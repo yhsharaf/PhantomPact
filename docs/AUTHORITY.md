@@ -145,7 +145,7 @@ Raised by appdoze (issue #1 / PR #2) and reworked from their code:
 
 - If both players swing at the same enemy within the same 1.5 s in PvP, the ghost's replay can't be told from your
   own hit, so that drop is reported. It's harmless outside PvP, where the ghost does no damage.
-- Enemy AI isn't synced: each world's copy picks its own attacks. Its position snaps back if it drifts over 4 m.
+- Enemy AI isn't synced: each world's copy picks its own attacks. Within 4 m of the host's copy it's left alone; further off it glides back, and past 20 m it jumps.
 - `Connect = Steam` is tested up to Valve's network: the Python relay's logic in unit tests, and the C++ relay reaching
   Steam inside both games. Two real accounts haven't connected through it yet; steps are in
   [STEAM_TEST.md](STEAM_TEST.md).

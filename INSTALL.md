@@ -50,6 +50,8 @@ The UE4SS console shows `Phantom Pact Host: co-op on` (or Guest), and
 
 - **Partner compass:** a silver seal on a line at the top shows which way your partner is. Turn it off with
   `PartnerCompass = Off`.
+- **Map:** your partner is a jade copy of your own map marker, turned the way they face, when you're in the same
+  area (red while they're down). Turn it off with `PartnerMapIcon = Off`.
 - **Tips:** short messages when your partner connects, drops, goes down or wanders far off.
 - **When you die:** after a few seconds the camera follows your partner until you respawn.
 

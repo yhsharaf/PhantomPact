@@ -23,7 +23,8 @@ share loot and dust, and rest at bells together. The host's world leads, and you
 - Shared resting: rest at a bell and enemies respawn for both
 - Elden Ring–style co-op difficulty: enemies and bosses get more health and posture while you play together
 - PvP duels (`PvP = On`): the game's own block, parry and dodge; parries stagger the attacker; the loser dies
-- A partner compass in the game's ink style, partner tips, and spectating your partner while you're down
+- A partner compass in the game's ink style, your partner on the map in jade, partner tips, and spectating your
+  partner while you're down
 - Optional `Secret` that signs every packet; works over Tailscale, Hamachi, Radmin, ZeroTier, UU Accelerator, and
   Steam (beta)
 
@@ -64,7 +65,7 @@ Early release, 2 players. Tailscale or any virtual LAN; Steam joining is in beta
 ## Credits
 
 - **[appdoze](https://github.com/appdoze)**, for the relay security review and code: packet signing, sender
-  filtering, event value checks, faster sending, the settings handshake, in-game status tips and smoother partner
+  filtering, event value checks, faster sending, the settings handshake, in-game status tips, the partner on the map, enemies gliding back on the guest, and smoother partner
   movement
 - **Vercadi**, for UE4SS for Phantom Blade Zero, which made modding this game possible
 - **The UE4SS team** ([RE-UE4SS](https://github.com/UE4SS-RE/RE-UE4SS))

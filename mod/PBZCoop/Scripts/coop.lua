@@ -47,7 +47,14 @@ return function(api)
     local PREDICT_MAX_SPEED = 2500 -- cm/s; faster between two snapshots is a teleport, not movement
     local PREDICT_BLEND = 0.5     -- weight of the newest velocity sample (smooths jitter)
     local ENEMY_RADIUS_CM = 6000  -- host shares enemies within this distance of its player
-    local ENEMY_SNAP_CM = 400     -- client teleports a mirrored enemy that is further than this from the host's
+    -- How a mirrored enemy follows the host's copy on the client (from appdoze's PR #7). Within ENEMY_GLIDE_CM it's
+    -- left alone: each world's copy picks its own attacks, so a few metres apart is normal in a fight, and pulling an
+    -- enemy then would slide it mid-attack and drag paired animations apart. Beyond that it glides back; only a big
+    -- gap (a teleporting boss, a respawn, a streaming hitch) is a jump.
+    local ENEMY_GLIDE_CM = 400
+    local ENEMY_SNAP_CM = 2000
+    local ENEMY_GLIDE_SHARE = 0.1  -- share of the gap closed per snapshot (20 per second); at 0.25 the first step, 1 m, hopped
+    local ENEMY_GLIDE_MAX_CM = 120 -- and never more than this per snapshot, so a glide never looks like a jump
     local ENEMY_MATCH_CM = 2000   -- client: a same-class enemy this close stands in for a host enemy with another id
     local PICKUP_EVERY = 10       -- snapshots between pickup scans (0.5 s)
     local AGGRO_EVERY = 20        -- snapshots between ghost aggro refreshes (1 s)
@@ -627,9 +634,14 @@ return function(api)
                     end
                     held[addr] = actor
                     local cur = actor:K2_GetActorLocation()
-                    if distance(cur, r) > ENEMY_SNAP_CM then
+                    local gap = distance(cur, r)
+                    if gap > ENEMY_SNAP_CM then
                         actor:K2_SetActorLocationAndRotation({ X = r.X, Y = r.Y, Z = r.Z },
                             { Pitch = 0.0, Yaw = r.Yaw, Roll = 0.0 }, false, {}, true)
+                    elseif gap > ENEMY_GLIDE_CM then
+                        local k = math.min(gap * ENEMY_GLIDE_SHARE, ENEMY_GLIDE_MAX_CM) / gap
+                        actor:K2_SetActorLocation({ X = cur.X + (r.X - cur.X) * k, Y = cur.Y + (r.Y - cur.Y) * k,
+                            Z = cur.Z + (r.Z - cur.Z) * k }, false, {}, true)
                     end
                     if game.setHealth and r.Hp ~= nil and hp ~= nil and r.Hp < hp - 0.5 then
                         game.setHealth(actor, r.Hp)

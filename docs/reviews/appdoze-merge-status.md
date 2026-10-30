@@ -88,3 +88,13 @@ branch `review/pr-5-now`).
 
 appdoze is credited in the README, in code comments next to each ported piece, and as `Co-authored-by` on the
 commit that brings in their code, so GitHub counts it as their contribution once pushed.
+
+## After 1.4.0
+
+| Item | Status | Notes |
+|---|---|---|
+| PR #6, partner on the map | Merged by hand | The game's own marker in jade. The scale now comes from your own marker (the PR's 1920 was 2.6 times too small in Weeping Creek Valley), the map is searched once a second while closed, and it turns red when the partner is down |
+| PR #7, enemies glide back | Merged by hand | Starts at 4 m, not 1.5 m, so close-range fights and executions stay as they were. 10% per snapshot, not 25%, which hopped |
+| PR #10, build-native finds Visual Studio with vswhere | Merged | As written |
+| Issue #8, revive design | Under review | |
+| Issue #9, pact save design | Under review | |
