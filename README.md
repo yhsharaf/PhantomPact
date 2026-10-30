@@ -4,6 +4,8 @@
 
 # Phantom Pact: online co-op for Phantom Blade Zero
 
+English | [简体中文](README.zh-CN.md)
+
 Phantom Pact adds online co-op to **Phantom Blade Zero**. Two players each run their own game and keep their own
 save, and Phantom Pact links the two worlds: you see each other, fight the same enemies, take on bosses as a team,
 share loot and dust, and rest at bells together. The host's world leads, and your partner joins in.
