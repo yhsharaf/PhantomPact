@@ -11,7 +11,10 @@ return function(api)
     local coop = api.coop
     local net = coop.net
 
+    -- From a sky-painting plugin: only some levels load it (the prologue does, the valley after it doesn't, and the
+    -- compass simply didn't appear there), so it's loaded here when it's missing.
     local WIDGET_CLASS = "W_PaintSize_C"
+    local WIDGET_PATH = "/UltraVolumetrics/UltraVolumetrics/Core/PaintMode/Blueprint/W_PaintSize.W_PaintSize_C"
     local COMPASS_HALF_DEG = 100    -- this far to either side maps to the line's ends
     local LINE_WIDTH_FRAC = 0.42    -- of the screen width
     local LINE_Y_FRAC = 0.055       -- from the top
@@ -39,8 +42,20 @@ return function(api)
         return textures[name]
     end
 
-    local function newImage(texName, w, h)
+    local function widgetClass()
         local cls = FindObject("WidgetBlueprintGeneratedClass", WIDGET_CLASS)
+        if not valid(cls) then
+            cls = StaticFindObject(WIDGET_PATH)
+        end
+        if not valid(cls) and type(LoadAsset) == "function" then
+            pcall(LoadAsset, WIDGET_PATH)
+            cls = StaticFindObject(WIDGET_PATH)
+        end
+        return cls
+    end
+
+    local function newImage(texName, w, h)
+        local cls = widgetClass()
         local pc = api.getPlayer1()
         local tex = texture(texName)
         if not (valid(cls) and valid(pc) and tex) then
@@ -145,7 +160,7 @@ return function(api)
         dotWidget:SetPositionInViewport({ X = x, Y = cy }, false)
         fit(lineWidget, width, width * LINE_ASPECT)
         fit(dotWidget, DOT_SIZE, DOT_SIZE)
-        local down = t.MaxHp and t.MaxHp > 0 and t.Hp and t.Hp <= 0
+        local down = net.partnerDowned or (t.MaxHp and t.MaxHp > 0 and t.Hp and t.Hp <= 0)
         pcall(function()
             dotWidget.Circle:SetColorAndOpacity(down and DOWN_TINT or NORMAL_TINT)
             dotWidget:SetRenderOpacity(behind and 0.55 or 1.0)
@@ -163,22 +178,19 @@ return function(api)
     end
 
     -- Sync off (netoff): coop.lua stops calling extraTicks, so the widgets are cleared from a loop of their own.
-    if type(LoopAsync) == "function" then
-        LoopAsync(1000, function()
-            if not net.enabled and (lineWidget or dotWidget) then
-                ExecuteInGameThread(function()
-                    if not net.enabled then
-                        remove()
-                    end
-                end)
-            end
-            return false
-        end)
-    end
+    LoopInGameThreadWithDelay(1000, function()
+        if not net.enabled and (lineWidget or dotWidget) then
+            remove()
+        end
+        return false
+    end)
 
     function hud.set(on)
         hud.on = on
     end
+
+    -- For revive.lua's ring, the same kind of widget.
+    hud.texture, hud.newImage, hud.fit, hud.show = texture, newImage, fit, show
 
     -- hud on|off
     function hud.command(args)

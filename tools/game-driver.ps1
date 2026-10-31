@@ -35,6 +35,38 @@ Add-Type -AssemblyName System.Drawing, System.Windows.Forms
 # Window lookup, mod commands and log reading (the part the player scripts use on their own).
 . (Join-Path $PSScriptRoot 'mod-link.ps1') -GameWin64 $GameWin64 -ProcessName $ProcessName
 
+# MainWindowHandle can be the UE4SS console: keys then went nowhere and the copy sat at its menu. Ask for the game's own.
+if (-not ('GameDriver.Finder' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System; using System.Text; using System.Runtime.InteropServices;
+namespace GameDriver { public static class Finder {
+    delegate bool EnumProc(IntPtr h, IntPtr l);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc f, IntPtr l);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder s, int n);
+    public static IntPtr Unreal(int pid) {
+        IntPtr found = IntPtr.Zero;
+        EnumWindows((h, l) => {
+            uint p; GetWindowThreadProcessId(h, out p);
+            var s = new StringBuilder(64); GetClassName(h, s, 64);
+            if (p == (uint)pid && s.ToString() == "UnrealWindow") { found = h; return false; }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+} }
+'@
+}
+function Get-GameWindow {
+    $procs = Get-Process -Name $script:ProcessName -ErrorAction SilentlyContinue
+    if ($script:TargetPid) { $procs = $procs | Where-Object { $_.Id -eq $script:TargetPid } }
+    foreach ($p in @($procs)) {
+        $h = [GameDriver.Finder]::Unreal($p.Id)
+        if ($h -ne [IntPtr]::Zero) { return $h }
+    }
+    return [IntPtr]::Zero
+}
+
 # Two copies on one PC: point the driver at one of them. Instance 1 uses the mod folder, N > 1 uses instN\.
 function Select-GameInstance {
     param([Parameter(Mandatory = $true)][int]$ProcessId, [int]$Instance = 1)

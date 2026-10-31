@@ -18,7 +18,7 @@ return function(api)
     local net = coop.net
 
     local PATH = "^/[%w_/%-]+%.[%w_%-]+$"
-    local ALLOWED_ROOTS = { "^/PBZCombatAsset/", "^/Game/" }
+    local ALLOWED_ROOTS = { "^/PBZCombatAsset/", "^/Game/", "^/HuaShira/" }
     local MAX_NEW_LOADS_PER_MIN = 30
     local RESTART_S = 0.05          -- the same montage at an earlier position = played again
 
@@ -56,6 +56,8 @@ return function(api)
         return ok and yes == true
     end
 
+    moves.animOf, moves.pathOf, moves.allowedPath = animOf, pathOf, allowedPath
+
     -- Sender, every tick: a new montage, or the same one started again, goes to the partner.
     local function watch()
         local _, pawn = api.getPlayer1()
@@ -72,6 +74,9 @@ return function(api)
         local pos = ai:Montage_GetPosition(m) or 0
         if addr ~= last or pos < lastPos - RESTART_S then
             local path = pathOf(m)
+            if api.revive then
+                api.revive.onLocalMontage(m:GetFName():ToString())
+            end
             if allowedPath(path) then
                 coop.sendEvent("U", path, string.format("%.2f", pos))
                 moves.sent = moves.sent + 1
@@ -106,6 +111,8 @@ return function(api)
         cache[path] = (valid(m) and isMontage(m)) and m or false
         return cache[path] or nil
     end
+
+    moves.montage = montage
 
     coop.handlers.U = function(rest)
         local path, pos = (rest or ""):match("^(%S+)%s+(%S+)$")

@@ -24,7 +24,7 @@ foreach ($f in 'enabled.txt', 'PhantomPact.ini') { Copy-Item (Join-Path $root "m
 Copy-Item (Join-Path $root 'mod\PBZCoop\Scripts\*.lua') (Join-Path $mod 'Scripts')
 # The PvP victory calligraphy (生还, painted in Lumina), loaded by pbz.lua at run time.
 New-Item -ItemType Directory -Force (Join-Path $mod 'art') | Out-Null
-Copy-Item (Join-Path $root 'mod\PBZCoop\art\*.png') (Join-Path $mod 'art')
+Copy-Item (Join-Path $root 'mod\PBZCoop\art\*') (Join-Path $mod 'art') -Recurse
 Copy-Item (Join-Path $root 'net\pbzcoop_net.py'), (Join-Path $root 'net\steam_transport.py') (Join-Path $mod 'relay')
 
 # The built-in relay. Built here so the zip can never carry an older one than the source.

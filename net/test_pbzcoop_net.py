@@ -96,6 +96,16 @@ class RelayLoopback(unittest.TestCase):
         self.assertTrue(wait_for(lambda: read(b_ev).startswith("S 333")))
         self.assertTrue(wait_for(lambda: event_lines(b_ev) == ["1 A attack2"]))
 
+    def test_enemies_that_leave_the_snapshot_leave_the_partners_copy(self):
+        out = os.path.join(self.a, "net_out.txt")
+        write(out, "P 1 10.0 20.0 30.0 90.0 0 0\nE Mob_1 1 2 3 4 50 100 1\n")
+        self.start("host", "--dir", self.a, "--port", str(PORT))
+        self.start("client", "--dir", self.b, "--peer", "127.0.0.1", "--port", str(PORT))
+        b_in = os.path.join(self.b, "net_in.txt")
+        self.assertTrue(wait_for(lambda: read(b_in) == "P 1 10.0 20.0 30.0 90.0 0 0\nE Mob_1 1 2 3 4 50 100 1\n"))
+        write(out, "P 2 11.0 20.0 30.0 90.0 0 0\n")
+        self.assertTrue(wait_for(lambda: read(b_in) == "P 2 11.0 20.0 30.0 90.0 0 0\n"))
+
     def test_receiving_relay_restart_resends_events(self):
         a_out = os.path.join(self.a, "net_events_out.txt")
         b_ev = os.path.join(self.b, "net_events_in.txt")
@@ -401,6 +411,26 @@ class Security(unittest.TestCase):
             self.assertEqual(status.count("connected="), 1)
             self.assertNotIn("\n", status)
             self.assertNotIn("time=999", status)
+
+    def test_position_travels_apart_from_enemies_and_events(self):
+        relay = load_relay_module()
+        net = FakeSteamNet()
+        with tempfile.TemporaryDirectory() as tmp:
+            r = relay.Relay("host", tmp, None, 0, net.link(2, [], peer=1))
+            enemies = "".join(f"E Boss_Enemy_Character_C_{i} 1000.0 2000.0 300.0 90.0 500.0 500.0 0 100.0 Cls\n"
+                              for i in range(40))
+            write(os.path.join(tmp, "net_out.txt"), "P 5 1 2 3 0 0 850 850 M\n" + enemies)
+            events = "".join(f"{i} A {'x' * 100}\n" for i in range(1, 31))
+            write(os.path.join(tmp, "net_events_out.txt"), "S 111\n" + events)
+            net.inbox[1] = []
+            r.send_state()
+            sent = [d for _, d in net.inbox[1]]
+            self.assertEqual(len(sent), 3)
+            self.assertIn(b'"e"', sent[0], "events must go first")
+            self.assertLess(len(sent[0]), 1200, "events must fit one VPN packet")
+            self.assertIn(b"P 5", sent[1])
+            self.assertLess(len(sent[1]), 200)
+            self.assertIn(b"E Boss", sent[2])
 
     def test_snapshot_goes_out_as_soon_as_the_mod_writes_it(self):
         relay = load_relay_module()

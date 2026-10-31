@@ -43,7 +43,10 @@ PING_EVERY = 1.0
 PEER_TIMEOUT = 3.0
 PROTOCOL = 2
 MAX_EVENTS_PER_PACKET = 40
+MAX_EVENT_BYTES = 1000  # and this much text, so a packet stays under a VPN's 1280-byte limit and isn't split
 MAX_SNAPSHOT_BYTES = 48000
+ENEMY_EVERY = 0.1       # enemies go in their own, larger packet: a lost one must not cost the player's position
+SESSION_EVERY = 1.0     # the event session is repeated this often when no events are pending
 
 
 def read_text(path):
@@ -205,7 +208,8 @@ class Auth:
 
 
 # Settings both players should share; each relay reads them from its own PhantomPact.ini and tells the other.
-SHARED_SETTINGS = ("coopenemyhealth", "coopenemyposture", "pvp", "pvpdamage", "pvpparryposture", "connect")
+SHARED_SETTINGS = ("coopenemyhealth", "coopenemyposture", "pvp", "pvpdamage", "pvpparryposture", "connect",
+                   "revive")
 HELLO_EVERY = 2.0
 
 
@@ -328,6 +332,14 @@ class SteamLink:
         return f"Steam as {self.st.my_name}"
 
 
+def split_snapshot(text):
+    """The mod's snapshot as (the player's lines, the enemy lines), which travel in separate packets."""
+    player, enemies = [], []
+    for line in text.splitlines(True):
+        (enemies if line.startswith("E ") else player).append(line)
+    return "".join(player), "".join(enemies)
+
+
 class Relay:
     def __init__(self, role, folder, peer, port, link=None, allow="partner", secret=None, settings=None,
                  version="?"):
@@ -355,6 +367,12 @@ class Relay:
         self.acked = {}                   # our session -> highest event id the peer confirmed
         self.events_acked = 0
         self.in_blanked = False           # net_in.txt emptied because the peer went silent
+        self.in_player = ""               # the peer's latest position lines, and below its enemy lines
+        self.in_enemies = ""
+        self.last_state = 0.0
+        self.last_enemies = 0.0
+        self.last_session = 0.0
+        self.enemies_sent = False         # the last enemy packet had enemies: an empty list must follow them
 
     def send(self, msg, to=None):
         to = to if to is not None else self.peer
@@ -411,8 +429,10 @@ class Relay:
                 # (A 400-digit JSON integer here raised OverflowError and killed the relay.)
                 self.rtt_ms = (now - msg["ts"]) * 1000.0
             elif kind == "state":
-                if isinstance(msg.get("s"), str):
-                    write_atomic(self.in_path, msg["s"])
+                if isinstance(msg.get("s"), str) or isinstance(msg.get("n"), str):
+                    self.in_player = msg["s"] if isinstance(msg.get("s"), str) else self.in_player
+                    self.in_enemies = msg["n"] if isinstance(msg.get("n"), str) else self.in_enemies
+                    write_atomic(self.in_path, self.in_player + self.in_enemies)
                     self.in_blanked = False
                 ev = msg.get("e")
                 if isinstance(ev, dict) and isinstance(ev.get("sid"), str) and isinstance(ev.get("l"), list):
@@ -460,6 +480,7 @@ class Relay:
             if not self.in_blanked:
                 # The peer is gone: don't leave its last snapshot for the mod to keep applying.
                 write_atomic(self.in_path, "")
+                self.in_player = self.in_enemies = ""
                 self.in_blanked = True
         if now - self.last_ping >= PING_EVERY:
             if self.peer is None and self.role != "host":
@@ -471,23 +492,39 @@ class Relay:
         if self.peer is not None and now - self.last_hello >= HELLO_EVERY:
             self.send({"t": "hello", "ver": self.version, "cfg": self.settings})
             self.last_hello = now
-        # Resent every tick even if unchanged, so a dropped packet heals itself (wait() also sends on change).
-        self.send_state()
+        # Resent if nothing went out since the last tick, so a dropped packet heals itself. wait() sends on change,
+        # which is every tick while the mod runs: sending here as well doubled the traffic.
+        if time.monotonic() - self.last_state >= TICK:
+            self.send_state()
 
     def send_state(self):
-        msg = {"t": "state"}
-        snapshot = read_text(self.out_path)
-        if snapshot.strip():
-            msg["s"] = snapshot[:MAX_SNAPSHOT_BYTES]
+        now = time.monotonic()
+        self.last_state = now
+        # Events first: a dead enemy's "K" should arrive before the enemy list that no longer has it.
         session, events = parse_events(read_complete_lines(self.events_out_path))
         if session is not None:
             acked = self.acked.get(session, 0)
-            pending = [line for eid, line in events if eid > acked][:MAX_EVENTS_PER_PACKET]
-            # Always include the session (even with nothing pending) so the peer's inbox follows restarts.
-            msg["e"] = {"sid": session, "l": pending}
+            pending, size = [], 0
+            for eid, line in events:
+                if eid <= acked:
+                    continue
+                if pending and (len(pending) == MAX_EVENTS_PER_PACKET or size + len(line) > MAX_EVENT_BYTES):
+                    break
+                pending.append(line)
+                size += len(line)
+            # The session is repeated even with nothing pending, so the peer's inbox follows restarts.
+            if pending or now - self.last_session >= SESSION_EVERY:
+                self.send({"t": "state", "e": {"sid": session, "l": pending}})
+                self.last_session = now
             self.events_acked = acked
-        if len(msg) > 1:
-            self.send(msg)
+        snapshot = read_text(self.out_path)
+        if snapshot.strip():
+            player, enemies = split_snapshot(snapshot[:MAX_SNAPSHOT_BYTES])
+            self.send({"t": "state", "s": player})
+            if (enemies or self.enemies_sent) and now - self.last_enemies >= ENEMY_EVERY:
+                self.send({"t": "state", "n": enemies})
+                self.last_enemies = now
+                self.enemies_sent = bool(enemies)
 
     def status(self, now):
         connected = self.peer is not None and now - self.last_heard <= PEER_TIMEOUT
@@ -650,7 +687,8 @@ def run_replay(folder, path, seconds, client_log):
         write_atomic(status_path, "role=replay connected=no stopped=yes\n")
 
 
-ALIVE_TIMEOUT = 30.0     # s without a heartbeat from the mod before a relay the mod started gives up
+ALIVE_TIMEOUT = 180.0    # s without a heartbeat from the mod before a relay the mod started gives up (the
+                         # heartbeat runs on the game thread, which stands still through a long load)
 
 
 def fine_timer(on):

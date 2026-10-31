@@ -6,7 +6,7 @@
 -- F8  spawn player 2: a second local player + a copy of player 1's character (F8-F11 need PBZCOOP_DEBUG=1)
 -- F9  remove player 2
 
-local VERSION = "1.4.0"
+local VERSION = "1.4.1"
 local TAG = "[PBZCoop] "
 if (os.getenv("PBZCOOP_INSTANCE") or "1") ~= "1" then
     TAG = "[PBZCoop#" .. os.getenv("PBZCOOP_INSTANCE") .. "] "
@@ -441,8 +441,10 @@ api.coop = coop
 api.status = dofile(SCRIPT_DIR .. "status.lua")(api)
 api.partner = dofile(SCRIPT_DIR .. "partner.lua")(api)
 api.moves = dofile(SCRIPT_DIR .. "moves.lua")(api)
+api.puppets = dofile(SCRIPT_DIR .. "puppets.lua")(api)
 api.hud = dofile(SCRIPT_DIR .. "hud.lua")(api)
 api.mapicon = dofile(SCRIPT_DIR .. "mapicon.lua")(api)
+api.revive = dofile(SCRIPT_DIR .. "revive.lua")(api)
 api.pvp = dofile(SCRIPT_DIR .. "pvp.lua")(api)
 api.scaling = dofile(SCRIPT_DIR .. "scaling.lua")(api)
 local net = coop.net
@@ -497,7 +499,9 @@ COMMANDS.scale = api.scaling.command
 COMMANDS.tips = api.status.command
 COMMANDS.partner = api.partner.command
 COMMANDS.moves = api.moves.command
+COMMANDS.puppets = api.puppets.command
 COMMANDS.hud = api.hud.command
+COMMANDS.revive = api.revive.command
 
 local function readCommandFile()
     local path = modDir() .. "cmd.txt"
@@ -553,14 +557,14 @@ local function runCommand(line)
     end
 end
 
-LoopAsync(500, function()
+-- All Lua stays on the game thread: Lua isn't thread-safe, and LoopAsync's worker thread ran alongside the tick and
+-- corrupted the Lua heap (crashes inside UE4SS.dll, every one on the game thread, none in a UObject call).
+LoopInGameThreadWithDelay(500, function()
     local text = readCommandFile()
     if text then
-        ExecuteInGameThread(function()
-            for line in text:gmatch("[^\r\n]+") do
-                runCommand(line)
-            end
-        end)
+        for line in text:gmatch("[^\r\n]+") do
+            runCommand(line)
+        end
     end
     return false
 end)

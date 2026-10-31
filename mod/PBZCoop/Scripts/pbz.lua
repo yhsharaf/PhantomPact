@@ -73,7 +73,9 @@ return function(api)
     -- Enemy ids that are the same on both PCs. Runtime actor names are not (the same placed character was
     -- ..._2147476826 in one session and ..._2147477757 in the next), but enemies come from level-placed
     -- AISpawners whose designer SpawnerID ("ZuoShangyoung_Seq003") is stable, so an enemy made by a spawner is
-    -- "sp:<SpawnerID>". Others keep their actor name, and coop.lua falls back to class + position matching.
+    -- "sp:<SpawnerID>". Most spawners have no SpawnerID (174 of 180 in Xigu): every enemy of theirs was "sp:None", so
+    -- one death read as all of them. Their level actor names (..._UAID_...) are the same on both PCs, so those stand
+    -- in. Others keep their actor name, and coop.lua falls back to class + position matching.
     -- Scanning every AISpawner is slow, so at most once per ID_REFRESH_S unless forced.
     local ID_REFRESH_S = 1.0
     local spawnerIds = {}
@@ -89,7 +91,8 @@ return function(api)
             pcall(function()
                 local a = s.SpawnedAI
                 if valid(a) then
-                    spawnerIds[a:GetAddress()] = "sp:" .. s.SpawnerID:ToString()
+                    local id = s.SpawnerID:ToString()
+                    spawnerIds[a:GetAddress()] = "sp:" .. (id ~= "None" and id or s:GetFName():ToString())
                 end
             end)
         end
@@ -97,6 +100,15 @@ return function(api)
 
     function game.enemyId(actor)
         return spawnerIds[actor:GetAddress()] or actor:GetFName():ToString()
+    end
+
+    -- Guest copies of the host's enemies: their own AI stays out of it (puppets.lua).
+    function game.stopAI(actor)
+        pcall(function() actor:GetController().BrainComponent:StopLogic("PhantomPact") end)
+    end
+
+    function game.startAI(actor)
+        pcall(function() actor:GetController().BrainComponent:RestartLogic() end)
     end
 
     function game.enemyClass(actor)
@@ -116,6 +128,29 @@ return function(api)
                 return
             end
         end
+    end
+
+    -- The other player's boss, on this PC too: a boss only spawns on the PC whose player started the fight. Returns
+    -- its spawner's location, or nil for an enemy that doesn't come from a named spawner.
+    function game.spawnBoss(enemyId)
+        local id = enemyId:match("^sp:(.+)$")
+        for _, s in ipairs(id and FindAllOf("AISpawner") or {}) do
+            local sid = nil
+            pcall(function() sid = s.SpawnerID:ToString() end)
+            if sid == id then
+                local at = s:K2_GetActorLocation()
+                local alive = false
+                pcall(function() alive = valid(s.SpawnedAI) and not game.isDead(s.SpawnedAI) end)
+                if not alive then
+                    local ok, err = pcall(function() s:ClaimSeqSpawn(false, true, true) end)
+                    if not ok then
+                        log("Couldn't spawn " .. id .. ": " .. tostring(err))
+                    end
+                end
+                return { X = at.X, Y = at.Y, Z = at.Z }
+            end
+        end
+        return nil
     end
 
     -- Cached for ENEMY_CACHE_S: the host and client halves (and aggro) all ask within the same tick.
@@ -178,6 +213,11 @@ return function(api)
         pcall(function() bosses[actor:GetAddress()] = nil end)
     end
 
+    -- A boss bar is up: a fight the game started, or the partner's (showBossBar).
+    function game.bossFightActive()
+        return next(bosses) ~= nil
+    end
+
     function game.resetBosses()
         bosses = {}
     end
@@ -193,11 +233,28 @@ return function(api)
     end
 
     function game.kill(actor)
+        local boss = game.isBoss and game.isBoss(actor)
         forgetBoss(actor)
         game.setMinHealth(actor, 0)
+        if boss then
+            -- Bosses shrug off the game-logic reason: the guest's lived on with the fog walls open.
+            game.applyDamage(actor, math.huge, 0)
+            return
+        end
         syncing = true
         local ok, err = pcall(function() actor:Kill(DIE_GAME_LOGIC) end)
         syncing = false
+        if not ok then
+            log("Kill failed: " .. tostring(err))
+        end
+    end
+
+    -- The player's own death, the game's normal flow (screen, respawn, refresh). Kill with the game-logic reason
+    -- leaves a player alive at their health.
+    function game.killPlayer(pawn)
+        game.setMinHealth(pawn, 0)
+        game.setHealth(pawn, 0)
+        local ok, err = pcall(function() pawn:Kill(DIE_DAMAGED) end)
         if not ok then
             log("Kill failed: " .. tostring(err))
         end
@@ -472,6 +529,43 @@ return function(api)
         if not (ok and activated) then
             log("Ghost couldn't play " .. classPath:match("([^.]+)$"))
         end
+    end
+
+    -- The class path of the first running ability that isn't passive(name), or nil.
+    function game.activeAbility(actor, passive)
+        local asc = abilitySystem(actor)
+        local found = nil
+        if asc then
+            pcall(function()
+                asc.ActivatableAbilities.Items:ForEach(function(_, spec)
+                    -- Own pcall: an error must never unwind through UE4SS's ForEach.
+                    pcall(function()
+                        local s = spec:get()
+                        if found == nil and s.ActiveCount > 0 then
+                            local path = s.Ability:GetClass():GetFullName():gsub("^%S+ ", "")
+                            if not passive(path) then
+                                found = path
+                            end
+                        end
+                    end)
+                end)
+            end)
+        end
+        return found
+    end
+
+    -- An ability the actor was already given, by class path. False when it has none such or it won't start.
+    function game.playAbility(actor, classPath)
+        if not classPath:match("^/[%w_/%-]+%.[%w_%-]+$") or #classPath > 256 then
+            return false
+        end
+        local asc = abilitySystem(actor)
+        local cls = StaticFindObject(classPath)
+        if not (asc and valid(cls)) then
+            return false
+        end
+        local ok, activated = pcall(function() return asc:TryActivateAbilityByClass(cls, true) end)
+        return ok and activated == true
     end
 
     ------------------------------------------------------------------ hit reactions

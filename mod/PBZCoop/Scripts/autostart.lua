@@ -84,6 +84,9 @@ return function(api)
     if api.mapicon then
         api.mapicon.on = (settings.partnermapicon or "on"):lower() ~= "off"
     end
+    if api.revive then
+        api.revive.set((settings.revive or "off"):lower() == "on")
+    end
     local role = (settings.role or "off"):lower()
     local modRole = ({ host = "host", guest = "client" })[role]
     if not modRole then
@@ -113,7 +116,7 @@ return function(api)
     -- Heartbeat for the relay; written before the relay starts so it doesn't see a stale one.
     local alivePath = modDir() .. "net_alive.txt"
     writeText(alivePath, tostring(os.time()))
-    LoopAsync(ALIVE_EVERY_MS, function()
+    LoopInGameThreadWithDelay(ALIVE_EVERY_MS, function()
         writeText(alivePath, tostring(os.time()))
         return false
     end)
@@ -199,14 +202,11 @@ return function(api)
 
     -- Sync on once the player is in the world.
     local on = false
-    LoopAsync(2000, function()
+    LoopInGameThreadWithDelay(2000, function()
         if on then
-            return true
+            return false    -- (returning true doesn't end this kind of loop in this UE4SS)
         end
-        ExecuteInGameThread(function()
-            if on then
-                return
-            end
+        pcall(function()
             local _, pawn = getPlayer1()
             if valid(pawn) then
                 on = true

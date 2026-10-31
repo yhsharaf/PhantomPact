@@ -93,7 +93,7 @@ return function(api)
         if fx and (fx ~= px or fy ~= py) then
             icon:SetRenderTransformAngle(math.deg(math.atan(fx - px, py - fy)))
         end
-        local down = t.MaxHp and t.MaxHp > 0 and t.Hp and t.Hp <= 0
+        local down = net.partnerDowned or (t.MaxHp and t.MaxHp > 0 and t.Hp and t.Hp <= 0)
         icon:SetColorAndOpacity(down and DOWN_TINT or JADE)
         if hidden then
             pcall(function() icon:SetVisibility(3) end)

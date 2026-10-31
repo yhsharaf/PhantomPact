@@ -21,7 +21,16 @@ foreach ($i in 1, 2) {
         Show-Game; Send-GameKey RETURN; Start-Sleep 10
         $ok = Wait-Gameplay -TimeoutSec 20
     }
-    "copy $i in gameplay: $ok"
+    # Wait-Gameplay can pass with the copy still at the title screen, so ask the game itself.
+    $pawn = $false
+    for ($k = 0; $k -lt 8 -and -not $pawn; $k++) {
+        $t = Get-Date
+        Send-ModCommand 'eval local _,p=PBZ.getPlayer1() return "pawn="..tostring(p~=nil)'
+        Start-Sleep 2
+        $pawn = [bool](Get-ModLog -Since $t -Last 200 | Where-Object { $_ -match 'pawn=true' })
+        if (-not $pawn) { Show-Game; Start-Sleep -Milliseconds 500; Send-GameKey RETURN; Start-Sleep 15 }
+    }
+    "copy $i in gameplay: $ok, has a character: $pawn"
 }
 Use 1; Send-ModCommand 'neton host'; Start-Sleep 2; Use 2; Send-ModCommand 'neton client'; Start-Sleep 4
 "hostPid=$hostPid clientPid=$clientPid"

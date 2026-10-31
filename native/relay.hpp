@@ -38,10 +38,14 @@ constexpr double WATCH = 0.005;        // how often the mod's files are checked 
 constexpr double PING_EVERY = 1.0;
 constexpr double PEER_TIMEOUT = 3.0;
 constexpr double HELLO_EVERY = 2.0;
-constexpr double ALIVE_TIMEOUT = 30.0; // s without a heartbeat from the mod before the relay gives up
+constexpr double ALIVE_TIMEOUT = 180.0; // s without a heartbeat from the mod before the relay gives up (it's sent from
+                                        // the game thread, which stands still through a long load)
 constexpr int PROTOCOL = 2;
 constexpr size_t MAX_EVENTS_PER_PACKET = 40;
+constexpr size_t MAX_EVENT_BYTES = 1000;  // and this much text, so a packet stays under a VPN's 1280-byte limit
 constexpr size_t MAX_SNAPSHOT_BYTES = 48000;
+constexpr double ENEMY_EVERY = 0.1;       // enemies go in their own, larger packet: losing one can't cost the position
+constexpr double SESSION_EVERY = 1.0;     // the event session is repeated this often when no events are pending
 constexpr int MAX_PACKETS_PER_RECEIVE = 256;
 constexpr size_t MAX_ACKED_SESSIONS = 16;   // ack session ids come from the network: don't keep them forever
 
@@ -338,7 +342,7 @@ inline std::string clean_token(const std::string& value, size_t limit = 32) {
 }
 
 inline const char* const SHARED_SETTINGS[] = {"coopenemyhealth", "coopenemyposture", "pvp", "pvpdamage",
-                                              "pvpparryposture", "connect"};
+                                              "pvpparryposture", "connect", "revive"};
 
 inline bool is_shared_setting(const std::string& key) {
     return std::any_of(std::begin(SHARED_SETTINGS), std::end(SHARED_SETTINGS), [&](const char* k) { return key == k; });
@@ -489,6 +493,8 @@ public:
         if (peer_ && last_heard_ > 0 && now - last_heard_ > PEER_TIMEOUT && !in_blanked_) {
             // The peer is gone: don't leave its last snapshot for the mod to keep applying.
             write_atomic(in_path_, "");
+            in_player_.clear();
+            in_enemies_.clear();
             in_blanked_ = true;
         }
         if (now - last_ping_ >= PING_EVERY) {
@@ -505,8 +511,9 @@ public:
             send_hello();
             last_hello_ = now;
         }
-        // Resent every tick even if unchanged, so a dropped packet heals itself (wait() also sends on change).
-        send_state();
+        // Resent if nothing went out since the last tick, so a dropped packet heals itself. wait() sends on change,
+        // which is every tick while the mod runs: sending here as well doubled the traffic.
+        if (monotonic() - last_state_ >= TICK) send_state();
     }
 
     // Sleep until the next tick, but handle incoming packets the moment they arrive, and send the mod's snapshot or
@@ -578,38 +585,56 @@ private:
         send_raw(msg);
     }
 
+    void send_snapshot_part(const char* key, const std::string& text) {
+        std::string msg = std::string("{\"t\":\"state\",\"") + key + "\":";
+        json::append_string(msg, text);
+        msg += ",\"v\":" + std::to_string(PROTOCOL) + "}";
+        send_raw(msg);
+    }
+
     void send_state() {
-        std::string msg = "{\"t\":\"state\"";
-        bool has = false;
-        std::string snapshot = read_text(out_path_);
-        if (!strip(snapshot).empty()) {
-            if (snapshot.size() > MAX_SNAPSHOT_BYTES) snapshot.resize(MAX_SNAPSHOT_BYTES);
-            msg += ",\"s\":";
-            json::append_string(msg, snapshot);
-            has = true;
-        }
+        const double now = monotonic();
+        last_state_ = now;
+        // Events first: a dead enemy's "K" should arrive before the enemy list that no longer has it.
         ParsedEvents parsed = parse_events(read_complete_lines(events_out_path_));
         if (parsed.session) {
             auto it = acked_.find(*parsed.session);
             long long acked = it == acked_.end() ? 0 : it->second;
-            // Always include the session (even with nothing pending) so the peer's inbox follows restarts.
-            msg += ",\"e\":{\"sid\":";
-            json::append_string(msg, *parsed.session);
-            msg += ",\"l\":[";
-            size_t count = 0;
+            std::string lines;
+            size_t count = 0, size = 0;
             for (const auto& [id, line] : parsed.events) {
                 if (id <= acked) continue;
-                if (count == MAX_EVENTS_PER_PACKET) break;
-                if (count++) msg.push_back(',');
-                json::append_string(msg, line);
+                if (count && (count == MAX_EVENTS_PER_PACKET || size + line.size() > MAX_EVENT_BYTES)) break;
+                if (count++) lines.push_back(',');
+                json::append_string(lines, line);
+                size += line.size();
             }
-            msg += "]}";
+            // The session is repeated even with nothing pending, so the peer's inbox follows restarts.
+            if (count || now - last_session_ >= SESSION_EVERY) {
+                std::string msg = "{\"t\":\"state\",\"e\":{\"sid\":";
+                json::append_string(msg, *parsed.session);
+                msg += ",\"l\":[" + lines + "]},\"v\":" + std::to_string(PROTOCOL) + "}";
+                send_raw(msg);
+                last_session_ = now;
+            }
             events_acked_ = acked;
-            has = true;
         }
-        if (has) {
-            msg += ",\"v\":" + std::to_string(PROTOCOL) + "}";
-            send_raw(msg);
+        std::string snapshot = read_text(out_path_);
+        if (!strip(snapshot).empty()) {
+            if (snapshot.size() > MAX_SNAPSHOT_BYTES) snapshot.resize(MAX_SNAPSHOT_BYTES);
+            std::string player, enemies;
+            for (size_t at = 0; at < snapshot.size();) {
+                size_t end = snapshot.find('\n', at);
+                end = end == std::string::npos ? snapshot.size() : end + 1;
+                (snapshot.compare(at, 2, "E ") == 0 ? enemies : player).append(snapshot, at, end - at);
+                at = end;
+            }
+            send_snapshot_part("s", player);
+            if ((!enemies.empty() || enemies_sent_) && now - last_enemies_ >= ENEMY_EVERY) {
+                send_snapshot_part("n", enemies);
+                last_enemies_ = now;
+                enemies_sent_ = !enemies.empty();
+            }
         }
     }
 
@@ -664,8 +689,12 @@ private:
                 if (ts && ts->type == json::Value::Number && std::fabs(ts->number) < 1e12)
                     rtt_ms_ = (now - ts->number) * 1000.0;
             } else if (*kind == "state") {
-                if (const std::string* s = msg.get_string("s")) {
-                    write_atomic(in_path_, *s);
+                const std::string* s = msg.get_string("s");
+                const std::string* n = msg.get_string("n");
+                if (s || n) {
+                    if (s) in_player_ = *s;
+                    if (n) in_enemies_ = *n;
+                    write_atomic(in_path_, in_player_ + in_enemies_);
                     in_blanked_ = false;
                 }
                 const json::Value* ev = msg.get("e");
@@ -734,6 +763,9 @@ private:
     double last_hello_ = 0, last_heard_ = 0, last_ping_ = 0;
     long long rejected_ = 0, received_ = 0, sent_ = 0, events_acked_ = 0;
     bool in_blanked_ = false;
+    std::string in_player_, in_enemies_;   // the peer's latest position lines and enemy lines
+    double last_state_ = 0, last_enemies_ = 0, last_session_ = 0;
+    bool enemies_sent_ = false;            // the last enemy packet had enemies: an empty list must follow them
 };
 
 struct Options {

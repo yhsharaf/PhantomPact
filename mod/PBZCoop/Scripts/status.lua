@@ -120,6 +120,13 @@ return function(api)
             notify("mismatch", "settings differ from your partner's: " .. s.mismatch:gsub(",", ", "))
         end
 
+        local theirs = s.partner_version
+        if theirs and theirs ~= "?" and theirs ~= "-" and theirs ~= "" and api.version and theirs ~= api.version
+            and theirs ~= last.partner_version then
+            notify("version", "your partner is on Phantom Pact " .. theirs .. " and you're on " .. api.version
+                .. ": use the same version, or enemies won't stay in step.")
+        end
+
         local rejected = tonumber(s.rejected) or 0
         if rejected > (tonumber(last.rejected) or 0) and s.connected ~= "yes" then
             notify("secret", "packets refused: both PCs need the same Secret in PhantomPact.ini (or both none).")

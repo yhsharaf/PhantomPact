@@ -1,4 +1,4 @@
-# Phantom Pact 1.4.0: online co-op for Phantom Blade Zero
+# Phantom Pact 1.4.1: online co-op for Phantom Blade Zero
 
 Play the campaign with a friend: you see each other as a second Soul, fight the same enemies and bosses, and
 share loot, dust and bell rests. The host's world decides enemies, bosses and deaths; the guest's world follows.
@@ -41,8 +41,8 @@ The UE4SS console shows `Phantom Pact Host: co-op on` (or Guest), and
 - **Hamachi, Radmin, ZeroTier, UU Accelerator's multiplayer:** any virtual LAN works. The guest puts the host's
   address from that app in `HostAddress` (leave `Connect = Tailscale`: it just means "connect by IP"). If the app
   hands out unusual addresses (UU, ZeroTier), the host also sets `AllowAnyAddress = On`.
-- **Steam (beta):** both set `Connect = Steam`; the guest joins a Steam friend who's hosting. No Tailscale needed.
-  Not yet tested between two players, so tell us how it goes.
+- **Steam:** both set `Connect = Steam`; the guest joins a Steam friend who's hosting. No Tailscale needed. You must be
+  Steam friends. The guest leaves `HostAddress` empty (or puts the host's Steam name), and not an IP address.
 - **Secret (optional):** the same password in `Secret =` on both PCs signs every packet, so nobody else on the
   network can join. Recommended with `AllowAnyAddress = On`.
 
@@ -79,7 +79,10 @@ Not in PvP yet: executions (posture break only staggers).
 
 ## Good to know
 
-- The host should lead into new areas and boss arenas; the guest follows.
+- Enemies are one fight: the host's game runs them, and the guest sees and fights the same ones. Their attacks work as
+  usual on both PCs, so block, parry and dodge do too.
+- Boss fights: when one of you starts a boss, the other is brought into the arena. Stay close when you're about to start
+  one: far from the host, enemies that aren't loaded on the host's PC fight on their own on the guest's.
 - If your partner disappears, they are down, in a cutscene, on another map or disconnected; they come back.
 - If the guest dies during a boss fight, the host's fight goes on; the host's win counts for both.
 - Not shared yet: cutscenes, dialogue, spending dust, quests and story progress.

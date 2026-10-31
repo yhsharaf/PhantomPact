@@ -32,10 +32,25 @@ return function(api)
     local GHOST_SNAP_CM = 600     -- walking ghost further than this from its target teleports instead
     local GHOST_STOP_CM = 60      -- walking ghost closer than this stops and faces the remote player's direction
     local GHOST_MIN_SPEED = 100   -- cm/s, walking ghost's slowest speed while catching up
-    local GHOST_MAX_SPEED = 750   -- cm/s, fastest (a bit above P1's 450 jog, so it can catch up)
+    local GHOST_MAX_SPEED = 1400  -- cm/s, fastest: above any sprint or dash, or it fell behind and kept snapping
     local GHOST_SPEED_PER_CM = 3.0  -- speed per cm of distance to the target
     local GHOST_ACCELERATION = 2000 -- cm/s², P1 uses 210 but the ghost must react to network updates quickly
     local GHOST_SMOOTHING = 0.35  -- sphere ghost: fraction of the remaining distance covered per tick
+    local GHOST_CLIMB_CM = 250    -- walking ghost this far above or below its target glides there (it can't climb)
+    local GHOST_LAND_CM = 60      -- and walks again once this close in height
+    local GHOST_GLIDE_SMOOTHING = 0.2 -- fraction of the remaining distance covered per tick while gliding
+    local GHOST_CORRECT_CM = 200  -- further than this from its target it moves even during a replayed move
+    local GHOST_FAILED_LANDING_S = 3.0 -- back in the air this soon after landing: there's no floor here for it
+    local GHOST_HOVER_S = 6.0     -- then it stays gliding this long (the partner's ground isn't loaded on this PC)
+    local BOSS_JOIN_CM = 5000     -- further than this from the other player's boss, you're brought to it: arenas are
+    local BOSS_JOIN_SIDE_CM = 300 -- apart from the map (Xigu's is 20 km up, no way to walk there). This far from its spot
+    local ARRIVE_HOLD_S = 3.0     -- kept in the air this long on arrival, while the ground there loads
+    local ARRIVE_WATCH_S = 25.0   -- for this long, a player dropping through ground that isn't there yet is put back
+    local ARRIVE_FALL_CM = 300    -- this far below the arrival point counts as dropping through
+    local BOSS_RETURN_S = 8.0     -- after the boss dies, this long before following a partner who left the arena
+    local GHOST_AWAY_S = 3.0      -- a sequence or other map must last this long to hide the ghost (climbs, finishers)
+    local GAP_LOG_S = 0.5         -- a partner silent this long is logged when they return (choppy-connection reports)
+    local SIZE_LOG_EVERY = 1200   -- snapshots between lines on how much we send (one minute)
     -- Dead reckoning: the ghost aims where the partner should be now, not where the last snapshot said, by
     -- extending their recent velocity. Capped, so a stop or turn costs at most a short overshoot. Velocity comes
     -- from snapshot numbers (the sender writes one every SNAPSHOT_S), not arrival times, which jitter.
@@ -58,7 +73,9 @@ return function(api)
     local ENEMY_MATCH_CM = 2000   -- client: a same-class enemy this close stands in for a host enemy with another id
     local PICKUP_EVERY = 10       -- snapshots between pickup scans (0.5 s)
     local AGGRO_EVERY = 20        -- snapshots between ghost aggro refreshes (1 s)
+    local MOVE_NONE = 0           -- EMovementMode::MOVE_None
     local MOVE_WALKING = 1        -- EMovementMode::MOVE_Walking
+    local MOVE_FLYING = 5         -- EMovementMode::MOVE_Flying: no gravity while the ghost glides
     local ECC_PAWN = 2            -- ECollisionChannel::ECC_Pawn
     local ECR_IGNORE = 0          -- ECollisionResponse::ECR_Ignore
 
@@ -79,6 +96,8 @@ return function(api)
         inTail = "",              -- an incomplete last line (no "\n" yet), finished on a later read
         remoteEnemies = {},       -- client: name -> latest host record
         deadSent = {},            -- host: enemy name -> true once its death was announced
+        guestKilled = {},         -- host: enemy name -> the guest killed its copy while it wasn't loaded here
+        guestKillSent = {},       -- client: enemy name -> the host was told of that kill
         pendingDeaths = {},       -- client: host id -> true for a death announced while our copy wasn't loaded
         pendingBosses = {},       -- client: host id -> true for a boss fight announced before our copy was matched
         matchSticky = {},         -- client: host id -> address of the local actor matched to it by class/position
@@ -228,6 +247,8 @@ return function(api)
         end
     end
 
+    local extraTicksEarly = {}  -- name -> function, run every tick (filled below, joined into extraTicks)
+
     ------------------------------------------------------------------ ghost (the remote player)
 
     local function spawnGhost()
@@ -244,6 +265,7 @@ return function(api)
             return
         end
         net.ghostWalks = false
+        net.ghostGliding = false
         if net.ghostMode == "clone" then
             -- Steered with movement input (see steerGhost) so the game's own locomotion animations play.
             -- It needs collision for the floor, but should not shove player 1 around.
@@ -286,13 +308,24 @@ return function(api)
         end
         local dead = zero and (os.clock() - net.zeroSince) >= 1.0
         local gone = net.partnerGone == true     -- see watchPartner
-        -- In a cutscene the partner isn't really playing: their ghost would stand idle in your world.
-        local hide = otherMap or dead or gone or t.Cine == true
+        -- In a cutscene the partner isn't really playing: their ghost would stand idle in your world. Short
+        -- sequences are part of play, and a ghost hidden for each one blinked in and out.
+        local away = otherMap or t.Cine == true
+        if away then
+            net.awaySince = net.awaySince or os.clock()
+        else
+            net.awaySince = nil
+        end
+        local hide = dead or gone or (away and os.clock() - net.awaySince >= GHOST_AWAY_S)
         if hide ~= net.ghostHidden then
             net.ghostHidden = hide
             pcall(function()
                 net.ghost:SetActorHiddenInGame(hide)
                 net.ghost:SetActorEnableCollision(net.ghostWalks and not hide)
+                if net.ghostWalks then
+                    -- Without collision it would fall through the world: 20 km by the time it came back.
+                    net.ghost.CharacterMovement:SetMovementMode(hide and MOVE_NONE or MOVE_WALKING, 0)
+                end
             end)
             if hide then
                 log("Ghost hidden: the other player is " .. (gone and "gone" or dead and "down"
@@ -303,15 +336,47 @@ return function(api)
         end
     end
 
+    -- The ghost only walks, so a partner climbing a cliff left it pressing against the rock until the height gap
+    -- reached the snap distance. A big gap in height moves it directly instead. True while gliding.
+    local function glideGhost(cur, t)
+        local gap = math.abs(t.Z - cur.Z)
+        if not net.ghostGliding then
+            if gap < GHOST_CLIMB_CM then
+                return false
+            end
+            net.ghostGliding = true
+            net.ghost.CharacterMovement:SetMovementMode(MOVE_FLYING, 0)
+            if net.ghostLandedAt and os.clock() - net.ghostLandedAt < GHOST_FAILED_LANDING_S then
+                net.ghostHoverUntil = os.clock() + GHOST_HOVER_S
+            else
+                log("Ghost gliding: the other player is " .. math.floor(gap) .. " cm higher or lower.")
+            end
+        elseif gap <= GHOST_LAND_CM and t.Grounded and os.clock() >= (net.ghostHoverUntil or 0) then
+            -- (Not while they hang on a cliff: a ghost walking in mid-air falls, then glides back up, again and again.)
+            net.ghostGliding = false
+            net.ghostLandedAt = os.clock()
+            net.ghost.CharacterMovement:SetMovementMode(MOVE_WALKING, 0)
+            return false
+        end
+        local a = distance(cur, t) > GHOST_SNAP_CM and 1.0 or GHOST_GLIDE_SMOOTHING
+        net.ghost:K2_SetActorLocationAndRotation(
+            { X = cur.X + (t.X - cur.X) * a, Y = cur.Y + (t.Y - cur.Y) * a, Z = cur.Z + (t.Z - cur.Z) * a },
+            { Pitch = 0.0, Yaw = t.Yaw, Roll = 0.0 }, false, {}, true)
+        return true
+    end
+
     local function steerGhost()
         if not valid(net.ghost) or net.target == nil then
             return
         end
-        if game.ghostBusy and game.ghostBusy(net.ghost) then
-            return    -- mid attack/dodge: let the move's own motion play out
-        end
         local cur = net.ghost:K2_GetActorLocation()
         local t = net.target
+        if net.ghostHidden or (net.ghostWalks and glideGhost(cur, t)) then
+            return
+        end
+        if game.ghostBusy and game.ghostBusy(net.ghost) and distance(cur, t) < GHOST_CORRECT_CM then
+            return    -- mid attack/dodge: let the move's own motion play out
+        end
         local v = net.vel
         if v and net.lastRemoteAt and not net.ghostHidden and not net.partnerGone
             and v.X * v.X + v.Y * v.Y >= PREDICT_MIN_SPEED * PREDICT_MIN_SPEED then
@@ -444,10 +509,19 @@ return function(api)
                 hostSeen[name] = { hp = hp, posture = posture, addr = e.actor:GetAddress() }
             end
             local dead = game.isDead and game.isDead(e.actor)
+            if not dead and net.guestKilled[name] and game.kill then
+                net.guestKilled[name] = nil
+                game.kill(e.actor)
+                dead = true
+            end
+            if not dead and api.puppets then
+                api.puppets.watchHost(name, e.actor)
+            end
             if dead then
                 if not net.deadSent[name] then
                     net.deadSent[name] = true
                     sendEvent("K", name)
+                    log("Enemy died here: " .. name .. "; telling the other player.")
                 end
             elseif hp ~= nil and maxhp ~= nil then
                 -- (No health read = stale actor: left out rather than sent as 0/0, which the client would apply.)
@@ -581,6 +655,13 @@ return function(api)
             end
         end
         net.heldAlive = keep or {}
+        if api.puppets then
+            if keep then
+                api.puppets.releaseExcept(keep)
+            else
+                api.puppets.releaseAll()
+            end
+        end
     end
 
     local function applyRemoteEnemies(origin)
@@ -622,6 +703,9 @@ return function(api)
                         else
                             local lethal = net.heldAlive[addr] ~= nil and dHp > 0.5 and hp <= HELD_HP + 0.01
                             reportHit(name, actor, math.max(0, dHp), math.max(0, dPosture), lethal)
+                            if lethal then
+                                log("Killing blow on " .. name .. "; telling the host.")
+                            end
                         end
                     end
                 end
@@ -633,15 +717,8 @@ return function(api)
                         game.setMinHealth(actor, HELD_HP)
                     end
                     held[addr] = actor
-                    local cur = actor:K2_GetActorLocation()
-                    local gap = distance(cur, r)
-                    if gap > ENEMY_SNAP_CM then
-                        actor:K2_SetActorLocationAndRotation({ X = r.X, Y = r.Y, Z = r.Z },
-                            { Pitch = 0.0, Yaw = r.Yaw, Roll = 0.0 }, false, {}, true)
-                    elseif gap > ENEMY_GLIDE_CM then
-                        local k = math.min(gap * ENEMY_GLIDE_SHARE, ENEMY_GLIDE_MAX_CM) / gap
-                        actor:K2_SetActorLocation({ X = cur.X + (r.X - cur.X) * k, Y = cur.Y + (r.Y - cur.Y) * k,
-                            Z = cur.Z + (r.Z - cur.Z) * k }, false, {}, true)
+                    if api.puppets then
+                        api.puppets.follow(name, actor, r)
                     end
                     if game.setHealth and r.Hp ~= nil and hp ~= nil and r.Hp < hp - 0.5 then
                         game.setHealth(actor, r.Hp)
@@ -666,6 +743,10 @@ return function(api)
                     net.stats.applied = net.stats.applied + 1
                 end
                 nextSeen[name] = { hp = hp, posture = posture, addr = addr }
+            elseif net.remoteEnemies[name] and not net.hostKilled[name] and not net.guestKillSent[name] then
+                -- It died here before the host had it loaded (we were far apart): the host's copy follows.
+                net.guestKillSent[name] = true
+                sendEvent("G", name)
             end
         end
         seen = nextSeen
@@ -673,11 +754,37 @@ return function(api)
         releaseHeld(held)
     end
 
+    -- The local enemy last paired with this host id, for a death that arrives after the host stopped listing it.
+    local function stickyEnemy(name)
+        local addr = net.matchSticky[name]
+        if addr ~= nil and game.listEnemies then
+            for _, e in ipairs(game.listEnemies()) do
+                if valid(e) and e:GetAddress() == addr then
+                    return e
+                end
+            end
+        end
+        return nil
+    end
+
+    handlers.G = function(name)
+        if isHost() and name then
+            net.guestKilled[name] = true
+        end
+    end
+
     handlers.K = function(name)
         local actor = enemyByName[name]
         if isClient() then
             net.hostKilled[name] = true
             net.hostBosses[name] = nil
+            if net.joinedBoss == name then
+                net.joinedBoss = nil
+                net.bossOverAt = os.clock() + BOSS_RETURN_S
+            end
+            if not valid(actor) then
+                actor = stickyEnemy(name)
+            end
             if valid(actor) then
                 if game.kill then
                     game.kill(actor)
@@ -730,6 +837,7 @@ return function(api)
         posture = posture and math.max(0, math.min(posture, MAX_EVENT_DAMAGE)) or 0
         if lethal == "L" then
             amount = math.huge      -- the client's killing blow (its copy can't show the full damage)
+            log("Partner's killing blow on " .. tostring(name) .. (valid(enemyByName[name]) and "." or ", which isn't loaded here."))
         end
         if isHost() and name then
             local actor = enemyByName[name]
@@ -781,6 +889,8 @@ return function(api)
     local function forgetDeaths()
         net.deadSent = {}
         net.pendingDeaths = {}
+        net.guestKilled = {}
+        net.guestKillSent = {}
         net.pendingBosses = {}
         net.hostKilled = {}
         net.hostBosses = {}
@@ -795,7 +905,12 @@ return function(api)
     --   Client died: only the client's world refreshed. The host's world, and its boss fight, go on untouched;
     --     the client's copies of what the host already killed are killed again, and a boss fight the host is
     --     still in is shown again (bar and fog walls).
+    local restListeners = {}   -- name -> function(kind): a bell or death rest, here or the partner's (revive.lua)
+
     local function onLocalRest(kind)
+        for _, fn in pairs(restListeners) do
+            fn(kind)
+        end
         if kind == "death" and net.role == "client" then
             log("You died and respawned: your world refreshed, the host's goes on. Enemies the host already killed stay dead.")
             local again = 0
@@ -826,6 +941,9 @@ return function(api)
     end
 
     handlers.R = function(kind)
+        for _, fn in pairs(restListeners) do
+            fn(kind)
+        end
         if kind == "death" then
             log("The host died and respawned: enemies respawn here too.")
         else
@@ -848,8 +966,65 @@ return function(api)
 
     ------------------------------------------------------------------ bosses
 
+    local function gap3d(a, b)
+        return math.sqrt((a.X - b.X) ^ 2 + (a.Y - b.Y) ^ 2 + (a.Z - b.Z) ^ 2)
+    end
+
+    local function arriveAt(pawn, at)
+        pawn.CharacterMovement:SetMovementMode(MOVE_FLYING, 0)
+        local spot = { X = at.X + BOSS_JOIN_SIDE_CM, Y = at.Y, Z = at.Z + 100 }
+        pawn:K2_SetActorLocation(spot, false, {}, true)
+        net.arriveUntil = os.clock() + ARRIVE_HOLD_S
+        net.arrival = net.arrival or { spot = spot, untilClock = os.clock() + ARRIVE_WATCH_S }
+    end
+
+    -- A boss fight on the other PC: the same boss here, and this player beside it.
+    local function joinBossFight(name)
+        local _, pawn = getPlayer1()
+        local at = game.spawnBoss and game.spawnBoss(name) or net.target
+        if not at or not valid(pawn) or game.isDead(pawn) or net.ghostHidden == nil then
+            return
+        end
+        if gap3d(pawn:K2_GetActorLocation(), at) > BOSS_JOIN_CM then
+            log("Joining the other player's boss fight.")
+            net.joinedBoss = name
+            arriveAt(pawn, at)
+        end
+    end
+
+    local function watchArrival()
+        local _, pawn = getPlayer1()
+        if net.arriveUntil and os.clock() >= net.arriveUntil then
+            net.arriveUntil = nil
+            if valid(pawn) then
+                pawn.CharacterMovement:SetMovementMode(MOVE_WALKING, 0)
+            end
+        end
+        local arrival = net.arrival
+        if arrival then
+            if os.clock() >= arrival.untilClock or not valid(pawn) then
+                net.arrival = nil
+            elseif not net.arriveUntil and pawn:K2_GetActorLocation().Z < arrival.spot.Z - ARRIVE_FALL_CM then
+                log("The ground isn't loaded yet: holding a little longer.")
+                pawn.CharacterMovement:SetMovementMode(MOVE_FLYING, 0)
+                pawn:K2_SetActorLocation(arrival.spot, false, {}, true)
+                net.arriveUntil = os.clock() + ARRIVE_HOLD_S
+            end
+        end
+        -- The boss is dead and the partner has gone back to the map: don't leave this player stranded in the arena.
+        if net.bossOverAt and os.clock() >= net.bossOverAt then
+            net.bossOverAt = nil
+            if valid(pawn) and net.target and not game.isDead(pawn)
+                and gap3d(pawn:K2_GetActorLocation(), net.target) > BOSS_JOIN_CM then
+                arriveAt(pawn, net.target)
+            end
+        end
+    end
+    extraTicksEarly.arrival = watchArrival
+
     handlers.B = function(name)
         log("The other player started a boss fight with " .. name .. ".")
+        joinBossFight(name)
         if net.role == "client" then
             net.hostBosses[name] = true
         end
@@ -905,16 +1080,26 @@ return function(api)
             net.localMap = game.mapName and game.mapName(pawn) or "?"
         end
         -- Field 10 is the outfit in appdoze's fork ("-": we don't send one); field 11 is 1 while we're in a
-        -- cutscene. Older versions ignore both.
+        -- cutscene; field 12 is 0 while we're off the ground (climbing). Older versions ignore them.
         local cine = game.inCutscene and game.inCutscene() and 1 or 0
-        local lines = { string.format("P %d %.1f %.1f %.1f %.1f %.0f %.1f %.1f %s - %d",
-            net.seq, loc.X, loc.Y, loc.Z, yaw, speed, hp or 0, maxhp or 0, net.localMap, cine) }
+        local okM, mode = pcall(function() return pawn.CharacterMovement.MovementMode end)
+        local grounded = (okM and mode ~= MOVE_WALKING) and 0 or 1
+        if cine ~= net.lastCine or mode ~= net.lastMode then
+            log("Sending: sequence " .. cine .. ", movement mode " .. tostring(mode) .. ".")
+            net.lastCine, net.lastMode = cine, mode
+        end
+        local lines = { string.format("P %d %.1f %.1f %.1f %.1f %.0f %.1f %.1f %s - %d %d",
+            net.seq, loc.X, loc.Y, loc.Z, yaw, speed, hp or 0, maxhp or 0, net.localMap, cine, grounded) }
         if isHost() then
             for _, l in ipairs(enemySnapshotLines(loc)) do
                 lines[#lines + 1] = l
             end
         end
-        writeAtomic(modDir() .. "net_out.txt", table.concat(lines, "\n") .. "\n")
+        local snapshot = table.concat(lines, "\n") .. "\n"
+        writeAtomic(modDir() .. "net_out.txt", snapshot)
+        if net.seq % SIZE_LOG_EVERY == 0 then
+            log("Sending " .. (#lines - 1) .. " enemies, " .. #snapshot .. " bytes a snapshot.")
+        end
         if game.watchLocalPlayer then
             game.watchLocalPlayer(pawn, sendEvent)
         end
@@ -948,14 +1133,14 @@ return function(api)
         for line in text:gmatch("[^\r\n]+") do
             local kind = line:sub(1, 1)
             if kind == "P" then
-                local seq, x, y, z, yaw, speed, hp, maxhp, map, _, cine = line:match(
-                    "^P (%d+) (%S+) (%S+) (%S+) (%S+)%s*(%S*)%s*(%S*)%s*(%S*)%s*(%S*)%s*(%S*)%s*(%S*)")
+                local seq, x, y, z, yaw, speed, hp, maxhp, map, _, cine, grounded = line:match(
+                    "^P (%d+) (%S+) (%S+) (%S+) (%S+)%s*(%S*)%s*(%S*)%s*(%S*)%s*(%S*)%s*(%S*)%s*(%S*)%s*(%S*)")
                 seq = tonumber(seq)
                 if seq ~= nil and seq ~= net.lastRemoteSeq then
                     local t = { X = num(x), Y = num(y), Z = num(z), Yaw = num(yaw),
                         Speed = num(speed), Hp = num(hp), MaxHp = num(maxhp),
                         Map = (map ~= nil and map ~= "") and map or nil,
-                        Cine = cine == "1" }
+                        Cine = cine == "1", Grounded = grounded ~= "0" }
                     -- A position that doesn't parse (or is NaN) is dropped, not applied.
                     if t.X and t.Y and t.Z and t.Yaw then
                         local prev, steps = net.target, net.lastRemoteSeq and (seq - net.lastRemoteSeq) or 0
@@ -971,6 +1156,10 @@ return function(api)
                             end
                         else
                             net.vel = nil       -- first snapshot, or a gap (relay restart, loading)
+                        end
+                        if net.lastRemoteSeq and net.lastRemoteAt and os.clock() - net.lastRemoteAt >= GAP_LOG_S then
+                            log(string.format("No position for %.1f s, then %d snapshots later.",
+                                os.clock() - net.lastRemoteAt, seq - net.lastRemoteSeq))
                         end
                         net.lastRemoteSeq = seq
                         net.lastRemoteAt = os.clock()
@@ -1028,7 +1217,9 @@ return function(api)
         end
         net.ghost = nil
         net.ghostHidden = nil
+        net.ghostGliding = false
         net.zeroSince = nil
+        net.awaySince = nil
     end
 
     local function start(role)
@@ -1188,7 +1379,7 @@ return function(api)
     end
 
     -- Other modules (pvp.lua) run here every tick while sync is on: name -> function.
-    local extraTicks = {}
+    local extraTicks = extraTicksEarly
 
     local function tick()
         if not net.enabled then
@@ -1233,6 +1424,10 @@ return function(api)
         net = net,
         handlers = handlers,       -- event type -> function(rest); other modules add their own types
         extraTicks = extraTicks,
+        enemyActor = function(name)
+            return enemyByName[name]
+        end,
+        restListeners = restListeners,
         isHost = isHost,
         sendEvent = sendEvent,
         reportHit = reportHit,
