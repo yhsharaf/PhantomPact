@@ -33,7 +33,7 @@ return function(api)
     local textures = {}
 
     local function texture(name)
-        if type(name) == "userdata" then            -- a texture object (one of the game's own), used as it is
+        if type(name) ~= "string" then              -- a texture object (one of the game's own), used as it is
             return name
         end
         if valid(textures[name]) then

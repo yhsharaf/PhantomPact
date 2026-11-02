@@ -2294,6 +2294,30 @@ return function(api)
         end
     end
 
+    -- A drink: the game counts it, then applies it. (localcoop.lua decides whose it is.)
+    local medicineHooked = false
+    function game.hookMedicine(counted, before, after)
+        if medicineHooked or not valid(StaticFindObject(BACKPACK)) then
+            return
+        end
+        medicineHooked = true
+        local ok, err = pcall(function()
+            local drunk = nil
+            RegisterHook(BACKPACK .. ":UseMedicine", function(_, id)
+                drunk = id:get():ToString()
+            end)
+            RegisterHook(BACKPACK .. ":ActivateMedicineGameplayEffect", function()
+                counted(drunk)
+                before()
+            end, function()
+                after()
+            end)
+        end)
+        if not ok then
+            log("Player 2's drinks stay player 1's: " .. tostring(err))
+        end
+    end
+
     -- Medicines and accessories have no one way in: the lists themselves are looked at, every few seconds.
     function game.watchGear(pawn, send)
         local bp = worldSubsystem(pawn, BACKPACK)

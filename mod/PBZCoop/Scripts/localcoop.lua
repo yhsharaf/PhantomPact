@@ -207,18 +207,132 @@ return function(api)
                 log("Player 2 can interact: input subsystem wired.")
             end
         end
+        -- Its timer looks for things around the Soul and plays their prompts, and those are on the things, for player 1: player 2
+        -- walking off made player 1's own prompt shrink to a dot. Player 2's are their own (V.real), and nothing else needs the timer.
+        if ic then
+            pcall(function() ic:PauseTimer() end)
+        end
+        -- Their execution points are WidgetComponents of their own, and with no owner those draw in the first player's half.
+        if V.pointsFor ~= pawn:GetAddress() then
+            V.pointsFor, V.points = pawn:GetAddress(), {}
+            pcall(function()
+                local player = state.p2Controller.Player
+                pawn:GetExecutionComponent().ExecutionWidgets:ForEach(function(kind, point)
+                    point:get():SetOwnerPlayer(player)
+                    V.points[kind:get():ToString()] = point:get()
+                end)
+            end)
+        end
+    end
+
+    -- Dust lives on the Soul, and only player 1's is saved: what player 2 earns goes to player 1.
+    local function passDust(p1, p2)
+        local ok, now = pcall(function() return p2.ConsciousnessDust end)
+        now = ok and tonumber(now) or nil
+        if now == nil then
+            return
+        end
+        if p2Dust ~= nil and now > p2Dust then
+            p1:ChangeDustNumInternal(now - p2Dust)
+            log("Player 2's dust: +" .. (now - p2Dust))
+        end
+        p2Dust = now
+    end
+
+    -- Going down, the game's death card in their half of the screen, and back, its getting up off the ground. The real death would
+    -- send player 1 to the bell, so only these two parts of it are shown. The card is put together from its own pictures: its widget,
+    -- W_PlayerDead, sends "the player" back by itself a few seconds on, even taken away again, and took player 1 487 m in testing.
+    V.DEAD_ART = "/Game/PBZContent/UI/InGame/Dead/"
+    V.RISE_ABILITY = "/Game/PBZContent/UI/InGame/Dead/GA_PlayerRespawn"
+    V.DEATH_PARTS = {       -- picture; height against their half's (nil: all of it); down from the middle, the same way; seconds to come up
+        { V.DEAD_ART .. "bg_dead.bg_dead", nil, 0, 0.5 },
+        { V.DEAD_ART .. "bg_dead.bg_dead", nil, 0, 2.5, true },        -- (the last: black, going to dark)
+        { V.DEAD_ART .. "T_UI_blood_Combine.T_UI_blood_Combine", 1.4, 0.05, 0.9 },
+        { "/Game/PBZContent/UI/UINew/testplaceholder/yun.yun", 0.62, -0.25, 0.4 },
+        { "/Game/PBZContent/UI/UINew/testplaceholder/ming.ming", 0.62, 0.27, 0.6 },
+    }
+
+    function V.dropDeathCard()
+        for _, part in ipairs(V.deathCard or {}) do
+            if valid(part.widget) then
+                pcall(function() part.widget:RemoveFromParent() end)
+            end
+        end
+        V.deathCard = nil
+    end
+
+    function V.showDeathCard(pc)
+        V.dropDeathCard()
+        local lib = StaticFindObject("/Script/UMG.Default__WidgetLayoutLibrary")
+        local size, scale = lib:GetViewportSize(pc), lib:GetViewportScale(pc)
+        local vw, vh = size.X / scale, size.Y / scale
+        local x, y, w, h = vw * 0.5, vh * 0.75, vw, vh * 0.5
+        if config.layout == "lr" then
+            x, y, w, h = vw * 0.75, vh * 0.5, vw * 0.5, vh
+        end
+        V.deathCard = {}
+        for i, part in ipairs(V.DEATH_PARTS) do
+            local picture = V.gameTexture(part[1])
+            if picture then
+                local partW, partH = w, h
+                if part[2] then
+                    local okS, wide = pcall(function() return picture:Blueprint_GetSizeX() / picture:Blueprint_GetSizeY() end)
+                    partH = h * part[2]
+                    partW = partH * (okS and wide > 0 and wide or 1)
+                end
+                local widget = api.hud.newImage(picture, partW, partH, BAR_Z + 2 + i)
+                if widget then
+                    widget:SetPositionInViewport({ X = x, Y = y + h * part[3] }, false)
+                    widget:SetRenderOpacity(0)
+                    if part[5] then
+                        pcall(function() widget.Circle:SetColorAndOpacity({ R = 0.0, G = 0.0, B = 0.0, A = 1.0 }) end)
+                    end
+                    V.deathCard[#V.deathCard + 1] = { widget = widget, w = partW, h = partH, fade = part[4] }
+                end
+            end
+        end
+        V.deathSince = os.clock()
+    end
+
+    function V.drawDeathCard()
+        for _, part in ipairs(V.deathCard or {}) do
+            pcall(function()
+                api.hud.fit(part.widget, part.w, part.h)
+                part.widget:SetRenderOpacity(math.min(1, (os.clock() - V.deathSince) / part.fade))
+            end)
+        end
+    end
+
+    function V.riseUp()
+        local path = V.RISE_ABILITY .. ".GA_PlayerRespawn_C"
+        local class = StaticFindObject(path)
+        if not valid(class) and type(LoadAsset) == "function" then
+            pcall(LoadAsset, V.RISE_ABILITY)
+            class = StaticFindObject(path)
+        end
+        local p2 = state.p2Pawn
+        if valid(class) and valid(p2) then
+            pcall(function()
+                StaticFindObject("/Script/GameplayAbilities.Default__AbilitySystemBlueprintLibrary"):GetAbilitySystemComponent(p2)
+                    :TryActivateAbilityByClass(class, true)
+            end)
+        end
     end
 
     local function respawn(p1)
         if valid(state.p2Pawn) then
+            passDust(p1, state.p2Pawn)
             state.p2Pawn:K2_DestroyActor()
         end
         state.p2Pawn = nil
+        V.real, V.realUp = nil, false
+        V.dropDeathCard()
         p2Dust = nil
         api.spawnPawnForPlayer2(p1:GetClass())
         if valid(state.p2Pawn) then
             game.setMinHealth(state.p2Pawn, DOWN_HP)
             wireInteract()
+            V.soulAt = os.clock()
         end
         downSince = nil
     end
@@ -536,6 +650,23 @@ return function(api)
     V.noticed = {}              -- enemy address -> os.clock() of the last notice
     V.inFace = {}               -- enemy address -> os.clock() since player 2 has been in its face
     V.nextNotice = 0
+    V.pointers = {}             -- enemy address -> the HUD that points at it
+
+    -- The HUD's arrow to an enemy after you and out of view. The game feeds player 1's.
+    function V.pointAt(e, addr, on)
+        local hud = on and V.hudFor or nil
+        if V.pointers[addr] ~= hud and valid(V.hud) then
+            V.pointers[addr] = hud
+            pcall(function()
+                if on then
+                    V.hud:ShowEnemyIndicator(e)
+                else
+                    V.hud:RemoveEnemyIndicator(e)
+                end
+            end)
+        end
+    end
+
     local function noticePlayer2(p1, p2)
         if os.clock() < V.nextNotice then
             return
@@ -545,7 +676,9 @@ return function(api)
         local now = os.clock()
         for _, e in ipairs(game.listEnemies(true)) do
             pcall(function()
+                local addr = e:GetAddress()
                 if game.isDead(e) or (game.getHealth(e) or 0) <= 0 then
+                    V.pointAt(e, addr, false)
                     return
                 end
                 local q = e:K2_GetActorLocation()
@@ -553,9 +686,9 @@ return function(api)
                     return
                 end
                 local d = distance(q, here)
-                local addr = e:GetAddress()
                 if d > V.NOTICE_FRONT_CM then
                     V.inFace[addr] = nil
+                    V.pointAt(e, addr, false)
                     return
                 end
                 local hm = e.BP_PBZHatredManagerComponent
@@ -569,6 +702,7 @@ return function(api)
                         hates = true
                     end
                 end)
+                V.pointAt(e, addr, hates)
                 if hates then
                     V.inFace[addr] = nil
                     return
@@ -766,6 +900,11 @@ return function(api)
         local p2 = state.p2Pawn
         local bossesNow = game.bossActors and game.bossActors() or {}
         local boss = bossesNow[1]
+        if valid(V.hud) then
+            hideBossBar()
+            V.hudBossBars(bossesNow)
+            return
+        end
         if paused or inScene or menuOpen or api.panel.open or not (valid(pc) and valid(p2) and valid(boss)) then
             hideBossBar()
             return
@@ -792,8 +931,7 @@ return function(api)
         V.bossFrame:SetPositionInViewport({ X = x, Y = y }, false)
         pcall(function() V.bossFrame:SetAlignmentInViewport({ X = 0.5, Y = 0.5 }) end)
         api.hud.fit(V.bossFrame, V.BOSS_BAR_W, V.BOSS_BAR_H)
-        pcall(function() V.bossFill:SetAlignmentInViewport({ X = 0.0, Y = 0.5 }) end)
-        V.bossFill:SetPositionInViewport({ X = x - (V.BOSS_BAR_W - 4) / 2, Y = y }, false)
+        V.bossFill:SetPositionInViewport({ X = x - (V.BOSS_BAR_W - 4) / 2 + fillW / 2, Y = y }, false)
         api.hud.fit(V.bossFill, fillW, V.BOSS_BAR_H - 4)
         api.hud.show(V.bossFrame, true)
         api.hud.show(V.bossFill, true)
@@ -818,7 +956,8 @@ return function(api)
     local function updateBar()
         local pc = getPlayer1()
         local p2 = state.p2Pawn
-        if paused or inScene or api.panel.open or not (valid(pc) and valid(p2)) or game.isDead(p2) then
+        V.showHud()
+        if valid(V.hud) or paused or inScene or menuOpen or api.panel.open or not (valid(pc) and valid(p2)) or game.isDead(p2) then
             hideBar()
             return
         end
@@ -861,20 +1000,6 @@ return function(api)
     local function fullHealth(pawn)
         local _, max = game.getHealth(pawn)
         return max or FALLBACK_HP
-    end
-
-    -- Dust lives on the Soul, and only player 1's is saved: what player 2 earns goes to player 1.
-    local function passDust(p1, p2)
-        local ok, now = pcall(function() return p2.ConsciousnessDust end)
-        now = ok and tonumber(now) or nil
-        if now == nil then
-            return
-        end
-        if p2Dust ~= nil and now > p2Dust then
-            p1:ChangeDustNumInternal(now - p2Dust)
-            log("Player 2's dust: +" .. (now - p2Dust))
-        end
-        p2Dust = now
     end
 
     -- What gear and training add goes on player 1's Soul alone, and a new Soul starts from the base numbers. Of the 223
@@ -940,7 +1065,9 @@ return function(api)
             return
         end
         if not valid(p2) then
-            respawn(p1)
+            if not (inScene or menuOpen or game.inCutscene() or api.gs():IsGamePaused(pc)) then
+                respawn(p1)
+            end
             return
         end
         -- CreatePlayer leaves the new controller without ticking, and a controller that doesn't tick reads no input.
@@ -948,7 +1075,8 @@ return function(api)
             state.p2Controller:SetActorTickEnabled(true)
         end
         wireInteract()
-        if not configApplied then
+        game.hookMedicine(V.medicineCounted, V.beforeMedicine, V.afterMedicine)
+        if not configApplied and not menuOpen then
             configApplied = applyConfig()
             if configApplied and not V.checklistShown then
                 -- The two-pad setup in one line, once, when player 2 is in.
@@ -974,6 +1102,7 @@ return function(api)
         -- ticks, hangs in "falling" and is "rescued" for nothing when the menu closes. A scene is the same: the new Soul
         -- would stand in the shot, unhidden. Both wait for the game to run again.
         local held = inScene or api.gs():IsGamePaused(pc)
+        passDust(p1, p2)
         if p2DownSince or game.isDead(p2) or (hp and hp <= DOWN_HP) then
             if not p2DownSince then
                 p2DownSince = os.clock()
@@ -981,17 +1110,21 @@ return function(api)
                 leaveDomains(p2)
                 pcall(function() p2:DisableInput(state.p2Controller) end)
                 pcall(function() p2.Mesh:SetSimulatePhysics(true) end)      -- no real death, so no death animation
+                V.showDeathCard(pc)
             end
             if os.clock() - p2DownSince >= RESPAWN_S and not held then
                 log("Player 2 is back.")
                 p2DownSince = nil
                 respawn(p1)
+                V.riseUp()
             end
             return
         end
         downSince = nil
         game.guardFormations()
-        passDust(p1, p2)
+        if not held then
+            V.keepHud(pc, p2)
+        end
         matchPlayer1(p1, p2)
         wakeEnemies(p1, p2)
         keepEnemiesAlive(p1, p2)
@@ -1101,6 +1234,9 @@ return function(api)
 
     -- Back to one player: full screen, the normal camera, and the game's own controls for player 1.
     local function goSolo()
+        if swapped then
+            V.unswapBodies()
+        end
         local pc, p1 = getPlayer1()
         paused = true
         -- Player 2 stays as a local player, with no Soul and no screen: really removing them makes the game delete the UI
@@ -1110,6 +1246,9 @@ return function(api)
             state.p2Pawn:K2_DestroyActor()
         end
         state.p2Pawn = nil
+        V.dropHud()
+        V.dropDeathCard()
+        V.real, V.realUp = nil, false
         api.gs():SetForceDisableSplitscreen(pc, true)
         waiting, configApplied = {}, false
         p2Dust, p2DownSince, fallingSince = nil, nil, nil
@@ -1246,7 +1385,7 @@ return function(api)
             inScene = playing
             api.gs():SetForceDisableSplitscreen(pc, playing or menuOpen)
             if valid(p2) then
-                game.setMinHealth(p2, playing and (game.getHealth(p2) or 0) or 0)
+                game.setMinHealth(p2, playing and (game.getHealth(p2) or 0) or DOWN_HP)
             end
             holdForScene(playing)
             log(playing and "Scene: full screen." or "Scene over: split screen.")
@@ -1266,7 +1405,7 @@ return function(api)
     local function stopWaiting(n, p1)
         waiting[n] = nil
         if valid(pawnOf(n, p1)) then
-            game.setMinHealth(pawnOf(n, p1), 0)
+            game.setMinHealth(pawnOf(n, p1), n == 2 and DOWN_HP or 0)     -- (a real death of player 2's would take player 1 to the bell)
         end
     end
 
@@ -1291,6 +1430,7 @@ return function(api)
     -- when the joystick returns or another one claims them.
     local function watchPads()
         local pc, p1 = getPlayer1()
+        p1 = swapped and state.swapBody1 or p1      -- (in a swap, player 1's controller holds player 2's body)
         if not paused and valid(pc) then
             followScene(pc)
         end
@@ -1346,7 +1486,7 @@ return function(api)
                 game.setMinHealth(pawn, waiting[n])
             end
         end
-        for i = 1, 4 do
+        for i = 1, 2 do                 -- (pad_route.hpp moves one of two joysticks: a third would claim a player and reach nobody)
             local card = "joy" .. i
             local free = config.p1 ~= card and (paused or config.p2 ~= card)
             claimHeld[i] = (free and pads[i] == 2) and claimHeld[i] + WATCH_MS / 1000 or 0
@@ -1434,15 +1574,133 @@ return function(api)
             return
         end
         local given = 0
+        -- (The set a prompt adds goes with the rest as well, with the prompt still up on the bell, and player 1's button dead there.)
+        local _, p1 = getPlayer1()
+        local ic1 = valid(p1) and p1:GetComponentByClass(StaticFindObject("/Script/ProjectPBZ.PBZInteractComponent")) or nil
+        local offered = ic1 and valid(ic1:GetInteractActor())
         for _, c in ipairs(FindAllOf("InputMappingContext") or {}) do
             local found = {}
             if s2:HasMappingContext(c, found) and not s1:HasMappingContext(c, {}) then
                 s1:AddMappingContext(c, found.OutFoundPriority or 0, {})
                 given = given + 1
+            elseif offered and c:GetFName():ToString() == "IMC_Interaction" and not s1:HasMappingContext(c, {}) then
+                s1:AddMappingContext(c, 1000, {})
+                given = given + 1
             end
         end
         if given > 0 then
             log(string.format("Player 1's controls put back (%d sets).", given))
+        end
+    end
+
+    -- The game makes one HUD, and everything in it asks for "player 0's" body as it's made: its health and ShaChi bars, gourd,
+    -- weapons, buffs. So a second one, made in the moment player 1's controller points at player 2's body, is all player 2's own, in
+    -- player 2's half of the screen, and it shows and hides by the same rules as player 1's.
+    V.HUD_CLASS = "/Game/PBZContent/UI/FrontEnd/W_FrontEndHUDLayout.W_FrontEndHUDLayout_C"
+    V.HUD_AFTER_S = 3.0             -- a new Soul is left to settle this long first
+    V.hud, V.hudFor, V.hudUp, V.hudBosses = nil, nil, nil, {}
+
+    -- For one call the game's "player 0's body" is player 2's: the controller points there, with no possession, so nobody's move or
+    -- input is touched. (A real swap dropped player 1's input sets, and a Soul back from down can come in the middle of a fight.)
+    local function asPlayer1(fn)
+        local pc1, p1 = getPlayer1()
+        pc1.Pawn = state.p2Pawn
+        pc1.Character = state.p2Pawn
+        local ok, err = pcall(fn)
+        pc1.Pawn = p1
+        pc1.Character = p1
+        return ok, err
+    end
+
+    function V.dropHud()
+        if valid(V.hud) then
+            pcall(function() V.hud:RemoveFromParent() end)
+        end
+        for _, bar in pairs(V.hudBosses) do
+            if valid(bar) then
+                pcall(function() bar:RemoveFromParent() end)
+            end
+        end
+        V.hud, V.hudFor, V.hudUp, V.hudBosses = nil, nil, nil, {}
+    end
+
+    function V.keepHud(pc, p2)
+        local class = StaticFindObject(V.HUD_CLASS)
+        if swapped or not valid(class) or (valid(V.hud) and V.hudFor == p2:GetAddress())
+            or os.clock() - (V.soulAt or 0) < V.HUD_AFTER_S or api.gs():IsGamePaused(pc) then
+            return
+        end
+        V.dropHud()
+        local pc2 = state.p2Controller
+        local ok, err = asPlayer1(function()
+            local w = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary"):Create(pc2, class, pc2)
+            w:AddToPlayerScreen(5)
+            w:ActivateWidget()
+            V.hud = w
+        end)
+        V.hudFor = p2:GetAddress()      -- (so a failure isn't tried every second, for a Soul that may never take it)
+        log(ok and "Player 2 has a HUD of their own." or ("Player 2's HUD: " .. tostring(err)))
+    end
+
+    -- Over a full-width menu or a scene there's no half of the screen for it.
+    function V.showHud()
+        if not valid(V.hud) then
+            return
+        end
+        local up = not (paused or inScene or menuOpen or swapped or p2DownSince or api.panel.open)
+        if up ~= V.hudUp then
+            V.hudUp = up
+            pcall(function() V.hud:SetVisibility(up and 3 or 1) end)
+            for _, bar in pairs(V.hudBosses) do
+                pcall(function() bar:SetVisibility(up and 3 or 1) end)
+            end
+        end
+        -- The gourd on it counts the shared one, and theirs is their own.
+        if up and p2Charges then
+            pcall(function() V.hud.WB_quickslot.BottomMedicineNum:SetText(FText(tostring(p2Charges))) end)
+        end
+    end
+
+    -- Health written by hand tells nobody, so the bar is told, and comes up as it does for a real change.
+    function V.hudHealth(p2)
+        local hp, max = game.getHealth(p2)
+        if valid(V.hud) and hp and max then
+            pcall(function()
+                V.hud:ForSeq_UpdatePlayerHP(hp / max)
+                V.hud["Need To Show"](V.hud)
+            end)
+        end
+    end
+
+    -- A HUD told of a boss adds a bar to player 1's half whichever HUD is told, and makes nothing in its own. So player 2's bars are
+    -- the game's bar made by hand in their half: Init with the boss, and it follows the fight by itself.
+    V.BOSS_BAR_CLASS = "/Game/PBZContent/UI/Hud/WB_BossHPBar.WB_BossHPBar_C"
+    V.BOSS_BAR_STEP = 90        -- a second boss's bar sits this far under the first
+
+    function V.hudBossBars(bossesNow)
+        local fighting = {}
+        for i, boss in ipairs(bossesNow) do
+            local addr = boss:GetAddress()
+            fighting[addr] = true
+            local class = StaticFindObject(V.BOSS_BAR_CLASS)
+            if not V.hudBosses[addr] and valid(class) then
+                pcall(function()
+                    local pc2 = state.p2Controller
+                    local bar = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary"):Create(pc2, class, pc2)
+                    bar:AddToPlayerScreen(6)
+                    bar:Init(boss)
+                    bar:SetRenderTranslation({ X = 0, Y = (i - 1) * V.BOSS_BAR_STEP })
+                    V.hudBosses[addr] = bar
+                end)
+            end
+        end
+        for addr, bar in pairs(V.hudBosses) do
+            if not fighting[addr] then
+                V.hudBosses[addr] = nil
+                if valid(bar) then
+                    pcall(function() bar:RemoveFromParent() end)
+                end
+            end
         end
     end
 
@@ -1471,6 +1729,17 @@ return function(api)
         local rested = swapIsBell and swapSawMenu       -- (a ring that never came is no rest)
         swapped = false
         if not (valid(pc1) and valid(pc2) and valid(p1) and valid(p2)) then
+            -- Whatever's left goes back to its own controller, or that player can't move.
+            pcall(function() pc1:ResetIgnoreInputFlags() end)
+            pcall(function() pc2:ResetIgnoreInputFlags() end)
+            pcall(function()
+                pc1:UnPossess()
+                pc1:Possess(p1)
+            end)
+            pcall(function()
+                pc2:UnPossess()
+                pc2:Possess(p2)
+            end)
             return
         end
         pcall(function()
@@ -1485,6 +1754,8 @@ return function(api)
         controlsUntil, controlsAt = os.clock() + CONTROLS_WATCH_S, 0
         log("Player 2's turn is over: controls are back.")
         if rested then
+            -- The rest ran on player 2's body. Health written by hand leaves player 1 with the low health look, so it's the bell's step.
+            pcall(game.restHere, p1)
             game.after(RENEW_AFTER_S, function()
                 local ok, err = pcall(renewPlayer2)
                 if not ok then
@@ -1493,6 +1764,8 @@ return function(api)
             end)
         end
     end
+
+    V.unswapBodies = unswapBodies
 
     -- Called often: swaps back once player 2's body has finished (nothing interacting, no bell menu) or on a timeout.
     local function watchSwap()
@@ -1618,6 +1891,23 @@ return function(api)
     end
     V.TALK_CM = 400
 
+    -- The game's own rule for this Soul and this thing: in its reach and faced, as player 1 must. Player 2's own interact component
+    -- answers it as player 1's does. Without it, a button that's also an execution rang the bell behind them in a fight, and a fog
+    -- door or a music trigger counted as something to use.
+    function V.gameAllows(pawn, thing)
+        local ok, can = pcall(function()
+            V.interactClass = V.interactClass or StaticFindObject("/Script/ProjectPBZ.PBZInteractComponent")
+            local ic = pawn:GetComponentByClass(V.interactClass)
+            return ic:CanTriggerInteract(thing) and ic:IsPlayerFaceToActor(pawn, thing)
+        end)
+        if ok and can == true and #game.bossActors() > 0 then
+            -- (A bell in a boss fight: the game turns player 1's prompt red and won't have it.)
+            local okB, bell = pcall(function() return thing:IsA(StaticFindObject("/Script/ProjectPBZ.PBZCheckPoint")) end)
+            return not (okB and bell)
+        end
+        return ok and can == true
+    end
+
     local function findTarget(pawn, want)
         local bp = backpackOf(pawn)
         if want ~= "climb" and bp and bp.bShowPickItemWidget then
@@ -1686,7 +1976,7 @@ return function(api)
             if d then
                 if d <= INTERACT_CM and (bestD == nil or d < bestD) then
                     local okS, done = pcall(function() return s.CurSwitchState end)
-                    if not (okS and done == true) and not usedSwitches[s:GetAddress()] then
+                    if not (okS and done == true) and not usedSwitches[s:GetAddress()] and V.gameAllows(pawn, s) then
                         best, bestD = s, d
                     end
                 end
@@ -1700,7 +1990,7 @@ return function(api)
         local person, personD = nil, V.TALK_CM
         for _, n in ipairs(FindAllOf("BP_NPC_Narrative_C") or {}) do
             local okL, loc = pcall(function() return n:K2_GetActorLocation() end)
-            if okL and loc.X and distance(at, loc) < personD then
+            if okL and loc.X and distance(at, loc) < personD and facing(pawn, loc, 0.5) then
                 person, personD = n, distance(at, loc)
             end
         end
@@ -1801,6 +2091,10 @@ return function(api)
             local _, p1 = getPlayer1()
             local ic1 = valid(p1) and componentOf(p1, "PBZInteractComponent") or nil
             if ic1 then
+                -- (From afar the game has player 1 walk all the way there first, on their own. The talk fills both screens anyway.)
+                if distance(p1:K2_GetActorLocation(), at) > V.TALK_CM then
+                    moveBeside(p1, pawn)
+                end
                 local ok, err = pcall(function()
                     ic1:SetCurrentInteractActor(target)
                     ic1:DoInteract(target)
@@ -1890,9 +2184,20 @@ return function(api)
     V.GLYPH_ROOT = "/Game/PBZContent/UI/Foundation/Platform/Input/"
     local GLYPHS = {
         ps = { climb = V.GLYPH_ROOT .. "GamepadPS4/V2/Interact/T_Cross_Interact.T_Cross_Interact",
-               use = V.GLYPH_ROOT .. "GamepadPS4/V2/Interact/T_Circle_Interact.T_Circle_Interact" },
+               use = V.GLYPH_ROOT .. "GamepadPS4/V2/Interact/T_Circle_Interact.T_Circle_Interact",
+               Execution = V.GLYPH_ROOT .. "GamepadPS4/V2/Interact/T_Circle_Interact.T_Circle_Interact",
+               ShachiWeapon = V.GLYPH_ROOT .. "GamepadPS4/V2/Interact/T_R2_Interact.T_R2_Interact",
+               SpecialAttack = V.GLYPH_ROOT .. "GamepadPS4/V2/Interact/T_Triangle_Interact.T_Triangle_Interact" },
         xbox = { climb = V.GLYPH_ROOT .. "GamepadXboxOne/Interact/ui_Xbox_A_interact.ui_Xbox_A_interact",
-                 use = V.GLYPH_ROOT .. "GamepadXboxOne/Interact/ui_Xbox_B_interact.ui_Xbox_B_interact" },
+                 use = V.GLYPH_ROOT .. "GamepadXboxOne/Interact/ui_Xbox_B_interact.ui_Xbox_B_interact",
+                 Execution = V.GLYPH_ROOT .. "GamepadXboxOne/Interact/ui_Xbox_B_interact.ui_Xbox_B_interact",
+                 ShachiWeapon = V.GLYPH_ROOT .. "GamepadXboxOne/Interact/ui_Xbox_RT_interact.ui_Xbox_RT_interact",
+                 SpecialAttack = V.GLYPH_ROOT .. "GamepadXboxOne/Interact/ui_Xbox_Y_interact.ui_Xbox_Y_interact" },
+        kbm = { climb = V.GLYPH_ROOT .. "KeyboardMouse/New/Interact/ui_PC_key_Space_Interact.ui_PC_key_Space_Interact",
+                use = V.GLYPH_ROOT .. "KeyboardMouse/New/Interact/ui_PC_key_E_Interact.ui_PC_key_E_Interact",
+                Execution = V.GLYPH_ROOT .. "KeyboardMouse/New/Interact/ui_PC_key_E_Interact.ui_PC_key_E_Interact",
+                ShachiWeapon = V.GLYPH_ROOT .. "KeyboardMouse/New/Interact/ui_PC_key_CtrlL_Interact.ui_PC_key_CtrlL_Interact",
+                SpecialAttack = V.GLYPH_ROOT .. "KeyboardMouse/New/Interact/ui_PC_key_F_Interact.ui_PC_key_F_Interact" },
     }
     V.glyphTextures = {}
     V.padFamily, V.nextFamily = "xbox", 0
@@ -1915,6 +2220,7 @@ return function(api)
         end
         return V.glyphTextures[path]
     end
+    V.gameTexture = gameTexture
     local function currentPadFamily(pc)
         if os.clock() < V.nextFamily then
             return V.padFamily
@@ -1934,26 +2240,221 @@ return function(api)
         return V.padFamily
     end
     local function glyphFor(pc, kind)
-        if config.p2 == "kbm" then
-            local key = kind == "climb" and "panel/prompt_space.png" or "panel/prompt_e.png"
-            return key, key
-        end
-        local path = GLYPHS[currentPadFamily(pc)][kind]
+        local path = GLYPHS[config.p2 == "kbm" and "kbm" or currentPadFamily(pc)][kind]
         local t = gameTexture(path)
         if t then
             return path, t
         end
-        local key = kind == "climb" and "panel/prompt_a.png" or "panel/prompt_b.png"
+        local key = config.p2 == "kbm" and (kind == "climb" and "panel/prompt_space.png" or "panel/prompt_e.png")
+            or (kind == "climb" and "panel/prompt_a.png" or "panel/prompt_b.png")
         return key, key
+    end
+
+    -- An execution point looks its button up by player 1's input too, and comes up blank with a keyboard there. Its picture goes in
+    -- as the prompt's does, each time it's built.
+    function V.pointPictures(pc)
+        if V.pointsFor ~= state.p2Pawn:GetAddress() then
+            return
+        end
+        for kind, point in pairs(V.points or {}) do
+            local widget = point:GetWidget()
+            if valid(widget) and widget:IsVisible() then
+                local icon = widget.InputActionWidget.Icon
+                if not valid(icon.ResourceObject) then
+                    local _, picture = glyphFor(pc, kind)
+                    icon.ResourceObject = type(picture) == "string" and api.hud.texture(picture) or picture
+                end
+            end
+        end
     end
 
     local promptWidget, promptTex, promptKind, nextPrompt = nil, nil, nil, 0
     local PROMPT_EVERY_S = 0.15
+    local PROMPT_IN_S = 0.18        -- it pops in over this long, as the game's does
+    local PROMPT_POP = 1.35         -- from this size
+    local PROMPT_BREATH = 0.04      -- and breathes by this much while it's up
+    local PROMPT_LIFT_CM = 70       -- above the thing it's for
+    V.promptSince = nil             -- when it came up
 
-    local function hidePrompt()
+    -- The game's prompt is a widget on a WidgetComponent of the thing, drawn in the first local player's half of the screen. Player
+    -- 2's is that same widget on a component of their own, owned by their local player and set down on the thing: the game's own
+    -- look and animations, and the engine holds it to its spot every frame. It's kept on their Soul, and goes with it.
+    -- The picture is written in by hand: the widget looks its button up by player 1's input, which may well be a keyboard.
+    V.PROMPT_WIDGET = "/Game/PBZContent/UI/InGame/InteractionUI/W_InteractionUI.W_InteractionUI_C"
+    V.real, V.realUp = nil, false   -- { comp, widget, body }, and what it's showing: "ring", "button" or false
+
+    function V.realPrompt(pawn)
+        local r = V.real
+        if r and r.body == pawn:GetAddress() and valid(r.comp) and valid(r.widget) then
+            return r
+        end
+        V.real, V.realUp = nil, false
+        local class, compClass = StaticFindObject(V.PROMPT_WIDGET), StaticFindObject("/Script/UMG.WidgetComponent")
+        if not (valid(class) and valid(compClass)) then
+            return nil
+        end
+        local pc2 = state.p2Controller
+        local ok, comp, widget = pcall(function()
+            local c = pawn:AddComponentByClass(compClass, false, { Rotation = { X = 0, Y = 0, Z = 0, W = 1 },
+                Translation = { X = 0, Y = 0, Z = 0 }, Scale3D = { X = 1, Y = 1, Z = 1 } }, false)
+            c:SetAbsolute(true, true, true)
+            c:SetCollisionEnabled(0)
+            c:SetWidgetSpace(1)
+            c:SetOwnerPlayer(pc2.Player)
+            c:SetDrawAtDesiredSize(true)
+            c:SetPivot({ X = 0.5, Y = 0.5 })
+            local w = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary"):Create(pc2, class, pc2)
+            c:SetWidget(w)
+            w.InvalidationBox_0:SetCanCache(false)
+            c:SetVisibility(false, false)
+            return c, w
+        end)
+        if not (ok and valid(comp) and valid(widget)) then
+            log("Player 2's prompt stays the plain one: " .. tostring(comp))
+            V.realFailed = true
+            return nil
+        end
+        V.real = { comp = comp, widget = widget, body = pawn:GetAddress() }
+        return V.real
+    end
+
+    -- at once over a menu or a scene, by its own animation when there's just nothing left to use
+    function V.hideRealPrompt(atOnce)
+        local r, was = V.real, V.realUp
+        V.realUp = false
+        if not (r and was and valid(r.comp) and valid(r.widget)) then
+            return
+        end
+        pcall(function()
+            if atOnce then
+                r.comp:SetVisibility(false, false)
+            elseif was == "ring" then
+                r.widget:PlayVirtualToNone(r.comp)
+            else
+                r.widget:PlayInputActionToNone(r.comp)
+            end
+        end)
+    end
+
+    -- ring: the small ring the game shows on a thing not yet in reach, instead of the button.
+    function V.showRealPrompt(pawn, spot, picture, ring)
+        local r = not V.realFailed and V.realPrompt(pawn) or nil
+        if not r then
+            return false
+        end
+        return (pcall(function()
+            r.comp:K2_SetWorldLocation(spot, false, {}, false)
+            local want = ring and "ring" or "button"
+            -- (A fade-out ends by hiding the component, whatever has started since.)
+            if V.realUp ~= want or not r.comp:IsVisible() then
+                local was = r.comp:IsVisible() and V.realUp
+                V.realUp = want
+                r.comp:SetVisibility(true, false)
+                if ring then
+                    if was == "button" then
+                        r.widget:PlayInputActionToVirtual(r.comp, false)
+                    else
+                        r.widget:PlayNoneToVirtualAnimation(r.comp)
+                    end
+                elseif was == "ring" then
+                    r.widget:PlayVirtualToInput(r.comp, false)
+                else
+                    r.widget:PlayNoneToInputAction(r.comp)
+                end
+            end
+            if ring then
+                return
+            end
+            local icon = r.widget.InputActionWidget_C_75.Icon
+            if not valid(icon.ResourceObject) or icon.ResourceObject:GetAddress() ~= picture:GetAddress() then
+                icon.ResourceObject = picture
+                r.widget.InvalidationBox_0:InvalidateCache()
+            end
+        end))
+    end
+
+    local function hidePrompt(atOnce)
+        V.promptSince = nil
+        V.hideRealPrompt(atOnce)
         if promptWidget then
             api.hud.show(promptWidget, false)
         end
+    end
+
+    -- The nearest thing to use that's in the game's sight but not its reach. (A look a few times a second, and only with nothing in reach.)
+    V.RING_CM = 2000
+    function V.ringThing(pawn)
+        local now = os.clock()
+        if now < (V.ringAt or 0) then
+            return V.ringWas
+        end
+        V.ringAt, V.ringWas = now + 0.3, nil
+        V.interactClass = V.interactClass or StaticFindObject("/Script/ProjectPBZ.PBZInteractComponent")
+        local ic = pawn:GetComponentByClass(V.interactClass)
+        local at, best = pawn:K2_GetActorLocation(), V.RING_CM
+        for _, s in ipairs(FindAllOf("PBZSwitchBase") or {}) do
+            local d = reach(at, s)
+            if d and d < best and not usedSwitches[s:GetAddress()] then
+                local ok, near = pcall(function() return s.CurSwitchState ~= true and ic:GetValidDistance(s, pawn) end)
+                if ok and near == true then
+                    V.ringWas, best = s, d
+                end
+            end
+        end
+        return V.ringWas
+    end
+
+    -- Where the game shows the thing's own prompt, or over it when it has none. Nil for what has no place in the world (a loot card).
+    function V.promptAnchor(target)
+        local ok, at = pcall(function()
+            local wc = target:GetComponentByClass(StaticFindObject("/Script/UMG.WidgetComponent"))
+            if valid(wc) then
+                return wc:K2_GetComponentLocation()
+            end
+            local l = target:K2_GetActorLocation()
+            return { X = l.X, Y = l.Y, Z = l.Z + PROMPT_LIFT_CM }
+        end)
+        return ok and at and at.X and { X = at.X, Y = at.Y, Z = at.Z } or nil
+    end
+
+    -- Over what it's for, as player 1's is, while that's inside player 2's own half of the screen (the third answer). Otherwise, or
+    -- for what has no place in the world, where the game shows its own.
+    local function promptSpot(vw, vh, scale, target)
+        local x, y = vw * 0.5, vh * (0.5 + 0.5 * PROMPT_Y)
+        local left, top = 0, vh * 0.5
+        if config.layout == "lr" then
+            x, y = vw * 0.75, vh * PROMPT_Y
+            left, top = vw * 0.5, 0
+        end
+        local at = {}
+        local spot = V.promptAnchor(target or promptTarget)
+        local ok = spot and pcall(function()
+            state.p2Controller:ProjectWorldLocationToScreen(spot, at, false)
+        end)
+        if ok and at.X and at.Y then
+            local ax, ay = at.X / scale, at.Y / scale
+            if ax > left + PROMPT_SIZE and ax < vw - PROMPT_SIZE and ay > top + PROMPT_SIZE and ay < vh - PROMPT_SIZE then
+                return ax, ay, spot
+            end
+        end
+        return x, y, nil
+    end
+
+    -- Every frame while it's up: the look-around is a few times a second, but a picture moved that often jumps as the camera turns.
+    local function drawPrompt(pc)
+        if not (V.promptSince and valid(promptWidget)) then
+            return
+        end
+        local lib = StaticFindObject("/Script/UMG.Default__WidgetLayoutLibrary")
+        local size, scale = lib:GetViewportSize(pc), lib:GetViewportScale(pc)
+        local x, y = promptSpot(size.X / scale, size.Y / scale, scale)
+        promptWidget:SetPositionInViewport({ X = x, Y = y }, false)
+        local now = os.clock()
+        local t = math.min(1, (now - V.promptSince) / PROMPT_IN_S)
+        local ease = 1 - (1 - t) * (1 - t)
+        local grow = PROMPT_POP + (1 - PROMPT_POP) * ease + PROMPT_BREATH * math.sin(now * 4) * ease
+        api.hud.fit(promptWidget, PROMPT_SIZE * grow, PROMPT_SIZE * grow)
+        pcall(function() promptWidget:SetRenderOpacity(ease) end)
     end
 
     local function updatePrompt()
@@ -1961,6 +2462,12 @@ return function(api)
         local pawn = state.p2Pawn
         if swapped or paused or inScene or menuOpen or api.panel.open or not (valid(pc) and valid(pawn))
             or game.isDead(pawn) or p2DownSince then
+            hidePrompt(true)
+            return
+        end
+        -- (On a rope or a ladder, or in the air, there's nothing to press: the game shows player 1 nothing either.)
+        local okM, mode = pcall(function() return pawn.CharacterMovement.MovementMode end)
+        if okM and mode ~= 1 and mode ~= 2 then
             hidePrompt()
             return
         end
@@ -1976,10 +2483,42 @@ return function(api)
             promptTarget, promptTargetKind, promptTargetAt = ok and target or nil, promptKind, now
         end
         if promptKind == nil then
-            hidePrompt()
+            -- Something near, not yet in reach: the game's ring on it, as player 1 has.
+            local thing = V.ringThing(pawn)
+            local shown = false
+            if thing then
+                pcall(function()
+                    local lib = StaticFindObject("/Script/UMG.Default__WidgetLayoutLibrary")
+                    local size, scale = lib:GetViewportSize(pc), lib:GetViewportScale(pc)
+                    local spot = select(3, promptSpot(size.X / scale, size.Y / scale, scale, thing))
+                    shown = spot ~= nil and V.showRealPrompt(pawn, spot, nil, true)
+                end)
+            end
+            V.promptSince = nil
+            if promptWidget then
+                api.hud.show(promptWidget, false)
+            end
+            if not shown then
+                V.hideRealPrompt()
+            end
             return
         end
         local tex, pic = glyphFor(pc, (promptKind == "volume" or promptKind == "gap") and "climb" or "use")
+        local spot = nil
+        pcall(function()
+            local lib = StaticFindObject("/Script/UMG.Default__WidgetLayoutLibrary")
+            local size, scale = lib:GetViewportSize(pc), lib:GetViewportScale(pc)
+            spot = select(3, promptSpot(size.X / scale, size.Y / scale, scale))
+        end)
+        local picture = type(pic) == "string" and api.hud.texture(pic) or pic
+        if spot and valid(picture) and V.showRealPrompt(pawn, spot, picture) then
+            V.promptSince = nil
+            if promptWidget then
+                api.hud.show(promptWidget, false)
+            end
+            return
+        end
+        V.hideRealPrompt()
         if not valid(promptWidget) then
             promptWidget = api.hud.newImage(pic, PROMPT_SIZE, PROMPT_SIZE, BAR_Z + 2)
             promptTex = tex
@@ -2000,46 +2539,25 @@ return function(api)
         if not promptWidget then
             return
         end
-        local lib = StaticFindObject("/Script/UMG.Default__WidgetLayoutLibrary")
-        local size, scale = lib:GetViewportSize(pc), lib:GetViewportScale(pc)
-        local vw, vh = size.X / scale, size.Y / scale
-        local x, y = vw * 0.5, vh * (0.5 + 0.5 * PROMPT_Y)
-        if config.layout == "lr" then
-            x, y = vw * 0.75, vh * PROMPT_Y
+        if not V.promptSince then
+            V.promptSince = now
+            drawPrompt(pc)
         end
-        promptWidget:SetPositionInViewport({ X = x, Y = y }, false)
-        api.hud.fit(promptWidget, PROMPT_SIZE, PROMPT_SIZE)
         api.hud.show(promptWidget, true)
     end
 
     -- The game's menus listen on player 1's screen only, so player 2's Options button does nothing there. It's passed on
     -- as player 1's own menu action.
-    -- The gourd and the top item heal "the player", which is player 1 whoever drank. When player 2 presses one and a
-    -- charge is used right after (without player 1 pressing its own), the heal is moved to player 2: the gain seen
-    -- on player 1 when there was one, else the gourd's own value, since a full player 1 shows no gain at all.
-    local healWatch = nil           -- { at, p1, p2, charges } after a press by player 2
-    local HEAL_WINDOW_S = 6.0        -- the gourd is held for a few seconds before it heals
-    local GOURD_SHARE = 0.4          -- "Restores 40% HP"
+    -- The gourd and the D-pad's other item work on "the player", which is player 1 whoever drank. The step that applies them looks the
+    -- player up as it runs, so for that one call player 1's controller points at player 2's body: the heal, its buffs, its glow and the
+    -- HUD's flash are the drinker's, by the game's own hand. (Moved afterwards, player 1 glowed and kept the buffs.)
+    local HEAL_WINDOW_S = 6.0        -- a press this old can still be why a drink comes: the gourd is held a moment before it heals
     local function key(name)
         return { KeyName = FName(name) }
     end
     local function itemPressed(controller)
         return controller:IsInputKeyDown(key("Gamepad_DPad_Down")) or controller:IsInputKeyDown(key("Gamepad_DPad_Up"))
     end
-    local function medicineCharges(pawn)
-        local bp = backpackOf(pawn)
-        local total = nil
-        pcall(function()
-            bp.MedicineInfos:ForEach(function(k, v)
-                local t = v:get().CurrentTime
-                if type(t) == "number" then
-                    total = (total or 0) + t
-                end
-            end)
-        end)
-        return total
-    end
-
     -- Player 2 has gourd charges of its own, as many as the gourd holds, back to full at every bell rest. The game
     -- takes each drink out of the one shared gourd, so that charge is put back and one of player 2's is spent.
     local function refillPlayer2(pawn)
@@ -2054,17 +2572,19 @@ return function(api)
         if p2Charges == nil then
             refillPlayer2(pawn)
         end
-        if info then
+        if info and not V.lentCharge then
             -- The shared gourd keeps its charge. The game writes the count again as the drink finishes, so the refund
             -- is made now and repeated a little later, never above the gourd's maximum.
-            local keep = info.CurrentTime + 1
+            V.gourdKeep = info.CurrentTime + 1
+            V.keepSerial = (V.keepSerial or 0) + 1
+            local serial = V.keepSerial
             local function refund()
-                if not valid(info) then
+                if not (valid(info) and V.gourdKeep) then
                     return                  -- a map change: pcall can't catch touching what it took away
                 end
                 pcall(function()
                     local max = info.MaxTime
-                    local want = math.min(keep, type(max) == "number" and max or keep)
+                    local want = math.min(V.gourdKeep, type(max) == "number" and max or V.gourdKeep)
                     if info.CurrentTime < want then
                         info:SetCurrentTime(want)
                         info:SetDisplayTime(want)
@@ -2074,7 +2594,12 @@ return function(api)
             refund()
             game.after(1.0, refund)
             game.after(2.5, refund)
-            game.after(4.0, refund)
+            game.after(4.0, function()
+                refund()
+                if serial == V.keepSerial then
+                    V.gourdKeep = nil
+                end
+            end)
         end
         if p2Charges ~= nil and p2Charges > 0 then
             p2Charges = p2Charges - 1
@@ -2082,49 +2607,126 @@ return function(api)
         end
         return false
     end
+    -- The game asks the shared gourd, and with player 1 having emptied it player 2's own press did nothing at all. So their charge is
+    -- lent to it and the press made again, and it's taken back if it wasn't drunk.
+    function V.gourdCount(pawn)
+        local info = gourdInfo(pawn)
+        local ok, n = pcall(function() return info.CurrentTime end)
+        return ok and type(n) == "number" and n or nil
+    end
+    function V.lendCharge(p2, p2pc)
+        if p2Charges == 0 or V.gourdCount(p2) ~= 0 or not p2pc:IsInputKeyDown(key("Gamepad_DPad_Down")) then
+            return
+        end
+        if p2Charges == nil then
+            refillPlayer2(p2)
+        end
+        local info, s = gourdInfo(p2), inputSubsystemOf(p2pc)
+        local action = nil
+        for _, a in ipairs(FindAllOf("InputAction") or {}) do
+            if a:GetFName():ToString() == "IA_UseBottomItem" then action = a end
+        end
+        if p2Charges and p2Charges > 0 and s and action then
+            info:SetCurrentTime(1)
+            info:SetDisplayTime(1)
+            V.lentCharge = true
+            s:InjectInputVectorForAction(action, { X = 1, Y = 0, Z = 0 }, {}, {})
+        end
+    end
+    function V.takeChargeBack(p2)
+        if V.lentCharge then
+            V.lentCharge = nil
+            local info = gourdInfo(p2)
+            if info then
+                pcall(function()
+                    info:SetCurrentTime(0)
+                    info:SetDisplayTime(0)
+                end)
+            end
+        end
+    end
+
+    function V.drinking(pawn)
+        local ok, m = pcall(function() return pawn.Mesh:GetAnimInstance():GetCurrentActiveMontage() end)
+        if not (ok and valid(m)) then       -- (no montage is an empty object, and calling into one crashes UE4SS)
+            return false
+        end
+        local name = m:GetFName():ToString()
+        return name:find("Medicine", 1, true) ~= nil or name:find("Heyao", 1, true) ~= nil
+    end
+    function V.player2Drinks()
+        local p2, p1 = state.p2Pawn, select(2, getPlayer1())
+        return not swapped and valid(p2) and valid(p1) and not V.drinking(p1)
+            and (V.drinking(p2) or os.clock() - (V.drinkPressAt or -1e9) < HEAL_WINDOW_S)
+    end
+
+    -- After the game has counted a drink: only the gourd is counted twice. The D-pad's other item is in the bag for both of them.
+    function V.medicineCounted(id)
+        local p2 = state.p2Pawn
+        local okB, bottom = pcall(function() return backpackOf(p2).BottomMedicineID:ToString() end)
+        local gourd = okB and id == bottom
+        if not V.player2Drinks() then
+            if gourd and V.gourdKeep then
+                V.gourdKeep = V.gourdKeep - 1       -- (player 1 drank theirs while one was being put back for player 2)
+            end
+            return
+        end
+        V.drinkDry = gourd and not spendPlayer2Charge(p2)
+        V.lentCharge = nil
+    end
+
+    function V.beforeMedicine()
+        if V.player2Drinks() then
+            local pc, p1 = getPlayer1()
+            V.drinkPc, V.drinkBody, V.drinkHp = pc, p1, game.getHealth(state.p2Pawn)
+            pc.Pawn = state.p2Pawn
+            pc.Character = state.p2Pawn
+        end
+    end
+
+    function V.afterMedicine()
+        local pc, p1 = V.drinkPc, V.drinkBody
+        if not p1 then
+            return
+        end
+        V.drinkPc, V.drinkBody = nil, nil
+        pc.Pawn = p1
+        pc.Character = p1
+        local p2 = state.p2Pawn
+        if V.drinkDry then
+            game.setHealth(p2, V.drinkHp)
+            V.hudHealth(p2)
+            tip("player 2's gourd is empty: rest at a bell.")
+        else
+            log(string.format("Player 2 drinks, %d charge(s) left.", p2Charges or 0))
+        end
+    end
+
     local itemHeld = false
     local function watchHeal(pc, p2pc, p1, p2)
         local pressed = itemPressed(p2pc)
         if pressed and not itemHeld and not itemPressed(pc) and not swapped then
-            local h1, h2 = game.getHealth(p1), game.getHealth(p2)
-            if h1 and h2 then
-                healWatch = { at = os.clock(), p1 = h1, p2 = h2, charges = medicineCharges(p2) }
-            end
+            V.drinkPressAt = os.clock()
+            pcall(V.lendCharge, p2, p2pc)
         end
         itemHeld = pressed
-        if healWatch == nil then
-            return
-        end
-        if os.clock() - healWatch.at > HEAL_WINDOW_S or itemPressed(pc) then
-            healWatch = nil
-            return
-        end
-        local h1 = game.getHealth(p1)
-        local h2, m2 = game.getHealth(p2)
-        local charges = medicineCharges(p2)
-        local used = healWatch.charges ~= nil and charges ~= nil and charges < healWatch.charges
-        local gain = h1 and (h1 - healWatch.p1) or 0
-        if used or gain > 5 then
-            local heal = gain > 5 and gain or math.floor((m2 or 0) * GOURD_SHARE)
-            if gain > 5 then
-                game.setHealth(p1, healWatch.p1)
-            end
-            if spendPlayer2Charge(p2) then
-                if h2 and m2 then
-                    game.setHealth(p2, math.min(m2, h2 + heal))
-                end
-                log(string.format("Player 2 drinks: +%.0f, %d charge(s) left.", heal, p2Charges or 0))
-            else
-                tip("player 2's gourd is empty: rest at a bell.")
-            end
-            healWatch = nil
+        V.afterMedicine()       -- (it has always run by now: this is for a call that ended some other way)
+        if V.lentCharge and os.clock() - V.drinkPressAt > HEAL_WINDOW_S then
+            V.takeChargeBack(p2)
         end
     end
 
     local function relayButtons()
         local pc = getPlayer1()
         local p2pc = state.p2Controller
+        drawPrompt(pc)
+        V.drawDeathCard()
         if paused or inScene or menuOpen or api.panel.open or not (valid(pc) and valid(p2pc) and valid(pc.Player)) then
+            if valid(p2pc) then
+                optionsHeld = p2pc:IsInputKeyDown({ KeyName = FName("Gamepad_Special_Right") })
+                climbHeld = p2pc:IsInputKeyDown({ KeyName = FName("Gamepad_FaceButton_Bottom") })
+                useHeld = p2pc:IsInputKeyDown({ KeyName = FName("Gamepad_FaceButton_Right") })
+            end
             return
         end
         local _, p1 = getPlayer1()
@@ -2188,6 +2790,9 @@ return function(api)
                         pcall(leaveDomains, state.p2Pawn)
                     end
                     api.removePlayer2()
+                    V.dropHud()
+                    V.dropDeathCard()
+                    V.real, V.realUp = nil, false
                     V.sceneHeld, V.screenHeld, V.p1LastAt = nil, nil, nil
                     inScene, menuOpen = false, false
                     woken, usedSwitches = {}, {}
@@ -2214,6 +2819,9 @@ return function(api)
                 updateBar()
                 updateBossBar(getPlayer1())
                 updatePrompt()
+                if valid(state.p2Pawn) then
+                    V.pointPictures(getPlayer1())
+                end
                 watchSwap()
                 local _, p1 = getPlayer1()
                 if valid(p1) then
@@ -2248,7 +2856,7 @@ return function(api)
     -- F5: bring player 2 back to player 1 by hand (stuck on a ledge, say).
     function localcoop.regroup()
         local _, p1 = getPlayer1()
-        if valid(p1) and valid(state.p2Pawn) and not game.isDead(state.p2Pawn) then
+        if not swapped and valid(p1) and valid(state.p2Pawn) and not game.isDead(state.p2Pawn) then
             moveBeside(state.p2Pawn, p1)
         end
     end
@@ -2259,8 +2867,8 @@ return function(api)
             join()
         elseif rest == "off" then
             goSolo()
-        elseif rest == "interact" then
-            interactP2()        -- as if player 2 pressed their interact button (tests)
+        elseif rest == "interact" or rest == "use" or rest == "climb" then
+            interactP2(rest ~= "interact" and rest or nil)      -- as if player 2 pressed their interact button (tests)
         elseif rest == "scene on" or rest == "scene off" then
             holdForScene(rest == "scene on")        -- the scene hold alone, without a scene (tests)
         end

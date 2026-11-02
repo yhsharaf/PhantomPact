@@ -27,7 +27,7 @@ return function(api)
     local CLOSE = { x = 848, y = 14, w = 38, h = 38 }
     local APPLY = { x = 690, y = 490, w = 170, h = 46 }
     local ONLINE = { x = 40, y = 490, w = 170, h = 46 }     -- across from it: back to online play at the next start
-    local CARDS = { "kbm", "joy1", "joy2", "joy3", "joy4" }
+    local CARDS = { "kbm", "joy1", "joy2" }       -- (main.dll routes two joysticks: a third would claim a player and reach nobody)
 
     local panel = { open = false }
     local parts = {}                -- name -> { widget, w, h }
@@ -480,7 +480,12 @@ return function(api)
         end
         local f4, f5 = pc:IsInputKeyDown(key("F4")), pc:IsInputKeyDown(key("F5"))
         if f4 and not wasF4 and not panel.open then
-            panel.toggle()
+            -- (Closing it unpauses the game and takes the input back, behind whatever the game's own menu was doing.)
+            if api.gs():IsGamePaused(pc) or api.localcoop.bellMenuUp() or api.localcoop.screenUp() then
+                api.status.notify("localcoop", "close the game's menu first, then press F4.")
+            else
+                panel.toggle()
+            end
         end
         if f5 and not wasF5 then
             api.localcoop.regroup()

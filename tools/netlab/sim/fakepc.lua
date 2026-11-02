@@ -547,9 +547,30 @@ function Fake.new(id, scripts, ini, link)
         put(ic, "CanTriggerInteract", function(_, thing) return rawget(thing, "__forbidden") == nil end)
         put(ic, "IsPlayerFaceToActor", function(_, _, thing) return rawget(thing, "__behind") == nil end)
         put(ic, "PauseTimer", function(self) put(self, "paused", true) end)
+        put(ic, "GetInteractActor", function() return nil end)
+        put(ic, "GetValidDistance", function(_, thing) return rawget(thing, "__seen") == true end)
         pc.interactComps[#pc.interactComps + 1] = ic
         put(p, "interact", ic)
         put(p, "GetComponentByClass", function(_, class) return class == pc.interactClass and ic or nil end)
+        local points = {}
+        local pointPairs = {}
+        for _, kind in ipairs({ "Execution", "ShachiWeapon", "SpecialAttack" }) do
+            local action = object(pc, "ActionWidget", { Icon = {} }, true)
+            local widget = object(pc, "WG_ExecutePoint", { InputActionWidget = action, shown = false }, true)
+            put(widget, "IsVisible", function(self) return rawget(self, "__fields").shown end)
+            local point = object(pc, "WidgetComponent", {}, true)
+            put(point, "SetOwnerPlayer", function(self, player) put(self, "owner", player) end)
+            put(point, "GetWidget", function() return widget end)
+            points[kind] = point
+            pointPairs[#pointPairs + 1] = { kind, point }
+        end
+        put(p, "points", points)
+        local execution = object(pc, "ExecutionComponent", { ExecutionWidgets = { ForEach = function(_, fn)
+            for _, pair in ipairs(pointPairs) do
+                fn({ get = function() return name(pair[1]) end }, { get = function() return pair[2] end })
+            end
+        end } }, true)
+        put(p, "GetExecutionComponent", function() return execution end)
         put(p, "AddComponentByClass", function()
             local c = object(pc, "WidgetComponent", { shown = false }, true)
             put(c, "SetWidget", function(self, w) put(self, "widget", w) end)
@@ -740,6 +761,13 @@ function Fake.new(id, scripts, ini, link)
                 InputActionWidget_C_75 = object(pc, "ActionWidget", { Icon = {} }, true),
                 InvalidationBox_0 = object(pc, "InvalidationBox", {}, true) }, true)
             put(w, "PlayNoneToInputAction", function(self) put(self, "plays", rawget(self, "__fields").plays + 1) end)
+            put(w, "PlayNoneToVirtualAnimation", function(self) put(self, "ring", (rawget(self, "__fields").ring or 0) + 1) end)
+            put(w, "PlayVirtualToInput", function(self) put(self, "plays", rawget(self, "__fields").plays + 1) end)
+            put(w, "PlayVirtualToNone", function(self, comp)
+                put(self, "outs", rawget(self, "__fields").outs + 1)
+                comp:SetVisibility(false, false)
+            end)
+            put(w, "PlayInputActionToVirtual", function(self) put(self, "ring", (rawget(self, "__fields").ring or 0) + 1) end)
             put(w, "PlayInputActionToNone", function(self, comp)
                 put(self, "outs", rawget(self, "__fields").outs + 1)
                 comp:SetVisibility(false, false)
@@ -749,9 +777,18 @@ function Fake.new(id, scripts, ini, link)
         if cls == pc.hudClass then
             local w = object(pc, "W_FrontEndHUDLayout_C", { owner = owner, heldBy = controller.Pawn, bosses = {} }, true)
             put(w, "SetVisibility", function(self, v) put(self, "visibility", v) end)
-            put(w, "RegisterBossHPBar", function(self, boss) rawget(self, "__fields").bosses[#rawget(self, "__fields").bosses + 1] = boss end)
-            put(w, "UnRegisterBossHPBar", function(self) put(self, "bosses", {}) end)
+            put(w, "ShowEnemyIndicator", function(self, e) rawget(self, "__fields").pointers[e] = true end)
+            put(w, "RemoveEnemyIndicator", function(self, e) rawget(self, "__fields").pointers[e] = nil end)
+            put(w, "pointers", {})
             pc.playerHud = w
+            return w
+        end
+        if cls == pc.bossBarClass then
+            local w = object(pc, "WB_BossHPBar_C", { owner = owner }, true)
+            put(w, "Init", function(self, boss) put(self, "boss", boss) end)
+            put(w, "RemoveFromParent", function(self) put(self, "removed", true) end)
+            put(w, "SetVisibility", function(self, v) put(self, "visibility", v) end)
+            pc.bossBars[#pc.bossBars + 1] = w
             return w
         end
         local circle = object(pc, "Image", { Brush = {} }, true)
@@ -775,6 +812,7 @@ function Fake.new(id, scripts, ini, link)
         local asc = rawget(actor, "__fields").asc
         if asc == nil then
             asc = object(pc, "ASC", { ActivatableAbilities = { Items = list({}) } }, true)
+            put(asc, "TryActivateAbilityByClass", function(_, class) put(actor, "used", class) end)
             put(actor, "asc", asc)
         end
         return asc
@@ -806,7 +844,15 @@ function Fake.new(id, scripts, ini, link)
     local bulletClass = object(pc, "Class")
     rawset(bulletClass, "__path", "/Script/SGameCombatSystem.BulletSubsystem")
     pc.interactClass, pc.promptClass, pc.hudClass = object(pc, "Class"), object(pc, "WidgetClass"), object(pc, "WidgetClass")
+    pc.bossBarClass, pc.bossBars = object(pc, "WidgetClass"), {}
+    pc.riseClass = object(pc, "Class")
     local found = {
+        ["/Game/PBZContent/UI/InGame/Dead/bg_dead.bg_dead"] = object(pc, "Texture", {}, true),
+        ["/Game/PBZContent/UI/InGame/Dead/T_UI_blood_Combine.T_UI_blood_Combine"] = object(pc, "Texture", {}, true),
+        ["/Game/PBZContent/UI/UINew/testplaceholder/yun.yun"] = object(pc, "Texture", {}, true),
+        ["/Game/PBZContent/UI/UINew/testplaceholder/ming.ming"] = object(pc, "Texture", {}, true),
+        ["/Game/PBZContent/UI/InGame/Dead/GA_PlayerRespawn.GA_PlayerRespawn_C"] = pc.riseClass,
+        ["/Game/PBZContent/UI/Hud/WB_BossHPBar.WB_BossHPBar_C"] = pc.bossBarClass,
         ["/Script/ProjectPBZ.PBZInteractComponent"] = pc.interactClass,
         ["/Script/UMG.WidgetComponent"] = object(pc, "Class"),
         ["/Game/PBZContent/UI/InGame/InteractionUI/W_InteractionUI.W_InteractionUI_C"] = pc.promptClass,

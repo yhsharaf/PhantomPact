@@ -54,19 +54,27 @@ for those and performs the action with player 2's own body:
 | Options | Pause menu (the one menu is shared; whichever pad opened it drives it) |
 | Select / touchpad | Quest-direction sense; it reports on both screens |
 
-The prompt for Cross or Circle shows on player 2's half of the screen with the game's own button pictures,
-PlayStation or Xbox according to what the game shows player 1.
+Player 2's prompts are the game's own: the same widget and animations as player 1's, set down on the thing itself in their half
+of the screen, with the button of their own pad. They follow the game's rules: in reach and faced, on the ground. With the thing
+out of their half, a plain button stands in at the bottom of it.
+
+Player 2 has the game's own HUD in their half too: health and ShaChi bars, gourd, weapons, buffs, a boss's bar, arrows to enemies
+out of view, and execution points on the enemies they can finish, all their own. The gourd on it shows their own charges. Going
+down, the game's death card plays in their half alone, and they get back up off the ground beside player 1.
 
 ## What the game hardwires to player 1, and how 1.5.0 bridges it
 
-- **Interaction search and prompts** run for player 1 only. The mod searches around player 2 with the game's own
-  reach rules and starts the interaction through player 2's interact component (climb spots) or through player 1's
-  component with player 2 named as the opener (chests, piles, bells), with player 1 pinned in place so they never walk
-  to it.
+- **Interaction prompts** are drawn for player 1 only, on the things themselves, and player 2's own search would play them
+  there too (player 2 walking off shrank player 1's prompt to a dot), so that search is paused. The mod asks player 2's interact
+  component what the game allows (`CanTriggerInteract`, `IsPlayerFaceToActor`) and starts the interaction through it (climb spots)
+  or through player 1's component with player 2 named as the opener (chests, piles), with player 1 pinned in place so they never
+  walk to it.
 - **Loot** is handed out only through player 1's interact component. Chests opened by player 2 still give the loot
   to the shared backpack. The loot card draws on player 1's half; Circle on pad 2 confirms it.
-- **The gourd** heals "the player". Player 2's press is moved to player 2 and charged to player 2's own count, which
-  refills at a bell to the gourd's maximum.
+- **The gourd and the D-pad's other item** work on "the player". Player 2's body drinks by the game's own ability, and for the
+  one call that applies it, player 1's controller points at player 2's body: the heal, its buffs, its glow and the HUD's flash are
+  theirs. It's charged to player 2's own count, which refills at a bell to the gourd's maximum, and a press with the shared gourd
+  dry still drinks their own charge.
 - **The bell menu and pause menu** listen on player 1's screen. The mod makes them full screen, routes both pads to
   them, and hands the pads back when they close.
 - **Enemy optimization** (the NPC optimizer) measures distance from player 1. Enemies far from player 1 are set
@@ -80,7 +88,11 @@ PlayStation or Xbox according to what the game shows player 1.
 - **Story scenes** play on player 1's camera. Both players watch full screen; player 2's Soul and weapons are
   hidden and pad 2 is ignored for the scene, and both come back when it ends. If the scene moved player 1, player 2
   is brought along.
-- **Bosses.** The boss health bar is player 1's HUD; player 2 gets a copy at the top of their half for the fight.
+- **The HUD** binds to player 0's body as it's made, so player 2's is made in the moment player 1's controller points at player
+  2's body, with no possession. It shows and hides by the same rules as player 1's. A health change the mod writes by hand is
+  told to it.
+- **Bosses.** The boss health bar is player 1's HUD's, and a second HUD can't make one; player 2's is the game's bar made by hand in
+  their half for the fight.
   The boss gets the same combat wake-up for player 2 as any enemy. Fog walls close around whoever started the
   fight: player 2, left outside, walks up to the fog and presses Circle, or just stands there a few seconds, and is
   set down beside player 1. Checked with Peng Meng, the Axemaster, on Xigu: intro scene, bar on both halves, the
@@ -116,8 +128,8 @@ PlayStation or Xbox according to what the game shows player 1.
   dialogue and scenes, a boss with its fog walls, deaths (player 1's real deaths with player 2 down, and both down at
   the same instant), rests, the pause menu and the F4 panel at the wrong moments, Return to Title and Load Game.
   Later chapters with two local players are untested, as is a fullscreen toggle during play.
-- Player 2's gourd at zero charges, its refill at a rest, and two players using one chest in the same instant could
-  not be driven without pads; the code paths exist and are unverified.
+- Player 2's refill at a rest, and two players using one chest in the same instant could not be driven without pads; the code
+  paths exist and are unverified.
 - The quest-direction sense and "information" screens draw on player 1's half; the loot card too.
 - The ledge vault (mantle) fails for both players through the mod's route; the game's own does it for player 1.
 - Lock-on for player 2 could not be checked without a pad; the game's own targeting runs per player.
