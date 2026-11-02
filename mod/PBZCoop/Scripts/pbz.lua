@@ -359,6 +359,14 @@ return function(api)
         pcall(function() actor:GetController().BrainComponent:RestartLogic() end)
     end
 
+    -- Out of the way on this PC, and back: coop.lua, for an enemy the host's world doesn't have.
+    function game.stepAside(actor, on)
+        pcall(function()
+            actor:SetActorHiddenInGame(on)
+            actor:SetActorEnableCollision(not on)
+        end)
+    end
+
     function game.enemyClass(actor)
         return className(actor)
     end

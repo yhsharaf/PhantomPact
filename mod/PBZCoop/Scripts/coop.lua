@@ -79,6 +79,8 @@ return function(api)
     local ENEMY_LIST_S = 0.5      -- and who's in reach is worked out this often
     local ENEMY_STALE_S = 1.0     -- a host enemy not updated this long is no longer shared
     local ENEMY_MATCH_CM = 2000   -- client: a same-class enemy this close stands in for a host enemy with another id
+    local ASIDE_AFTER_S = 3.0     -- client: an enemy of its own beside the host this long is asked about
+    local ASK_AGAIN_S = 10.0      -- and asked about again this often: the host's world changes too
     local PICKUP_S = 1.0          -- between pickup scans
     local MAX_CHEST_NAME = 96     -- what the partner may say a chest is called
     local MAX_ITEM_NAME = 64      -- and an item
@@ -111,6 +113,8 @@ return function(api)
         guestKilled = {},         -- host: enemy name -> the guest killed its copy while it wasn't loaded here
         guestKillSent = {},       -- client: enemy name -> the host was told of that kill
         pendingDeaths = {},       -- client: host id -> true for a death announced while our copy wasn't loaded
+        aside = {},               -- client: address -> { actor, name, since, askedAt, hidden, brain }: enemies of its own beside the host
+        notOnHost = {},           -- client: enemy id -> true: the host says it hasn't got this one
         pendingBosses = {},       -- boss id -> true for a fight announced before our copy of the boss was known here
         partnerBosses = {},       -- boss id -> true while the other PC's fight with that boss goes on
         matchSticky = {},         -- client: host id -> address of the local actor matched to it by class/position
@@ -162,6 +166,11 @@ return function(api)
             end
         end
         return p
+    end
+
+    -- Whether a player's last position is on this map. (One that hasn't said yet counts: it's where they were last.)
+    local function sameMap(t)
+        return t ~= nil and (t.Map == nil or net.localMap == nil or t.Map == net.localMap)
     end
 
     -- Everyone's boss bars, as one answer.
@@ -644,6 +653,10 @@ return function(api)
         net.foggedBosses[name] = nil
         net.partnerBosses[name] = nil
         net.pendingBosses[name] = nil
+        if net.joinedBoss == name then
+            net.joinedBoss = nil
+            net.bossOverAt = os.clock() + BOSS_RETURN_S
+        end
         if valid(actor) then
             at = at or actor:K2_GetActorLocation()
             if game.hideBossBar then
@@ -856,12 +869,67 @@ return function(api)
         end
         net.matchSticky = sticky
         -- Local enemies the host didn't mention keep their own id (their hits are still reported).
+        local paired, own = {}, {}
+        for _, addr in pairs(sticky) do
+            paired[addr] = true
+        end
         for _, e in pairs(locals) do
             if not used[e.addr] then
                 matched[enemyName(e.actor, e.addr)] = e.actor
+                if not paired[e.addr] then
+                    own[#own + 1] = e
+                end
             end
         end
-        return matched
+        return matched, own
+    end
+
+    local function showAside(keep)
+        for addr, a in pairs(net.aside) do
+            if not (keep and keep[addr]) and a.hidden and valid(a.actor) then
+                game.stepAside(a.actor, false)
+                game.startAI(a.actor)
+            end
+        end
+        net.aside = keep or {}
+    end
+
+    -- Each player keeps their own save, so the two worlds can disagree on who's dead, and near the host its world leads. An
+    -- enemy this world has and the host's hasn't would fight this player with nothing for the host to see or hit. Not being
+    -- in the host's lines proves nothing: those only cover what's near it, and a copy here may have run after this player. So
+    -- the host is asked, and only "I haven't got it" counts. Then it steps out of the way: hidden, not killed, so nothing
+    -- of it reaches this save, and back once the host has moved on or turns out to have it. Bosses stay: a hidden one would
+    -- start its fight all the same. Only spawner ids: any other name is this PC's alone.
+    local function setAside(own, now)
+        local t = net.target
+        if t and not net.partnerGone and os.clock() - (net.lastRemoteAt or -1e9) > ENEMY_STALE_S then
+            return                  -- (a hitch on the host's side says nothing about its enemies)
+        end
+        local here = t ~= nil and not net.partnerGone and t.Map == net.localMap
+        local kept, gone = {}, 0
+        for _, e in ipairs(own) do
+            local name = enemyName(e.actor, e.addr)
+            if here and name:sub(1, 3) == "sp:" and inReach(e.loc.X, e.loc.Y, e.loc.Z, t) and not game.isDead(e.actor)
+                and not game.isBoss(e.actor, e.addr) then
+                local a = net.aside[e.addr] or { actor = e.actor, name = name, since = now, askedAt = -1e9 }
+                kept[e.addr] = a
+                if a.hidden then
+                    a.brain = game.stopAI(e.actor, a.brain)     -- (the game starts a stopped AI again by itself)
+                elseif net.notOnHost[name] then
+                    a.hidden = true
+                    game.stepAside(e.actor, true)
+                    a.brain = game.stopAI(e.actor)
+                    gone = gone + 1
+                elseif now - a.since >= ASIDE_AFTER_S and now - a.askedAt >= ASK_AGAIN_S then
+                    a.askedAt = now
+                    sendEvent("HAS", name)
+                end
+            end
+        end
+        showAside(kept)
+        if gone > 0 then
+            log(gone .. " enemies here aren't in the host's world: out of the way while you're near the host.")
+        end
     end
 
     -- Client: pull its copies of the host's enemies into place and match their health and posture.
@@ -1033,7 +1101,9 @@ return function(api)
                 reach.near[addr] = nil
             end
         end
-        enemyByName = matchRemoteEnemies(reach.near)
+        local own
+        enemyByName, own = matchRemoteEnemies(reach.near)
+        setAside(own, now)
         local queue = {}
         for name, actor in pairs(enemyByName) do
             queue[#queue + 1] = { name = name, actor = actor }
@@ -1065,6 +1135,7 @@ return function(api)
                 seen = {}
                 round.seen, round.queue, round.at = nil, {}, 1
                 releaseHeld(nil)
+                showAside()
                 return
             end
             updateReach(origin, nil, dt)
@@ -1179,10 +1250,6 @@ return function(api)
             local wasBoss = net.hostBosses[name] or net.partnerBosses[name] or net.pendingBosses[name]
                 or (valid(actor) and game.isBoss and game.isBoss(actor))
             net.hostBosses[name] = nil
-            if net.joinedBoss == name then
-                net.joinedBoss = nil
-                net.bossOverAt = os.clock() + BOSS_RETURN_S
-            end
             if valid(actor) then
                 if api.puppets then
                     api.puppets.drop(actor)
@@ -1474,6 +1541,28 @@ return function(api)
         end
     end
 
+    -- A guest asks after an enemy of its own. Anything loaded here counts, however far from this player: only "no" is sent.
+    handlers.HAS = function(name, from)
+        if not isHost() then
+            return
+        end
+        local list, addrs = game.listEnemies()
+        for i, actor in ipairs(list) do
+            if valid(actor) and enemyName(actor, addrs[i]) == name and not game.isDead(actor) then
+                return
+            end
+        end
+        if from then
+            sendTo(from, "NOT", name)
+        else
+            sendEvent("NOT", name)
+        end
+    end
+
+    handlers.NOT = function(name)
+        net.notOnHost[name] = true
+    end
+
     handlers.C = function(amount)
         amount = num(amount)
         local _, pawn = getPlayer1()
@@ -1497,7 +1586,10 @@ return function(api)
     -- at a closed wall with the fight on the other side.
     local function joinBossFight(name, p)
         local _, pawn = getPlayer1()
-        local at = game.spawnBoss and game.spawnBoss(name) or p.target
+        local at = game.spawnBoss and game.spawnBoss(name)
+        if not at and sameMap(p.target) then
+            at = p.target
+        end
         if game.refreshEnemyIds then
             game.refreshEnemyIds(true)
         end
@@ -1511,7 +1603,7 @@ return function(api)
         local here = pawn:K2_GetActorLocation()
         if gap3d(here, at) > BOSS_JOIN_CM or (game.outsideFog and game.outsideFog(here, at)) then
             log("Joining the other player's boss fight.")
-            net.joinedBoss = name
+            net.joinedBoss, net.joinedWith = name, p
             arriveAt(pawn, at)
         end
     end
@@ -1616,9 +1708,9 @@ return function(api)
         -- The boss is dead and the partner has gone back to the map: don't leave this player stranded in the arena.
         if net.bossOverAt and os.clock() >= net.bossOverAt then
             net.bossOverAt = nil
-            if valid(pawn) and net.target and not game.isDead(pawn)
-                and gap3d(pawn:K2_GetActorLocation(), net.target) > BOSS_JOIN_CM then
-                arriveAt(pawn, net.target)
+            local t = (net.joinedWith or net).target
+            if valid(pawn) and sameMap(t) and not game.isDead(pawn) and gap3d(pawn:K2_GetActorLocation(), t) > BOSS_JOIN_CM then
+                arriveAt(pawn, t)
             end
         end
     end
@@ -1908,6 +2000,8 @@ return function(api)
         net.hostBosses = {}
         net.hitHere = {}
         net.fightOf = {}
+        net.notOnHost = {}
+        net.joinedBoss, net.joinedWith, net.pullAfterCalm, net.bossOverAt = nil, nil, nil, nil
         net.healTicks = {}
         net.hostSeen = {}
         enemyByName = {}
@@ -2041,6 +2135,7 @@ return function(api)
             game.spectate(nil)
         end
         releaseHeld(nil)
+        showAside()
         destroyGhosts()
         leaveParty()
         reopenFog()
