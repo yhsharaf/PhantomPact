@@ -1137,6 +1137,7 @@ return function(api)
         end
         wireInteract()
         game.hookMedicine(V.medicineCounted, V.beforeMedicine, V.afterMedicine)
+        pcall(V.hookFeel)
         if not configApplied and not menuOpen then
             configApplied = applyConfig()
             if configApplied and not V.checklistShown then
@@ -2248,6 +2249,53 @@ return function(api)
         end
     end
 
+    -- The game plays rumble on the first controller whoever it's for, and a far blow's camera shake on everybody's. It doesn't say who
+    -- it's for, so it goes by who's in the middle of something: player 2 alone, it's player 2's. Player 1's own stays theirs.
+    V.RUMBLE = "/Script/Engine.PlayerController:ClientPlayForceFeedback_Internal"
+    V.SHAKE = "/Script/Engine.PlayerController:ClientStartCameraShake"
+    V.SHAKE_NEAR_CM = 1500
+
+    function V.acting(pawn)
+        local okA, anim = pcall(function() return pawn.Mesh:GetAnimInstance() end)
+        if not (okA and valid(anim)) then
+            return false
+        end
+        local ok, playing = pcall(function() return anim:GetCurrentActiveMontage() end)
+        return ok and valid(playing)
+    end
+
+    function V.player2Alone(self)
+        local pc1, p1 = getPlayer1()
+        local soul = state.p2Pawn
+        local okS, who = pcall(function() return self:get() end)
+        return not swapped and okS and valid(who) and valid(pc1) and who:GetAddress() == pc1:GetAddress()
+            and valid(soul) and valid(p1) and V.acting(soul) and not V.acting(p1)
+    end
+
+    function V.hookFeel()
+        if V.feelHooked then
+            return
+        end
+        V.feelHooked = true
+        RegisterHook(V.RUMBLE, function(self, effect)
+            if V.player2Alone(self) then
+                V.rumbled = effect:get()
+                state.p2Controller:ClientPlayForceFeedback_Internal(V.rumbled, { Tag = FName("None"), bLooping = false, bIgnoreTimeDilation = false, bPlayWhilePaused = false })
+            end
+        end, function()
+            if V.rumbled then
+                local effect = V.rumbled
+                V.rumbled = nil
+                getPlayer1():ClientStopForceFeedback(effect, FName("None"))
+            end
+        end)
+        RegisterHook(V.SHAKE, function(self, _, scale)
+            if V.player2Alone(self) and distance(select(2, getPlayer1()):K2_GetActorLocation(), state.p2Pawn:K2_GetActorLocation()) > V.SHAKE_NEAR_CM then
+                scale:set(0.0)
+            end
+        end)
+    end
+
     local promptTarget, promptTargetKind, promptTargetAt = nil, nil, 0   -- the prompt's last find, reused on a press
     local function interactP2(want)
         local pawn = state.p2Pawn
@@ -2622,7 +2670,7 @@ return function(api)
     -- Where the game shows the thing's own prompt, or over it when it has none. Nil for what has no place in the world (a loot card).
     function V.promptAnchor(target)
         local ok, at = pcall(function()
-            local wc = target:GetComponentByClass(StaticFindObject("/Script/UMG.WidgetComponent"))
+            local wc = not isGapBlocker(target) and target:GetComponentByClass(StaticFindObject("/Script/UMG.WidgetComponent")) or nil      -- (a gap's is by the Soul: the point to reach is the actor)
             if valid(wc) then
                 return wc:K2_GetComponentLocation()
             end

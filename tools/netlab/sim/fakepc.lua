@@ -412,6 +412,30 @@ function Fake.switch(pc, class, x, y, z, bell, noState)
     return s
 end
 
+-- The game's rumble and camera shake, on the first controller as it plays them.
+function Fake.rumble(pc)
+    local path = "/Script/Engine.PlayerController:ClientPlayForceFeedback_Internal"
+    local effect = object(pc, "ForceFeedbackEffect")
+    local self = { get = function() return pc.controller end }
+    for _, fn in ipairs(pc.hooks[path] or {}) do
+        fn(self, { get = function() return effect end })
+    end
+    put(pc.controller, "rumble", effect)
+    for _, fn in ipairs(pc.afterHooks[path] or {}) do
+        fn(self)
+    end
+    return effect
+end
+
+function Fake.shake(pc)
+    local path = "/Script/Engine.PlayerController:ClientStartCameraShake"
+    local scale = 1.0
+    for _, fn in ipairs(pc.hooks[path] or {}) do
+        fn({ get = function() return pc.controller end }, { get = function() end }, { set = function(_, v) scale = v end })
+    end
+    return scale
+end
+
 -- The end of the game's walk up to a thing, some time after the press: what starts then sees who "the player" is.
 function Fake.arrive(pc, thing)
     local path = "/Script/ProjectPBZ.PBZSwitchBase:FinishMoveToAsync"
@@ -683,6 +707,8 @@ function Fake.new(id, scripts, ini, link)
             IsInputKeyDown = function(_, key) return keys[key.KeyName:ToString()] == true end,
             SetViewTargetWithBlend = function(self, target) put(self, "viewTarget", target) end,
             GetViewTarget = function(self) return rawget(self, "__fields").viewTarget or rawget(self, "__fields").Pawn end,
+            ClientPlayForceFeedback_Internal = function(self, effect) put(self, "rumble", effect) end,
+            ClientStopForceFeedback = function(self, effect) put(self, "rumbleStopped", effect) end,
             IsActorTickEnabled = function(self) return rawget(self, "__fields").ticking end,
             SetActorTickEnabled = function(self, on) put(self, "ticking", on) end,
             Possess = function(self, b) put(self, "Pawn", b) end,

@@ -2,7 +2,7 @@
 
 Mode > LOCAL under MORE in the F5 panel, or `Role = Local` in `PhantomPact.ini`, puts two players on one PC, side by side on
 one screen, no internet and no second PC. It is in testing: 1.5.0's work was done on Xigu with two DualSense pads through DS4Windows. 1.6.0's was
-played through all ten regions of the story with player 2's presses injected, so what a real second pad does there is still to be seen.
+played through all ten regions of the story with player 2's presses injected, and every button was then checked through two virtual Xbox pads.
 
 ## Setup
 
@@ -137,9 +137,10 @@ down, the game's death card plays in their half alone, and they get back up off 
 - Two players using one chest in the same instant could not be driven without pads; the code path exists and is unverified.
 - The quest-direction sense and "information" screens draw on player 1's half; the loot card too.
 - The ledge vault (mantle) fails for both players through the mod's route; the game's own does it for player 1.
-- Lock-on is the game's own for player 2, and its mark shows in their half. The Phantom Edge change on D-pad right needs a real pad to
-  check: an injected press doesn't reach that binding.
+- Lock-on is the game's own for player 2, and its mark shows in their half.
 - Doors that are barred from the other side are as they are for player 1: a push and a "won't open".
+- An execution by player 2 was not seen through to its animation: the press reaches their own binding, and the prompt shows in their half.
+- Rumble goes by who's in the middle of something, as the game doesn't say who it's for. When both players are at it, it stays on player 1's pad.
 - A talk is player 1's to the game: player 2's press starts it and sets player 1 down beside them, and the dialogue screen is shared.
 - Shops and training are pages of the bell menu, which both players share. Doors that need an item (the game's
   switches with required items) do not occur in chapter 1 on Xigu and are untested for player 2; the mod's route
