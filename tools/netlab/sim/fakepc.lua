@@ -404,6 +404,7 @@ function Fake.switch(pc, class, x, y, z, bell, noState)
             rot.Yaw = 0.0
         end,
         FinishMoveToAsync = function(self) put(self, "opened", rawget(self, "__fields").opened + 1) end,
+        CancelMoveTo = function(self) put(self, "cancelled", true) end,
         GetComponentByClass = function() return nil end,
         IsA = function() return bell == true end,
     })

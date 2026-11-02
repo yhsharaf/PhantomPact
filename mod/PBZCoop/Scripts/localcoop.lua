@@ -2110,7 +2110,8 @@ return function(api)
     -- 1's component, as it was, it was player 1 who was walked over, made to sheathe their sword and held in the opening, mid-fight if it
     -- came to that.) Two things stay the first player's whoever is at it. The close-up cuts their half of the screen, so it's handed
     -- over; and the end of a chest's opening pays out only through their component, so that's called by hand.
-    V.OPENING_S, V.APPROACH_MAX_S, V.SHEATHE_S, V.WATCH_STEP_S, V.CLOSE_UP_MAX_S = 3.6, 8.0, 1.8, 0.03, 8.0
+    V.OPENING_S, V.APPROACH_MAX_S, V.SHEATHE_S, V.WATCH_STEP_S, V.CLOSE_UP_MAX_S = 3.6, 5.5, 1.8, 0.03, 8.0
+    V.maps = 0
 
     -- An interaction puts the Soul's input in a mode of its own, with its control sets taken off, and only player 1's is ever put back:
     -- player 2 stood at the chest with a dead pad.
@@ -2169,7 +2170,7 @@ return function(api)
         end
         -- (Putting a weapon away comes first, and the component says nothing of it while that lasts. A chest always comes to its close-up.)
         local chest = name == "BP_Chest_C"
-        V.opening = { thing = thing, ic = ic, chest = chest, surelyUntil = os.clock() + (chest and V.APPROACH_MAX_S or V.SHEATHE_S),
+        V.opening = { thing = thing, ic = ic, chest = chest, hp = game.getHealth(pawn), surelyUntil = os.clock() + (chest and V.APPROACH_MAX_S or V.SHEATHE_S),
             giveUpAt = os.clock() + V.APPROACH_MAX_S }
         game.after(V.WATCH_STEP_S, function() pcall(V.watchOpening) end)
     end
@@ -2186,6 +2187,13 @@ return function(api)
         local sequence = o.thing.LevelSequenceActor
         local view = pc1:GetViewTarget()
         if not (valid(sequence) and valid(view) and view:GetAddress() ~= p1:GetAddress()) then
+            -- (A hit on the way there ends the walk, and with it the wait.)
+            if o.hp and (game.getHealth(soul) or o.hp) < o.hp - 1 then
+                V.opening = nil
+                pcall(function() o.thing:CancelMoveTo() end)
+                V.endUse()
+                return
+            end
             local doing = o.ic:GetInteractingActor()
             if os.clock() < o.surelyUntil or (valid(doing) and os.clock() < o.giveUpAt) then
                 game.after(V.WATCH_STEP_S, function() pcall(V.watchOpening) end)
@@ -2206,8 +2214,9 @@ return function(api)
         game.after(0.5, function() pcall(V.watchCloseUp) end)
         if o.chest then
             soul:PlayAnimMontage(o.thing.OpenChestAnim, 1.0, FName("None"))
+            local map = V.maps
             game.after(V.OPENING_S, function()
-                if valid(o.thing) then
+                if map == V.maps and valid(o.thing) then     -- (a load in between takes the chest with it)
                     local okP, errP = pcall(function() o.thing["Pickup Items"](o.thing) end)
                     if not okP then
                         log("A chest's pay-out: " .. tostring(errP))
@@ -3010,6 +3019,7 @@ return function(api)
                         pcall(function() getPlayer1():ResetIgnoreInputFlags() end)
                     end
                     V.lentCharge, V.gourdKeep, V.drinkPc, V.drinkBody, V.opening, V.closeUp = nil, nil, nil, nil, nil, nil
+                    V.maps = V.maps + 1
                     V.looked = {}
                     promptTarget, promptKind, promptTargetKind, V.promptSince, V.ringWas = nil, nil, nil, nil, nil
                     V.sceneHeld, V.screenHeld, V.p1LastAt = nil, nil, nil
