@@ -13,3 +13,9 @@ The user's challenge, 2026-11-02: three unique bugs make one commit, nine commit
 4. A guest whose save is behind the host's was attacked by enemies the host killed on another day, unseen by the host. The guest now asks the host about an enemy of its own (`HAS`), and on `NOT` the copy steps aside, hidden and not killed, until the host moves on or goes to another map. Sim: `twoSaves`. Real: one true case hidden, six real enemies left alone, back when the host leaves.
 5. A partner's boss fight on another map flew this player to that spot's numbers on this map, held them in the air and dropped them. `joinBossFight` used the partner's position without looking at which map it was on; the walk back after a boss had the same gap. Sim: `otherMaps`.
 6. A host pulled into a guest's fight in an arena apart from the map was never brought back when the boss died: only a guest's `K` handler set the return. It's in `endBossFight` now, which all three kinds of kill go through, and the return goes to whoever the fight was with. Sim: `fightsAndWhoIsLeft`.
+
+## 1.5.4
+
+7. A player over a respawn was skipped by a partner's fight for good: the calm of 30 s dropped the pull with nothing to retry it, the fog walls closed in front of them, and if the partner died their respawn waited on a fight nobody could reach. This is the "left behind a fog wall" of the Yan Qiansui takes. The pull now waits for the calm, if the fight's still on. Sim: `fightsAndWhoIsLeft`.
+8. With two players, a guest joining during a boss fight travelled before it heard of the fight, and landed in it with no bar. `F` only came every 5 s and the wait for it was for parties alone. Sim: `fightsAndWhoIsLeft`.
+9. A guest watching a fight stayed frozen in the air for good if the host vanished: only the host's own word ended a watch. Sim: `fightsAndWhoIsLeft`.

@@ -68,7 +68,6 @@ return function(api)
     local ARRIVE_SETTLE_S = 0.6   -- after the hold, this long to find the ground or start falling
     local RESPAWN_CALM_S = 30.0   -- this long after a respawn, the partner's boss fight doesn't pull this player in
     local BOSS_RETURN_S = 8.0     -- after the boss dies, this long before following a partner who left the arena
-    local REJOIN_S = 2.0          -- after respawning, this long before going back to the fight the host is still in
     local BOSS_BAR_S = 1.0        -- during the other player's boss fight, how often its bar here is looked at
     local GHOST_AWAY_S = 3.0      -- a sequence or other map must last this long to hide the ghost (climbs, finishers)
     local GAP_LOG_S = 0.5         -- a partner silent this long is logged when they return (choppy-connection reports)
@@ -1232,6 +1231,7 @@ return function(api)
             for name in pairs(net.deadSent) do
                 sendEvent("K", name)
             end
+            net.fightToldAt = 0
         else
             net.hostKilled = {}
             net.guestKillSent = {}
@@ -1419,7 +1419,8 @@ return function(api)
         net.hostBosses = {}
         net.hitHere = {}
         net.fightOf = {}
-        net.joinedBoss = nil
+        net.notOnHost = {}
+        net.joinedBoss, net.joinedWith, net.pullAfterCalm = nil, nil, nil
         reopenFog()
         if game.resetBosses then
             game.resetBosses()
@@ -1436,10 +1437,14 @@ return function(api)
     --     still in is shown again (bar and fog walls).
     local restListeners = {}   -- name -> function(kind): a bell or death rest, here or the partner's (revive.lua)
 
-    local function onLocalRest(kind)
+    local function restEvent(kind)
         for _, fn in pairs(restListeners) do
             fn(kind)
         end
+    end
+
+    local function onLocalRest(kind)
+        restEvent(kind)
         if kind == "death" then
             net.noPullUntil = os.clock() + RESPAWN_CALM_S
         end
@@ -1452,7 +1457,7 @@ return function(api)
             end
             for name in pairs(net.hostBosses) do
                 net.pendingBosses[name] = true
-                net.rejoinAt = os.clock() + REJOIN_S
+                net.pullAfterCalm = { name = name, p = net.party and peerOf(net.fightOf[name]) or net }
             end
             reopenFog()
             if game.resetBosses then
@@ -1477,9 +1482,7 @@ return function(api)
     handlers.R = function(kind, from)
         peerOf(from).fights = false     -- (that player's fight is over, and a bar left up there can't say so yet)
         countFights()
-        for _, fn in pairs(restListeners) do
-            fn(kind)
-        end
+        restEvent(kind)
         if kind == "death" then
             log("The host died and respawned: enemies respawn here too.")
         else
@@ -1495,9 +1498,7 @@ return function(api)
     -- A sit at a bell is everyone's: whoever's dead, down or watching comes to the one who sat, and anyone else is rested where
     -- they stand. It says the sitter's fight is over too, or a bar left up there would hold a partner's respawn for good.
     local function onLocalSit()
-        for _, fn in pairs(restListeners) do
-            fn("sit")
-        end
+        restEvent("sit")
         if game.resetBosses then
             game.resetBosses()
         end
@@ -1597,7 +1598,9 @@ return function(api)
             return
         end
         -- Just respawned: the partner's fight goes on without being dragged back into it, which killed the player again.
+        -- It waits for the calm to end, not for good: the walls are closed behind the partner, and there's no walking in.
         if os.clock() < (net.noPullUntil or 0) then
+            net.pullAfterCalm = { name = name, p = p }
             return
         end
         local here = pawn:K2_GetActorLocation()
@@ -1671,7 +1674,7 @@ return function(api)
     end
 
     local function watchArrival()
-        if not (net.arriveUntil or net.arrival or net.bossOverAt) then
+        if not (net.arriveUntil or net.arrival or net.bossOverAt or net.pullAfterCalm) then
             return
         end
         local _, pawn = getPlayer1()
@@ -1698,11 +1701,12 @@ return function(api)
                 net.arrival = nil       -- on the ground: from here a drop is a slope or a ledge, and the player's own
             end
         end
-        -- Respawned at a bell with the host still in the fight: back to it.
-        if net.rejoinAt and os.clock() >= net.rejoinAt then
-            net.rejoinAt = nil
-            for name in pairs(net.hostBosses) do
-                joinBossFight(name, net)
+        -- Over a respawn, with the fight still on: into it.
+        local pull = net.pullAfterCalm
+        if pull and os.clock() >= (net.noPullUntil or 0) then
+            net.pullAfterCalm = nil
+            if net.partnerFighting and (net.partnerBosses[pull.name] or net.hostBosses[pull.name]) then
+                joinBossFight(pull.name, pull.p)
             end
         end
         -- The boss is dead and the partner has gone back to the map: don't leave this player stranded in the arena.

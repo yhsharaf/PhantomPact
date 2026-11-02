@@ -16,7 +16,7 @@ return function(api)
     local FAR_CM = 15000            -- "far apart" above 150 m (same area)
     local KEY_MS = 40               -- how often F3 is looked at; a press lasts longer
     local LINK_WAIT_S = 120         -- from the link, a joining guest has this long to reach the host (a cutscene may be on)
-    local TOLD_WAIT_S = 2.5         -- with more than two players it waits this long first, to hear of a fight anyone's in
+    local TOLD_WAIT_S = 2.5         -- and waits this long first, to hear of a fight anyone's in
 
     local partner = { down = false, zeroReads = 0, far = false, cine = false }
     local players = {}              -- with more than two: slot -> the same four, for that player
@@ -99,7 +99,7 @@ return function(api)
             partner.joining = false
             partner.goUntil = os.clock() + LINK_WAIT_S
             coop.watchParty()               -- (the host's hello comes with its first position: this frame can't have seen it)
-            partner.goFrom = net.party and os.clock() + TOLD_WAIT_S or 0
+            partner.goFrom = os.clock() + TOLD_WAIT_S
         end
         if partner.goUntil and net.partnerFighting then
             -- Not into the middle of a boss fight: it's watched, and the trip made when it's over, whoever won.
