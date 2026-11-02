@@ -37,3 +37,9 @@ The user's challenge, 2026-11-02: three unique bugs make one commit, nine commit
 16. An enemy copy let go by a guest kept a 24-hour target lock: the ghost it was given stayed its target after the host dropped or the guest left, and it ignored the guest. Sim: `offAndBack`.
 17. A marker on a map opened again stayed where the partner last was, after they left or changed map: closing the map told the code the marker was hidden, so it was never hidden. Sim: `whatsLeftOfAPartner`.
 18. A tip was cut short by the timer of the tip before it, one widget and two timers. Sim: `offAndBack`.
+
+## 1.5.8
+
+19. Bell tips, and why the relay couldn't start, stayed English in Chinese. Sim: `offAndBack`.
+20. A setting added to an ini with no line end at its end was glued to the last line: `Secret = hunter2FourPlayers = On` changed the password and lost the key. Sim: `offAndBack`.
+21. Paste kept addresses Join then refused, and a Join that couldn't start while hosting said nothing.

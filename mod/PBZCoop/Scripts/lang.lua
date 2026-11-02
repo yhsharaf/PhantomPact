@@ -29,6 +29,9 @@ return function()
         ["your partner is down."] = "队友倒下了。",
         ["your partner is back."] = "队友回来了。",
         ["your partner is watching a cutscene."] = "队友正在观看过场动画。",
+        ["your partner rested at a bell: you'll join them."] = "队友在钟旁休息了:你会前往队友身边。",
+        ["your partner rested at a bell: you're rested too."] = "队友在钟旁休息了:你也恢复了。",
+        ["your partner needs PvP on too, or their moves won't show here."] = "队友也要开启 PvP,否则这里看不到对方的动作。",
         ["partner disconnected."] = "队友已断开连接。",
         ["PvP is off with more than two players."] = "超过两名玩家时 PvP 关闭。",
         ["Local co-op starts the next time you start the game."] = "下次启动游戏时开始本地分屏。",
@@ -90,6 +93,13 @@ return function()
             "房主(%1)没有回应。请检查地址和端口、房主是否已在游戏里开房,以及双方的密码和 Phantom Pact 版本是否相同。" },
         { "^no friend hosting found%..*$",
             "没有找到正在开房的好友。你们必须是 Steam 好友,对方要开房并使用 Steam,而且不能隐身;双方的密码和 Phantom Pact 版本也要相同。" },
+        { "^无法启动:couldn't find the host address (.+)$", "无法启动:找不到房主地址 %1" },
+        { "^无法启动:UDP port (%d+) is in use on this PC %(error (%d+)%): set another Port in PhantomPact%.ini on both PCs$",
+            "无法启动:这台电脑的 UDP 端口 %1 已被占用(错误 %2)。请在双方的 PhantomPact.ini 里改用别的端口。" },
+        { "^无法启动:UDP port (%d+) can't be used %(error (%d+)%): set another Port in PhantomPact%.ini on both PCs$",
+            "无法启动:UDP 端口 %1 无法使用(错误 %2)。请在双方的 PhantomPact.ini 里改用别的端口。" },
+        { "^无法启动:Steam isn't loaded in this game %(steam_api64%.dll%)$", "无法启动:游戏里没有加载 Steam(steam_api64.dll)。" },
+        { "^无法启动:Steam isn't ready: is it running and logged in%?$", "无法启动:Steam 还没准备好,请确认它已运行并已登录。" },
         -- More than two players. (Each player's own lines are added below.)
         { " Players: (%d) of (%d)%.", " 玩家:%1/%2。" },
         { "^player (%d) is on Phantom Pact (.+) and you're on (.+): use the same version, or enemies won't stay in step%.$",
@@ -102,7 +112,8 @@ return function()
         for _, line in ipairs({ { " joined%. (%d) players now%.$", " 加入了。现在有 %1 名玩家。" },
             { " left%. (%d) players now%.$", " 离开了。现在有 %1 名玩家。" }, { " is down%.$", " 倒下了。" }, { " is back%.$", " 回来了。" },
             { " is watching a cutscene%.$", " 正在观看过场动画。" }, { " is on another map%.$", " 在另一张地图上。" },
-            { " is (%d+) m away%.$", " 在 %1 米外。" } }) do
+            { " is (%d+) m away%.$", " 在 %1 米外。" }, { " rested at a bell: you'll join them%.$", " 在钟旁休息了:你会前往对方身边。" },
+            { " rested at a bell: you're rested too%.$", " 在钟旁休息了:你也恢复了。" } }) do
             PARTS[#PARTS + 1] = { "^" .. who[1] .. line[1], who[2] .. line[2] }
         end
         PARTS[#PARTS + 1] = { " You're " .. who[1] .. "%.$", " 你是" .. who[2] .. "。" }

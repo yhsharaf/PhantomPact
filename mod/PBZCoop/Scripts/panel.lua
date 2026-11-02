@@ -75,9 +75,14 @@ return function(api)
             out[#out + 1] = line
             at = stop + 1
         end
+        local eol = text:find("\r\n", 1, true) and "\r\n" or "\n"
         for name, value in pairs(values) do
             if not seen[name] then
-                out[#out + 1] = name .. " = " .. value .. "\n"
+                -- (A file trimmed by hand can end without a line end: added to that, the key is lost and the last value changes.)
+                if #out > 0 and out[#out]:sub(-1) ~= "\n" then
+                    out[#out] = out[#out] .. eol
+                end
+                out[#out + 1] = name .. " = " .. value .. eol
             end
         end
         local tmp = io.open(path .. ".tmp", "wb")

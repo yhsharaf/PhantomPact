@@ -225,6 +225,9 @@ return function(api)
         if not c then
             note = why
             log("Online panel: " .. why)
+            if api.online.current() then
+                api.status.notify("join", why)      -- (the panel's own line shows the session that's running)
+            end
             return
         end
         -- Saved first: the relay reads the ini as it starts.
@@ -242,7 +245,7 @@ return function(api)
     local function pasteAddress()
         local text = clipboard()
         wordsAt = 0
-        if text == "" or #text > 64 or text:find('[%s"%%&|<>^]') then
+        if text == "" or #text > 64 or not text:match("^[%w%.%-:]+$") then
             note = "Copy the host's address first, then press Paste."
             return
         end
