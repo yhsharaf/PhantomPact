@@ -1989,6 +1989,52 @@ return function(api)
             #game.listEnemies(true)))
     end
 
+    ------------------------------------------------------------------ bullets
+
+    local BULLET_ACTOR, BULLET_DATA = "/Script/SGameCombatSystem.BulletActorBase", "/Script/SGameCombatSystem.BulletDataBase"
+
+    function game.bulletSystem(pawn)
+        return worldSubsystem(pawn, "/Script/SGameCombatSystem.BulletSubsystem")
+    end
+
+    -- One this player fired, with a body to see, that no other bullet started.
+    function game.isShot(b, owner)
+        local ok, yes = pcall(function()
+            return b:IsA(lib(BULLET_ACTOR)) and valid(b.BulletOwnerAvatar) and b.BulletOwnerAvatar:GetAddress() == owner
+                and b.bWasInitializedWithParentBullet ~= true
+        end)
+        return ok and yes == true
+    end
+
+    function game.isBulletData(d)
+        local ok, yes = pcall(function() return d:IsA(lib(BULLET_DATA)) end)
+        return ok and yes == true
+    end
+
+    local function toQuat(pitch, yaw, roll)
+        local p, y, r = math.rad(pitch) / 2, math.rad(yaw) / 2, math.rad(roll) / 2
+        local sp, cp, sy, cy, sr, cr = math.sin(p), math.cos(p), math.sin(y), math.cos(y), math.sin(r), math.cos(r)
+        return { X = cr * sp * sy - sr * cp * cy, Y = -cr * sp * cy - sr * cp * sy, Z = cr * cp * sy - sr * sp * cy,
+            W = cr * cp * cy + sr * sp * sy }
+    end
+
+    -- The game's own spawner, on its default object: it holds nothing of a shot's. It only makes the bullet: starting it is the
+    -- step that puts it in the world. No ability, as a ghost hasn't got one.
+    function game.fireBullet(owner, data, x, y, z, pitch, yaw, roll)
+        local fired = {}
+        local ok = pcall(function()
+            lib("/Script/SGameCombatSystem.Default__BulletSpawnBurst"):SpawnBullets(owner, nil, nil, data,
+                { Rotation = toQuat(pitch, yaw, roll), Translation = { X = x, Y = y, Z = z }, Scale3D = { X = 1.0, Y = 1.0, Z = 1.0 } }, fired)
+        end)
+        if not ok or #fired == 0 then
+            return false
+        end
+        for i = 1, #fired do
+            pcall(function() fired[i]:get():Start() end)
+        end
+        return true
+    end
+
     ------------------------------------------------------------------ currency (dust)
 
     -- Dust gained locally (kill rewards, pickups) goes to the other player too: shared rewards. Spending isn't

@@ -127,7 +127,8 @@ function Wait-DevGameplay($Game, [int]$TimeoutSec = 240, [switch]$AfterCrash) {
         if (-not (Get-Process -Id $Game.Pid -ErrorAction SilentlyContinue)) { throw "Copy $($Game.Pid) exited." }
         if ($window -eq [IntPtr]::Zero) { $window = [NetLab.Win]::Unreal($Game.Pid) }
         $t = Get-Date
-        Send-Dev $Game 'eval local _,p=PBZ.getPlayer1() return "pawn="..tostring(p~=nil)'
+        # The shader screen can wait for good on its last one or two (seen after a crash): that's where the game's own skip comes in.
+        Send-Dev $Game 'eval local g=StaticFindObject("/Script/ProjectPBZ.Default__PBZBlueprintFunctionLibrary") if g:ShouldShowPSOPrecompileScreen() and g:GetPSOPrecompilesRemaining()<=2 and not g:IsPSOPrecompileComplete() then g:NotifyPSOPrecompileSkippedByPlayer() end local _,p=PBZ.getPlayer1() return "pawn="..tostring(p~=nil)'
         Start-Sleep -Seconds 3
         # Two copies write one log: a copy over 1 tags its lines with its number.
         $tag = if ($Game.Instance -gt 1) { "PBZCoop#$($Game.Instance)\]" } else { 'PBZCoop\]' }

@@ -200,7 +200,7 @@ return function(api)
     ------------------------------------------------------------------ events
 
     -- These are only worth showing now: a move two seconds late is worse than none, and must never hold up a death.
-    local QUICK = { U = true, M = true, A = true, H = true }
+    local QUICK = { U = true, M = true, A = true, H = true, Z = true, SHOT = true }
 
     local hostWorld = os.time()   -- host: stands for the world as loaded, new with each game or map load (see handlers.Y)
 
@@ -276,7 +276,7 @@ return function(api)
             end
             net.ghostSlots[p.ghost:GetAddress()] = p.number
         end
-        p.ghostAddr = p.ghost:GetAddress()
+        p.ghostAddr, p.ghostAt = p.ghost:GetAddress(), os.clock()
         p.ghostWalks = false
         p.ghostGliding = false
         p.ghostHidden = nil         -- the last one went with the old world: this one is told afresh whether to show

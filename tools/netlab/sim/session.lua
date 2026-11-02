@@ -64,6 +64,13 @@ function Session:run(seconds, each)
     end
 end
 
+-- The game starts loading a map.
+function Session.loadMap(pc)
+    for _, fn in ipairs(pc.loadMapHooks) do
+        fn()
+    end
+end
+
 function Session.moveTo(pc, x, y, z)
     Fake.put(pc.pawn, "loc", { X = x, Y = y, Z = z or 100.0 })
 end
@@ -119,6 +126,37 @@ function Session.hold(pc, weapon, armed)
     local w = rawget(pc.pawn, "__fields")["Character Weapons Component"]
     Fake.put(w, "config", pc.env.StaticFindObject(weapon))
     Fake.put(w, "armed", armed)
+end
+
+function Session.holdEdge(pc, weapon, armed)
+    local w = rawget(pc.pawn, "__fields")["Character Weapons Component"]
+    Fake.put(w, "edgeConfig", pc.env.StaticFindObject(weapon))
+    Fake.put(w, "edgeArmed", armed)
+end
+
+function Session.edgeMove(pc, path)
+    Fake.put(rawget(pc.pawn, "__fields").edgeAnim, "montage", pc.env.StaticFindObject(path))
+end
+
+-- Player 2's button, pressed for one frame and let go.
+function Session.press2(s, key)
+    local pc = s.pcs[1]
+    pc.keys2[key] = true
+    s:run(0.05)
+    pc.keys2[key] = false
+    s:run(0.05)
+end
+
+-- A story scene plays, or stops.
+function Session.scene(pc, on)
+    pc.scene = pc.scene or Fake.sceneManager(pc)
+    Fake.put(pc.scene, "playing", on)
+end
+
+-- A bullet in the game's list. solid: an actor, not one of the sweeps every swing makes.
+function Session.bullet(pc, owner, path, x, y, z, solid, parent)
+    local b = Fake.bullet(pc, owner, pc.env.StaticFindObject(path), x, y, z, solid ~= false, parent == true)
+    return b
 end
 
 function Session.stagger(pc, tag)

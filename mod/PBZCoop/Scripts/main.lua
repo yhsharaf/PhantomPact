@@ -6,7 +6,7 @@
 -- F8  spawn player 2: a second local player + a copy of player 1's character (F8-F11 need PBZCOOP_DEBUG=1)
 -- F9  remove player 2
 
-local VERSION = "1.5.1"
+local VERSION = "1.5.2"
 local TAG = "[PBZCoop] "
 if (os.getenv("PBZCOOP_INSTANCE") or "1") ~= "1" then
     TAG = "[PBZCoop#" .. os.getenv("PBZCOOP_INSTANCE") .. "] "
@@ -505,6 +505,7 @@ api.coop = coop
 api.status = dofile(SCRIPT_DIR .. "status.lua")(api)
 api.partner = dofile(SCRIPT_DIR .. "partner.lua")(api)
 api.moves = dofile(SCRIPT_DIR .. "moves.lua")(api)
+api.bullets = dofile(SCRIPT_DIR .. "bullets.lua")(api)
 api.puppets = dofile(SCRIPT_DIR .. "puppets.lua")(api)
 api.hud = dofile(SCRIPT_DIR .. "hud.lua")(api)
 api.mapicon = dofile(SCRIPT_DIR .. "mapicon.lua")(api)
@@ -571,6 +572,7 @@ COMMANDS.moves = api.moves.command
 COMMANDS.puppets = api.puppets.command
 COMMANDS.hud = api.hud.command
 COMMANDS.revive = api.revive.command
+COMMANDS.bullets = api.bullets.command
 COMMANDS.units = api.units.command
 COMMANDS.localcoop = api.localcoop.command
 COMMANDS.panel = api.panel.command

@@ -24,7 +24,7 @@ return function(api)
 
     local moves = { sent = 0, played = 0, failed = 0, refused = 0, partnerSends = false }
     local last, lastPos = nil, 0
-    local cache = {}                -- montage path -> montage object, or false when it can't be loaded here
+    local cache = {}                -- montage path -> its address once checked, or false when it can't be loaded here
     local loads, loadsWindow = 0, os.clock()
 
     local function animOf(actor)
@@ -115,15 +115,13 @@ return function(api)
         return true
     end
 
+    -- Looked up each time, not kept: a kept object can go with a map, and its address can then be something else entirely, which
+    -- valid() can't tell.
     local function montage(path)
-        local m = cache[path]
-        if m and valid(m) then
-            return m
-        end
-        if m == false then
+        if cache[path] == false then
             return nil
         end
-        m = StaticFindObject(path)
+        local m = StaticFindObject(path)
         if not valid(m) and type(LoadAsset) == "function" then
             -- Moves of a weapon the local player doesn't carry aren't in memory yet.
             if not countLoad() then
@@ -132,11 +130,16 @@ return function(api)
             pcall(LoadAsset, path)
             m = StaticFindObject(path)
         end
-        cache[path] = (valid(m) and isMontage(m)) and m or false
-        return cache[path] or nil
+        if valid(m) and (cache[path] == m:GetAddress() or isMontage(m)) then
+            cache[path] = m:GetAddress()
+            return m
+        end
+        cache[path] = false
+        return nil
     end
 
     moves.montage = montage
+    moves.countLoad = countLoad
 
     coop.handlers.U = function(rest, from)
         local p = coop.peerOf(from)
@@ -184,11 +187,17 @@ return function(api)
     -- backpack, not the partner's. So the sender says what it holds and whether it's drawn ("W <weapon config> <0|1>"),
     -- and the ghost's own weapons component is brought to that (and kept there: the ghost's blueprint follows this PC's
     -- backpack, and a new ghost starts from it).
+    --
+    -- A Phantom Edge weapon is the same with a slot of its own, drawn for its skill alone ("E <weapon config> <0|1>"). Set on the
+    -- ghost's component, it hangs where the partner's does. It has moves of its own too: a cannon's mesh is folded away to nothing
+    -- until it plays the montage that opens it, so what that mesh plays goes as well ("Z <montage> <position>").
     local GEAR_WATCH_S = 0.1        -- how often the sender checks that the blade is drawn
     local GEAR_PATH_S = 0.5         -- and which weapon it is
     local GEAR_DRESS_S = 0.25       -- how often the ghost is checked against the partner
     local GEAR_SWAP_S = 5.0         -- a weapon change that didn't take isn't tried again sooner
-    local gear = { watchAt = 0, pathAt = 0 }
+    local GEAR_SETTLE_S = 6.0       -- a new ghost is left alone this long
+    local gear = { watchAt = 0, pathAt = 0, edgePathAt = 0 }
+    local SHACHI = "Weapon.Slot.Shachi"
 
     -- What one other player holds, kept with them.
     local function gearOf(p)
@@ -201,10 +210,35 @@ return function(api)
         return gear.slot
     end
 
-    local function heldConfig(cwc)
+    local function edgeSlot()
+        gear.edge = gear.edge or { TagName = FName(SHACHI) }
+        return gear.edge
+    end
+
+    local function heldConfig(cwc, slot)
         local data = {}
-        cwc:GetCurrentWeapon(mainSlot(), data, false, {})
+        cwc:GetCurrentWeapon(slot or mainSlot(), data, false, {})
         return valid(data.WeaponConfig) and pathOf(data.WeaponConfig) or nil
+    end
+
+    -- The actor hanging on a body for its Phantom Edge weapon. It's the component's to spawn and take away, so it's looked for.
+    local function edgeActor(body)
+        local list = {}
+        body:GetAttachedActors(list, true, true)
+        for i = 1, #list do
+            local a = list[i]:get()
+            local ok, tag = pcall(function() return a.Slot.TagName:ToString() end)
+            if ok and tag == SHACHI then
+                return a
+            end
+        end
+        return nil
+    end
+
+    local function edgeAnim(body)
+        local ai
+        pcall(function() ai = edgeActor(body).WeaponMesh:GetAnimInstance() end)
+        return valid(ai) and ai or nil
     end
 
     local function isWeaponConfig(obj)
@@ -233,6 +267,30 @@ return function(api)
             gear.sentArmed, gear.sentPath = armed, gear.path
             coop.sendEvent("W", gear.path, armed and 1 or 0)
         end
+        armed = cwc:IsArmed(edgeSlot()) == true
+        if now >= gear.edgePathAt then
+            gear.edgePathAt = now + GEAR_PATH_S
+            gear.edgePath = heldConfig(cwc, edgeSlot())
+        end
+        if gear.edgePath and (armed ~= gear.sentEdgeArmed or gear.edgePath ~= gear.sentEdgePath) then
+            gear.sentEdgeArmed, gear.sentEdgePath = armed, gear.edgePath
+            coop.sendEvent("E", gear.edgePath, armed and 1 or 0)
+        end
+        if armed then
+            local ai = gear.edgeAnim
+            if not (valid(ai) and gear.edgeAnimOf == gear.edgePath) then
+                ai = edgeAnim(pawn)
+                gear.edgeAnim, gear.edgeAnimOf = ai, gear.edgePath
+            end
+            local m = ai and ai:GetCurrentActiveMontage()
+            if valid(m) then
+                local addr, pos = m:GetAddress(), ai:Montage_GetPosition(m) or 0
+                if addr ~= gear.edgeMontage or pos < gear.edgePos - RESTART_S then
+                    coop.sendEvent("Z", pathOf(m), string.format("%.2f", pos))
+                end
+                gear.edgeMontage, gear.edgePos = addr, pos
+            end
+        end
     end
 
     coop.handlers.W = function(rest, from)
@@ -249,42 +307,88 @@ return function(api)
         theirs.dressAt = 0
     end
 
-    -- Weapon configs load like montages: same paths, same cap. Not an AnimMontage, so not through the same cache.
-    local function weaponConfig(path)
-        local cfg = gear.config
-        if cfg and gear.configPath == path and valid(cfg) then
-            return cfg
+    coop.handlers.E = function(rest, from)
+        local path, armed = (rest or ""):match("^(%S+)%s+([01])$")
+        if not allowedPath(path) then
+            moves.refused = moves.refused + 1
+            return
         end
-        cfg = StaticFindObject(path)
+        local theirs = gearOf(coop.peerOf(from))
+        if path ~= theirs.edgePath then
+            theirs.edgeSwapAt = 0
+        end
+        theirs.edgePath, theirs.edgeArmed = path, armed == "1"
+        theirs.dressAt = 0
+    end
+
+    coop.handlers.Z = function(rest, from)
+        local path, pos = (rest or ""):match("^(%S+)%s+(%S+)$")
+        pos = tonumber(pos)
+        if not (allowedPath(path) and pos and pos == pos and pos >= 0 and pos < 600) then
+            moves.refused = moves.refused + 1
+            return
+        end
+        local p = coop.peerOf(from)
+        if net.pvp or not valid(p.ghost) or p.ghostHidden or not moves.settled(p) then
+            return
+        end
+        local m, ai = montage(path), edgeAnim(p.ghost)
+        if m and ai then
+            pcall(function() ai:Montage_Play(m, 1.0, 0, pos + (net.rttMs or 0) / 2000, true) end)
+        end
+    end
+
+    -- Weapon configs load like montages: same paths, same cap. Not an AnimMontage, so not through the same cache, and looked up each
+    -- time for the same reason: a swap is rare.
+    local function weaponConfig(path)
+        local cfg = StaticFindObject(path)
         if not valid(cfg) and type(LoadAsset) == "function" and countLoad() then
             pcall(LoadAsset, path)
             cfg = StaticFindObject(path)
         end
-        if valid(cfg) and isWeaponConfig(cfg) then
-            gear.config, gear.configPath = cfg, path
-            return cfg
-        end
-        return nil
+        return valid(cfg) and isWeaponConfig(cfg) and cfg or nil
+    end
+
+    -- A new ghost, on a map that's most often only just there. A weapon's passive skill starts the moment it's given, and with its
+    -- classes still loading after the trip it has no code yet: that was a crash on arrival with a Scarlet Wraithblade. So nothing of
+    -- the partner's goes on it for a few seconds, and nothing's fired from it.
+    function moves.settled(p)
+        return os.clock() - (p.ghostAt or -1e9) >= GEAR_SETTLE_S
     end
 
     local function dressGhost(p, now)
         local ghost, theirs = p.ghost, gearOf(p)
-        if not theirs.partnerPath or now < theirs.dressAt or not valid(ghost) or p.ghostHidden then
+        if now < theirs.dressAt or not valid(ghost) or p.ghostHidden or not moves.settled(p) then
             return
         end
         theirs.dressAt = now + GEAR_DRESS_S
         local cwc = ghost["Character Weapons Component"]
         local slot = mainSlot()
-        if now >= theirs.swapAt and heldConfig(cwc) ~= theirs.partnerPath then
-            theirs.swapAt = now + GEAR_SWAP_S
-            local cfg = weaponConfig(theirs.partnerPath)
-            if cfg then
-                cwc:SetSlotWeapon(slot, math.max(cwc:GetCurrentWeaponIndex(slot, false) or 0, 0), cfg)
-                log("The ghost now holds " .. theirs.partnerPath:match("([^.]+)$") .. ".")
+        if theirs.partnerPath then
+            if now >= theirs.swapAt and heldConfig(cwc) ~= theirs.partnerPath then
+                theirs.swapAt = now + GEAR_SWAP_S
+                local cfg = weaponConfig(theirs.partnerPath)
+                if cfg then
+                    cwc:SetSlotWeapon(slot, math.max(cwc:GetCurrentWeaponIndex(slot, false) or 0, 0), cfg)
+                    log("The ghost now holds " .. theirs.partnerPath:match("([^.]+)$") .. ".")
+                end
+            end
+            if (cwc:IsArmed(slot) == true) ~= theirs.partnerArmed then
+                cwc:SetArmed(slot, theirs.partnerArmed)
             end
         end
-        if (cwc:IsArmed(slot) == true) ~= theirs.partnerArmed then
-            cwc:SetArmed(slot, theirs.partnerArmed)
+        if theirs.edgePath and not net.pvp then
+            slot = edgeSlot()
+            if now >= (theirs.edgeSwapAt or 0) and heldConfig(cwc, slot) ~= theirs.edgePath then
+                theirs.edgeSwapAt = now + GEAR_SWAP_S
+                local cfg = weaponConfig(theirs.edgePath)
+                if cfg then
+                    cwc:SetSlotWeapon(slot, 0, cfg)
+                end
+            end
+            if (cwc:IsArmed(slot) == true) ~= theirs.edgeArmed then
+                cwc:SetArmed(slot, theirs.edgeArmed)
+            end
         end
     end
 
@@ -292,19 +396,20 @@ return function(api)
         local cwc = ghost["Character Weapons Component"]
         local slot = mainSlot()
         cwc:SetWeaponAndScabbardForceHide(slot, math.max(cwc:GetCurrentWeaponIndex(slot, false) or 0, 0), hide)
+        cwc:SetWeaponForceHide(edgeSlot(), 0, hide)
     end
 
     -- The partner has just (re)started sync: it knows nothing yet.
     local partnerStarted = coop.handlers.S
     coop.handlers.S = function(rest, from)
-        gear.sentPath = nil
+        gear.sentPath, gear.sentEdgePath = nil, nil
         return partnerStarted(rest, from)
     end
 
     -- Someone new in a party: the same.
     local someoneJoined = coop.handlers.J
     coop.handlers.J = function(rest, from)
-        gear.sentPath = nil
+        gear.sentPath, gear.sentEdgePath = nil, nil
         return someoneJoined(rest, from)
     end
 

@@ -12,7 +12,7 @@ if SIM_MODE == "two" then
     passed = dofile(SIM_DIR .. "/two.lua")(out, SIM_OLD, scripts)
 elseif SIM_MODE == "four" then
     out("four players:")
-    passed = dofile(SIM_DIR .. "/four.lua")(out, scripts)
+    passed = dofile(SIM_DIR .. "/four.lua")(out, SIM_OLD ~= "" and SIM_OLD or scripts)
 else
     error("two <old Scripts> or four")
 end

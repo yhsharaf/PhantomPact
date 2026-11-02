@@ -169,14 +169,41 @@ function Fake.character(pc, class, x, y, z, hp, posture)
     defs(pc, mesh, { GetAnimInstance = function() return anim end })
     put(a, "Mesh", mesh)
     put(a, "anim", anim)
-    local weapons = object(pc, "Weapons", { armed = false, config = nil })
+    local weapons = object(pc, "Weapons", { armed = false, config = nil, edgeArmed = false, edgeConfig = nil })
+    local function edge(slot)
+        return slot.TagName:ToString() == "Weapon.Slot.Shachi"
+    end
+    local edgeAnim = object(pc, "Anim", { montage = nil })
+    defs(pc, edgeAnim, {
+        GetCurrentActiveMontage = function(self) return rawget(self, "__fields").montage end,
+        Montage_GetPosition = function() return 0.25 end,
+        Montage_Play = function(self, m) put(self, "montage", m) put(self, "played", (rawget(self, "__fields").played or 0) + 1) return 1.0 end,
+    })
+    local edgeMesh = object(pc, "Mesh")
+    defs(pc, edgeMesh, { GetAnimInstance = function() return edgeAnim end })
+    local edgeActor = object(pc, "WeaponActor", { Slot = { TagName = name("Weapon.Slot.Shachi") }, WeaponMesh = edgeMesh })
+    put(a, "edgeAnim", edgeAnim)
     defs(pc, weapons, {
-        IsArmed = function(self) return rawget(self, "__fields").armed end,
-        GetCurrentWeapon = function(self, _, data) data.WeaponConfig = rawget(self, "__fields").config end,
+        IsArmed = function(self, slot)
+            local f = rawget(self, "__fields")
+            if edge(slot) then
+                return f.edgeArmed
+            end
+            return f.armed
+        end,
+        GetCurrentWeapon = function(self, slot, data)
+            local f = rawget(self, "__fields")
+            if edge(slot) then
+                data.WeaponConfig = f.edgeConfig
+            else
+                data.WeaponConfig = f.config
+            end
+        end,
         GetCurrentWeaponIndex = function() return 0 end,
-        SetSlotWeapon = function(self, _, _, cfg) put(self, "config", cfg) end,
-        SetArmed = function(self, _, on) put(self, "armed", on) end,
+        SetSlotWeapon = function(self, slot, _, cfg) put(self, edge(slot) and "edgeConfig" or "config", cfg) end,
+        SetArmed = function(self, slot, on) put(self, edge(slot) and "edgeArmed" or "armed", on) end,
         SetWeaponAndScabbardForceHide = function(self, _, _, hide) put(self, "hidden", hide) end,
+        SetWeaponForceHide = function(self, _, _, hide) put(self, "edgeHidden", hide) end,
     })
     put(a, "Character Weapons Component", weapons)
     defs(pc, a, {
@@ -206,6 +233,11 @@ function Fake.character(pc, class, x, y, z, hp, posture)
             f.loc = { X = f.loc.X + dir.X * step, Y = f.loc.Y + dir.Y * step, Z = f.loc.Z }
         end,
         LaunchCharacter = false,
+        GetAttachedActors = function(self, list)
+            if rawget(rawget(self, "__fields")["Character Weapons Component"], "__fields").edgeConfig then
+                list[#list + 1] = { get = function() return edgeActor end }
+            end
+        end,
         SetActorHiddenInGame = function(self, on) put(self, "hidden", on) end,
         SetActorEnableCollision = false,
         IsDead = function(self) return rawget(self, "__fields").dead end,
@@ -345,6 +377,75 @@ function Fake.enemy(pc, id, class, x, y, z, hp, posture, boss)
     return e
 end
 
+function Fake.sceneManager(pc)
+    local m = object(pc, "PBZLevelSequenceManager", { playing = false, ActiveSessionPlayer = nil })
+    defs(pc, m, { IsInSequence = function(self) return rawget(self, "__fields").playing end })
+    put(m, "ActiveSessionPlayer", m)
+    return m
+end
+
+-- Something to use: a chest, a pile, a bell (a checkpoint), or what only looks like one.
+function Fake.switch(pc, class, x, y, z, bell, noState)
+    local s = object(pc, class, { InteractPlayer = nil, opened = 0 })
+    rawset(s, "__name", class)
+    if not noState then
+        put(s, "CurSwitchState", false)
+    end
+    defs(pc, s, {
+        K2_GetActorLocation = function() return { X = x, Y = y, Z = z } end,
+        GetActorBounds = function(_, _, o, e)
+            o.X, o.Y, o.Z = x, y, z
+            e.X, e.Y, e.Z = 50, 50, 50
+        end,
+        GetMoveToTarget = function(_, loc, rot)
+            loc.X, loc.Y, loc.Z = x - 100, y, z
+            rot.Yaw = 0.0
+        end,
+        FinishMoveToAsync = function(self) put(self, "opened", rawget(self, "__fields").opened + 1) end,
+        GetComponentByClass = function() return nil end,
+        IsA = function() return bell == true end,
+    })
+    pc.switches[#pc.switches + 1] = s
+    return s
+end
+
+-- A drink as the game makes it: a body drinking, then the count, then the effect on whoever player 0's controller holds.
+function Fake.drink(pc, body, item, share)
+    local anim = rawget(body, "__fields").anim
+    local m = object(pc, "AnimMontage")
+    rawset(m, "__name", "AM_Hun_Medicine_Unarmed")
+    put(anim, "montage", m)
+    local BACKPACK = "/Script/ProjectPBZ.PBZBackPackSubsystem"
+    local id = { get = function() return name(item or "Hulu") end }
+    local function run(list, ...)
+        for _, fn in ipairs(list or {}) do
+            fn(nil, ...)
+        end
+    end
+    run(pc.hooks[BACKPACK .. ":UseMedicine"], id)
+    if not item then
+        put(pc.gourd, "CurrentTime", rawget(pc.gourd, "__fields").CurrentTime - 1)
+    end
+    run(pc.hooks[BACKPACK .. ":ActivateMedicineGameplayEffect"])
+    local who = rawget(pc.controller, "__fields").Pawn
+    Fake.setHealth(who, math.min(1000, Fake.health(who) + (share or 400)))
+    pc.glowedOn = who
+    run(pc.afterHooks[BACKPACK .. ":ActivateMedicineGameplayEffect"])
+    put(anim, "montage", nil)
+end
+
+-- One entry in the game's list of live bullets.
+function Fake.bullet(pc, owner, data, x, y, z, solid, parent)
+    local b = object(pc, "Bullet", { BulletOwnerAvatar = owner, BulletData = data, bWasInitializedWithParentBullet = parent })
+    defs(pc, b, {
+        IsA = function() return solid end,
+        K2_GetActorLocation = function() return { X = x, Y = y, Z = z } end,
+        K2_GetActorRotation = function() return { Pitch = 0.0, Yaw = 0.0, Roll = 0.0 } end,
+    })
+    pc.liveBullets[#pc.liveBullets + 1] = b
+    return b
+end
+
 -- The AI of an enemy nobody stopped: it looks at its target again when its cooldown is up.
 function Fake.thinkEnemies(pc)
     for _, e in ipairs(pc.enemies) do
@@ -383,6 +484,7 @@ local function files(pc)
                     end
                     return nil
                 end,
+                lines = function() return text:gmatch("[^\n]+") end,
                 seek = function() return #text end,
                 close = function() end,
             }
@@ -429,10 +531,56 @@ function Fake.new(id, scripts, ini, link)
             record(pc, "Pawn", "ChangeDustNumInternal", n)
             put(self, "ConsciousnessDust", rawget(self, "__fields").ConsciousnessDust + n)
         end)
-        put(p, "GiveItem", function() end)
+        put(p, "GiveItem", function(self, id, n)
+            pc.bag:AddPropsToBackPack(n, id, false)
+        end)
+        local ic = object(pc, "PBZInteractComponent", { used = {}, InteractingActor = nil, LocalPlayerSubsystem = nil })
+        defs(pc, ic, {
+            GetOwner = function() return p end,
+            DoInteract = function(self, target)
+                local used = rawget(self, "__fields").used
+                used[#used + 1] = target
+            end,
+            CheckAndForceEndInteract = false,
+            SetCurrentInteractActor = false,
+        })
+        put(ic, "CanTriggerInteract", function(_, thing) return rawget(thing, "__forbidden") == nil end)
+        put(ic, "IsPlayerFaceToActor", function(_, _, thing) return rawget(thing, "__behind") == nil end)
+        put(ic, "PauseTimer", function(self) put(self, "paused", true) end)
+        pc.interactComps[#pc.interactComps + 1] = ic
+        put(p, "interact", ic)
+        put(p, "GetComponentByClass", function(_, class) return class == pc.interactClass and ic or nil end)
+        put(p, "AddComponentByClass", function()
+            local c = object(pc, "WidgetComponent", { shown = false }, true)
+            put(c, "SetWidget", function(self, w) put(self, "widget", w) end)
+            put(c, "SetVisibility", function(self, on) put(self, "shown", on) end)
+            put(c, "IsVisible", function(self) return rawget(self, "__fields").shown end)
+            put(c, "K2_SetWorldLocation", function(self, at) put(self, "at", at) end)
+            put(p, "promptComp", c)
+            return c
+        end)
+        defs(pc, p, { DisableInput = false, EnableInput = false })
+        put(p, "NBCamera", object(pc, "Camera", {}, true))
         return p
     end
     pc.newPawn = newPawn
+    pc.interactComps, pc.switches, pc.bellMenus, pc.screens, pc.keys2, pc.loadedAt = {}, {}, {}, {}, {}, 0
+    pc.afterHooks = {}
+    pc.inputActions = {}
+    for _, action in ipairs({ "IA_UseBottomItem" }) do
+        local a = object(pc, "InputAction")
+        rawset(a, "__name", action)
+        pc.inputActions[#pc.inputActions + 1] = a
+    end
+    pc.inputSubsystems, pc.injected = {}, {}
+    for id = 0, 1 do
+        local s = object(pc, "InputSubsystem", {}, true)
+        put(s, "GetOuter", function() return { ControllerId = id } end)
+        put(s, "InjectInputVectorForAction", function(_, action)
+            pc.injected[#pc.injected + 1] = action:GetFName():ToString()
+        end)
+        pc.inputSubsystems[#pc.inputSubsystems + 1] = s
+    end
     local pawn = newPawn(0.0, 0.0, 100.0)
     pc.pawn = pawn
     local death = object(pc, "DeathWidget", { NotTick = false }, true)
@@ -441,12 +589,27 @@ function Fake.new(id, scripts, ini, link)
     local widgets = {}
     local camera = object(pc, "Camera")
     defs(pc, camera, { GetCameraRotation = function() return { Yaw = 0.0 } end, GetCameraLocation = function() return { X = 0, Y = 0, Z = 0 } end })
-    local controller = object(pc, "PlayerController", { Pawn = pawn, PlayerCameraManager = camera, viewTarget = nil })
+    local function playerController(keys, id, body)
+        local c = object(pc, "PlayerController", { Pawn = body, PlayerCameraManager = camera, viewTarget = nil, ticking = id == 0, ignored = false,
+            Player = object(pc, "LocalPlayer", { ControllerId = id }) })
+        defs(pc, c, {
+            IsInputKeyDown = function(_, key) return keys[key.KeyName:ToString()] == true end,
+            SetViewTargetWithBlend = function(self, target) put(self, "viewTarget", target) end,
+            IsActorTickEnabled = function(self) return rawget(self, "__fields").ticking end,
+            SetActorTickEnabled = function(self, on) put(self, "ticking", on) end,
+            Possess = function(self, b) put(self, "Pawn", b) end,
+            UnPossess = function(self) put(self, "Pawn", nil) end,
+            SetIgnoreMoveInput = function(self, on) put(self, "ignored", on) end,
+            SetIgnoreLookInput = false,
+            ResetIgnoreInputFlags = function(self) put(self, "ignored", false) end,
+            IsMoveInputIgnored = function(self) return rawget(self, "__fields").ignored end,
+            GetControlRotation = function() return { Pitch = 0.0, Yaw = 0.0, Roll = 0.0 } end,
+            FlushPressedKeys = false,
+        })
+        return c
+    end
+    local controller = playerController(pc.keys, 0, pawn)
     pc.controller = controller
-    defs(pc, controller, {
-        IsInputKeyDown = function(_, key) return pc.keys[key.KeyName:ToString()] == true end,
-        SetViewTargetWithBlend = function(self, target) put(self, "viewTarget", target) end,
-    })
     local mode = object(pc, "GameMode")
     put(mode, "Refresh Monster", function()
         record(pc, "GameMode", "Refresh Monster")
@@ -456,7 +619,25 @@ function Fake.new(id, scripts, ini, link)
     end)
     local gs = object(pc, "GameplayStatics")
     defs(pc, gs, {
-        GetPlayerController = function() return controller end,
+        GetPlayerController = function(_, _, i)
+            if i == 1 then
+                return pc.controller2
+            end
+            return controller
+        end,
+        CreatePlayer = function()
+            pc.controller2 = playerController(pc.keys2, 1)
+            put(pc.controller2, "ProjectWorldLocationToScreen", function(_, _, out)
+                local at = pc.projected or { X = 960, Y = 810 }
+                out.X, out.Y = at.X, at.Y
+            end)
+            return pc.controller2
+        end,
+        RemovePlayer = function()
+            pc.controller2 = nil
+        end,
+        SetForceDisableSplitscreen = function(_, _, on) pc.fullWidth = on end,
+        SetPlayerControllerID = false,
         GetGameMode = function() return mode end,
         IsGamePaused = function() return pc.paused end,
         SetGamePaused = function(_, _, on) pc.paused = on end,
@@ -515,10 +696,28 @@ function Fake.new(id, scripts, ini, link)
             fn(self, { get = function() return count end }, { get = function() return name(key) end }, { get = function() return push end })
         end
     end
-    defs(pc, bag, { AddPropsToBackPack = given, PushMedicineToInventory = false, PushAccessoryToInventory = false, AddWeaponItem = false })
+    local function gotWeapon(self, id, normal, push, loading)
+        for _, fn in ipairs(pc.hooks[BACKPACK .. ":AddWeaponItem"] or {}) do
+            fn(self, { get = function() return id end }, { get = function() return normal end }, { get = function() return push end },
+                { get = function() return loading end })
+        end
+    end
+    defs(pc, bag, { AddPropsToBackPack = given, PushMedicineToInventory = false, PushAccessoryToInventory = false, AddWeaponItem = gotWeapon })
     local subsystems = object(pc, "SubsystemLibrary")
+    pc.liveBullets, pc.fired, pc.bulletData = {}, {}, {}
+    local bulletSystem = object(pc, "BulletSubsystem", { Bullets = list(pc.liveBullets) })
+    defs(pc, bulletSystem, { GetBulletCount = function() return #pc.liveBullets end })
+    local spawner = object(pc, "BulletSpawnBurst")
+    defs(pc, spawner, { SpawnBullets = function(_, owner, _, _, data, tf, fired)
+        local shot = { owner = owner, data = data, at = tf.Translation, started = false }
+        pc.fired[#pc.fired + 1] = shot
+        fired[#fired + 1] = { get = function()
+            return { Start = function() shot.started = true end }
+        end }
+    end })
     defs(pc, subsystems, { GetWorldSubsystem = function(_, _, cls)
-        return rawget(cls, "__path") == BACKPACK and bag or nil
+        local path = rawget(cls, "__path")
+        return (path == BACKPACK and bag) or (path == "/Script/SGameCombatSystem.BulletSubsystem" and bulletSystem) or nil
     end })
     local aiLibrary = object(pc, "SGameAIFunctionLibrary")
     defs(pc, aiLibrary, {
@@ -535,13 +734,33 @@ function Fake.new(id, scripts, ini, link)
         end,
     })
     local widgetLibrary = object(pc, "WidgetBlueprintLibrary")
-    defs(pc, widgetLibrary, { SetInputMode_UIOnlyEx = false, SetInputMode_GameOnly = false, Create = function(_, _, cls)
+    defs(pc, widgetLibrary, { SetInputMode_UIOnlyEx = false, SetInputMode_GameOnly = false, Create = function(_, _, cls, owner)
+        if cls == pc.promptClass then
+            local w = object(pc, "W_InteractionUI_C", { plays = 0, outs = 0, owner = owner,
+                InputActionWidget_C_75 = object(pc, "ActionWidget", { Icon = {} }, true),
+                InvalidationBox_0 = object(pc, "InvalidationBox", {}, true) }, true)
+            put(w, "PlayNoneToInputAction", function(self) put(self, "plays", rawget(self, "__fields").plays + 1) end)
+            put(w, "PlayInputActionToNone", function(self, comp)
+                put(self, "outs", rawget(self, "__fields").outs + 1)
+                comp:SetVisibility(false, false)
+            end)
+            return w
+        end
+        if cls == pc.hudClass then
+            local w = object(pc, "W_FrontEndHUDLayout_C", { owner = owner, heldBy = controller.Pawn, bosses = {} }, true)
+            put(w, "SetVisibility", function(self, v) put(self, "visibility", v) end)
+            put(w, "RegisterBossHPBar", function(self, boss) rawget(self, "__fields").bosses[#rawget(self, "__fields").bosses + 1] = boss end)
+            put(w, "UnRegisterBossHPBar", function(self) put(self, "bosses", {}) end)
+            pc.playerHud = w
+            return w
+        end
         local circle = object(pc, "Image", { Brush = {} }, true)
         put(circle, "SetColorAndOpacity", function(self, tint) put(self, "tint", tint) end)
         local w = object(pc, "Widget", { Circle = circle, FadeIn = {} }, true)
         put(w, "SetColorAndOpacity", function(self, tint) put(self, "colour", tint) end)
         put(w, "IsInViewport", function() return true end)
         put(w, "SetVisibility", function(self, v) put(self, "visibility", v) end)
+        put(w, "SetText", function(self, text) put(self, "lastText", tostring(text)) end)
         put(w, "SetPositionInViewport", function(self, at) put(self, "position", at) end)
         put(w, "GetDesiredSize", function() return { X = 40, Y = 40 } end)
         put(w, "RemoveFromParent", function(self) put(self, "removed", true) end)
@@ -584,7 +803,14 @@ function Fake.new(id, scripts, ini, link)
         return { X = 0.5 + at.X / 1e6, Y = 0.5 + at.Y / 1e6 }
     end })
 
+    local bulletClass = object(pc, "Class")
+    rawset(bulletClass, "__path", "/Script/SGameCombatSystem.BulletSubsystem")
+    pc.interactClass, pc.promptClass, pc.hudClass = object(pc, "Class"), object(pc, "WidgetClass"), object(pc, "WidgetClass")
     local found = {
+        ["/Script/ProjectPBZ.PBZInteractComponent"] = pc.interactClass,
+        ["/Script/UMG.WidgetComponent"] = object(pc, "Class"),
+        ["/Game/PBZContent/UI/InGame/InteractionUI/W_InteractionUI.W_InteractionUI_C"] = pc.promptClass,
+        ["/Game/PBZContent/UI/FrontEnd/W_FrontEndHUDLayout.W_FrontEndHUDLayout_C"] = pc.hudClass,
         ["/Script/Engine.Default__GameplayStatics"] = gs,
         ["/Script/Engine.Default__SubsystemBlueprintLibrary"] = subsystems,
         ["/Script/SGameAI.Default__SGameAIFunctionLibrary"] = aiLibrary,
@@ -592,6 +818,9 @@ function Fake.new(id, scripts, ini, link)
         ["/Script/UMG.Default__WidgetLayoutLibrary"] = layoutLibrary,
         ["/Script/GameplayAbilities.Default__AbilitySystemBlueprintLibrary"] = abilities,
         ["/Script/Engine.Default__KismetRenderingLibrary"] = rendering,
+        ["/Script/SGameCombatSystem.Default__BulletSpawnBurst"] = spawner,
+        ["/Script/EngineSettings.Default__GameMapsSettings"] = object(pc, "GameMapsSettings", {}, true),
+        ["/Script/SGameCombatSystem.BulletSubsystem"] = bulletClass,
         ["/Game/PBZContent/DataTable/DT_CodexEnemyDataTable.DT_CodexEnemyDataTable"] = codex,
         ["/UltraVolumetrics/UltraVolumetrics/Core/PaintMode/Blueprint/W_PaintSize.W_PaintSize_C"] = widgetClass,
         ["/Game/PBZContent/UI/InGame/SwitchUI/WB_TipsText.WB_TipsText_C"] = widgetClass,
@@ -602,6 +831,7 @@ function Fake.new(id, scripts, ini, link)
     }
     rawset(found[BACKPACK], "__path", BACKPACK)
     local statics = object(pc, "StaticObject", {}, true)
+    pc.found = found
     pc.montages, pc.weaponConfigs = {}, {}
 
     local env = setmetatable({}, { __index = _G })
@@ -627,6 +857,15 @@ function Fake.new(id, scripts, ini, link)
             end
             return m
         end
+        if path:find("^/PBZCombatAsset/ActorData/Players/") then
+            local d = pc.bulletData[path]
+            if d == nil then
+                d = object(pc, "BulletData")
+                rawset(d, "__path", path)
+                pc.bulletData[path] = d
+            end
+            return d
+        end
         if path:find("^/Game/Weapon") then
             local c = pc.weaponConfigs[path]
             if c == nil then
@@ -648,6 +887,8 @@ function Fake.new(id, scripts, ini, link)
             return mapSystem
         elseif class == "MelodiousBell" then
             return bell
+        elseif class == "PBZLevelSequenceManager" then
+            return pc.scene
         end
         return nil
     end
@@ -672,6 +913,18 @@ function Fake.new(id, scripts, ini, link)
             return pc.chests
         elseif class == "WB_MapNew_C" then
             return { mapScreen }
+        elseif class == "PBZInteractComponent" then
+            return pc.interactComps
+        elseif class == "PBZSwitchBase" then
+            return pc.switches
+        elseif class == "W_BellMenu_C" then
+            return pc.bellMenus
+        elseif class == "CommonActivatableWidget" then
+            return pc.screens
+        elseif class == "InputAction" then
+            return pc.inputActions
+        elseif class == "EnhancedInputLocalPlayerSubsystem" then
+            return pc.inputSubsystems
         end
         return nil
     end
@@ -683,11 +936,14 @@ function Fake.new(id, scripts, ini, link)
     env.ExecuteInGameThread = function(fn) fn() end
     env.RegisterKeyBind = function() end
     env.Key = {}
-    env.RegisterHook = function(path, fn)
+    env.RegisterHook = function(path, fn, after)
         pc.hooks[path] = pc.hooks[path] or {}
         table.insert(pc.hooks[path], fn)
+        pc.afterHooks[path] = pc.afterHooks[path] or {}
+        table.insert(pc.afterHooks[path], after)
     end
-    env.RegisterLoadMapPreHook = function(fn) pc.loadMapHook = fn end
+    pc.loadMapHooks = {}
+    env.RegisterLoadMapPreHook = function(fn) pc.loadMapHooks[#pc.loadMapHooks + 1] = fn end
     env.LoopInGameThreadWithDelay = function(ms, fn)
         pc.loops[#pc.loops + 1] = { every = ms / 1000, at = pc.now + ms / 1000, fn = fn }
     end
