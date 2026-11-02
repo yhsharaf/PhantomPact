@@ -1378,6 +1378,7 @@ return function(api)
     local swapAt, swapIdle = 0, 0
     local swapIsBell, swapSawMenu = false, false
     local SWAP_MAX_S = 120           -- a bell: the player may sit in its menu a while
+    local SWAP_BELL_WAIT_S = 20      -- and if that menu hasn't come by now, it isn't coming (hit on the walk, enemies near)
     local SWAP_SWITCH_MAX_S = 10     -- a chest or pile: the walk and the opening take about six seconds
     local SWAP_MONTAGE_S = 6         -- after this, a playing animation no longer holds the swap (hits from enemies never stop)
     local SWAP_IDLE_S = 3.0          -- the bell's walk, ring and menu have gaps between them; swap back only after a real pause
@@ -1467,7 +1468,7 @@ return function(api)
     local function unswapBodies()
         local pc1, pc2 = getPlayer1(), state.p2Controller
         local p1, p2 = state.swapBody1, state.swapBody2
-        local rested = swapIsBell
+        local rested = swapIsBell and swapSawMenu       -- (a ring that never came is no rest)
         swapped = false
         if not (valid(pc1) and valid(pc2) and valid(p1) and valid(p2)) then
             return
@@ -1535,8 +1536,11 @@ return function(api)
         else
             swapIdle = swapIdle + BAR_MS / 1000
         end
-        local limit = swapIsBell and SWAP_MAX_S or SWAP_SWITCH_MAX_S
-        if (swapIdle >= SWAP_IDLE_S and age > 3.0) or age > limit then
+        local limit = SWAP_SWITCH_MAX_S
+        if swapIsBell then
+            limit = swapSawMenu and SWAP_MAX_S or SWAP_BELL_WAIT_S
+        end
+        if (swapIdle >= SWAP_IDLE_S and age > 3.0) or (age > limit and not (menu or screenUp())) then
             unswapBodies()
         end
     end
@@ -1839,14 +1843,25 @@ return function(api)
                 return
             end
             local keep, yaw = p1:K2_GetActorLocation(), p1:K2_GetActorRotation().Yaw
-            pcall(function() ic1:DoInteract(best) end)
+            local spot = best:K2_GetActorLocation()
+            local apart = distance(keep, spot)
+            local took = nil
+            pcall(function() took = ic1:DoInteract(best) end)
+            -- (Still busy with the last one it says no, and finishing the walk would then open this one with nothing in it.)
+            if took == false then
+                return
+            end
             pcall(function() best.InteractPlayer = pawn end)
             local ok, err = pcall(function() best:FinishMoveToAsync() end)
-            usedSwitches[best:GetAddress()] = true
-            log("Player 2 opens " .. best:GetClass():GetFName():ToString() .. (ok and "" or (": " .. tostring(err))))
+            local name = best:GetClass():GetFName():ToString()
+            if name == "BP_Rubbish_C" then          -- (a chest says it's open itself, and a lever or a door can be used again)
+                usedSwitches[best:GetAddress()] = true
+            end
+            log("Player 2 opens " .. name .. (ok and "" or (": " .. tostring(err))))
+            -- Only the game's walk toward the chest is undone: player 1 running or dodging is player 1's own.
             for _, delay in ipairs({ 0.1, 0.4, 0.9, 1.5 }) do
                 game.after(delay, function()
-                    if valid(p1) and distance(p1:K2_GetActorLocation(), keep) > 30 then
+                    if valid(p1) and distance(p1:K2_GetActorLocation(), keep) > 30 and distance(p1:K2_GetActorLocation(), spot) < apart - 30 then
                         p1:K2_SetActorLocationAndRotation(keep, { Pitch = 0.0, Yaw = yaw, Roll = 0.0 }, false, {}, true)
                     end
                 end)
@@ -2175,6 +2190,7 @@ return function(api)
                     api.removePlayer2()
                     V.sceneHeld, V.screenHeld, V.p1LastAt = nil, nil, nil
                     inScene, menuOpen = false, false
+                    woken, usedSwitches = {}, {}
                     waiting, configApplied = {}, false
                     p2Dust, p2DownSince, fallingSince, downSince = nil, nil, nil, nil
                     if had then

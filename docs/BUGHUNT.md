@@ -49,3 +49,9 @@ The user's challenge, 2026-11-02: three unique bugs make one commit, nine commit
 22. PvP turned on in the panel skipped `PvPDamage` and `PvPParryPosture`, which only loaded with PvP on at the start, and never said the partner needs it too, while their moves stopped showing. With four players the row showed ON although it was refused.
 23. A weapon a partner found opened the game's full-screen "equip it now?" on this player, with the game not paused for it: in a party, on three other screens. It comes with a tip now. Sim: `weaponsFound`. Real: 40 weapons shared in a row, no dialog, the tip each time.
 24. A boss rose when the first partner joined mid-fight, though they only watch. Sim: `scaling`.
+
+## 1.6.0
+
+25. Local: the swap for player 2's bell had one limit, 120 s. A ring that never came left both pads on each other's bodies for two minutes, and a menu open longer was swapped away from under them, which left player 1 with no controls.
+26. Local: the pin that keeps player 1 still while player 2 opens a chest took player 1's own running for the game's walk, and yanked them back four times in a second and a half.
+27. Local: player 2 could use something once until player 1 died (levers, doors, every switch but a pile), and addresses used before a load blocked new chests that came back on them. Only piles are remembered now, and it's forgotten on a map change.
