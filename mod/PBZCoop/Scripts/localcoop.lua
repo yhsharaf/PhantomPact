@@ -55,14 +55,22 @@ return function(api)
     local swapped = false           -- player 1's controller is driving player 2's body for an interaction (see swapBodies)
     local p2Charges = nil           -- player 2's own gourd charges; nil until the gourd has been seen, reset at a rest
 
+    -- (A look through the game's object list takes a millisecond or two of the frame, so this one is kept to five a second, as screenUp's.)
+    V.bellNow, V.nextBellCheck = false, 0
     local function bellMenuUp()
+        if os.clock() < V.nextBellCheck then
+            return V.bellNow
+        end
+        V.nextBellCheck = os.clock() + 0.2
+        V.bellNow = false
         for _, w in ipairs(FindAllOf("W_BellMenu_C") or {}) do
             local ok, vis = pcall(function() return w:IsVisible() end)
             if ok and vis then
-                return true
+                V.bellNow = true
+                break
             end
         end
-        return false
+        return V.bellNow
     end
 
     -- The game's screens (tutorial and information pages, chapter titles, dialogues, videos, confirmations, loading,
@@ -170,7 +178,13 @@ return function(api)
         end
     end
 
+    -- The game's own parts are asked of the actor, which costs next to nothing.
+    V.PARTS = { PBZInteractComponent = "/Script/ProjectPBZ.PBZInteractComponent", SpecialMoveComponent = "/Script/AdvancedSpecialMove.SpecialMoveComponent" }
     local function componentOf(pawn, className)
+        if V.PARTS[className] then
+            local ok, c = pcall(function() return pawn:GetComponentByClass(StaticFindObject(V.PARTS[className])) end)
+            return ok and valid(c) and c or nil
+        end
         for _, c in ipairs(FindAllOf(className) or {}) do
             local ok, owner = pcall(function() return c:GetOwner() end)
             if ok and valid(owner) and owner:GetAddress() == pawn:GetAddress() then
@@ -329,9 +343,25 @@ return function(api)
         end
     end
 
+    -- Their Ultimate gauge is their own, filled by their own hits and spent on their combat art, and a new Soul starts with it empty.
+    V.GAUGE = { "UltimateCharge", "UltimateChargeCount" }
+    function V.keepGauge(soul)
+        V.gauge = {}
+        for _, name in ipairs(V.GAUGE) do
+            V.gauge[name] = soul.AttributeSetBase[name].CurrentValue
+        end
+    end
+    function V.giveGauge(soul)
+        for name, value in pairs(V.gauge or {}) do
+            local attribute = soul.AttributeSetBase[name]
+            attribute.BaseValue, attribute.CurrentValue = value, value
+        end
+    end
+
     local function respawn(p1)
         if valid(state.p2Pawn) then
             passDust(p1, state.p2Pawn)
+            pcall(V.keepGauge, state.p2Pawn)
             state.p2Pawn:K2_DestroyActor()
         end
         state.p2Pawn = nil
@@ -341,8 +371,10 @@ return function(api)
         V.dropHud()
         api.spawnPawnForPlayer2(p1:GetClass())
         V.watchControls()
+        V.nextMenuKeep = 0
         if valid(state.p2Pawn) then
             game.setMinHealth(state.p2Pawn, DOWN_HP)
+            pcall(V.giveGauge, state.p2Pawn)
             wireInteract()
             V.soulAt = os.clock()
         end
@@ -1065,12 +1097,19 @@ return function(api)
         log("Player 1 is back.")
     end
 
+    V.STEP_S = 0.1
+    V.nextMenuKeep = 0
+
     local function tick()
         local pc, p1 = getPlayer1()
         if paused or swapped or not valid(p1) then
             return
         end
-        keepMenusOnPlayer1(pc)
+        -- (Only a player being added can take the layout, so this needn't be every second.)
+        if os.clock() >= V.nextMenuKeep then
+            V.nextMenuKeep = os.clock() + 5.0
+            keepMenusOnPlayer1(pc)
+        end
         local p2 = state.p2Pawn
         if game.isDead(p1) then
             downSince = downSince or os.clock()
@@ -1148,11 +1187,15 @@ return function(api)
             V.keepHud(pc, p2)
         end
         matchPlayer1(p1, p2)
-        wakeEnemies(p1, p2)
-        keepEnemiesAlive(p1, p2)
-        keepDomains(p1, p2)
-        noticePlayer2(p1, p2)
-        wakeBosses(p1, p2)
+        -- One after another: each looks through the game's object list, and all in one frame they held it up by 8 ms, once a second.
+        for i, step in ipairs({ wakeEnemies, keepEnemiesAlive, keepDomains, noticePlayer2, wakeBosses }) do
+            game.after(V.STEP_S * i, function()
+                local _, body = getPlayer1()
+                if not (swapped or paused or p2DownSince) and valid(body) and valid(state.p2Pawn) then
+                    step(body, state.p2Pawn)
+                end
+            end)
+        end
         followJumps(p1, p2)
         fogTip(p1, p2)
         -- Player 2 goes wherever they like. Only a long fall means they dropped out of the world.
@@ -1478,7 +1521,7 @@ return function(api)
         -- dialogue that ended in a scene): release them. Player 1's controller is the reference: when the game
         -- ignores player 1 too, it's the game's own state and stays.
         local pc2 = state.p2Controller
-        if not inScene and not menuOpen and not V.sceneHeld and not V.screenHeld and not swapped and not p2DownSince
+        if not inScene and not menuOpen and not V.sceneHeld and not V.screenHeld and not V.closeUp and not swapped and not p2DownSince
             and valid(pc2) and not pc:IsMoveInputIgnored() and pc2:IsMoveInputIgnored() then
             V.p2StuckSince = V.p2StuckSince or os.clock()
             if os.clock() - V.p2StuckSince > 1.0 then
@@ -1857,9 +1900,7 @@ return function(api)
     -- Player 2's interact button, in the order the game itself would take things:
     --   1. A loot card is up (the game draws it on player 1's screen whoever opened the chest): confirm it.
     --   2. A climb spot in reach (ladders, wall runs, ledges): the game's own interaction, with player 2's body.
-    --   3. A chest, door or lever in reach: the game's approach walk always moves player 1, so player 2 is put on the
-    --      spot the switch asks for, the interaction is started through player 1's component (the only path that hands
-    --      out the loot) with player 2 named as the opener, and the walk is finished at once so player 1 stays put.
+    --   3. A chest, door or lever in reach: the game's own interaction, with player 2's body (see V.useAsTheirs).
     --   4. A pickup in reach: the game's pickups only notice player 1, so the item goes into the shared backpack here.
     -- findTarget is the same look-around, used for the prompt on player 2's screen as well.
     local INTERACT_CM = 500          -- the game's own interaction distance (PBZInteractComponent.DistanceB)
@@ -1889,6 +1930,25 @@ return function(api)
         end
         local dx, dy = loc.X - at.X, loc.Y - at.Y
         return math.sqrt(dx * dx + dy * dy)
+    end
+
+    -- A look around for player 2's prompt took six looks through the game's whole object list, in one frame, a few times a second. How
+    -- far the nearest of each kind is gets remembered instead, as plain numbers (an actor kept for later may be gone by then, and calling
+    -- into one kills the game). Until they've walked that far, or a moment has passed for what's newly streamed in, it isn't looked for.
+    V.looked, V.LOOK_AGAIN_S, V.LOOK_MOVED_CM = {}, 2.0, 1500
+    function V.around(class, need, at)
+        local now, last = os.clock(), V.looked[class]
+        if last and now < last.till and distance(at, last.at) < last.free then
+            return {}
+        end
+        local list, nearest = FindAllOf(class) or {}, 1e9
+        for _, thing in ipairs(list) do
+            nearest = math.min(nearest, reach(at, thing, 2500) or 1e9)
+        end
+        -- (Each with its own moment, so that they don't all come round in the same frame.)
+        V.looked[class] = { till = now + V.LOOK_AGAIN_S * (0.75 + 0.5 * math.random()), at = { X = at.X, Y = at.Y, Z = at.Z },
+            free = math.min(nearest - need, V.LOOK_MOVED_CM) }
+        return nearest <= need and list or {}
     end
 
     V.gapBlockerClass = nil
@@ -1926,6 +1986,8 @@ return function(api)
         return (dx * f.X + dy * f.Y) / len >= (minDot or 0.7)
     end
     V.TALK_CM = 400
+    V.GAP_CM = 3000             -- a gap blocker is used from afar (its DisplayPointDistance)
+    V.RING_CM = 2000            -- the game's ring shows on a thing from about here
 
     -- The game's own rule for this Soul and this thing: in its reach and faced, as player 1 must. Player 2's own interact component
     -- answers it as player 1's does. Without it, a button that's also an execution rang the bell behind them in a fight, and a fog
@@ -1962,8 +2024,8 @@ return function(api)
         end
         -- Two families of climb spots: the SpecialMove volumes (ladders, wall and side runs, rappels) and the ASM
         -- ones (poles, slides, rope swings, holes, temporary ladders). Both are the game's own interactables.
-        for _, className in ipairs(volume == false and {} or { "SpecialMoveVolumeBase", "BP_ASM_SpVolumeBase_C" }) do
-            for _, v in ipairs(FindAllOf(className) or {}) do
+        for _, family in ipairs(volume == false and {} or { { "SpecialMoveVolumeBase", VOLUME_CM }, { "BP_ASM_SpVolumeBase_C", V.GAP_CM } }) do
+            for _, v in ipairs(V.around(family[1], family[2], at)) do
                 -- To the spot's box, not its origin: a ladder's origin is at its foot, and player 2 may be at the top.
                 local d
                 -- A gap blocker (the ShaChi hook shot across a gap) is used from a distance, looking at it: the
@@ -2007,7 +2069,7 @@ return function(api)
         end
         local best = nil
         bestD = nil
-        for _, s in ipairs(FindAllOf("PBZSwitchBase") or {}) do
+        for _, s in ipairs(V.around("PBZSwitchBase", V.RING_CM, at)) do
             local d = reach(at, s)
             if d then
                 if d <= INTERACT_CM and (bestD == nil or d < bestD) then
@@ -2024,7 +2086,7 @@ return function(api)
         -- A person close by. The game only offers one to player 2 now and then, and not at all with player 1 far away, so
         -- its offer isn't waited for: a talk starts from anywhere (see kind "talk").
         local person, personD = nil, V.TALK_CM
-        for _, n in ipairs(FindAllOf("BP_NPC_Narrative_C") or {}) do
+        for _, n in ipairs(V.around("BP_NPC_Narrative_C", V.TALK_CM, at)) do
             local okL, loc = pcall(function() return n:K2_GetActorLocation() end)
             if okL and loc.X and distance(at, loc) < personD and facing(pawn, loc, 0.5) then
                 person, personD = n, distance(at, loc)
@@ -2033,7 +2095,7 @@ return function(api)
         if person then
             return "talk", person, bp
         end
-        for _, p in ipairs(FindAllOf("PBZPickupActor") or {}) do
+        for _, p in ipairs(V.around("PBZPickupActor", INTERACT_CM, at)) do
             local okL, loc = pcall(function() return p:K2_GetActorLocation() end)
             local okP, pickable = pcall(function() return p.bIsPickable end)
             if okL and loc.X and distance(at, loc) <= INTERACT_CM and (not okP or pickable ~= false) then
@@ -2043,10 +2105,144 @@ return function(api)
         return nil
     end
 
+    -- Through their own interact component, with "the player" pointed at their body for the call, the game's whole interaction is theirs:
+    -- its walk up at its own pace, their weapon put away, the thing used, and player 1 left to whatever they're doing. (Through player
+    -- 1's component, as it was, it was player 1 who was walked over, made to sheathe their sword and held in the opening, mid-fight if it
+    -- came to that.) Two things stay the first player's whoever is at it. The close-up cuts their half of the screen, so it's handed
+    -- over; and the end of a chest's opening pays out only through their component, so that's called by hand.
+    V.OPENING_S, V.APPROACH_MAX_S, V.SHEATHE_S, V.WATCH_STEP_S, V.CLOSE_UP_MAX_S = 3.6, 8.0, 1.8, 0.03, 8.0
+
+    -- An interaction puts the Soul's input in a mode of its own, with its control sets taken off, and only player 1's is ever put back:
+    -- player 2 stood at the chest with a dead pad.
+    function V.endUse()
+        local soul = state.p2Pawn
+        if valid(soul) then
+            pcall(function() soul.PBZNBInput:ResetToDefaultInputMode() end)
+        end
+    end
+
+    -- The walk ends a moment later, and what starts then takes "the player" too: a door's sequence had player 1 pushing at the air. (Not at a
+    -- chest, whose opening is played by hand above: there it threw player 2 five metres as the opening began.)
+    V.FINISH_WALK = "/Script/ProjectPBZ.PBZSwitchBase:FinishMoveToAsync"
+    function V.afterUseStep()
+        local pc1, p1 = V.usePc, V.useBody
+        if pc1 then
+            V.usePc, V.useBody = nil, nil
+            pc1.Pawn = p1
+            pc1.Character = p1
+        end
+    end
+    function V.hookUse()
+        if V.useHooked then
+            return
+        end
+        V.useHooked = true
+        RegisterHook(V.FINISH_WALK, function()
+            local pc1, p1 = getPlayer1()
+            if V.opening and not V.opening.chest and not V.usePc and valid(pc1) and valid(p1) and valid(state.p2Pawn) then
+                V.usePc, V.useBody = pc1, p1
+                pc1.Pawn = state.p2Pawn
+                pc1.Character = state.p2Pawn
+            end
+        end, V.afterUseStep)
+    end
+
+    function V.useAsTheirs(pawn, thing)
+        local ic = componentOf(pawn, "PBZInteractComponent")
+        if not ic then
+            return
+        end
+        pcall(V.hookUse)
+        pcall(function() ic:CheckAndForceEndInteract() end)
+        local took = nil
+        local ok, err = asPlayer1(function() took = ic:DoInteract(thing) end)
+        -- (Still busy with the last one it says no.)
+        if took == false then
+            return
+        end
+        local name = thing:GetClass():GetFName():ToString()
+        log("Player 2 opens " .. name .. (ok and "" or (": " .. tostring(err))))
+        if name == "BP_Rubbish_C" then          -- (a chest says it's open itself, and a lever or a door can be used again)
+            usedSwitches[thing:GetAddress()] = true
+            game.after(V.WATCH_STEP_S, function() pcall(V.endUse) end)
+            return
+        end
+        -- (Putting a weapon away comes first, and the component says nothing of it while that lasts. A chest always comes to its close-up.)
+        local chest = name == "BP_Chest_C"
+        V.opening = { thing = thing, ic = ic, chest = chest, surelyUntil = os.clock() + (chest and V.APPROACH_MAX_S or V.SHEATHE_S),
+            giveUpAt = os.clock() + V.APPROACH_MAX_S }
+        game.after(V.WATCH_STEP_S, function() pcall(V.watchOpening) end)
+    end
+
+    function V.watchOpening()
+        V.afterUseStep()        -- (it has always run by now: this is for a call that ended some other way)
+        local o = V.opening
+        local pc1, p1 = getPlayer1()
+        local pc2, soul = state.p2Controller, state.p2Pawn
+        if not o or swapped or p2DownSince or not (valid(o.thing) and valid(o.ic) and valid(p1) and valid(pc2) and valid(soul)) then
+            V.opening = nil
+            return
+        end
+        local sequence = o.thing.LevelSequenceActor
+        local view = pc1:GetViewTarget()
+        if not (valid(sequence) and valid(view) and view:GetAddress() ~= p1:GetAddress()) then
+            local doing = o.ic:GetInteractingActor()
+            if os.clock() < o.surelyUntil or (valid(doing) and os.clock() < o.giveUpAt) then
+                game.after(V.WATCH_STEP_S, function() pcall(V.watchOpening) end)
+            else
+                V.opening = nil
+                V.endUse()
+            end
+            return
+        end
+        V.opening = nil
+        sequence.SequencePlayer:SetDisableCameraCuts(true)
+        pc1:SetViewTargetWithBlend(p1, 0, 0, 0, false)
+        pc2:SetViewTargetWithBlend(view, 0.3, 0, 0, false)
+        -- They stay put for it, as the one at a chest does.
+        pc2:SetIgnoreMoveInput(true)
+        pc2:SetIgnoreLookInput(true)
+        V.closeUp = { thing = o.thing, giveUpAt = os.clock() + V.CLOSE_UP_MAX_S }
+        game.after(0.5, function() pcall(V.watchCloseUp) end)
+        if o.chest then
+            soul:PlayAnimMontage(o.thing.OpenChestAnim, 1.0, FName("None"))
+            game.after(V.OPENING_S, function()
+                if valid(o.thing) then
+                    local okP, errP = pcall(function() o.thing["Pickup Items"](o.thing) end)
+                    if not okP then
+                        log("A chest's pay-out: " .. tostring(errP))
+                    end
+                end
+            end)
+        end
+    end
+
+    function V.watchCloseUp()
+        local c = V.closeUp
+        if not c then
+            return
+        end
+        local sequence = valid(c.thing) and c.thing.LevelSequenceActor or nil
+        local player = valid(sequence) and sequence.SequencePlayer or nil
+        if valid(player) and player:IsPlaying() and os.clock() < c.giveUpAt then
+            game.after(0.25, function() pcall(V.watchCloseUp) end)
+            return
+        end
+        V.closeUp = nil
+        local pc2, soul = state.p2Controller, state.p2Pawn
+        if valid(pc2) and valid(soul) then
+            pc2:SetViewTargetWithBlend(soul, 0.4, 0, 0, false)
+            if not (swapped or V.screenHeld or V.sceneHeld) then
+                pc2:ResetIgnoreInputFlags()
+            end
+            V.endUse()
+        end
+    end
+
     local promptTarget, promptTargetKind, promptTargetAt = nil, nil, 0   -- the prompt's last find, reused on a press
     local function interactP2(want)
         local pawn = state.p2Pawn
-        if swapped or not valid(pawn) or game.isDead(pawn) or p2DownSince then
+        if swapped or V.opening or V.closeUp or not valid(pawn) or game.isDead(pawn) or p2DownSince then
             return
         end
         local kind, target, bp
@@ -2158,44 +2354,7 @@ return function(api)
                 end
                 return
             end
-            -- A chest or pile, with nobody frozen: player 2 is put on the spot the switch asks for, the interaction
-            -- is started through player 1's component (the only path that hands out the loot) with player 2 named as
-            -- the opener, and the walk is finished at once so player 1 never moves. Player 2 plays the opening.
-            local loc, rot = {}, {}
-            local okT = pcall(function() best:GetMoveToTarget(loc, rot, {}, {}, {}, {}) end)
-            if okT and loc.X and distance(at, loc) <= INTERACT_CM * 2 then
-                pawn:K2_SetActorLocationAndRotation({ X = loc.X, Y = loc.Y, Z = loc.Z + 20 },
-                    { Pitch = 0.0, Yaw = rot.Yaw or 0.0, Roll = 0.0 }, false, {}, true)
-            end
-            local p1 = select(2, getPlayer1())
-            local ic1 = valid(p1) and componentOf(p1, "PBZInteractComponent") or nil
-            if not ic1 then
-                return
-            end
-            local keep, yaw = p1:K2_GetActorLocation(), p1:K2_GetActorRotation().Yaw
-            local spot = best:K2_GetActorLocation()
-            local apart = distance(keep, spot)
-            local took = nil
-            pcall(function() took = ic1:DoInteract(best) end)
-            -- (Still busy with the last one it says no, and finishing the walk would then open this one with nothing in it.)
-            if took == false then
-                return
-            end
-            pcall(function() best.InteractPlayer = pawn end)
-            local ok, err = pcall(function() best:FinishMoveToAsync() end)
-            local name = best:GetClass():GetFName():ToString()
-            if name == "BP_Rubbish_C" then          -- (a chest says it's open itself, and a lever or a door can be used again)
-                usedSwitches[best:GetAddress()] = true
-            end
-            log("Player 2 opens " .. name .. (ok and "" or (": " .. tostring(err))))
-            -- Only the game's walk toward the chest is undone: player 1 running or dodging is player 1's own.
-            for _, delay in ipairs({ 0.1, 0.4, 0.9, 1.5 }) do
-                game.after(delay, function()
-                    if valid(p1) and distance(p1:K2_GetActorLocation(), keep) > 30 and distance(p1:K2_GetActorLocation(), spot) < apart - 30 then
-                        p1:K2_SetActorLocationAndRotation(keep, { Pitch = 0.0, Yaw = yaw, Roll = 0.0 }, false, {}, true)
-                    end
-                end)
-            end
+            V.useAsTheirs(pawn, best)
             return
         end
         if kind == "pickup" and bp then
@@ -2427,7 +2586,6 @@ return function(api)
     end
 
     -- The nearest thing to use that's in the game's sight but not its reach. (A look a few times a second, and only with nothing in reach.)
-    V.RING_CM = 2000
     function V.ringThing(pawn)
         local now = os.clock()
         if now < (V.ringAt or 0) then
@@ -2440,7 +2598,7 @@ return function(api)
             return nil
         end
         local at, best = pawn:K2_GetActorLocation(), V.RING_CM
-        for _, s in ipairs(FindAllOf("PBZSwitchBase") or {}) do
+        for _, s in ipairs(V.around("PBZSwitchBase", V.RING_CM, at)) do
             local d = reach(at, s)
             if d and d < best and not usedSwitches[s:GetAddress()] then
                 local ok, near = pcall(function() return s.CurSwitchState ~= true and ic:GetValidDistance(s, pawn) end)
@@ -2515,7 +2673,7 @@ return function(api)
         end
         -- (On a rope or a ladder, or in the air, there's nothing to press: the game shows player 1 nothing either.)
         local okM, mode = pcall(function() return pawn.CharacterMovement.MovementMode end)
-        if okM and mode ~= 1 and mode ~= 2 then
+        if V.opening or V.closeUp or (okM and mode ~= 1 and mode ~= 2) then
             hidePrompt()
             return
         end
@@ -2840,6 +2998,7 @@ return function(api)
                     local had = valid(state.p2Controller)
                     if valid(state.p2Pawn) then
                         pcall(leaveDomains, state.p2Pawn)
+                        pcall(V.keepGauge, state.p2Pawn)
                     end
                     api.removePlayer2()
                     V.dropHud()
@@ -2850,7 +3009,8 @@ return function(api)
                         swapped, state.swapBody1, state.swapBody2 = false, nil, nil
                         pcall(function() getPlayer1():ResetIgnoreInputFlags() end)
                     end
-                    V.lentCharge, V.gourdKeep, V.drinkPc, V.drinkBody = nil, nil, nil, nil
+                    V.lentCharge, V.gourdKeep, V.drinkPc, V.drinkBody, V.opening, V.closeUp = nil, nil, nil, nil, nil, nil
+                    V.looked = {}
                     promptTarget, promptKind, promptTargetKind, V.promptSince, V.ringWas = nil, nil, nil, nil, nil
                     V.sceneHeld, V.screenHeld, V.p1LastAt = nil, nil, nil
                     inScene, menuOpen = false, false

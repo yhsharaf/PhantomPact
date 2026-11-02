@@ -1,8 +1,8 @@
 # Local co-op (split screen) in Phantom Pact 1.6.0
 
 Mode > LOCAL under MORE in the F5 panel, or `Role = Local` in `PhantomPact.ini`, puts two players on one PC, side by side on
-one screen, no internet and no second PC. It is in testing: the whole of 1.5.0's local co-op work was done on Xigu with two DualSense pads through
-DS4Windows, and the rest of the game has not been walked through yet.
+one screen, no internet and no second PC. It is in testing: 1.5.0's work was done on Xigu with two DualSense pads through DS4Windows. 1.6.0's was
+played through all ten regions of the story with player 2's presses injected, so what a real second pad does there is still to be seen.
 
 ## Setup
 
@@ -50,6 +50,7 @@ for those and performs the action with player 2's own body:
 | Left stick, right stick, attacks, dodge, block | The game's own handling, as for player 1 |
 | Cross (A) | Jump; inside a climb spot: ladder, wall run, side run, rope swing, rappel, pole or slide; looking at a gap blocker within its range: the hook shot across |
 | Circle (B) | Use: chest, rubbish pile, door, lever, bell, loot card confirm |
+| L2 | The weapon's combat art, spending their own Ultimate charge, as for player 1 |
 | D-pad down | Drink the gourd: heals player 2 and uses player 2's own charges |
 | Options | Pause menu (the one menu is shared; whichever pad opened it drives it) |
 | Select / touchpad | Quest-direction sense; it reports on both screens |
@@ -67,10 +68,14 @@ down, the game's death card plays in their half alone, and they get back up off 
 - **Interaction prompts** are drawn for player 1 only, on the things themselves, and player 2's own search would play them
   there too (player 2 walking off shrank player 1's prompt to a dot), so that search is paused. The mod asks player 2's interact
   component what the game allows (`CanTriggerInteract`, `IsPlayerFaceToActor`) and starts the interaction through it (climb spots)
-  or through player 1's component with player 2 named as the opener (chests, piles), with player 1 pinned in place so they never
-  walk to it.
-- **Loot** is handed out only through player 1's interact component. Chests opened by player 2 still give the loot
-  to the shared backpack. The loot card draws on player 1's half; Circle on pad 2 confirms it.
+  with "the player" pointed at their body for that one call (chests, doors, piles). So the game's whole interaction is theirs: its
+  walk up, a weapon put away, the opening, and player 1 goes on with whatever they were doing.
+- **The close-up at a chest** cuts the first player's half of the screen, whoever opened it. It's handed to player 2 as it starts. The
+  sequence's own cuts can't be switched off in time, so for a frame or two it does touch player 1's half.
+- **Loot** is paid at the end of the opening only through player 1's interact component, so that step is called by hand. Chests opened
+  by player 2 give the loot to the shared backpack. The loot card draws on player 1's half; Circle on pad 2 confirms it.
+- **The end of an interaction** puts back the input mode of player 1's Soul only, which left player 2 with a dead pad. It's done for
+  their Soul by hand.
 - **The gourd and the D-pad's other item** work on "the player". Player 2's body drinks by the game's own ability, and for the
   one call that applies it, player 1's controller points at player 2's body: the heal, its buffs, its glow and the HUD's flash are
   theirs. It's charged to player 2's own count, which refills at a bell to the gourd's maximum, and a press with the shared gourd
@@ -124,15 +129,17 @@ down, the game's death card plays in their half alone, and they get back up off 
 
 ## Known limits
 
-- Everything above was tested on Xigu (chapter 1 up to the village and the Peng Meng arena): the chapter's opening
+- Most of the above was tested on Xigu (chapter 1 up to the village and the Peng Meng arena): the chapter's opening
   dialogue and scenes, a boss with its fog walls, deaths (player 1's real deaths with player 2 down, and both down at
   the same instant), rests, the pause menu and the F4 panel at the wrong moments, Return to Title and Load Game.
-  Later chapters with two local players are untested, as is a fullscreen toggle during play.
-- Player 2's refill at a rest, and two players using one chest in the same instant could not be driven without pads; the code
-  paths exist and are unverified.
+  All ten story regions were walked through with no crash and no script error, with player 2's presses injected. A fullscreen toggle during
+  play is untested.
+- Two players using one chest in the same instant could not be driven without pads; the code path exists and is unverified.
 - The quest-direction sense and "information" screens draw on player 1's half; the loot card too.
 - The ledge vault (mantle) fails for both players through the mod's route; the game's own does it for player 1.
-- Lock-on for player 2 could not be checked without a pad; the game's own targeting runs per player.
+- Lock-on is the game's own for player 2, and its mark shows in their half. The Phantom Edge change on D-pad right needs a real pad to
+  check: an injected press doesn't reach that binding.
+- Doors that are barred from the other side are as they are for player 1: a push and a "won't open".
 - A talk is player 1's to the game: player 2's press starts it and sets player 1 down beside them, and the dialogue screen is shared.
 - Shops and training are pages of the bell menu, which both players share. Doors that need an item (the game's
   switches with required items) do not occur in chapter 1 on Xigu and are untested for player 2; the mod's route

@@ -150,6 +150,7 @@ function Fake.character(pc, class, x, y, z, hp, posture)
         Health = attribute(pc, hp), Health_Max = attribute(pc, hp), Health_Min = attribute(pc, 0), Attack = attribute(pc, 50),
         Shachi = attribute(pc, posture or 100), Shachi_Max = attribute(pc, posture or 100), Level = attribute(pc, 1),
         ShachiAttack = attribute(pc, 50), Infliction_Max = attribute(pc, 100), BreakDurationAdditionalMultiplier = attribute(pc, 1),
+        UltimateCharge = attribute(pc, 0), UltimateChargeCount = attribute(pc, 0),
     }))
     local cmc = object(pc, "Movement", { MovementMode = 1, Velocity = { X = 0.0, Y = 0.0, Z = 0.0 }, MaxWalkSpeed = 0, AirControl = 0,
         MaxAcceleration = 0, bRunPhysicsWithNoController = false, bOrientRotationToMovement = true })
@@ -410,6 +411,37 @@ function Fake.switch(pc, class, x, y, z, bell, noState)
     return s
 end
 
+-- The end of the game's walk up to a thing, some time after the press: what starts then sees who "the player" is.
+function Fake.arrive(pc, thing)
+    local path = "/Script/ProjectPBZ.PBZSwitchBase:FinishMoveToAsync"
+    for _, fn in ipairs(pc.hooks[path] or {}) do
+        fn(thing)
+    end
+    put(thing, "theplayer", rawget(pc.controller, "__fields").Pawn)
+    rawget(thing, "__fields").FinishMoveToAsync(thing)
+    for _, fn in ipairs(pc.afterHooks[path] or {}) do
+        fn(thing)
+    end
+end
+
+-- What a chest's opening does whoever is at it: the first player's half cut to a shot. Stop it with the third answer.
+function Fake.chestScene(pc, chest)
+    local camera = object(pc, "CineCameraActor")
+    local m = object(pc, "AnimMontage")
+    local sequence = object(pc, "LevelSequencePlayer", { playing = true, cutsOff = false })
+    put(sequence, "IsPlaying", function(self) return rawget(self, "__fields").playing end)
+    put(sequence, "SetDisableCameraCuts", function(self, off) put(self, "cutsOff", off) end)
+    local actor = object(pc, "LevelSequenceActor", { SequencePlayer = sequence })
+    put(chest, "OpenChestAnim", m)
+    put(chest, "Pickup Items", function(self) put(self, "paid", (rawget(self, "__fields").paid or 0) + 1) end)
+    put(chest, "FinishMoveToAsync", function(self)
+        put(self, "opened", rawget(self, "__fields").opened + 1)
+        put(self, "LevelSequenceActor", actor)
+        put(pc.controller, "viewTarget", camera)
+    end)
+    return camera, m, sequence
+end
+
 -- A drink as the game makes it: a body drinking, then the count, then the effect on whoever player 0's controller holds.
 function Fake.drink(pc, body, item, share)
     local anim = rawget(body, "__fields").anim
@@ -541,6 +573,14 @@ function Fake.new(id, scripts, ini, link)
             DoInteract = function(self, target)
                 local used = rawget(self, "__fields").used
                 used[#used + 1] = target
+                put(self, "theplayer", rawget(pc.controller, "__fields").Pawn)
+                if p ~= pc.pawn then
+                    pc.inputSets[1] = {}
+                end
+                local finish = rawget(target, "__fields").FinishMoveToAsync
+                if finish and not pc.walksUp then
+                    finish(target)
+                end
             end,
             CheckAndForceEndInteract = false,
             SetCurrentInteractActor = false,
@@ -549,6 +589,7 @@ function Fake.new(id, scripts, ini, link)
         put(ic, "IsPlayerFaceToActor", function(_, _, thing) return rawget(thing, "__behind") == nil end)
         put(ic, "PauseTimer", function(self) put(self, "paused", true) end)
         put(ic, "GetInteractActor", function() return nil end)
+        put(ic, "GetInteractingActor", function(self) return rawget(self, "__fields").InteractingActor end)
         put(ic, "GetValidDistance", function(_, thing) return rawget(thing, "__seen") == true end)
         pc.interactComps[#pc.interactComps + 1] = ic
         put(p, "interact", ic)
@@ -582,6 +623,17 @@ function Fake.new(id, scripts, ini, link)
             return c
         end)
         defs(pc, p, { DisableInput = false, EnableInput = false })
+        put(p, "PlayAnimMontage", function(self, m) put(self, "opening", m) return 3.3 end)
+        local input = object(pc, "PBZNBInputComponent", { resets = 0 })
+        put(input, "ResetToDefaultInputMode", function(self)
+            put(self, "resets", rawget(self, "__fields").resets + 1)
+            if p ~= pc.pawn then
+                for _, c in ipairs(pc.inputContexts) do
+                    pc.inputSets[1][c] = 1
+                end
+            end
+        end)
+        put(p, "PBZNBInput", input)
         put(p, "NBCamera", object(pc, "Camera", {}, true))
         return p
     end
@@ -596,6 +648,8 @@ function Fake.new(id, scripts, ini, link)
     end
     pc.inputSubsystems, pc.injected = {}, {}
     pc.inputContexts = { object(pc, "InputMappingContext"), object(pc, "InputMappingContext") }
+    rawset(pc.inputContexts[1], "__name", "IMC_Default")
+    rawset(pc.inputContexts[2], "__name", "IMC_Locomotion")
     pc.inputSets = { [0] = {}, [1] = {} }
     for _, c in ipairs(pc.inputContexts) do
         pc.inputSets[0][c], pc.inputSets[1][c] = 1, 1
@@ -627,6 +681,7 @@ function Fake.new(id, scripts, ini, link)
         defs(pc, c, {
             IsInputKeyDown = function(_, key) return keys[key.KeyName:ToString()] == true end,
             SetViewTargetWithBlend = function(self, target) put(self, "viewTarget", target) end,
+            GetViewTarget = function(self) return rawget(self, "__fields").viewTarget or rawget(self, "__fields").Pawn end,
             IsActorTickEnabled = function(self) return rawget(self, "__fields").ticking end,
             SetActorTickEnabled = function(self, on) put(self, "ticking", on) end,
             Possess = function(self, b) put(self, "Pawn", b) end,
