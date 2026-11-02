@@ -19,3 +19,9 @@ The user's challenge, 2026-11-02: three unique bugs make one commit, nine commit
 7. A player over a respawn was skipped by a partner's fight for good: the calm of 30 s dropped the pull with nothing to retry it, the fog walls closed in front of them, and if the partner died their respawn waited on a fight nobody could reach. This is the "left behind a fog wall" of the Yan Qiansui takes. The pull now waits for the calm, if the fight's still on. Sim: `fightsAndWhoIsLeft`.
 8. With two players, a guest joining during a boss fight travelled before it heard of the fight, and landed in it with no bar. `F` only came every 5 s and the wait for it was for parties alone. Sim: `fightsAndWhoIsLeft`.
 9. A guest watching a fight stayed frozen in the air for good if the host vanished: only the host's own word ended a watch. Sim: `fightsAndWhoIsLeft`.
+
+## 1.5.5
+
+10. A fight outlived whoever was in it. When its owner left, only the walls opened: the mirrored bars, `partnerBosses` and `pendingBosses` stayed, and those bars counted as a fight, so other players held each other's respawns for up to 15 minutes, and F3 said "not now". Leaving, a partner's sit and a partner gone now end those fights. Sim: `fightsAndWhoIsLeft`.
+11. A host's death on one map refreshed the enemies and took down the boss bar of a guest fighting on another. Sim: `elsewhere`.
+12. Every trip the host made counted as a new world: the guest's enemies refreshed, what it knew of the host's kills went, and the log said someone rested at a bell. Only a load from outside the world is a new one now. Sim: `elsewhere`.

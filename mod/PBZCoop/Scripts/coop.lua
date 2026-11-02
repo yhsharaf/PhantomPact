@@ -210,7 +210,7 @@ return function(api)
     -- These are only worth showing now: a move two seconds late is worse than none, and must never hold up a death.
     local QUICK = { U = true, M = true, A = true, H = true, Z = true, SHOT = true }
 
-    local hostWorld = os.time()   -- host: stands for the world as loaded, new with each game or map load (see handlers.Y)
+    local hostWorld = os.time()   -- host: stands for the world as loaded, new with each start and load from the title (see handlers.Y)
 
     local function sendEvent(kind, ...)
         if not net.enabled then
@@ -664,6 +664,16 @@ return function(api)
         end
         if at and game.setBossFog then
             game.setBossFog(at, false)
+        end
+    end
+
+    -- Those fights end here, with no word from the boss: their owner left, or stopped. whose: that player's number (nil for all).
+    local function endFights(whose)
+        for name in pairs(net.partnerBosses) do
+            if whose == nil or net.fightOf[name] == whose then
+                endBossFight(name, enemyByName[name])
+                net.fightOf[name] = nil
+            end
         end
     end
 
@@ -1403,7 +1413,7 @@ return function(api)
     -- A world refreshed: every boss fight can happen again. After a death the dead mostly stay dead, so a guest goes on by what
     -- the host killed, or what it never saw die there comes alive here alone. Only a new world ("bell": the host loaded its
     -- world again, or a mod's respawns) starts from nothing.
-    local function forgetDeaths(kind)
+    local function forgetDeaths(kind, elsewhere)
         if kind ~= "death" then
             net.deadSent = {}
             net.guestKilled = {}
@@ -1422,7 +1432,7 @@ return function(api)
         net.notOnHost = {}
         net.joinedBoss, net.joinedWith, net.pullAfterCalm = nil, nil, nil
         reopenFog()
-        if game.resetBosses then
+        if game.resetBosses and not elsewhere then
             game.resetBosses()
         end
         game.forgetFocus()
@@ -1488,9 +1498,11 @@ return function(api)
         else
             log("The other player rested at a bell: respawning enemies here too.")
         end
-        forgetDeaths(kind)
+        -- From another map it says nothing about the enemies here, or the fight this player may be in.
+        local elsewhere = not sameMap(peerOf(from).target)
+        forgetDeaths(kind, elsewhere)
         seen = {}
-        if game.refreshEnemies then
+        if game.refreshEnemies and not elsewhere then
             game.refreshEnemies()
         end
     end
@@ -1511,9 +1523,8 @@ return function(api)
         local p = peerOf(from)
         p.fights = false
         countFights()
-        for _, fn in pairs(restListeners) do
-            fn("sit")
-        end
+        restEvent("sit")
+        endFights(net.party and p.number or nil)
         local _, pawn = getPlayer1()
         if net.pvp or not valid(pawn) then
             return
@@ -2113,6 +2124,11 @@ return function(api)
 
     pcall(function()
         RegisterLoadMapPreHook(function()
+            -- With a player in the world this is a trip: the same world on another map, and a partner's fight goes on. Only a
+            -- load from outside it (the title screen) is a world loaded anew.
+            if valid(select(2, getPlayer1())) then
+                return
+            end
             hostWorld = os.time()
             if isHost() then
                 sendEvent("Y", hostWorld)
@@ -2142,6 +2158,7 @@ return function(api)
         showAside()
         destroyGhosts()
         leaveParty()
+        endFights()
         reopenFog()
         clearRemoteState()
         log("Online sync off.")
@@ -2224,22 +2241,21 @@ return function(api)
             end
             if last then
                 log("Lost the other player (nothing heard for " .. PARTNER_GONE_S .. " s): fog walls opened, enemies are yours again.")
+                endFights()
+                net.hostBosses, net.pendingBosses = {}, {}
                 reopenFog()
                 releaseHeld(nil)
                 net.remoteEnemies = {}
                 seen = {}
+                net.partnerFighting = false
+                watchFight(false)       -- (what ends a watch is that player's own word, and it won't come now)
+                restEvent("gone")
             else
                 log("Lost player " .. p.number .. " (nothing heard for " .. PARTNER_GONE_S .. " s).")
             end
             if net.party then
                 countFights()
-                -- The walls closed for their fight. Others' bars don't say it's on: those are copies of the same one.
-                for name, whose in pairs(net.fightOf) do
-                    if whose == p.number and net.foggedBosses[name] then
-                        pcall(game.setBossFog, net.foggedBosses[name], false)
-                        net.foggedBosses[name], net.fightOf[name] = nil, nil
-                    end
-                end
+                endFights(p.number)     -- (others' bars don't say it's on: those are copies of the same one)
             end
             updateGhostVisibility(p)
         elseif not gone and p.partnerGone then
