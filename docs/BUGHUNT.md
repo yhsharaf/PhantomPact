@@ -31,3 +31,9 @@ The user's challenge, 2026-11-02: three unique bugs make one commit, nine commit
 13. Dust and a kill's loot that arrived while a player had no body (a respawn, a load) were lost for good, while gifts in the same moment waited. Sim: `noBodyYet`.
 14. A partner's down state outlived them: a partner who crashed while down left the compass red and this player's revive floor off, and Leave while armed or down left the health floor, the input block and the save veto on, because the ticks that take those off stop with the sync. `revive.stop()` takes them off, and a kill told in an earlier session is forgotten with it. Sim: `whatsLeftOfAPartner`.
 15. What a player did with co-op off was reported at the next link: dust earned alone went to the partner, and a pickup taken alone destroyed the partner's copy. Sim: `offAndBack`.
+
+## 1.5.7
+
+16. An enemy copy let go by a guest kept a 24-hour target lock: the ghost it was given stayed its target after the host dropped or the guest left, and it ignored the guest. Sim: `offAndBack`.
+17. A marker on a map opened again stayed where the partner last was, after they left or changed map: closing the map told the code the marker was hidden, so it was never hidden. Sim: `whatsLeftOfAPartner`.
+18. A tip was cut short by the timer of the tip before it, one widget and two timers. Sim: `offAndBack`.

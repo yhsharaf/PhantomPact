@@ -1555,6 +1555,7 @@ return function(api)
     -- Guest: a move lunges at its enemy's target, so a copy with none fell short of the host's and was dragged the rest of the
     -- way, attack pose and all. It's given the host's target, and its own picker is told to leave that alone.
     local copyPickers = {}        -- enemy address -> its target picker
+    local copyCooldowns = {}      -- enemy address -> how long its picker waited before it was told to leave a target alone
     local TARGET_KEY = "AI.BlackboardKey.Object.TargetActor"
     local LONG_S = 86400.0
     function game.aimCopy(actor, addr, target)
@@ -1565,12 +1566,26 @@ return function(api)
                 copyPickers[addr] = picker
             end
             if picker then
+                copyCooldowns[addr] = copyCooldowns[addr] or picker.SwitchTargetCooldown
                 picker.SwitchTargetCooldown = LONG_S
                 picker.LastSwitchTime = api.gs():GetTimeSeconds(actor)
             end
             StaticFindObject("/Script/SGameAI.Default__SGameAIFunctionLibrary"):SetValueAsObjectByTag(actor.Controller.Blackboard,
                 { TagName = FName(TARGET_KEY) }, target)
         end)
+    end
+
+    -- A copy let go is its own again: the target it was given may be a ghost that's gone, so it looks for one now, not in a day.
+    function game.freeCopy(addr)
+        local picker, cooldown = copyPickers[addr], copyCooldowns[addr]
+        copyPickers[addr], copyCooldowns[addr] = nil, nil
+        if cooldown and valid(picker) then
+            pcall(function()
+                picker.SwitchTargetCooldown = cooldown
+                picker.LastSwitchTime = 0
+                picker:TrySwitchTarget()
+            end)
+        end
     end
 
     function game.partnerHit(addr, slot)

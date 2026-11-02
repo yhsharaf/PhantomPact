@@ -54,6 +54,8 @@ return function(api)
         return valid(w) and select(2, pcall(function() return w:IsInViewport() end)) == true
     end
 
+    local tipSerial = 0
+
     local function show(text)
         log("Status: " .. text)
         if not status.on then
@@ -70,9 +72,11 @@ return function(api)
             tip:SetText(FText("Phantom Pact: " .. api.lang.say(text)))
             pcall(function() tip:PlayAnimation(tip.FadeIn, 0, 1, 0, 1, false) end)
             local shown = tip
+            tipSerial = tipSerial + 1
+            local serial = tipSerial
             if game.after then
                 game.after(SHOW_S, function()
-                    if valid(shown) and shown == tip then
+                    if valid(shown) and shown == tip and serial == tipSerial then   -- (a later tip has this widget for its own time)
                         pcall(function() shown:SetVisibility(1) end)   -- collapsed
                     end
                 end)

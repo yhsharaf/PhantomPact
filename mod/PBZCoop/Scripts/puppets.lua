@@ -102,6 +102,7 @@ return function(api)
             if valid(p.actor) and not game.isDead(p.actor) then
                 pcall(function() p.actor.CharacterMovement.bOrientRotationToMovement = true end)
                 game.startAI(p.actor)
+                game.freeCopy(addr)
             end
         end
     end

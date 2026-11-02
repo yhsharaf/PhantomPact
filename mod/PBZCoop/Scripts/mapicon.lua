@@ -209,11 +209,7 @@ return function(api)
             if not isOpen then
                 openMap = findMap()
                 if not openMap then
-                    hidden = true   -- the icon closed with the map
-                    for _, one in pairs(pointers) do
-                        one.hidden = true
-                    end
-                    return
+                    return          -- (the icon closed with the map, and comes back with it: hide() has to know it's showing)
                 end
             end
             if net.party then
