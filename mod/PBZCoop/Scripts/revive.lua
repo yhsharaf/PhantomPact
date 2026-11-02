@@ -382,6 +382,9 @@ return function(api)
     coop.handlers.OUT = partnerBack
 
     coop.restListeners.revive = function(kind)
+        if kind == "gone" then
+            partnerBack()
+        end
         if kind == "bell" or kind == "sit" then
             downs = 0
         end
@@ -391,6 +394,22 @@ return function(api)
                 getUp(pc, pawn)
             end
         end
+    end
+
+    -- Sync off: what's on here comes off now, or it stays on, with the ticks that would take it off gone.
+    function revive.stop()
+        partnerBack()
+        local pc, pawn = api.getPlayer1()
+        if valid(pc) and valid(pawn) then
+            if down then
+                leaveDown(pc, pawn)
+            end
+            if armed then
+                game.setMinHealth(pawn, 0)
+            end
+        end
+        down, armed = false, false
+        hideRing()
     end
 
     function revive.set(on)

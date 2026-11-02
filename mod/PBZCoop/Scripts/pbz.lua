@@ -2332,6 +2332,14 @@ return function(api)
     local closedNear, retiring, searched = {}, {}, {}
     local pileHooked = false
 
+    -- Sync stopped: dust earned and things taken alone from now on aren't news for the next partner.
+    function game.forgetLink()
+        lastDust, syncedDust = nil, 0
+        gearKnown = nil
+        watched = {}
+        closedNear = {}
+    end
+
     local function chestOpen(chest)
         local ok, open, started = pcall(function() return chest.CurSwitchState, chest.bInteracted end)
         return not ok or open == true or started == true

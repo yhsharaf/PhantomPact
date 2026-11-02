@@ -25,3 +25,9 @@ The user's challenge, 2026-11-02: three unique bugs make one commit, nine commit
 10. A fight outlived whoever was in it. When its owner left, only the walls opened: the mirrored bars, `partnerBosses` and `pendingBosses` stayed, and those bars counted as a fight, so other players held each other's respawns for up to 15 minutes, and F3 said "not now". Leaving, a partner's sit and a partner gone now end those fights. Sim: `fightsAndWhoIsLeft`.
 11. A host's death on one map refreshed the enemies and took down the boss bar of a guest fighting on another. Sim: `elsewhere`.
 12. Every trip the host made counted as a new world: the guest's enemies refreshed, what it knew of the host's kills went, and the log said someone rested at a bell. Only a load from outside the world is a new one now. Sim: `elsewhere`.
+
+## 1.5.6
+
+13. Dust and a kill's loot that arrived while a player had no body (a respawn, a load) were lost for good, while gifts in the same moment waited. Sim: `noBodyYet`.
+14. A partner's down state outlived them: a partner who crashed while down left the compass red and this player's revive floor off, and Leave while armed or down left the health floor, the input block and the save veto on, because the ticks that take those off stop with the sync. `revive.stop()` takes them off, and a kill told in an earlier session is forgotten with it. Sim: `whatsLeftOfAPartner`.
+15. What a player did with co-op off was reported at the next link: dust earned alone went to the partner, and a pickup taken alone destroyed the partner's copy. Sim: `offAndBack`.

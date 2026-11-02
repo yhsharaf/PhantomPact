@@ -1353,11 +1353,20 @@ return function(api)
 
     ------------------------------------------------------------------ items
 
+    -- What the game gave the partner. Played with nobody in the world (a map loading) it waits. So does what's shared by word.
+    local giftsWaiting = {}
+    local dustWaiting = 0
+
     handlers.I = function(rest)
         local name, itemId, kind = rest:match("^(%S+)%s*(%S*)%s*(%S*)")
         if name and game.takeRemotePickup then
             local _, pawn = getPlayer1()
-            game.takeRemotePickup(name, itemId, pawn, (kind ~= "" and kind ~= "-") and kind or nil)
+            kind = (kind ~= "" and kind ~= "-") and kind or nil
+            if valid(pawn) or name:sub(1, 5) ~= "loot:" then
+                game.takeRemotePickup(name, itemId, pawn, kind)
+            elseif #itemId <= MAX_ITEM_NAME then
+                giftsWaiting[#giftsWaiting + 1] = { id = itemId, count = 1, kind = kind, loot = true }
+            end
         end
     end
 
@@ -1367,8 +1376,6 @@ return function(api)
         end
     end
 
-    -- What the game gave the partner. Played with nobody in the world (a map loading) it waits.
-    local giftsWaiting = {}
     handlers.T = function(rest, from)
         local id, count, kind = rest:match("^(%S+) (%d+) (%S+)$")
         count = num(count)
@@ -1379,12 +1386,20 @@ return function(api)
 
     local function takeGifts(pawn)
         for _, gift in ipairs(giftsWaiting) do
-            game.receiveGift(pawn, gift.id, gift.count, gift.kind, net.party and (gift.from or 1) or nil)
-            if gift.kind == "accessory" or gift.kind == "medicine" then
+            if gift.loot then
+                game.grantLoot(pawn, gift.id, gift.kind)
+            else
+                game.receiveGift(pawn, gift.id, gift.count, gift.kind, net.party and (gift.from or 1) or nil)
+            end
+            if gift.kind ~= nil then
                 api.status.notify("gift", "your partner found something: you have it too.")    -- (these come with no popup)
             end
         end
         giftsWaiting = {}
+        if dustWaiting > 0 and game.addCurrency then
+            game.addCurrency(pawn, dustWaiting)
+            dustWaiting = 0
+        end
     end
 
     local function reportChest(name)
@@ -1577,9 +1592,8 @@ return function(api)
 
     handlers.C = function(amount)
         amount = num(amount)
-        local _, pawn = getPlayer1()
-        if amount and amount > 0 and amount <= MAX_EVENT_DUST and game.addCurrency then
-            game.addCurrency(pawn, amount)
+        if amount and amount > 0 and amount <= MAX_EVENT_DUST then
+            dustWaiting = dustWaiting + amount
         end
     end
 
@@ -1903,7 +1917,7 @@ return function(api)
             game.hookPiles(reportChest)
             game.watchChests(pawn, reportChest)
         end
-        if #giftsWaiting > 0 and not game.isDead(pawn) then
+        if (#giftsWaiting > 0 or dustWaiting > 0) and not game.isDead(pawn) then
             takeGifts(pawn)
         end
         if game.watchGear and now >= (slow.gearAt or 0) then
@@ -2012,6 +2026,7 @@ return function(api)
         net.pendingBosses = {}
         net.partnerBosses = {}
         net.hostKilled = {}
+        net.guestKilled = {}
         net.hostBosses = {}
         net.hitHere = {}
         net.fightOf = {}
@@ -2019,6 +2034,7 @@ return function(api)
         net.joinedBoss, net.joinedWith, net.pullAfterCalm, net.bossOverAt = nil, nil, nil, nil
         net.healTicks = {}
         net.hostSeen = {}
+        net.partnerDowned = false
         enemyByName = {}
         seen = {}
         round.queue, round.at, round.seen, round.held = {}, 1, nil, nil
@@ -2160,6 +2176,8 @@ return function(api)
         leaveParty()
         endFights()
         reopenFog()
+        api.revive.stop()
+        game.forgetLink()
         clearRemoteState()
         log("Online sync off.")
     end
