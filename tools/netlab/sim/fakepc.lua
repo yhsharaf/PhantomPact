@@ -149,6 +149,7 @@ function Fake.character(pc, class, x, y, z, hp, posture)
     put(a, "AttributeSetBase", object(pc, "Attributes", {
         Health = attribute(pc, hp), Health_Max = attribute(pc, hp), Health_Min = attribute(pc, 0), Attack = attribute(pc, 50),
         Shachi = attribute(pc, posture or 100), Shachi_Max = attribute(pc, posture or 100), Level = attribute(pc, 1),
+        ShachiAttack = attribute(pc, 50), Infliction_Max = attribute(pc, 100), BreakDurationAdditionalMultiplier = attribute(pc, 1),
     }))
     local cmc = object(pc, "Movement", { MovementMode = 1, Velocity = { X = 0.0, Y = 0.0, Z = 0.0 }, MaxWalkSpeed = 0, AirControl = 0,
         MaxAcceleration = 0, bRunPhysicsWithNoController = false, bOrientRotationToMovement = true })
@@ -594,9 +595,19 @@ function Fake.new(id, scripts, ini, link)
         pc.inputActions[#pc.inputActions + 1] = a
     end
     pc.inputSubsystems, pc.injected = {}, {}
+    pc.inputContexts = { object(pc, "InputMappingContext"), object(pc, "InputMappingContext") }
+    pc.inputSets = { [0] = {}, [1] = {} }
+    for _, c in ipairs(pc.inputContexts) do
+        pc.inputSets[0][c], pc.inputSets[1][c] = 1, 1
+    end
     for id = 0, 1 do
         local s = object(pc, "InputSubsystem", {}, true)
         put(s, "GetOuter", function() return { ControllerId = id } end)
+        put(s, "HasMappingContext", function(_, c, found)
+            found.OutFoundPriority = pc.inputSets[id][c]
+            return pc.inputSets[id][c] ~= nil
+        end)
+        put(s, "AddMappingContext", function(_, c, priority) pc.inputSets[id][c] = priority end)
         put(s, "InjectInputVectorForAction", function(_, action)
             pc.injected[#pc.injected + 1] = action:GetFName():ToString()
         end)
@@ -648,6 +659,12 @@ function Fake.new(id, scripts, ini, link)
         end,
         CreatePlayer = function()
             pc.controller2 = playerController(pc.keys2, 1)
+            -- (A controller taking a body clears player 0's control sets, whichever controller it is.)
+            local takes = rawget(pc.controller2, "__fields").Possess
+            put(pc.controller2, "Possess", function(self, body)
+                pc.inputSets[0] = {}
+                takes(self, body)
+            end)
             put(pc.controller2, "ProjectWorldLocationToScreen", function(_, _, out)
                 local at = pc.projected or { X = 960, Y = 810 }
                 out.X, out.Y = at.X, at.Y
@@ -969,6 +986,8 @@ function Fake.new(id, scripts, ini, link)
             return pc.screens
         elseif class == "InputAction" then
             return pc.inputActions
+        elseif class == "InputMappingContext" then
+            return pc.inputContexts
         elseif class == "EnhancedInputLocalPlayerSubsystem" then
             return pc.inputSubsystems
         end

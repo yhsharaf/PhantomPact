@@ -133,7 +133,7 @@ down, the game's death card plays in their half alone, and they get back up off 
 - The quest-direction sense and "information" screens draw on player 1's half; the loot card too.
 - The ledge vault (mantle) fails for both players through the mod's route; the game's own does it for player 1.
 - Lock-on for player 2 could not be checked without a pad; the game's own targeting runs per player.
-- Story NPCs are talked to by player 1 (the game's interaction is player 1's); the dialogue screen is shared.
+- A talk is player 1's to the game: player 2's press starts it and sets player 1 down beside them, and the dialogue screen is shared.
 - Shops and training are pages of the bell menu, which both players share. Doors that need an item (the game's
   switches with required items) do not occur in chapter 1 on Xigu and are untested for player 2; the mod's route
   would open one through player 2 with the shared backpack, but the "needs item" page would draw on player 1's half.

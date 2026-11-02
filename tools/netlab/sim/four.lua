@@ -1368,10 +1368,30 @@ local function localScreen()
     k:run(1.5)
     local cover, art = kpc.widgets[before + 1], kpc.widgets[before + 5]
     check(#kpc.widgets == before + 5 and field(cover, "position").Y == 810, "going down: the game's death card, in their half")
-    k:run(7)
+    k:run(4.7)
+    local back = kpc.now
+    while next(kpc.inputSets[0]) == nil and kpc.now - back < 2 do
+        k:run(0.1)
+    end
+    k:run(2.3)
     check(field(cover, "removed") == true and field(art, "removed") == true, "it goes when they're back")
+    check(next(kpc.inputSets[0]) ~= nil, "player 1 keeps their controls through it")
     check(field(kstate.p2Pawn, "used") == kpc.riseClass, "and they get up off the ground")
     allErrors(k)
+
+    local a, apc, astate = localGame()
+    a:run(1.5)
+    local stats, stats2 = field(apc.pawn, "AttributeSetBase"), field(astate.p2Pawn, "AttributeSetBase")
+    Fake.put(field(stats, "Attack"), "CurrentValue", 55)
+    a:run(3)
+    check(field(field(stats2, "Attack"), "CurrentValue") == 55, "what the story adds to player 1's numbers reaches player 2")
+    Fake.put(field(stats2, "Attack"), "CurrentValue", 70)
+    a:run(3)
+    check(field(field(stats2, "Attack"), "CurrentValue") == 70, "and a buff of their own stays on top")
+    Fake.put(field(stats2, "Attack"), "CurrentValue", 50)
+    a:run(3)
+    check(field(field(stats2, "Attack"), "CurrentValue") == 55, "and when it ends they're back at player 1's number")
+    allErrors(a)
 
     local e, epc, estate = localGame()
     e:run(1.5)
