@@ -194,14 +194,16 @@ return function(api)
                     api.scaling.command(string.format("%d %d", tonumber(s.coopenemyhealth) or 150,
                         tonumber(s.coopenemyposture) or 130))
                 end
-                if (s.pvp or ""):lower() == "on" and api.pvp then
+                if api.pvp then
                     if tonumber(s.pvpdamage) then
                         api.pvp.command("damage " .. s.pvpdamage)
                     end
                     if tonumber(s.pvpparryposture) then
                         api.pvp.command("parry " .. s.pvpparryposture)
                     end
-                    api.pvp.set(true)
+                    if (s.pvp or ""):lower() == "on" then
+                        api.pvp.set(true)
+                    end
                 end
             end
         end)

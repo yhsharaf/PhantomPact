@@ -28,6 +28,8 @@ return function(api)
     local scaled = {}               -- enemy address -> its name once scaled (an address comes back for a new actor, after a
                                     -- map change or a respawn, and that one wasn't scaled yet)
     local scaledFor = {}            -- more than two players: enemy address -> how many it's been scaled for
+    local soloFights = {}           -- a boss's address -> true: its fight began with nobody else here, so whoever joins only
+                                    -- watches it, and it keeps its number until that's over
 
     local function scaleAttr(set, name, maxName, factor)
         pcall(function()
@@ -75,6 +77,22 @@ return function(api)
         return true
     end
 
+    local function noteSoloFights()
+        soloFights = {}
+        if game.bossFightActive() then
+            for _, boss in ipairs(game.bossActors()) do
+                soloFights[boss:GetAddress()] = true
+            end
+        end
+    end
+
+    local function inSoloFight(addr)
+        if soloFights[addr] and not game.bossFightActive() then
+            soloFights[addr] = nil
+        end
+        return soloFights[addr] == true
+    end
+
     -- While the partner is here: scale enemies we haven't scaled yet, a few looks a tick. The list is the one the net loop
     -- keeps: the search for enemies is its job, once a second, and two in one frame was part of the worst case.
     local next, todo, addrs, at, n = 0, {}, {}, 1, 0
@@ -96,10 +114,12 @@ return function(api)
             players = net.party and playersConnected() or 2
             if net.party then
                 if players < 2 then
+                    noteSoloFights()
                     return
                 end
             -- "With you": synced and the partner's ghost is in this world (same map, alive).
             elseif not (net.enabled and net.target and valid(net.ghost) and not net.ghostHidden) then
+                noteSoloFights()
                 return
             end
             todo, addrs = game.enemiesSoFar()
@@ -111,7 +131,7 @@ return function(api)
                 return
             end
             at = at + 1
-            local name = valid(e) and e:GetFName():ToString()
+            local name = valid(e) and not inSoloFight(addr) and e:GetFName():ToString()
             if name and net.party then
                 if scaleForParty(e, addr, name, players) then
                     n = n + 1

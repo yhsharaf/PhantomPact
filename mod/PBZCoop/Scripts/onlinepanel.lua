@@ -95,8 +95,17 @@ return function(api)
             save({ PartnerTeleport = word })
             api.partner.teleport = on
         elseif row == "pvp" then
+            if on and api.coop.net.party then
+                options[row] = false
+                api.status.notify("pvp", "PvP is off with more than two players.")
+                return
+            end
             save({ PvP = word })
             api.pvp.command(on and "on" or "off")
+            local net = api.coop.net
+            if on and net.enabled and not net.partnerGone and net.target then
+                api.status.notify("pvp", "your partner needs PvP on too, or their moves won't show here.")
+            end
         elseif row == "compass" then
             save({ PartnerCompass = word })
             api.hud.set(on)

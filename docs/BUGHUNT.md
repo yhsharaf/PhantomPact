@@ -43,3 +43,9 @@ The user's challenge, 2026-11-02: three unique bugs make one commit, nine commit
 19. Bell tips, and why the relay couldn't start, stayed English in Chinese. Sim: `offAndBack`.
 20. A setting added to an ini with no line end at its end was glued to the last line: `Secret = hunter2FourPlayers = On` changed the password and lost the key. Sim: `offAndBack`.
 21. Paste kept addresses Join then refused, and a Join that couldn't start while hosting said nothing.
+
+## 1.5.9
+
+22. PvP turned on in the panel skipped `PvPDamage` and `PvPParryPosture`, which only loaded with PvP on at the start, and never said the partner needs it too, while their moves stopped showing. With four players the row showed ON although it was refused.
+23. A weapon a partner found opened the game's full-screen "equip it now?" on this player, with the game not paused for it: in a party, on three other screens. It comes with a tip now. Sim: `weaponsFound`. Real: 40 weapons shared in a row, no dialog, the tip each time.
+24. A boss rose when the first partner joined mid-fight, though they only watch. Sim: `scaling`.

@@ -768,7 +768,8 @@ return function(api)
         end
         game.granting = true        -- (what the mod adds isn't sent back: see "what the game gives")
         if kind == "weapon" or kind == "weapon2" then
-            pcall(function() bp:AddWeaponItem(FName(itemId), kind == "weapon", true, false, false) end)
+            -- (No "equip it now?": that's a full screen, and with a partner linked the game doesn't pause for it.)
+            pcall(function() bp:AddWeaponItem(FName(itemId), kind == "weapon", false, false, false) end)
             log("Shared loot: weapon " .. itemId)
         elseif kind == "medicine" then
             pcall(function() bp:PushMedicineToInventory(FName(itemId), false, true) end)

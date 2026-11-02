@@ -1,4 +1,4 @@
-# Local co-op (split screen) in Phantom Pact 1.5.8
+# Local co-op (split screen) in Phantom Pact 1.5.9
 
 Mode > LOCAL under MORE in the F5 panel, or `Role = Local` in `PhantomPact.ini`, puts two players on one PC, side by side on
 one screen, no internet and no second PC. It is in testing: the whole of 1.5.0's local co-op work was done on Xigu with two DualSense pads through
