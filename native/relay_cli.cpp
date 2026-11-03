@@ -4,7 +4,10 @@
 //                                       60 frames a second and measures what arrives. Two bots on one PC share a clock,
 //                                       so every delay it prints is the true one.
 //   relay_cli netem <listen port> <target port> [options]   a bad connection between two ports on this PC
+//   relay_cli latency [options]         the partner's figure end to end in simulated time, over a grid of connections
+//                                       and frame rates: how far behind it shows, and how smoothly (latency.hpp)
 #include "relay.hpp"
+#include "latency.hpp"
 
 #include <limits>
 #include <queue>
@@ -406,6 +409,68 @@ void test_timeline_odd() {
         slid = slid || (out.x > 1 && out.x < 49000);
     }
     check(!slid, "a late sample behind a teleport doesn't make it slide");
+}
+
+// The ghost walks at the speed it's told, so that speed must be the sender's own: the mod's tick comes at another moment of
+// each frame, and the step between two stamps swings with it. Unless the sender is carried: then the path's.
+void test_timeline_speed() {
+    std::puts("timeline, speed:");
+    std::mt19937 rng(77);
+    std::uniform_real_distribution<double> unit(0, 1);
+    relay::Timeline line;
+    relay::Sample s, out;
+    s.flags = relay::FLAG_GROUNDED;
+    double worst = 0, next_frame = 0;
+    for (int i = 0; i < 600; i++) {
+        const double moved = i * 16.667;               // the game moves the player at the frame...
+        s.ms = static_cast<uint32_t>(10000 + moved + unit(rng) * 4);     // ...and the tick stamps it a little later
+        s.x = static_cast<float>(moved * 0.6);
+        s.vx = 600;
+        line.push(s, 50000 + s.ms + 30);
+        for (; next_frame <= s.ms + 30; next_frame += 16.667) {
+            if (!line.at(50000 + next_frame, out) || i < 120) continue;
+            worst = std::max(worst, std::fabs(out.vx - 600.0));
+        }
+    }
+    char what[120];
+    std::snprintf(what, sizeof what, "the speed it plays is the sender's, whenever the tick came (%.0f cm/s off at worst)", worst);
+    check(worst < 30, what);
+
+    relay::Timeline lift;
+    for (int i = 0; i < 300; i++) {
+        s.ms = static_cast<uint32_t>(10000 + i * 16);
+        s.x = static_cast<float>(i * 16 * 0.3);     // 300 cm/s, and the sender's own speed says it stands
+        s.vx = 0;
+        lift.push(s, 50000 + i * 16.0 + 20);
+        lift.at(50000 + i * 16.0 + 20, out);
+    }
+    std::snprintf(what, sizeof what, "carried by something, it's told the path's speed (%.0f cm/s of 300)", out.vx);
+    check(std::fabs(out.vx - 300) < 30, what);
+    const float last_x = out.x;
+    lift.at(50000 + 300 * 16.0 + 60, out);          // a sample late: the guess goes on at that speed too
+    std::snprintf(what, sizeof what, "and a guess past the last sample goes on at it (%.1f cm on in 56 ms)", out.x - last_x);
+    check(out.x - last_x > 12 && out.x - last_x < 22, what);
+}
+
+// The partner end to end (latency.hpp), sending as coop.lua does. When these numbers were chosen, an 80 ms link with
+// 10 ms of jitter and 2% loss played the partner 85 ms behind with a ghost speed off by 75 cm/s (95th percentile).
+void test_latency() {
+    std::puts("latency, end to end:");
+    const lab::Path stops = lab::make_path("stops", 40, 11);
+    const lab::Sending sending{0, 0, 125};
+    lab::TimelinePlayback bad, clean;
+    lab::Run r = lab::run(stops, nullptr, {80, 10, 2}, 60, 60, bad, 5, sending);
+    char what[140];
+    std::snprintf(what, sizeof what, "80 ms link, 10 ms jitter, 2%% loss: %.0f ms behind, %.0f ms at the 95th percentile",
+                  r.target.behind(0.5), r.target.behind(0.95));
+    check(r.target.behind(0.5) < 70 && r.target.behind(0.95) < 75, what);
+    std::snprintf(what, sizeof what, "a sudden stop runs on %.1f cm at most", r.target.overshoot(1.0));
+    check(r.target.overshoot(1.0) < 6, what);
+    std::snprintf(what, sizeof what, "the ghost's speed stays steady: %.0f cm/s off at the 95th percentile", r.ghost.speed(0.95));
+    check(r.ghost.speed(0.95) < 40, what);
+    lab::Run c = lab::run(stops, nullptr, {30, 0, 0}, 60, 60, clean, 6, sending);
+    std::snprintf(what, sizeof what, "30 ms clean link: %.0f ms behind", c.target.behind(0.5));
+    check(c.target.behind(0.5) < 38, what);
 }
 
 // Two real Relay objects through a network in memory, in simulated time: every packet is at the test's mercy.
@@ -1768,6 +1833,8 @@ void test_sockets(int port) {
 int run_tests(int argc, wchar_t** argv) {
     test_timeline();
     test_timeline_odd();
+    test_timeline_speed();
+    test_latency();
     test_lanes();
     test_packets();
     test_partners();
@@ -2041,6 +2108,93 @@ int netem(const Netem& o, const std::atomic<bool>* stop) {
     return 0;
 }
 
+// "30,80,150" -> 30, 80, 150.
+std::vector<double> opt_list(int argc, wchar_t** argv, const wchar_t* name, std::vector<double> fallback) {
+    for (int i = 1; i + 1 < argc; i++) {
+        if (std::wcscmp(argv[i], name) != 0) continue;
+        std::vector<double> out;
+        for (const wchar_t* at = argv[i + 1]; *at;) {
+            wchar_t* end = nullptr;
+            out.push_back(std::wcstod(at, &end));
+            if (end == at) break;
+            at = *end == L',' ? end + 1 : end;
+        }
+        return out;
+    }
+    return fallback;
+}
+
+// Every connection of the grid, one line each for the playback's target and for the ghost walking after it, then the
+// means. A recording replaces the made-up sender (and its frame rate) with the real game's frames.
+int run_latency(int argc, wchar_t** argv) {
+    const std::string kind = relay::narrow(opt_text(argc, argv, L"--path", L"mix"));
+    const std::string file = relay::narrow(opt_text(argc, argv, L"--recording", L""));
+    const double seconds = opt_number(argc, argv, L"--seconds", 60);
+    const auto rtts = opt_list(argc, argv, L"--rtt", {30, 80, 150});
+    const auto jitters = opt_list(argc, argv, L"--jitter", {0, 10, 30});
+    const auto losses = opt_list(argc, argv, L"--loss", {0, 2, 5});
+    const auto fpss = file.empty() ? opt_list(argc, argv, L"--fps", {30, 60, 120}) : std::vector<double>{0};
+    const double recv_fps = opt_number(argc, argv, L"--recv-fps", 60);
+    const bool brief = opt_number(argc, argv, L"--brief", 0) != 0;
+    // coop.lua's rule: every frame, at most 125 a second. --send-rate 0 is the rule before it, 1/62 s after the last send.
+    const double send_rate = opt_number(argc, argv, L"--send-rate", 125);
+    const lab::Sending sending = send_rate > 0 ? lab::Sending{0, 0, send_rate} : lab::Sending{};
+    lab::Recorded rec;
+    lab::Path path;
+    if (!file.empty()) {
+        rec = lab::load_recording(file);
+        path = lab::path_of(rec);
+        if (path.x.empty()) {
+            std::puts("latency: no P rows in that recording");
+            return 1;
+        }
+    } else {
+        path = lab::make_path(kind, seconds, 11);
+    }
+    static const char* const NAMES[] = {"behind50", "behind95", "behind99", "now95", "path99", "step99", "stepmax", "speed95",
+                                        "stop50", "stopmax", "backmax"};
+    constexpr size_t N = sizeof NAMES / sizeof NAMES[0];
+    const auto numbers = [](lab::Measures& m, double* v) {
+        const double got[N] = {m.behind(0.5), m.behind(0.95), m.behind(0.99), m.now(0.95), m.path(0.99), m.step(0.99), m.step(1.0),
+                               m.speed(0.95), m.overshoot(0.5), m.overshoot(1.0), m.back(1.0)};
+        std::copy(got, got + N, v);
+    };
+    double sums[2][N] = {};
+    int runs = 0;
+    std::printf("%s, %.0f s, %zu stops; receiver at %.0f FPS. ms for behind, cm for the rest (speed cm/s)\n",
+                file.empty() ? kind.c_str() : file.c_str(), path.length_ms() / 1000, path.stops.size(), recv_fps);
+    std::printf("%-26s", "rtt jitter loss fps");
+    for (const char* name : NAMES) std::printf("%9s", name);
+    std::printf("\n");
+    uint32_t seed = 1;
+    for (double rtt : rtts)
+        for (double jitter : jitters)
+            for (double loss : losses)
+                for (double fps : fpss) {
+                    lab::TimelinePlayback play;
+                    const lab::Link link{rtt, jitter, loss};
+                    lab::Run r = lab::run(path, file.empty() ? nullptr : &rec, link, fps ? fps : 60, recv_fps, play, seed++, sending);
+                    for (int stage = 0; stage < 2; stage++) {
+                        double v[N];
+                        numbers(stage ? r.ghost : r.target, v);
+                        for (size_t i = 0; i < N; i++) sums[stage][i] += v[i];
+                        if (brief) continue;
+                        char label[64];
+                        std::snprintf(label, sizeof label, "%3.0f %3.0f %2.0f%% %3.0f %s", rtt, jitter, loss, fps, stage ? "ghost " : "target");
+                        std::printf("%-26s", label);
+                        for (double x : v) std::printf("%9.1f", x);
+                        std::printf("\n");
+                    }
+                    runs++;
+                }
+    for (int stage = 0; stage < 2; stage++) {
+        std::printf("%-26s", stage ? "mean ghost" : "mean target");
+        for (double s : sums[stage]) std::printf("%9.1f", s / runs);
+        std::printf("\n");
+    }
+    return 0;
+}
+
 int run_netem(int argc, wchar_t** argv) {
     Netem o;
     o.listen = _wtoi(argv[2]);
@@ -2063,11 +2217,14 @@ int wmain(int argc, wchar_t** argv) {
     if (mode == L"test") return run_tests(argc, argv);
     if (mode == L"bot" && argc > 2) return run_bot(argc, argv);
     if (mode == L"netem" && argc > 3) return run_netem(argc, argv);
+    if (mode == L"latency") return run_latency(argc, argv);
     std::fputs("usage: relay_cli test [--sockets 0] [--port n] | bot host|client [--port n] [--peer ip] [--seconds s] [--fps n] [--enemies n]"
                " [--hitch-every s --hitch-ms ms] [--cx x --cy y --cz z] [--dir folder] [--ini file]"
                " [--event-every s] [--event-bytes n] [--events-for s] [--burst n]"
                " | netem <listen port> <target port>"
-               " [--delay ms] [--jitter ms] [--loss %] [--duplicate %] [--stall-every s --stall-ms ms] [--seconds s]\n", stderr);
+               " [--delay ms] [--jitter ms] [--loss %] [--duplicate %] [--stall-every s --stall-ms ms] [--seconds s]"
+               " | latency [--path mix|circle|stops|zigzag | --recording pair.txt] [--seconds s] [--rtt 30,80,150]"
+               " [--jitter 0,10,30] [--loss 0,2,5] [--fps 30,60,120] [--recv-fps n] [--send-rate 125|0] [--brief 1]\n", stderr);
     return 2;
 }
 

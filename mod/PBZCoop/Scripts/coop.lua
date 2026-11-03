@@ -40,7 +40,7 @@ return function(api)
     local spawnBesidePlayer1, game = api.spawnBesidePlayer1, api.game
 
     local GHOST_CLASS = "/Script/Engine.DefaultPawn"
-    local SEND_S = 1 / 62         -- the player goes out this often at most: every frame at 60 FPS, not more above it
+    local SEND_RATE = 125         -- the player goes out every frame, but no more than this many times a second
     local SLOW_S = 0.1            -- health, map and the other things that change rarely are read this often
     local EXTRA_S = 1 / 40        -- modules' ticks (extraTicks); steering runs every frame (frameTicks)
     local GHOST_SNAP_CM = 600     -- walking ghost further than this from its target teleports instead
@@ -3058,7 +3058,7 @@ return function(api)
     -- Other modules (pvp.lua) run here every tick while sync is on: name -> function.
     local extraTicks = extraTicksEarly
 
-    local nextSend, nextSlow, nextExtra, lastFrame = 0, 0, 0, nil
+    local sendBudget, nextSlow, nextExtra, lastFrame = 1, 0, 0, nil
     local frameNow, frameDt = 0, 0.016
 
     local function stageReadEnemies() readEnemies(frameNow) end
@@ -3077,8 +3077,11 @@ return function(api)
         runStage("processEvents", processEvents)
         runStage("readPartner", readPartner)
         runStage("readEnemies", stageReadEnemies)       -- (a host's: the ones a guest's game runs, see handover)
-        if now >= nextSend then
-            nextSend = now + SEND_S
+        -- A budget that fills with time, not a fixed gap after the last send: the tick comes at a slightly different moment
+        -- in each frame, and a gap of 1/62 s skipped one frame in four at 60 FPS, so the partner was played further behind.
+        sendBudget = math.min(1.5, sendBudget + frameDt * SEND_RATE)
+        if sendBudget >= 1 then
+            sendBudget = sendBudget - 1
             runStage("sendPlayer", sendPlayer)
         end
         runStage("steerGhost", steerGhosts)

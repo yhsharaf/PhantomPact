@@ -8,11 +8,20 @@ Everything here tests the relay and the sync on one PC.
     native\build\relay_cli.exe test
     .\tools\netlab\bench.ps1 -Delay 40 -Jitter 20 -Loss 2 -StallEvery 6 -StallMs 250
     .\tools\netlab\restart-test.ps1
+    native\build\relay_cli.exe latency [--path mix|stops|zigzag|circle] [--recording pair.txt] [--rtt 30,80,150] ...
 
 `relay_cli test` runs real relays against simulated connections, broken packets and a fuzz loop, then real sockets. `bench.ps1`
 runs two bots through a bad connection and prints true delays, since both share the PC's clock. `restart-test.ps1` is separate
 processes: restarts, Secrets, an old partner, garbage, the sure lane at 5% and 30% loss. Bots bind to loopback only, so
 Windows' firewall doesn't ask anything.
+
+`relay_cli latency` is the partner end to end in simulated time (`native/latency.hpp`), a grid of connections in seconds: the
+sender's frames with the real game's frame noise and the mod's tick a few ms into each, coop.lua's send rule, delay, jitter and
+loss, the Timeline, the receiver's frames, and the ghost walking the way steerGhost drives it. Per connection, for the Timeline's
+target and for the ghost: how far behind the true path it shows (p50/p95/p99), how far from where the sender is now, from the
+true path, a frame's step against the true one, speed against the true speed, and how far it runs on past a sudden stop and
+then comes back. `--recording` plays a pair.lua recording's frames instead of the made-up motion (recordings carry no velocity,
+so the replay's speeds are as noisy as the stamps); `--send-rate 0` is the send rule before 1.6.0's.
 
 ### Four players, and two players not changing
 

@@ -35,11 +35,13 @@ Two real copies on one PC, loopback:
 - `native/relay.hpp`: the relay thread in main.dll, the Mailbox between it and the game thread, the packets.
 - `native/lanes.hpp`: the sure lane (arrives, once, in order, resent by acknowledgement) and the quick lane (sent three
   times, played once, dropped if late).
-- `native/timeline.hpp`: plays the partner a little in the past, just far enough to stay smooth, following the connection.
+- `native/timeline.hpp`: plays the partner a little in the past, just far enough that three samples in four are there in
+  time, following the connection; the rest of the time it guesses ahead from the sender's own speed, which is also the
+  speed the ghost is told to walk at.
 - `native/lua_link.hpp`: direct calls from Lua (`api.link`, opened by `openLink` in main.lua). UE4SS doesn't export Lua's C
   API, but it exports its own wrapper class for C++ mods, and that is what's called.
-- `mod/PBZCoop/Scripts/coop.lua`: one `tick` every frame. `readPartner`, `steerGhost` and `sendPlayer` run each frame;
-  enemies take turns over `ENEMY_ROUND_S`; `watchSlowly` runs ten times a second.
+- `mod/PBZCoop/Scripts/coop.lua`: one `tick` every frame. `readPartner`, `steerGhost` and `sendPlayer` run each frame
+  (`sendPlayer` at most 125 times a second); enemies take turns over `ENEMY_ROUND_S`; `watchSlowly` runs ten times a second.
 
 Nothing on the hot path touches a file. `net_start.txt` starts the relay, `pp_stop` ends it (the socket closes, the Mailbox
 empties, and another start can follow with another role), and `net_status.txt` is rewritten once a second
@@ -92,6 +94,63 @@ Three guests, bots on one PC:
 
 On the game thread four players cost about a third more calls into the game each frame than two: a ghost's place is read from
 memory, and a hidden ghost costs nothing (`luasim.py four` counts them).
+
+## How far behind the partner is shown
+
+Measured with `relay_cli latency` (`native/latency.hpp`): the whole way from the sender's frame to the ghost on the other
+screen, in simulated time, against where the sender really was every millisecond. The sender's motion is made from what
+recordings of the real game show: starts take a quarter of a second, a stop takes one frame, turns run at about 25 degrees a
+frame, frames come unevenly and the mod's tick a few ms into each. Played over loopback, a real recording's partner shows
+24 ms behind on the bench and was 23 ms behind in the real game.
+
+Mixed play (runs, sudden stops, turns, footwork, dodges), mean over every RTT of 30/80/150 ms, jitter 0/10/30 ms, loss
+0/2/5% and the sender at 30/60/120 FPS; behind as p50 / p95 / p99:
+
+| | 1.6.0 as it was | now |
+|---|---|---|
+| The path played, behind the real one: RTT 30 / 80 / 150 ms | 59 / 84 / 119 ms | 44 / 69 / 104 ms |
+| ... with the sender at 30 / 60 / 120 FPS | 94 / 86 / 82 ms | 87 / 70 / 61 ms |
+| ... at the 95th / 99th percentile, all connections | 90 / 92 ms | 74 / 75 ms |
+| The ghost on screen, behind, p50 / p95 / p99 | 87 / 118 / 132 ms | 72 / 102 / 116 ms |
+| The ghost's speed off the real one, running and stopping, 95th percentile | 70 cm/s | 17 cm/s |
+| A sudden stop: how far the played path runs on past it, worst per connection | 0.8 cm | 1.4 cm |
+| ... and the ghost | 12.2 cm | 12.6 cm |
+
+Through real sockets and netem (`bench.ps1`), the bot sending every frame: RTT 30 clean 34 -> 30 ms, RTT 80 with 10 ms jitter
+and 2% loss 68 -> 64 ms, RTT 150 with 30 ms jitter and 5% loss 122 -> 110 ms (p50). `all.ps1`'s bad link (250 ms stalls
+every 3 s): 136 -> 73 ms at the 95th percentile.
+
+What made the difference:
+
+- `sendPlayer` sends every frame, at most 125 a second. The gap of 1/62 s it used to wait after a send skipped a frame in four
+  at 60 FPS (the tick's moment in the frame wanders a few ms), and one gap in ten was a whole extra frame for the partner to
+  wait out. Above 60 FPS it sent every second frame.
+- The Timeline plays just far enough behind that three samples in four are there in time, counting a sample's gap from the one
+  before together with its lateness, and guesses the last 3 ms from the sender's speed: a stop slides further than that. It
+  used to add the average gap, the 90th percentile of lateness and 2 ms, which also put a stall into the delay for 1.5 s.
+- The ghost is told the sender's own speed, eased between samples. Worked out from two samples' stamps it swung by a fifth from
+  sample to sample, because the stamp is when the tick ran, not when the game moved the player, and the ghost walks at that
+  speed. When the path disagrees with those speeds (the sender carried by something), it's the path's speed.
+
+Tried and not kept:
+
+- Showing the partner where they probably are now (guessing ahead by the whole delay): 5 ms ahead, but every sudden stop ran
+  on 31 cm (45 at worst) and walked back; easing the correction over 100 ms changed nothing, the overshoot comes before the
+  stop is known. Half of it: 38 ms behind, 8 cm (20 at worst). 10 ms ahead: 5 ms less, the worst stop 1.6 cm further. Every
+  ms guessed past the newest sample costs about 0.6 cm at a stop at running speed, once it's past the stop's own slide.
+- Leaving the gap between samples out of the delay: 20 ms less, but a stop overshot 18 cm at 30 FPS.
+- Through a stall, slowing the guess down instead of running on at full speed: a stall with a stop in it overshoots 15 cm instead
+  of 80, but every other stall then stops the ghost and makes it sprint to catch up (its speed off by 490 cm/s instead of 200).
+  Stalls are mostly the partner just running on, so the guess runs on as before, for at most 160 ms.
+- Sending from the relay thread at a fixed rate: the game has one new position a frame, so a timer only adds waiting. On a
+  60 Hz timer the partner showed 11 ms further behind than with each frame sent at once, on a 125 Hz one 5 ms.
+
+Enemy copies (`puppets.lua` carries the host's last line forward from when it was read): measured where a copy is steered to,
+10 lines a second today, they show 61 ms behind and run on 19 cm past a stop typically (59 at worst). Carrying the line on by
+half the round trip shows them 11 ms behind but doubles that overshoot; 20 lines a second cuts it to 7 cm (45 at worst) at no
+delay; 30 a second with half the round trip is 10 ms behind, about as smooth as today (24 cm past a stop typically against
+19, 41 cm back at worst against 49). A line rate above 10 is more work for every enemy on the host's game thread each turn,
+so that needs the real game's frame time first (`PERF.stages`), and nothing about enemies changed here.
 
 ## Testing
 
