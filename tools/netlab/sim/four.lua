@@ -361,6 +361,110 @@ local function farEnemy()
     allErrors(s)
 end
 
+-- Two players apart: the host's game keeps what's by the guest asleep, so an enemy clearly nearer the guest is the guest's
+-- game's to run, and the host's copy follows the guest's. Together again, it's the host's.
+local function guestRunsWhatsNearIt()
+    part("enemies by a guest some way off")
+    local list = {
+        { "byguest", THUG, 11500.0, 0.0, 100.0, 600, 100 },
+        { "between", THUG, 5500.0, 0.0, 100.0, 600, 100 },
+        { "bossthere", "BP_Monster_Boss_C", 11200.0, 700.0, 100.0, 5000, 400, true },
+        { "byhost", THUG, 300.0, 0.0, 100.0, 600, 100 },
+        { "chasing", THUG, 2600.0, 0.0, 100.0, 600, 100 },
+        { "faraway", THUG, 40000.0, 0.0, 100.0, 600, 100 },
+    }
+    local s = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, list)
+    local h, g = s.pcs[1], s.pcs[2]
+    local function brain(e)
+        return field(field(field(e, "Controller"), "BrainComponent"), "running")
+    end
+    -- What's sent from the given point on.
+    local function since(pc, from, pattern)
+        local n = 0
+        for i = from + 1, #pc.sent do
+            if pc.sent[i]:find(pattern) then
+                n = n + 1
+            end
+        end
+        return n
+    end
+    s:run(4)
+    Session.moveTo(h, 0, 0)
+    Session.moveTo(g, 11000, 0)        -- 110 m off: the host still runs what's near the guest
+    s:run(3)
+    local onH, onG = Session.enemyOn(h, "byguest"), Session.enemyOn(g, "byguest")
+    check(count(h.sent, "^E RUN sp:byguest 1$") == 1, "two players apart: an enemy clearly nearer the guest goes to the guest's game, once")
+    check(net(g).mine["sp:byguest"] == true and brain(onG) == true, "where it has its own AI back")
+    check(brain(onH) == false and count(g.sent, "^N ") > 0, "and the host's copy follows the guest's lines")
+    check(count(h.sent, "^E RUN sp:between ") == 0 and count(h.sent, "^E RUN sp:bossthere ") == 0
+        and count(h.sent, "^E RUN sp:byhost ") == 0 and count(h.sent, "^E RUN sp:chasing ") == 0,
+        "not one as near the host, nor a boss, nor one by the host or far from both")
+    Fake.put(onG, "loc", { X = 13000.0, Y = 800.0, Z = 100.0 })
+    s:run(2)
+    check(gap(at(onH), at(onG)) < 200, "the host's copy goes where the guest's goes")
+    local left = select(1, Fake.health(onG))
+    swing(g, onG, left - 60)
+    s:run(1)
+    check(count(g.sent, "^E D sp:byguest ") == 0, "the guest's hit isn't reported: it's that game's enemy")
+    check(select(1, Fake.health(onH)) == left - 60, "the host's copy follows the guest's health")
+    Session.moveTo(h, 12000, 2500)     -- near, and still apart
+    s:run(1)
+    swing(h, onH, select(1, Fake.health(onH)) - 40)
+    s:run(1)
+    check(count(h.sent, "^E D sp:byguest ") == 1, "the host's hit on it goes to the guest's game")
+    check(select(1, Fake.health(onG)) == left - 100, "and lands there")
+    s:run(1)
+    check(select(1, Fake.health(onG)) == left - 100 and select(1, Fake.health(onH)) == left - 100, "once, on both")
+    Session.moveTo(g, 12500, 2400)     -- together
+    Fake.put(onG, "loc", { X = 12800.0, Y = 1500.0, Z = 100.0 })
+    s:run(2)
+    check(count(h.sent, "^E RUN sp:byguest 0$") == 1 and net(g).mine["sp:byguest"] == nil, "together again: the host's game runs it")
+    check(brain(onH) == true and brain(onG) == false, "its AI back on the host, the guest's copy following the host's again")
+    check(gap(at(onH), at(onG)) < 200, "from where it stood, with no jump")
+    check(select(1, Fake.health(onH)) == select(1, Fake.health(onG)), "and with what it had left in the guest's game")
+    Session.moveTo(h, 3000, 2500)      -- apart again
+    s:run(3)
+    check(count(h.sent, "^E RUN sp:byguest 1$") == 2, "apart again: the guest's game runs it again")
+    local dust = Session.dust(h)
+    swing(g, onG, 0)
+    Fake.put(onG, "dead", true)
+    s:run(2)
+    check(count(g.sent, "^E GK sp:byguest$") == 1, "the guest's game kills it, and says so")
+    check(field(onH, "dead") == true and field(onH, "realDeath") ~= true, "the host's copy dies, quietly")
+    local dissolving = false
+    for _, e in ipairs(h.effectsOn) do
+        dissolving = dissolving or (e.path:find("NS_DeathDissolve_001", 1, true) ~= nil and e.on == field(onH, "Mesh"))
+    end
+    check(dissolving and Session.dust(h) == dust, "as a death looks, and pays nobody twice")
+    -- One fighting the host stays the host's, however near the guest.
+    local chasing = Session.enemyOn(h, "chasing")
+    Fake.put(field(chasing, "picker"), "SwitchTargetCooldown", 1e9)
+    Fake.put(chasing, "target", h.pawn)
+    Session.moveTo(h, 0, 0)
+    Session.moveTo(g, 3300, 0)
+    local mark = #h.sent
+    s:run(2)
+    check(since(h, mark, "^E RUN sp:chasing ") == 0 and net(h).guestRuns["sp:chasing"] == nil,
+        "one after the host stays the host's, though the guest is nearer")
+    Fake.put(chasing, "target", nil)
+    s:run(1)
+    check(since(h, mark, "^E RUN sp:chasing 1$") == 1, "and goes once it's after nobody")
+    -- Past the host's reach the guest's world has its own, as ever: its kill is the host's too.
+    Session.moveTo(g, 39500, 0)
+    s:run(3)
+    local far = Session.enemyOn(g, "faraway")
+    swing(g, far, select(1, Fake.health(far)) - 50)
+    s:run(1)
+    swing(g, far, 0)
+    Fake.put(far, "dead", true)
+    s:run(1)
+    check(count(g.sent, "^E GK sp:faraway$") == 1, "two players: a guest's kill past the host's reach is told")
+    Session.moveTo(h, 39000, 300)
+    s:run(2)
+    check(field(Session.enemyOn(h, "faraway"), "dead") == true, "and it's dead in the host's world once the host is near")
+    allErrors(s)
+end
+
 local function rests()
     part("bells and deaths")
     local s = party()
@@ -2824,6 +2928,7 @@ return function(print_, scripts)
     sharing()
     enemiesAndHits()
     farEnemy()
+    guestRunsWhatsNearIt()
     rests()
     sits()
     sitsForTwo()

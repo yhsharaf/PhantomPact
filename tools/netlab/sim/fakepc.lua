@@ -1276,8 +1276,16 @@ function Fake.new(id, scripts, ini, link)
     end })
     local rendering = object(pc, "RenderingLibrary")
     defs(pc, rendering, { ImportFileAsTexture2D = function() return object(pc, "Texture", {}, true) end })
+    -- The game's enemy codex: a row for each kind, which says whether it's a boss. (A fake enemy's class goes by its id.)
     local codex = object(pc, "DataTable")
-    defs(pc, codex, { FindRow = function() return nil end })
+    defs(pc, codex, { FindRow = function(_, kind)
+        for _, e in ipairs(pc.enemies) do
+            if (rawget(e, "__name") or ""):gsub("_C$", "") == kind and rawget(e, "__fields").boss then
+                return { bIsBoss = true }
+            end
+        end
+        return nil
+    end })
     local widgetClass = object(pc, "WidgetClass")
     pc.mapWidgets = {}
     local slotProto = { GetAutoSize = function() return false end, GetSize = function() return { X = 40, Y = 40 } end,

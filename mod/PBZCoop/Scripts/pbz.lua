@@ -761,6 +761,9 @@ return function(api)
         if not ok then
             log("Kill failed: " .. tostring(err))
         end
+        -- This kill leaves the health as it was (30 on a thug), and some 10 s on, as the game clears the body away, it stops
+        -- saying it's dead: read then, it was a live enemy again, sent to the partner, brought back there, handed over.
+        game.setHealth(actor, 0)
     end
 
     -- An enemy copy dies here as the host's did. The quiet kill alone left it standing, frozen, until it went; the game's

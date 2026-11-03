@@ -133,7 +133,10 @@ return function(api)
         peerList = nil,           -- party: the same, in slot order
         lead = nil,               -- party: who net stands for: a guest's host, or the host's first guest who's here
         ghostSlots = {},          -- party: ghost address -> slot
-        hitHere = {},             -- party, client: enemy id -> this player hit it
+        hitHere = {},             -- client: enemy id -> this player hit it
+        guestRuns = {},           -- host: enemy id -> true while the guest's game runs it (see handover)
+        guestLines = {},          -- host: enemy id -> the guest's latest record of one its game runs
+        mine = {},                -- client: host enemy id -> true while this game runs it (see handover)
         fightOf = {},             -- party: boss id -> the slot of whoever started that fight
         stats = { sent = 0, received = 0, applied = 0, undone = 0 },
     }
@@ -759,6 +762,26 @@ return function(api)
         end
     end
 
+    -- The host's game wakes enemies for its own player alone: its optimizer and its fight areas, which only ever take the host
+    -- in, kept the ones by a guest some way off asleep, and their copies on the guest's side stood there with them, never
+    -- swinging. So with two players apart, an enemy clearly nearer the guest is run by the guest's game, where the guest is the
+    -- player and it wakes as the game always does, and the host's copy follows the guest's lines and moves as a guest's copies
+    -- follow the host's. It's the host's again once the two are together, once it's clearly nearer the host, or when the
+    -- guest's game goes quiet about it. Bosses, one fighting the host, and anything without a spawner's id (which the two PCs
+    -- might name apart) stay the host's. Two players only: a party's relay carries enemy lines from the host alone.
+    local handover = {
+        APART_CM = 2500,        -- the two players further apart than this are apart
+        TOGETHER_CM = 1500,     -- and back within this, together
+        NEARER_CM = 1000,       -- an enemy changes hands once it's this much nearer the other player
+        FIGHT_CM = 3000,        -- one after the host and this close to it is in the host's fight
+        QUIET_S = 2.0,          -- this long with no line from the guest's game, it's the host's again
+        RETRY_S = 10.0,         -- and isn't handed over again this soon
+        on = false,             -- host, this round: the two are apart, and the guest's game may run enemies
+        seen = {},              -- host: id -> { hp, posture, addr } of a copy the guest's game runs, as left last turn
+        since = {},             -- host: id -> net.frameNow when it was handed over
+        retryAt = {},           -- host: id -> os.clock() before which it isn't handed over again
+    }
+
     -- Host, one enemy's turn: announce its death (reliably), or send where it is.
     local function shareEnemy(actor, addr, aggro)
         local name = enemyName(actor, addr)
@@ -783,14 +806,22 @@ return function(api)
         local paidThere = false
         if not dead and net.guestKilled[name] and game.kill then
             net.guestKilled[name] = nil
-            game.kill(actor)
+            if net.guestRuns[name] then
+                handover.drop(actor, addr, name)
+            end
+            -- (Not left standing frozen till it goes: it dies as a death looks here, as a guest's copies do.)
+            if game.dissolveKill and not (game.isBoss and game.isBoss(actor, addr)) then
+                game.dissolveKill(actor)
+            else
+                game.kill(actor)
+            end
             dead = true
             paidThere = true        -- the guest's game ran that death itself, loot and all
         end
-        if not dead and api.puppets then
-            api.puppets.watchHost(name, actor, addr)
-        end
         if dead then
+            if net.guestRuns[name] then
+                handover.drop(actor, addr, name)
+            end
             if not net.deadSent[name] then
                 net.deadSent[name] = true
                 sendEvent("K", name)
@@ -822,6 +853,12 @@ return function(api)
             -- (No health read = stale actor: left out rather than sent as 0/0, which the client would apply.)
             -- Alive (again, after a bell respawn): its next death must be announced too.
             net.deadSent[name] = nil
+            if handover.guestRuns(name, actor, addr, x, y, z) and handover.follow(name, actor, addr, hp, posture) then
+                return              -- (the guest's game runs it: what it does comes from there)
+            end
+            if api.puppets then
+                api.puppets.watchHost(name, actor, addr)
+            end
             if yaw == yaw and x == x and y == y and z == z then
                 local boss = game.isBoss and game.isBoss(actor, addr) and 1 or 0
                 -- "-" = unknown posture; the client leaves its own alone instead of zeroing it.
@@ -848,12 +885,13 @@ return function(api)
     -- id is the HOST's id for this enemy (it may differ from our own when matched by class and position).
     -- lethal: our copy is held at 1 health (only the host kills it), so a killing blow can't show its full damage
     -- here; it's sent as lethal and the host kills the enemy.
+    -- A host reports its hits on one the guest's game runs (handover), the other way round.
     local function reportHit(id, enemy, hpDamage, postureDamage, lethal)
-        if net.enabled and isClient() and valid(enemy) then
+        if net.enabled and (isClient() or net.guestRuns[id]) and valid(enemy) then
             sendEvent("D", id, string.format("%.1f", hpDamage), string.format("%.1f", postureDamage or 0),
                 lethal and "L" or "-")
             net.stats.hitsReported = (net.stats.hitsReported or 0) + 1
-            if net.party and hpDamage > 0 then
+            if isClient() and hpDamage > 0 then
                 net.hitHere[id] = true      -- (see GK in syncEnemy)
             end
         end
@@ -1063,6 +1101,8 @@ return function(api)
                         -- The host's swing, replayed here: the host's own world already took it.
                         undoHit(actor, prev.hp, prev.posture)
                         hp, posture = prev.hp, prev.posture
+                    elseif net.mine[name] then
+                        -- (This game runs it: what it loses is real, and the host's copy follows by its lines.)
                     elseif dHp > 0.5 and not net.pvp and not ownHit(actor) then
                         undoHit(actor, prev.hp, prev.posture)
                         hp, posture = prev.hp, prev.posture
@@ -1111,21 +1151,205 @@ return function(api)
                 end
                 net.stats.applied = net.stats.applied + 1
             end
+            if net.mine[name] then
+                handover.share(name, actor, addr)
+            end
             nextSeen[name] = { hp = hp, posture = posture, addr = addr }
-        elseif (net.remoteEnemies[name] or net.hitHere[name]) and not net.hostKilled[name] and not net.guestKillSent[name] then
+        elseif (net.remoteEnemies[name] or net.hitHere[name] or net.mine[name]) and not net.hostKilled[name]
+            and not net.guestKillSent[name] then
             -- It died here before the host had it loaded (we were far apart): the host's copy follows. In a party so does
             -- that of any guest near it. An enemy past the host's reach has no owner: it sleeps on the host, so each guest
             -- by it fights a copy of its own, as a guest alone does, and the first to kill it kills it for everyone.
-            -- (Only one this player hit: a copy can read as dead for other reasons, and this would kill it everywhere.)
+            -- (Only one this player hit: a copy can read as dead for other reasons, and this would kill it everywhere. Or one
+            -- this game ran for the host: its death was this game's own.)
             net.guestKillSent[name] = true
             sendEvent("GK", name)
         end
+    end
+
+    -- Host, each round: are the two apart, so that the guest's game may run what's clearly nearer the guest?
+    function handover.update()
+        local t = net.target
+        if net.party or net.pvp or t == nil or net.ghostHidden or net.partnerGone or not sameMap(t) or net.localLoc == nil then
+            handover.on = false
+            return
+        end
+        handover.on = gap3d(net.localLoc, t) > (handover.on and handover.TOGETHER_CM or handover.APART_CM)
+    end
+
+    function handover.dist(x, y, z, o)
+        return math.sqrt((x - o.X) ^ 2 + (y - o.Y) ^ 2 + (z - o.Z) ^ 2)
+    end
+
+    -- Host, an enemy's turn: true while the guest's game runs it. It's handed over, or taken back, as where it is says.
+    function handover.guestRuns(name, actor, addr, x, y, z)
+        local runs = net.guestRuns[name] == true
+        if x == nil or x ~= x or y ~= y or z ~= z then
+            return runs
+        end
+        local want = false
+        if handover.on and name:sub(1, 3) == "sp:" and not (game.isBoss and game.isBoss(actor, addr)) then
+            local dh, dg = handover.dist(x, y, z, net.localLoc), handover.dist(x, y, z, net.target)
+            if runs then
+                want = dh + handover.NEARER_CM >= dg
+            else
+                -- (Within the guest's own reach: its game has it near, and sends what it does.)
+                want = dg <= ENEMY_RADIUS_CM and dg + handover.NEARER_CM < dh and os.clock() >= (handover.retryAt[name] or 0)
+                    and not (dh <= handover.FIGHT_CM and game.enemyAfter(actor, net.ghost) == "host")
+                    and not (game.isDead and game.isDead(actor))    -- (a body just gone can read as alive for a turn)
+            end
+        end
+        if want ~= runs then
+            handover.give(name, actor, addr, want)
+        end
+        return want
+    end
+
+    -- Host: the guest's game runs it from now on (on), or this one does again.
+    function handover.give(name, actor, addr, on)
+        if on then
+            net.guestRuns[name] = true
+            net.guestLines[name] = nil
+            handover.seen[name] = nil
+            handover.since[name] = net.frameNow
+            log(name .. " is nearer the other player: their game runs it now.")
+        else
+            handover.release(actor, addr, name)
+            log(name .. " is this game's to run again.")
+        end
+        sendEvent("RUN", name, on and 1 or 0)
+    end
+
+    -- Host: a copy the guest's game ran is this world's own again: held no more, its own AI back. It takes what the guest's
+    -- game last said it had left first: out of this player's reach it had no turns to follow that, and came back with more.
+    function handover.release(actor, addr, name)
+        local r = net.guestLines[name]
+        if r and valid(actor) and game.setHealth then
+            local hp = game.getHealth(actor)
+            if hp and r.Hp < hp - 0.5 then
+                game.setHealth(actor, r.Hp)
+            end
+            local posture = game.getPosture and game.getPosture(actor)
+            if game.setPosture and r.Posture and posture and r.Posture < posture - 0.5 then
+                game.setPosture(actor, r.Posture)
+            end
+        end
+        net.guestRuns[name], net.guestLines[name], handover.seen[name] = nil, nil, nil
+        if net.heldAlive[addr] then
+            net.heldAlive[addr] = nil
+            if valid(actor) and game.setMinHealth then
+                game.setMinHealth(actor, 0)
+            end
+        end
+        if api.puppets then
+            api.puppets.release(addr)
+        end
+    end
+
+    -- Host: it died, whoever ran it. Nothing steers it now.
+    function handover.drop(actor, addr, name)
+        net.guestRuns[name], net.guestLines[name], handover.seen[name] = nil, nil, nil
+        net.heldAlive[addr] = nil
+        if api.puppets then
+            api.puppets.drop(actor)
+        end
+    end
+
+    -- Host, the turn of one the guest's game runs: this copy follows the guest's, as a guest's copies follow the host's, held
+    -- at 1 health (it dies when the guest's does: GK), and this player's own hits on it go to the guest's game, where it
+    -- lives. False: no word from the guest's game for a while, and it's this game's again from this turn.
+    function handover.follow(name, actor, addr, hp, posture)
+        local r = net.guestLines[name]
+        if net.frameNow - (r and r.at or handover.since[name] or net.frameNow) > handover.QUIET_S then
+            handover.retryAt[name] = os.clock() + handover.RETRY_S
+            handover.give(name, actor, addr, false)
+            return false
+        end
+        if r == nil then
+            return true             -- (the guest's first line is on its way)
+        end
+        if not net.heldAlive[addr] and game.setMinHealth then
+            net.heldAlive[addr] = actor
+            game.setMinHealth(actor, HELD_HP)
+        end
+        -- A drop since the last turn is weighed as a guest weighs one on its copies of the host's (syncEnemy).
+        local prev = handover.seen[name]
+        if prev and prev.addr == addr and prev.hp and hp then
+            local dHp = prev.hp - hp
+            local dPosture = (prev.posture and posture) and (prev.posture - posture) or 0
+            if dHp > 0.5 or dPosture > 0.5 then
+                if (ghostsHit() and dHp <= 0.5) or (dHp > 0.5 and not ownHit(actor)) then
+                    undoHit(actor, prev.hp, prev.posture)
+                    hp, posture = prev.hp, prev.posture
+                else
+                    reportHit(name, actor, math.max(0, dHp), math.max(0, dPosture), dHp > 0.5 and hp <= HELD_HP + 0.01)
+                end
+            end
+        end
+        if api.puppets then
+            api.puppets.follow(name, actor, r)
+        end
+        local _, maxhp = game.getHealth(actor)
+        if game.setMaxHealth and maxhp and math.abs(r.MaxHp - maxhp) > 1 then
+            game.setMaxHealth(actor, r.MaxHp)
+        end
+        if hp and r.Hp < hp - 0.5 then
+            game.setHealth(actor, r.Hp)
+            hp = r.Hp
+        elseif hp and r.Hp > hp + math.max(1, r.MaxHp * 0.05) then
+            net.healTicks[name] = (net.healTicks[name] or 0) + 1
+            if net.healTicks[name] >= HEAL_TICKS then
+                game.setHealth(actor, r.Hp)
+                hp = r.Hp
+                net.healTicks[name] = nil
+            end
+        else
+            net.healTicks[name] = nil
+        end
+        if game.setPosture and r.Posture and posture and r.Posture < posture - 0.5 then
+            game.setPosture(actor, r.Posture)
+            posture = r.Posture
+        end
+        handover.seen[name] = { hp = hp, posture = posture, addr = addr }
+        return true
+    end
+
+    -- Guest, the turn of one this game runs for the host: where it is and what it does go to the host's game, as the host's
+    -- enemies come here.
+    function handover.share(name, actor, addr)
+        local x, y, z, yaw, vx, vy, _, _, hp, maxhp, posture = game.read(actor, addr)
+        if hp and maxhp and maxhp > 0 and x == x and y == y and z == z and yaw == yaw then
+            link.enemy(string.format("%d %.0f %.0f %.0f %.0f %.0f %.0f %.1f %.1f 0 %s", enemyNumber(actor, name),
+                x, y, z, yaw, vx == vx and vx or 0, vy == vy and vy or 0, hp, maxhp,
+                posture ~= nil and string.format("%.1f", posture) or "-"))
+        end
+        if api.puppets then
+            api.puppets.watchHost(name, actor, addr)
+        end
+    end
+
+    -- Everything handed over goes back: sync off or on again, the partner gone or started anew, a rest, another map.
+    function handover.reset()
+        if isHost() then
+            for _, actor in pairs(net.heldAlive) do
+                if valid(actor) and game.setMinHealth then
+                    game.setMinHealth(actor, 0)
+                end
+            end
+            net.heldAlive = {}
+            if api.puppets then
+                api.puppets.releaseAll()        -- (a host's puppets are only ever the ones a guest's game ran)
+            end
+        end
+        net.guestRuns, net.guestLines, net.mine = {}, {}, {}
+        handover.seen, handover.since, handover.retryAt, handover.on = {}, {}, {}, false
     end
 
     local function startHostRound(now)
         if game.refreshEnemyIds then
             game.refreshEnemyIds()
         end
+        handover.update()
         local queue, names = {}, {}
         for addr, e in pairs(reach.near) do
             if valid(e.actor) then
@@ -1298,6 +1522,9 @@ return function(api)
                 round.seen, round.queue, round.at = nil, {}, 1
                 releaseHeld(nil)
                 showAside()
+                if next(net.mine) then
+                    net.mine = {}
+                end
                 return
             end
             updateReach(origin, nil, dt)
@@ -1328,21 +1555,49 @@ return function(api)
         if text == nil or net.partnerGone then
             return
         end
+        -- A host hears of the ones a guest's game runs (handover). Each side takes only what the other runs: a line late
+        -- from before a handover pulled a copy back for a moment.
+        local into = isHost() and net.guestLines or net.remoteEnemies
         for line in text:gmatch("[^\n]+") do
             local n, x, y, z, yaw, vx, vy, hp, maxhp, boss, posture = line:match(
                 "^(%d+) (%S+) (%S+) (%S+) (%S+) (%S+) (%S+) (%S+) (%S+) (%S+) (%S+)$")
             local who = n and net.enemyNames[tonumber(n)]
-            if who then
+            if who and (isHost() and net.guestRuns[who.name] or (isClient() and not net.mine[who.name])) then
                 local X, Y, Z, Yaw, Hp, MaxHp = num(x), num(y), num(z), num(yaw), num(hp), num(maxhp)
                 -- Unparsable numbers or no health (MaxHp 0) would teleport or zero our copy: ignore the record.
                 if X and Y and Z and Yaw and Hp and MaxHp and MaxHp > 0 then
                     -- The same table each time: puppets hold on to it and steer by the newest numbers.
-                    local r = net.remoteEnemies[who.name] or { Class = who.class }
+                    local r = into[who.name] or { Class = who.class }
                     r.X, r.Y, r.Z, r.Yaw, r.Hp, r.MaxHp = X, Y, Z, Yaw, Hp, MaxHp
                     r.VX, r.VY = num(vx) or 0, num(vy) or 0
                     r.Boss, r.Posture, r.at = boss == "1", num(posture), now
-                    net.remoteEnemies[who.name] = r
+                    into[who.name] = r
                 end
+            end
+        end
+    end
+
+    -- Host: whose game runs this enemy now ("1": the guest's, which sends its lines and moves from now on; see handover).
+    handlers.RUN = function(rest)
+        local name, on = (rest or ""):match("^(%S+) ([01])$")
+        if not name or isHost() or net.party then
+            return
+        end
+        if on == "0" then
+            net.mine[name] = nil            -- (the host's lines take it from here, and pair it up again)
+            return
+        end
+        net.mine[name] = true
+        net.remoteEnemies[name] = nil
+        local actor = enemyByName[name]
+        if valid(actor) then
+            local addr = actor:GetAddress()
+            if net.heldAlive[addr] then
+                net.heldAlive[addr] = nil
+                game.setMinHealth(actor, 0)
+            end
+            if api.puppets then
+                api.puppets.release(addr)   -- (its own AI back now, not when the host's lines run out)
             end
         end
     end
@@ -1379,6 +1634,7 @@ return function(api)
     -- The partner has just (re)started sync: it knows nothing yet. It hears again what enemies are, and what's dead.
     handlers.S = function(_, from)
         log("The other player started sync.")
+        handover.reset()                    -- (what either game ran for the other, the other knows nothing of now)
         net.announced = {}
         net.enemyNames = {}
         net.lookSent = nil                  -- (what this player wears goes to them at the next look)
@@ -1412,6 +1668,7 @@ return function(api)
         if isClient() then
             net.hostKilled[name] = true
             net.remoteEnemies[name] = nil
+            net.mine[name] = nil
             if not valid(actor) then
                 actor = stickyEnemy(name)
             end
@@ -1425,7 +1682,10 @@ return function(api)
                 if api.puppets then
                     api.puppets.drop(actor)
                 end
-                if fought and not quiet and game.killForReal then
+                if game.isDead and game.isDead(actor) then
+                    -- (Dead here first, by its own death: one this game ran (handover), whose death cut short looked wrong.)
+                    log("Host says " .. name .. " died; it's dead here already.")
+                elseif fought and not quiet and game.killForReal then
                     -- The boss of a fight both are in: the whole death here too, so this world's story goes on with the
                     -- host's, its scene after the fight first (a quiet kill skipped it, and the next phase came unseen).
                     game.killForReal(actor)
@@ -1474,7 +1734,22 @@ return function(api)
             amount = math.huge      -- the client's killing blow (its copy can't show the full damage)
             log("Partner's killing blow on " .. tostring(name) .. (valid(enemyByName[name]) and "." or ", which isn't loaded here."))
         end
-        if isHost() and name then
+        if isClient() and name and net.mine[name] then
+            -- The host's hit on one this game runs (handover): it lands here, where the enemy lives. A killing blow is its
+            -- whole death here, paying this player, and that dust reaches the host as any of this player's does.
+            local actor = enemyByName[name]
+            if valid(actor) and game.applyDamage and net.target and gap3d(actor:K2_GetActorLocation(), net.target) <= OWN_HIT_CM then
+                game.applyDamage(actor, amount, posture, true)
+                local left = { hp = game.getHealth(actor), posture = game.getPosture and game.getPosture(actor),
+                    addr = actor:GetAddress() }
+                seen[name] = left           -- (a reported hit: its turn mustn't weigh it again, nor undo it)
+                if round.seen and round.seen[name] then
+                    round.seen[name] = left
+                end
+            end
+        end
+        -- (One the guest's game runs takes no hits here: its lines say what it has left.)
+        if isHost() and name and not net.guestRuns[name] then
             local actor = enemyByName[name]
             local hitter = peerOf(from).target
             if valid(actor) and game.applyDamage and hitter
@@ -1669,6 +1944,7 @@ return function(api)
         end
         game.forgetFocus()
         game.forgetMoves()
+        handover.reset()
     end
 
     -- A death respawn refreshes the dying player's own world (the game does that, as in single-player).
@@ -1707,6 +1983,7 @@ return function(api)
             end
             seen = {}
             releaseHeld(nil)
+            net.mine = {}       -- (this world's enemies are new ones: what it ran for the host, the host takes back unheard of)
             if again > 0 then
                 log(again .. " enemies the host killed will be removed again as they load.")
             end
@@ -2132,6 +2409,7 @@ return function(api)
                 if game.forgetActors then
                     game.forgetActors()
                 end
+                handover.reset()
             end
         end
         local cine = game.inCutscene and game.inCutscene() and 1 or 0
@@ -2287,6 +2565,7 @@ return function(api)
     -- Forget everything learned from the other side, so nothing from an earlier session is applied.
     local function clearRemoteState()
         bring.putBackAll()
+        handover.reset()
         net.remoteEnemies = {}
         net.enemyNames = {}
         net.announced = {}
@@ -2541,6 +2820,7 @@ return function(api)
                 net.hostBosses, net.pendingBosses = {}, {}
                 reopenFog()
                 releaseHeld(nil)
+                handover.reset()
                 net.remoteEnemies = {}
                 seen = {}
                 net.partnerFighting = false
@@ -2777,9 +3057,7 @@ return function(api)
         lastFrame = now
         runStage("processEvents", processEvents)
         runStage("readPartner", readPartner)
-        if isClient() then
-            runStage("readEnemies", stageReadEnemies)
-        end
+        runStage("readEnemies", stageReadEnemies)       -- (a host's: the ones a guest's game runs, see handover)
         if now >= nextSend then
             nextSend = now + SEND_S
             runStage("sendPlayer", sendPlayer)

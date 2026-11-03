@@ -6,6 +6,9 @@
 -- two players a slot or -. An ability replays for real, so its hits land
 -- on the guest and guard, parry and dodge work as usual; a montage alone (hit reactions) deals no damage. Montages
 -- the game builds at run time (turns) have no path to send and are left out.
+--
+-- The same goes the other way for an enemy a guest's game runs (coop.lua's handover): the guest sends, and the host's copy
+-- follows. "Host" and "guest" in an "A" always mean the same two players, whichever PC says it.
 
 return function(api)
     local log, valid, game = api.log, api.valid, api.game
@@ -71,8 +74,11 @@ return function(api)
             local path = api.moves.pathOf(m)
             path = api.moves.allowedPath(path) and path or nil
             if ability or path then
-                coop.sendEvent("A", name, ability or "-", path or "-", string.format("%.2f", pos),
-                    net.party and game.enemyAfterSlot(actor, net.ghostSlots) or game.enemyAfter(actor, net.ghost))
+                local after = net.party and game.enemyAfterSlot(actor, net.ghostSlots) or game.enemyAfter(actor, net.ghost)
+                if not net.party and not coop.isHost() and after ~= "-" then
+                    after = after == "guest" and "host" or "guest"      -- (a guest's ghost is the host)
+                end
+                coop.sendEvent("A", name, ability or "-", path or "-", string.format("%.2f", pos), after)
                 puppets.attacks = puppets.attacks + 1
             end
         end
@@ -85,6 +91,7 @@ return function(api)
         local p = byAddr[addr]
         if p == nil then
             p = { actor = actor, name = name, busyUntil = 0, aiAt = 0 }
+            pcall(function() p.walkSpeed = actor.CharacterMovement.MaxWalkSpeed end)
             byAddr[addr] = p
         end
         p.target = target
@@ -100,7 +107,13 @@ return function(api)
         if p then
             byAddr[addr] = nil
             if valid(p.actor) and not game.isDead(p.actor) then
-                pcall(function() p.actor.CharacterMovement.bOrientRotationToMovement = true end)
+                pcall(function()
+                    local cmc = p.actor.CharacterMovement
+                    cmc.bOrientRotationToMovement = true
+                    if p.walkSpeed then
+                        cmc.MaxWalkSpeed = p.walkSpeed      -- (else it keeps the last speed it was steered at)
+                    end
+                end)
                 game.startAI(p.actor)
                 game.freeCopy(addr)
             end
@@ -139,7 +152,7 @@ return function(api)
         end
         if after ~= "-" then
             local _, pawn = api.getPlayer1()
-            local aim = after == "guest" and pawn or net.ghost
+            local aim = after == (coop.isHost() and "host" or "guest") and pawn or net.ghost
             if net.party then
                 aim = coop.playerBody(tonumber(after))
             end
@@ -261,8 +274,8 @@ return function(api)
         for _ in pairs(byAddr) do
             n = n + 1
         end
-        log(string.format("Puppets: %d following the host, attacks sent %d, played %d, failed %d, no copy here %d",
-            n, puppets.attacks, puppets.played, puppets.failed, puppets.noCopy))
+        log(string.format("Puppets: %d following %s, attacks sent %d, played %d, failed %d, no copy here %d",
+            n, coop.isHost() and "the guest's game" or "the host", puppets.attacks, puppets.played, puppets.failed, puppets.noCopy))
     end
 
     return puppets
