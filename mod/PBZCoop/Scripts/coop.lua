@@ -316,6 +316,16 @@ return function(api)
             if p.look and game.dressGhost then
                 game.dressGhost(p.ghost, p.look[1], p.look[2], p.look[3])
             end
+            if p.gait and game.setGhostGait then
+                -- A new one starts jogging, and its locomotion runs only a moment later: again then.
+                local ghost = p.ghost
+                game.setGhostGait(ghost, p.gait)
+                game.after(1.5, function()
+                    if valid(ghost) and ghost == p.ghost and p.gait then
+                        game.setGhostGait(ghost, p.gait)
+                    end
+                end)
+            end
         end
         if not p.ghostWalks then
             -- Teleported every tick, so its own movement (gravity, root motion) must stay out of the way.

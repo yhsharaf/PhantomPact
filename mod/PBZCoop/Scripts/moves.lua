@@ -61,6 +61,11 @@ return function(api)
     local ANIM_CHECK_S = 1.0
     local watchedBody, watchedAi, animCheckAt = nil, nil, 0
 
+    -- The guard stance (the right button held) is a pose the animation blueprint holds from tags while the stance's ability
+    -- runs: no montage plays between its enter and its exit, and a ghost runs neither. So the sender says whether it's in
+    -- the stance ("ST 1|0"), and the ghost holds the last frame of the stance's enter until it's left.
+    local stance = { CHECK_S = 0.1, at = 0, sent = nil }
+
     -- Sender, every tick: a new montage, or the same one started again, goes to the partner.
     local function watch()
         local pawn = coop.localPawn()
@@ -75,6 +80,20 @@ return function(api)
         local ai = watchedAi
         if not ai then
             return
+        end
+        if now >= stance.at and game.inStance then
+            stance.at = now + stance.CHECK_S
+            local on = game.inStance(pawn)
+            if on ~= stance.sent then
+                stance.sent = on
+                coop.sendEvent("ST", on and "1" or "0")
+            end
+            -- And how they move: the ghost walks, jogs and sprints with them (game.setGhostGait), where it only jogged.
+            local gait = game.gait and game.gait(pawn) or "j"
+            if gait ~= stance.gait then
+                stance.gait = gait
+                coop.sendEvent("GAIT", gait)
+            end
         end
         local m = ai:GetCurrentActiveMontage()
         if not valid(m) then
@@ -146,6 +165,9 @@ return function(api)
         local path, pos = (rest or ""):match("^(%S+)%s+(%S+)$")
         pos = tonumber(pos)
         if path == "-" then
+            if p.stance and (p.stanceHeld or (p.ghostPath or ""):find("StanceEnter", 1, true)) then
+                return                          -- (the stance's pose, held until it's left)
+            end
             if not net.pvp and valid(p.ghostMontage) and valid(p.ghost) then
                 local ai = animOf(p.ghost)
                 if ai then
@@ -172,12 +194,70 @@ return function(api)
         local ok = pcall(function() ai:Montage_Play(m, 1.0, 0, start, true) end)
         if ok then
             moves.played = moves.played + 1
-            p.ghostMontage = m
+            p.ghostMontage, p.ghostPath, p.stanceHeld = m, path, nil
+            if path:find("StanceEnter", 1, true) then
+                moves.holdStance(p, m, start)
+            end
             if game.noteGhostMove then
                 game.noteGhostMove(p.ghost)
             end
         else
             moves.failed = moves.failed + 1
+        end
+    end
+
+    -- The stance's enter, near its end: still in the stance, it stops there and holds (looked up again: nothing kept). Before
+    -- its blend out begins: paused in that, it went all the same. A timer can come late (a game in the background runs few
+    -- frames): one that finds it gone, or going, plays it again from that moment and holds it at once.
+    function moves.holdStance(p, m, start)
+        local addr, ghost = m:GetAddress(), p.ghost
+        local hold, fades = 0, 0
+        pcall(function()
+            local out = m.BlendOutTriggerTime
+            if not (type(out) == "number" and out >= 0) then
+                out = m.BlendOut.BlendTime
+            end
+            fades = m:GetPlayLength() - (tonumber(out) or 0.25)
+            hold = math.max(0, fades - 0.12)
+        end)
+        game.after(math.max(0, hold - start), function()
+            if not (p.stance and valid(ghost) and ghost == p.ghost and valid(p.ghostMontage) and p.ghostMontage:GetAddress() == addr) then
+                return
+            end
+            local ai = animOf(ghost)
+            local held = ai and pcall(function()
+                local now = ai:GetCurrentActiveMontage()
+                if not (valid(now) and now:GetAddress() == addr) or ai:Montage_GetPosition(p.ghostMontage) >= fades - 0.01 then
+                    ai:Montage_Play(p.ghostMontage, 1.0, 0, hold, true)
+                end
+                ai:Montage_Pause(p.ghostMontage)
+            end)
+            if held then
+                p.stanceHeld = addr
+            end
+        end)
+    end
+
+    coop.handlers.GAIT = function(rest, from)
+        local p = coop.peerOf(from)
+        if (rest == "w" or rest == "j" or rest == "s") and rest ~= p.gait then
+            p.gait = rest
+            if valid(p.ghost) and game.setGhostGait then
+                game.setGhostGait(p.ghost, rest)
+            end
+        end
+    end
+
+    coop.handlers.ST = function(rest, from)
+        local p = coop.peerOf(from)
+        p.stance = rest == "1"
+        if not p.stance and p.stanceHeld then
+            -- Left with no exit of its own to play (cut short): the held pose goes.
+            local ai = valid(p.ghost) and animOf(p.ghost)
+            if ai and valid(p.ghostMontage) and p.ghostMontage:GetAddress() == p.stanceHeld then
+                pcall(function() ai:Montage_Stop(STOP_BLEND_S, p.ghostMontage) end)
+            end
+            p.stanceHeld = nil
         end
     end
 
@@ -402,14 +482,14 @@ return function(api)
     -- The partner has just (re)started sync: it knows nothing yet.
     local partnerStarted = coop.handlers.S
     coop.handlers.S = function(rest, from)
-        gear.sentPath, gear.sentEdgePath = nil, nil
+        gear.sentPath, gear.sentEdgePath, stance.sent, stance.gait = nil, nil, nil, nil
         return partnerStarted(rest, from)
     end
 
     -- Someone new in a party: the same.
     local someoneJoined = coop.handlers.J
     coop.handlers.J = function(rest, from)
-        gear.sentPath, gear.sentEdgePath = nil, nil
+        gear.sentPath, gear.sentEdgePath, stance.sent, stance.gait = nil, nil, nil, nil
         return someoneJoined(rest, from)
     end
 

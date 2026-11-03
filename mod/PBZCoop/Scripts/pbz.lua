@@ -1290,6 +1290,59 @@ return function(api)
         activeLocal = nowActive
     end
 
+    -- How this player moves: "w" walking, "j" jogging, "s" sprinting, as their animation blueprint has it (a blueprint of
+    -- another kind is read as jogging: its fields aren't these).
+    function game.gait(pawn)
+        local g = "j"
+        pcall(function()
+            local ai = pawn.Mesh:GetAnimInstance()
+            if ai:GetClass():GetFName():ToString():find("^PBZ_ABP_Hun") then
+                g = ai.GameplayTag_IsSprint == true and "s" or ai["Gameplay Tag Run"] == true and "j" or "w"
+            end
+        end)
+        return g
+    end
+
+    -- How the ghost moves: walking, jogging or sprinting, as the partner does. Its own locomotion takes that from the
+    -- stick, and a ghost has none: it jogged at any speed (a walk was a slow jog, a sprint a fast one). Its state is
+    -- switched the game's way (ActorStateComponent:TryActivateNewState), with a tag of the game's own: the one its
+    -- locomotion keeps as its default, renamed (a tag built here took the game down). True when the game took it.
+    local GAITS = { w = "CharacterState.Native.Attitude.Walking", j = "CharacterState.Native.Attitude.Jogging",
+        s = "CharacterState.Native.Attitude.Sprinting" }
+    function game.setGhostGait(ghost, gait)
+        local tag, asc = GAITS[gait], abilitySystem(ghost)
+        if not (tag and asc) then
+            return false
+        end
+        local driver = nil
+        forEachSpec(asc, function(spec)
+            pcall(function()
+                if spec.Ability:GetClass():GetFName():ToString():find("LocomotionDriver") then
+                    spec.NonReplicatedInstances:ForEach(function(_, i) driver = i:get() end)
+                end
+            end)
+        end)
+        local ok, took = pcall(function()
+            driver.DefaultAttitudeStateTag.TagName = FName(tag)
+            return driver.ActorStateComponent:TryActivateNewState(driver.DefaultAttitudeStateTag)
+        end)
+        return valid(driver) and ok and took == true
+    end
+
+    -- Whether this player holds a guard stance (the right button): its ability runs as long as it's held.
+    function game.inStance(pawn)
+        local asc, on = abilitySystem(pawn), false
+        if asc then
+            forEachSpec(asc, function(spec)
+                if not on and (tonumber(spec.ActiveCount) or 0) > 0 then
+                    local ok, name = pcall(function() return spec.Ability:GetClass():GetFName():ToString() end)
+                    on = ok and name:find("^GA_Hun_.*_Stance_C$") ~= nil
+                end
+            end)
+        end
+        return on
+    end
+
     -- Ten times a second, co-op or PvP: an item coming into use, and the effects it puts on the body for a while.
     function game.watchItemFx(pawn, sendEvent)
         local asc = abilitySystem(pawn)

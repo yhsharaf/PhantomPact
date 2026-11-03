@@ -164,8 +164,9 @@ function Fake.character(pc, class, x, y, z, hp, posture)
     defs(pc, anim, {
         GetCurrentActiveMontage = function(self) return rawget(self, "__fields").montage end,
         Montage_GetPosition = function() return 0.25 end,
-        Montage_Play = function(self, m) put(self, "montage", m) put(self, "played", (rawget(self, "__fields").played or 0) + 1) return 1.0 end,
-        Montage_Stop = function(self) put(self, "montage", nil) end,
+        Montage_Play = function(self, m) put(self, "montage", m) put(self, "paused", nil) put(self, "played", (rawget(self, "__fields").played or 0) + 1) return 1.0 end,
+        Montage_Stop = function(self) put(self, "montage", nil) put(self, "paused", nil) end,
+        Montage_Pause = function(self, m) put(self, "paused", m) end,
     })
     local mesh = object(pc, "Mesh", { children = {}, shown = true })
     defs(pc, mesh, { GetAnimInstance = function() return anim end,
@@ -236,6 +237,7 @@ function Fake.character(pc, class, x, y, z, hp, posture)
             local speed = f.CharacterMovement.MaxWalkSpeed
             local step = speed * scale / 60
             f.loc = { X = f.loc.X + dir.X * step, Y = f.loc.Y + dir.Y * step, Z = f.loc.Z }
+            f.push = scale
         end,
         LaunchCharacter = false,
         GetAttachedActors = function(self, list)
@@ -1213,11 +1215,23 @@ function Fake.new(id, scripts, ini, link)
     pc.widgets = widgets
     local layoutLibrary = object(pc, "WidgetLayoutLibrary")
     defs(pc, layoutLibrary, { GetViewportSize = function() return { X = 1920, Y = 1080 } end, GetViewportScale = function() return 1.0 end })
+    -- A Hun's locomotion: its driver keeps a default gait tag, and its actor state component takes a new state by tag.
+    local function locomotion(actor)
+        local state = object(pc, "ActorStateComponent", { state = "CharacterState.Native.Attitude.Jogging" })
+        defs(pc, state, { TryActivateNewState = function(self, tag) put(self, "state", tag.TagName:ToString()) return true end })
+        local driver = object(pc, "GA_LocomotionDriver_3DDefault_C", {
+            DefaultAttitudeStateTag = { TagName = name("CharacterState.Native.Attitude.Jogging") }, ActorStateComponent = state })
+        put(actor, "gaitState", state)
+        local cls = { IsValid = function() return true end, GetFName = function() return name("GA_LocomotionDriver_3DDefault_C") end }
+        return { class = "GA_LocomotionDriver_3DDefault_C", ActiveCount = 1, NonReplicatedInstances = list({ driver }),
+            Ability = { IsValid = function() return true end, GetClass = function() return cls end } }
+    end
     local abilities = object(pc, "AbilitySystemLibrary")
     defs(pc, abilities, { GetAbilitySystemComponent = function(_, actor)
         local asc = rawget(actor, "__fields").asc
         if asc == nil then
-            asc = object(pc, "ASC", { ActivatableAbilities = { Items = list({}) } }, true)
+            local specs = rawget(actor, "__class") == "BP_Renewal_Hun_C" and { locomotion(actor) } or {}
+            asc = object(pc, "ASC", { ActivatableAbilities = { Items = list(specs) } }, true)
             put(asc, "TryActivateAbilityByClass", function(_, class) put(actor, "used", class) end)
             put(asc, "K2_GiveAbility", function(_, class)
                 local given = rawget(actor, "__given") or {}
@@ -1347,7 +1361,7 @@ function Fake.new(id, scripts, ini, link)
         if path:find("^/Game/Move") then
             local m = pc.montages[path]
             if m == nil then
-                m = object(pc, "AnimMontage")
+                m = object(pc, "AnimMontage", { BlendOutTriggerTime = -1.0, BlendOut = { BlendTime = 0.25 } })
                 rawset(m, "__path", path)
                 defs(pc, m, { GetPlayLength = function() return 1.5 end })
                 pc.montages[path] = m
