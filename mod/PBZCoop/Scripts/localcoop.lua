@@ -3024,8 +3024,7 @@ return function(api)
                 V.lastRelayError = err       -- (each new error once: it runs 30 times a second)
                 log("Button relay error: " .. tostring(err))
             end
-            -- (Never true: true ends the loop, and one error took player 2's buttons for the rest of the session.)
-            return false
+            return false        -- (true doesn't end these loops in this UE4SS either: tried, it ran on)
         end)
         LoopInGameThreadWithDelay(WATCH_MS, function()
             local ok, err = pcall(watchPads)

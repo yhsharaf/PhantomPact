@@ -104,6 +104,8 @@ return function(api)
         ghostWalks = false,
         lastRemoteAt = nil,       -- os.clock() of the partner's latest packet
         remoteEnemies = {},       -- client: name -> latest host record
+        hostLethal = {},          -- host: enemy id -> true: the host's killing blow on one the guest's game runs
+        deadBodies = {},          -- host: actor address -> true: its death was told (see shareEnemy)
         enemyNames = {},          -- client: number -> { name, class }
         enemyNumbers = {},        -- host: name -> number
         announced = {},           -- host: number -> true once the client was told what it means
@@ -787,7 +789,11 @@ return function(api)
     -- Host, one enemy's turn: announce its death (reliably), or send where it is.
     local function shareEnemy(actor, addr, aggro)
         local name = enemyName(actor, addr)
-        enemyByName[name] = actor
+        -- (Not a body over the live enemy of the same id: a guest's hit on that id landed on the body and was lost.)
+        local had = enemyByName[name]
+        if had == actor or not (valid(had) and not game.isDead(had) and game.isDead(actor)) then
+            enemyByName[name] = actor
+        end
         local x, y, z, yaw, vx, vy, _, _, hp, maxhp, posture = game.read(actor, addr)
         if net.pvp and hp and hp > 0 then
             -- Only in PvP does the ghost carry a real Attack stat, so only then can it hurt enemies here.
@@ -811,6 +817,18 @@ return function(api)
             if net.guestRuns[name] then
                 handover.drop(actor, addr, name)
             end
+            if net.hostLethal[name] then
+                -- The host's own killing blow on one the guest's game ran: the death ran there and paid the guest its
+                -- items, and the host only the dust, by C. The host's items are rolled here, as its own kill's would be.
+                net.hostLethal[name] = nil
+                local _, items = game.rollLoot(actor)
+                local _, pawn = getPlayer1()
+                for _, item in ipairs(items or {}) do
+                    for _ = 1, item.count do
+                        game.grantLoot(pawn, item.id, item.kind)
+                    end
+                end
+            end
             -- (Not left standing frozen till it goes: it dies as a death looks here, as a guest's copies do.)
             if game.dissolveKill and not (game.isBoss and game.isBoss(actor, addr)) then
                 game.dissolveKill(actor)
@@ -824,8 +842,12 @@ return function(api)
             if net.guestRuns[name] then
                 handover.drop(actor, addr, name)
             end
-            if not net.deadSent[name] then
+            -- (And by the body: a rest forgets the names, and a spawner's new enemy under the same id clears its name each
+            -- turn, so the old body's turn told its death again, every round: boss items paid twice, and the guest's live
+            -- copy killed.)
+            if not net.deadSent[name] and not net.deadBodies[addr] then
                 net.deadSent[name] = true
+                net.deadBodies[addr] = true
                 sendEvent("K", name)
                 log("Enemy died here: " .. name .. "; telling the other player.")
                 if game.markBeaten then
@@ -855,6 +877,7 @@ return function(api)
             -- (No health read = stale actor: left out rather than sent as 0/0, which the client would apply.)
             -- Alive (again, after a bell respawn): its next death must be announced too.
             net.deadSent[name] = nil
+            net.deadBodies[addr] = nil
             if handover.guestRuns(name, actor, addr, x, y, z) and handover.follow(name, actor, addr, hp, posture) then
                 return              -- (the guest's game runs it: what it does comes from there)
             end
@@ -1307,7 +1330,11 @@ return function(api)
                     undoHit(actor, prev.hp, prev.posture)
                     hp, posture = prev.hp, prev.posture
                 else
-                    reportHit(name, actor, math.max(0, dHp), math.max(0, dPosture), dHp > 0.5 and hp <= HELD_HP + 0.01)
+                    local lethal = dHp > 0.5 and hp <= HELD_HP + 0.01
+                    reportHit(name, actor, math.max(0, dHp), math.max(0, dPosture), lethal)
+                    if lethal then
+                        net.hostLethal[name] = true     -- (its items are rolled here when the death comes back: GK)
+                    end
                 end
             end
         end
@@ -1379,9 +1406,27 @@ return function(api)
         for addr, e in pairs(reach.near) do
             if valid(e.actor) then
                 queue[#queue + 1] = e
-                names[enemyName(e.actor, addr)] = e.actor
+                -- (A live one over a body under the same id, as in shareEnemy.)
+                local id = enemyName(e.actor, addr)
+                local had = names[id]
+                if not (had and not game.isDead(had) and game.isDead(e.actor)) then
+                    names[id] = e.actor
+                end
             else
                 reach.near[addr] = nil
+            end
+        end
+        -- One the guest's game ran that's out of reach now (the guest died, left, went far): it had no more turns, so it
+        -- stood held at 1 health, its AI stopped, steered to the guest's last line, until the host came by. It's this game's.
+        for name in pairs(net.guestRuns) do
+            local actor = names[name] == nil and enemyByName[name]
+            if actor ~= nil and actor ~= false then
+                if valid(actor) then
+                    handover.give(name, actor, actor:GetAddress(), false)
+                else
+                    net.guestRuns[name], net.guestLines[name], handover.seen[name] = nil, nil, nil
+                    sendEvent("RUN", name, 0)
+                end
             end
         end
         enemyByName = names
@@ -2528,6 +2573,7 @@ return function(api)
                 net.localMap = link.map(name)
                 reach.list, reach.at, reach.near = {}, 1, {}
                 net.matchSticky = {}    -- (the old map's addresses are free for new enemies: a late K must not find them)
+                net.deadBodies = {}
                 if game.forgetActors then
                     game.forgetActors()
                 end
@@ -2692,6 +2738,7 @@ return function(api)
         -- took the first word of it for that host loading again, and refreshed this player's world in the middle of play,
         -- a fight of their own too. A host restarting while the guest stays linked still does.)
         net.hostWorld = nil
+        net.hostLethal, net.deadBodies = {}, {}
         net.remoteEnemies = {}
         net.enemyNames = {}
         net.announced = {}
@@ -2997,11 +3044,28 @@ return function(api)
     end
 
     handlers.F = function(on, from)
+        local p = peerOf(from)
+        local was
         if net.party then
-            peerOf(from).fights = on == "1"
+            was = p.fights
+            p.fights = on == "1"
             countFights()
         else
+            was = net.partnerFighting
             net.partnerFighting = on == "1"
+        end
+        -- Their bar is down for good (F is sent 3 s after it drops, through a phase change): their fight is over, boss
+        -- alive or not, as when they died in it, walked out or restarted sync. Its mirror here goes too, unless this
+        -- player walked in and fights on: the bar came back every second and the walls stayed shut for nobody.
+        if was and on ~= "1" then
+            local whose = net.party and (from or 1) or nil
+            for name in pairs(net.partnerBosses) do
+                if (whose == nil or net.fightOf[name] == whose) and net.joinedBoss ~= name then
+                    log("The other player's fight with " .. name .. " is over there: over here too.")
+                    endBossFight(name, enemyByName[name])
+                    net.fightOf[name] = nil
+                end
+            end
         end
     end
 

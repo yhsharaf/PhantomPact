@@ -96,7 +96,7 @@ return function(api)
             api.partner.teleport = on
         elseif row == "pvp" then
             if on and api.coop.net.party then
-                options[row] = false
+                options[row] = "off"        -- (false matched neither button: the row showed nothing chosen)
                 api.status.notify("pvp", "PvP is off with more than two players.")
                 return
             end

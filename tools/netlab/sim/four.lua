@@ -1098,6 +1098,21 @@ local function guestSide()
     s:run(2)
     check(field(min, "CurrentValue") == 1, "and still held when the host is heard again")
     allErrors(s)
+
+    -- A guest's fight that ends with the boss alive (they died in it, walked out): over on the host too.
+    local f, fh, fg = pair()
+    Session.moveTo(fg, 3000, 2900)
+    Session.moveTo(fh, 30000, 3000)
+    f:run(2)
+    local boss = Session.enemyOn(fg, "boss")
+    fg.hudLayout:RegisterBossHPBar(boss)
+    f:run(3)
+    check(next(fh.env.PBZ.net.partnerBosses) ~= nil, "the guest's fight is mirrored on the host")
+    fg.hudLayout:UnRegisterBossHPBar(boss)
+    f:run(9)
+    check(next(fh.env.PBZ.net.partnerBosses) == nil and next(fh.env.PBZ.net.foggedBosses) == nil,
+        "its bar down for good with the boss alive: over on the host too, walls open")
+    allErrors(f)
 end
 
 -- The host's world decides: a chest the host opened before, alone, is open for a guest too, and pays them what it held.

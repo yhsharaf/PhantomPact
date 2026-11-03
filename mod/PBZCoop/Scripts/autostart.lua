@@ -194,8 +194,9 @@ return function(api)
                 api.partner.goOnLink(current.modRole == "client")
                 log("Phantom Pact " .. (current.modRole == "host" and "Host" or "Guest") .. ": co-op on.")
                 if api.scaling and (tonumber(s.coopenemyhealth) or tonumber(s.coopenemyposture)) then
-                    api.scaling.command(string.format("%d %d", tonumber(s.coopenemyhealth) or 150,
-                        tonumber(s.coopenemyposture) or 130))
+                    -- (Whole numbers: %d throws on 150.5, and the throw skipped the PvP settings below too.)
+                    api.scaling.command(string.format("%d %d", math.floor(tonumber(s.coopenemyhealth) or 150),
+                        math.floor(tonumber(s.coopenemyposture) or 130)))
                 end
                 if api.pvp then
                     if tonumber(s.pvpdamage) then

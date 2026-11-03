@@ -57,6 +57,11 @@ return function(api)
         if scaled[addr] ~= name then
             return false
         end
+        -- (Nor one the guest's game runs: its copy here takes the guest's Health_Max, and read as a new body it was made
+        -- tougher again each pass while the bar jumped.)
+        if (net.guestRuns or {})[name] then
+            return true
+        end
         local was, now = scaledMax[addr], api.coop.isHost() and maxOf(e)
         return not (was and now and now < was * 0.99)
     end

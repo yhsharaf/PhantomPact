@@ -385,6 +385,14 @@ return function(api)
 
     coop.handlers.OUT = partnerBack
 
+    -- The partner starting sync again is up, whatever they were: one down who restarted within the 12 s that make them
+    -- gone left this player's floor unarmed for good, and their ring on the ghost.
+    local syncStarted = coop.handlers.S
+    coop.handlers.S = function(...)
+        partnerBack()
+        return syncStarted(...)
+    end
+
     coop.restListeners.revive = function(kind)
         if kind == "gone" then
             partnerBack()
