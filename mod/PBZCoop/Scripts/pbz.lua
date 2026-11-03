@@ -472,6 +472,44 @@ return function(api)
         return nil
     end
 
+    -- The host's enemy, in this world too: kills last for good in a save, so a guest who has played further has the early
+    -- enemies long dead and saw the host fight thin air, with nothing there to hit them either. Its spawner here brings it back
+    -- as the game's encounter scripts would. Returns true if it was asked to, and whether this save had it dead (its record is
+    -- turned back then, so the spawner will spawn: putBack writes it dead again once this copy is done).
+    function game.bringBack(enemyId)
+        local s = spawnerOf(enemyId)
+        if not s then
+            return false
+        end
+        local alive = false
+        pcall(function() alive = valid(s.SpawnedAI) and not game.isDead(s.SpawnedAI) end)
+        if alive then
+            return false
+        end
+        local dead = game.isBeaten(enemyId) == true
+        if dead then
+            pcall(function()
+                s.ShouldSpawn = true
+                if s:IsA(StaticFindObject(SPAWNER_BP)) then
+                    s:Save()
+                end
+            end)
+        end
+        local ok = pcall(function() s:ClaimSeqSpawn(false, true, true) end)
+        return ok, dead
+    end
+
+    -- A spawner bringBack turned back, as this save had it: dead.
+    function game.putBack(enemyId)
+        local s = spawnerOf(enemyId)
+        return s ~= nil and pcall(function()
+            s.ShouldSpawn = false
+            if s:IsA(StaticFindObject(SPAWNER_BP)) then
+                s:Save()
+            end
+        end)
+    end
+
     -- Cached for ENEMY_CACHE_S: the host and client halves (and aggro) all ask within the same tick.
     -- fresh = true skips the cache.
     local ENEMY_CACHE_S = 1.0
@@ -710,20 +748,47 @@ return function(api)
     -- The player's own death, the game's normal flow (screen, respawn, refresh): the game's own kill effect. A player has
     -- no Kill, and health set to 0 by hand only leaves them lying there with no way back.
     local KILL_EFFECT = "/Game/PBZContent/Blueprint/Ability/GameplayEffects/GE_Kill"
-    function game.killPlayer(pawn)
-        game.setMinHealth(pawn, 0)
-        local ok, err = pcall(function()
+    local function applyKillEffect(actor)
+        return pcall(function()
             local effect = StaticFindObject(KILL_EFFECT .. ".GE_Kill_C")
             if not valid(effect) then
                 LoadAsset(KILL_EFFECT)
                 effect = StaticFindObject(KILL_EFFECT .. ".GE_Kill_C")
             end
             StaticFindObject("/Script/GameplayAbilities.Default__AbilitySystemBlueprintLibrary")
-                :GetAbilitySystemComponent(pawn):BP_ApplyGameplayEffectToSelf(effect, 1.0, {})
+                :GetAbilitySystemComponent(actor):BP_ApplyGameplayEffectToSelf(effect, 1.0, {})
         end)
+    end
+
+    function game.killPlayer(pawn)
+        game.setMinHealth(pawn, 0)
+        local ok, err = applyKillEffect(pawn)
         if not ok then
             log("Kill failed: " .. tostring(err))
         end
+    end
+
+    -- A copy of the partner's boss, dead the game's whole way: this world's story goes on as the partner's does, the scene
+    -- after the fight first. Its loot is rolled at level 0, which pays nothing: the partner's death paid already, and that
+    -- dust reaches this player from there. Falls back to the quiet kill if the effect doesn't take.
+    function game.killForReal(actor)
+        pcall(function()
+            local level = actor.AttributeSetBase.Level
+            level.BaseValue = 0
+            level.CurrentValue = 0
+        end)
+        forgetBoss(actor)
+        stopSwing(actor)
+        game.setMinHealth(actor, 0)
+        syncing = true
+        local ok = applyKillEffect(actor)
+        syncing = false
+        local hp = game.getHealth(actor)
+        if ok and hp ~= nil and hp <= 0 then
+            return true
+        end
+        game.kill(actor)
+        return false
     end
 
     -- Posture ("Shachi"): breaking it opens an execution.
@@ -749,17 +814,31 @@ return function(api)
     end
 
     -- Host: the client's player hit this enemy. Lower its health and posture; at zero health, let the game run
-    -- its death.
-    function game.applyDamage(actor, amount, postureDamage)
+    -- its death. real: through the game's own kill effect, the whole death as from this player's own blow, so this world
+    -- pays its player and a boss's story goes on (its scene after the fight, its reward). Kill() skips all that: a boss
+    -- the guest finished gave the host nothing and came back. Returns true when that real death ran.
+    function game.applyDamage(actor, amount, postureDamage, real)
         local hp = game.getHealth(actor)
         if hp == nil or hp <= 0 then
-            return
+            return false
         end
         local posture = game.getPosture(actor)
         if posture and postureDamage and postureDamage > 0 then
             game.setPosture(actor, math.max(0, posture - postureDamage))
         end
         local left = math.max(0, hp - amount)
+        if left <= 0 and real then
+            forgetBoss(actor)
+            stopSwing(actor)
+            game.setMinHealth(actor, 0)
+            syncing = true
+            local ok = applyKillEffect(actor)
+            syncing = false
+            local after = game.getHealth(actor)
+            if ok and after ~= nil and after <= 0 then
+                return true
+            end
+        end
         game.setHealth(actor, left)
         if left <= 0 then
             forgetBoss(actor)
@@ -768,6 +847,7 @@ return function(api)
             pcall(function() actor:Kill(DIE_DAMAGED) end)
             syncing = false
         end
+        return false
     end
 
     -- A native kill (death by damage) rolls the enemy's loot table (GetCombatLootDataForOwner, owner = the enemy,
@@ -2530,6 +2610,60 @@ return function(api)
     local seqManager, seqLookupAt = nil, -1e9
     local seqOrphanSince = nil      -- since when the manager says "in sequence" with nothing playing
     local SEQ_ORPHAN_S = 8.0
+
+    -- The player of this world's scene. A story scene the game's flow starts (a boss's change of phase, its end) plays
+    -- through a sequence actor of its own: the manager only knows one is on, and which, with no session player. The actor
+    -- playing the manager's scene is looked for at most once a second while none is known.
+    local sceneActor, sceneLookAt = nil, -1e9
+    local function playing(p)
+        local ok, on = pcall(function() return valid(p) and p:IsPlaying() end)
+        return ok and on == true
+    end
+    local function sceneOf(p)
+        local name = nil
+        pcall(function()
+            local s = p:GetSequence()
+            if valid(s) then
+                name = s:GetFName():ToString()
+            end
+        end)
+        return name
+    end
+    local function scenePlayer()
+        local session = nil
+        pcall(function() session = seqManager.ActiveSessionPlayer end)
+        if valid(session) then
+            return session
+        end
+        if valid(sceneActor) and playing(sceneActor.SequencePlayer) then
+            return sceneActor.SequencePlayer
+        end
+        sceneActor = nil
+        local now = os.clock()
+        if now - sceneLookAt < 1.0 then
+            return nil
+        end
+        sceneLookAt = now
+        local current = nil
+        pcall(function()
+            local s = seqManager:GetCurrentSequence()
+            if valid(s) then
+                current = s:GetFName():ToString()
+            end
+        end)
+        if current == nil then
+            return nil
+        end
+        for _, a in ipairs(FindAllOf("LevelSequenceActor") or {}) do
+            local p = valid(a) and a.SequencePlayer
+            if p and playing(p) and sceneOf(p) == current then
+                sceneActor = a
+                return p
+            end
+        end
+        return nil
+    end
+
     function game.inCutscene()
         if not valid(seqManager) then
             local now = os.clock()
@@ -2556,8 +2690,57 @@ return function(api)
             seqOrphanSince = nil
             return true
         end
+        if scenePlayer() then
+            seqOrphanSince = nil            -- (a scene of the flow's: on for as long as it plays, past SEQ_ORPHAN_S too)
+            return true
+        end
         seqOrphanSince = seqOrphanSince or os.clock()
         return os.clock() - seqOrphanSince < SEQ_ORPHAN_S
+    end
+
+    -- The scene this world is playing, by its sequence's name, or nil. (The manager hands back nothing between scenes:
+    -- a name asked of nothing is a crash in UE4SS, so it's looked at first.)
+    function game.sceneName()
+        if not game.inCutscene() then
+            return nil
+        end
+        local name = nil
+        pcall(function()
+            local s = seqManager:GetCurrentSequence()
+            if valid(s) then
+                name = s:GetFName():ToString()
+            end
+        end)
+        return name
+    end
+
+    -- How long this world's scene runs at its own speed, in seconds, or nil.
+    function game.sceneLength()
+        local length = nil
+        pcall(function()
+            local p = game.inCutscene() and scenePlayer()
+            if p then
+                local frames, rate = p:GetFrameDuration(), p:GetFrameRate()
+                local fps = rate.Numerator / rate.Denominator
+                if frames > 0 and fps > 0 then
+                    length = frames / fps
+                end
+            end
+        end)
+        return length
+    end
+
+    -- This world's scene, ended where it would end by itself, as a skip does: what follows it runs.
+    function game.skipScene()
+        local ok = false
+        pcall(function()
+            local p = game.inCutscene() and scenePlayer()
+            if p then
+                p:GoToEndAndStop()
+                ok = true
+            end
+        end)
+        return ok
     end
 
     function game.mapName(contextActor)

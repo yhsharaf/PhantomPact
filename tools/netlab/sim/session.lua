@@ -147,10 +147,12 @@ function Session.press2(s, key)
     s:run(0.05)
 end
 
--- A story scene plays, or stops.
-function Session.scene(pc, on)
+-- A story scene plays, or stops. name: its sequence's (none by default).
+function Session.scene(pc, on, name)
     pc.scene = pc.scene or Fake.sceneManager(pc)
     Fake.put(pc.scene, "playing", on)
+    Fake.put(pc.scene, "sequence", on and name and { GetFName = function() return { ToString = function() return name end } end,
+        IsValid = function() return true end } or nil)
 end
 
 -- A bullet in the game's list. solid: an actor, not one of the sweeps every swing makes.

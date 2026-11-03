@@ -123,6 +123,20 @@ and 160% with two connected, 250% and 190% with three. It only goes up, so a bos
 leaves. Someone who joins during a boss fight only watches, so that boss keeps its number until the fight is over, while other
 enemies rise at once.
 
+## The host's story
+
+You play in the host's world, so the host's story point counts for both of you:
+
+- **A guest who is behind** is brought up to the host's story a little while after joining, at a quiet moment
+  (not in a scene or a boss fight): the quests the host has done and the unlocks along the way. It never goes back,
+  and what you found and the bells you rang stay yours. A tip says when it's done. `FollowHostStory = Off` in
+  `PhantomPact.ini` keeps a guest's story their own.
+- **A guest who is further on** sees the host's enemies even where their own save killed them long ago: they're
+  brought back in the guest's world while you play together, and stay dead in the guest's save once killed.
+- **Bosses:** a boss the host has beaten is gone for the guest, and a boss either player finishes dies the game's
+  whole way in both worlds: the scene after it plays for both, the next phase comes for both, and when the host skips
+  that scene it's skipped for the guest too.
+
 ## PvP (duels)
 
 Both players set `PvP = On` in `PhantomPact.ini`. Your partner becomes an opponent you can fight:

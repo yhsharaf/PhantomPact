@@ -114,6 +114,9 @@ return function(api)
         pendingDeaths = {},       -- client: host id -> true for a death announced while our copy wasn't loaded
         aside = {},               -- client: address -> { actor, name, since, askedAt, hidden, brain }: enemies of its own beside the host
         notOnHost = {},           -- client: enemy id -> true: the host says it hasn't got this one
+        bossAsk = {},             -- client: boss id -> { since, askedAt }: a boss of its own beside the host, asked after
+        bringing = {},            -- client: host enemy id -> { since, askedAt }: one this world has no copy of
+        broughtBack = {},         -- client: enemy id -> true: dead in this save, brought back for the host (game.bringBack)
         pendingBosses = {},       -- boss id -> true for a fight announced before our copy of the boss was known here
         partnerBosses = {},       -- boss id -> true while the other PC's fight with that boss goes on
         matchSticky = {},         -- client: host id -> address of the local actor matched to it by class/position
@@ -697,6 +700,32 @@ return function(api)
         end
     end
 
+    -- Host: the client's hit killed this enemy. The game's own loot roll didn't run (see game.rollLoot), so it's
+    -- rolled here, once. Dust goes to the host like any kill's and reaches the client as shared dust ("C"); items go to
+    -- both, unless the client's game already paid its player (theirsPaid: the death ran there first).
+    local function payKillLoot(name, actor, theirsPaid)
+        local dust, items, level = game.rollLoot(actor)
+        local _, pawn = getPlayer1()
+        local paid = {}
+        if dust > 0 and valid(pawn) and pcall(function() pawn:ChangeDustNumInternal(dust) end) then
+            paid[#paid + 1] = dust .. " dust"
+        end
+        for _, item in ipairs(items) do
+            for _ = 1, item.count do
+                game.grantLoot(pawn, item.id, item.kind)
+            end
+            if theirsPaid then
+                paid[#paid + 1] = item.id .. " x" .. item.count
+            end
+        end
+        if not theirsPaid then
+            sendItems(name, items, paid)
+        end
+        if #paid > 0 then
+            log(string.format("Your partner's kill (%s, level %d): %s.", name, level, table.concat(paid, ", ")))
+        end
+    end
+
     -- A party's host, an enemy's aggro turn: every ghost here goes on its hatred list, and its focus is steered among all the
     -- players near it. Their ghosts' places are what the relay last said: no calls into the game for each of them.
     local function aggroParty(actor, addr, x, y, z, hp)
@@ -911,18 +940,26 @@ return function(api)
     -- in the host's lines proves nothing: those only cover what's near it, and a copy here may have run after this player. So
     -- the host is asked, and only "I haven't got it" counts. Then it steps out of the way: hidden, not killed, so nothing
     -- of it reaches this save, and back once the host has moved on or turns out to have it. Bosses stay: a hidden one would
-    -- start its fight all the same. Only spawner ids: any other name is this PC's alone.
+    -- start its fight all the same. But a boss is asked after too, and one the host's world has beaten is beaten here before
+    -- any fight (BEATEN): this player never meets a boss the host is past. Only spawner ids: any other name is this PC's alone.
     local function setAside(own, now)
         local t = net.target
         if t and not net.partnerGone and os.clock() - (net.lastRemoteAt or -1e9) > ENEMY_STALE_S then
             return                  -- (a hitch on the host's side says nothing about its enemies)
         end
         local here = t ~= nil and not net.partnerGone and t.Map == net.localMap
-        local kept, gone = {}, 0
+        local kept, gone, bosses = {}, 0, {}
         for _, e in ipairs(own) do
             local name = enemyName(e.actor, e.addr)
-            if here and name:sub(1, 3) == "sp:" and inReach(e.loc.X, e.loc.Y, e.loc.Z, t) and not game.isDead(e.actor)
-                and not game.isBoss(e.actor, e.addr) then
+            local near = here and name:sub(1, 3) == "sp:" and inReach(e.loc.X, e.loc.Y, e.loc.Z, t) and not game.isDead(e.actor)
+            if near and game.isBoss(e.actor, e.addr) then
+                local a = net.bossAsk[name] or { since = now, askedAt = -1e9 }
+                bosses[name] = a
+                if now - a.since >= ASIDE_AFTER_S and now - a.askedAt >= ASK_AGAIN_S then
+                    a.askedAt = now
+                    sendEvent("HAS", name)
+                end
+            elseif near then
                 local a = net.aside[e.addr] or { actor = e.actor, name = name, since = now, askedAt = -1e9 }
                 kept[e.addr] = a
                 if a.hidden then
@@ -939,6 +976,7 @@ return function(api)
             end
         end
         showAside(kept)
+        net.bossAsk = bosses
         if gone > 0 then
             log(gone .. " enemies here aren't in the host's world: out of the way while you're near the host.")
         end
@@ -1096,6 +1134,57 @@ return function(api)
         end
     end
 
+    -- Client: the host's enemies this world has no copy of, near this player. Kills last for good in a save, so a guest who has
+    -- played further than the host has the early enemies long dead: the host fought what the guest couldn't see, and nothing
+    -- there could hit the guest. Their spawners here bring them back (game.bringBack), a few a round. Bosses come with their
+    -- fight (spawnBoss).
+    local bring = {
+        AFTER_S = 2.0,              -- unpaired this long first: a copy may just be loading in
+        AGAIN_S = 10.0,             -- and asked again at most this often
+        PER_ROUND = 2,              -- spawns cost a frame each
+    }
+    function bring.missing(now)
+        for name in pairs(net.bringing) do
+            if net.remoteEnemies[name] == nil or enemyByName[name] ~= nil then
+                net.bringing[name] = nil
+            end
+        end
+        local t = net.target
+        if not (game.bringBack and t and not net.partnerGone and net.localLoc and t.Map == net.localMap) then
+            return
+        end
+        local asked, back = 0, 0
+        for name, r in pairs(net.remoteEnemies) do
+            if enemyByName[name] == nil and not r.Boss and (r.Hp or 0) > 0 and name:sub(1, 3) == "sp:" and not net.hostKilled[name]
+                and distance(net.localLoc, r) <= PARTNER_REACH_CM then
+                local b = net.bringing[name] or { since = now, askedAt = -1e9 }
+                net.bringing[name] = b
+                if now - b.since >= bring.AFTER_S and now - b.askedAt >= bring.AGAIN_S and asked < bring.PER_ROUND then
+                    b.askedAt = now
+                    asked = asked + 1
+                    local ok, wasDead = game.bringBack(name)
+                    if ok then
+                        back = back + 1
+                        net.broughtBack[name] = wasDead or net.broughtBack[name]
+                    end
+                end
+            end
+        end
+        if back > 0 then
+            log(back .. " of the host's enemies weren't in your world: brought back while you play together.")
+        end
+    end
+
+    -- Client: what bringBack turned back in this save's records goes back as it was.
+    function bring.putBackAll()
+        for name in pairs(net.broughtBack) do
+            if game.putBack then
+                game.putBack(name)
+            end
+        end
+        net.broughtBack, net.bringing = {}, {}
+    end
+
     local function startGuestRound(now)
         if game.refreshEnemyIds then
             game.refreshEnemyIds()
@@ -1119,6 +1208,7 @@ return function(api)
         local own
         enemyByName, own = matchRemoteEnemies(reach.near)
         setAside(own, now)
+        bring.missing(now)
         local queue = {}
         for name, actor in pairs(enemyByName) do
             queue[#queue + 1] = { name = name, actor = actor }
@@ -1255,7 +1345,8 @@ return function(api)
         end
     end
 
-    handlers.K = function(name)
+    -- quiet: a death from before (BEATEN), not the end of a fight going on.
+    handlers.K = function(name, _, quiet)
         local actor = enemyByName[name]
         if isClient() then
             net.hostKilled[name] = true
@@ -1263,14 +1354,19 @@ return function(api)
             if not valid(actor) then
                 actor = stickyEnemy(name)
             end
-            local wasBoss = net.hostBosses[name] or net.partnerBosses[name] or net.pendingBosses[name]
-                or (valid(actor) and game.isBoss and game.isBoss(actor))
+            local fought = net.hostBosses[name] or net.partnerBosses[name] or net.pendingBosses[name]
+            local wasBoss = fought or (valid(actor) and game.isBoss and game.isBoss(actor))
             net.hostBosses[name] = nil
             if valid(actor) then
                 if api.puppets then
                     api.puppets.drop(actor)
                 end
-                if game.kill then
+                if fought and not quiet and game.killForReal then
+                    -- The boss of a fight both are in: the whole death here too, so this world's story goes on with the
+                    -- host's, its scene after the fight first (a quiet kill skipped it, and the next phase came unseen).
+                    game.killForReal(actor)
+                    log("Host says " .. name .. " died; its death runs here too.")
+                elseif game.kill then
                     game.kill(actor)
                     log("Host says " .. name .. " died; killed it here.")
                 end
@@ -1279,33 +1375,16 @@ return function(api)
                 net.pendingDeaths[name] = true
                 log("Host says " .. name .. " died; not matched here yet, will kill it when it is.")
             end
+            if net.broughtBack[name] then
+                net.broughtBack[name] = nil
+                game.putBack(name)              -- (dead in this save before: dead in it again)
+            end
             if game.markBeaten then
                 game.markBeaten(name)
             end
             if wasBoss then
                 endBossFight(name, actor)
             end
-        end
-    end
-
-    -- Host: the client's hit killed this enemy. The game's own loot roll didn't run (see game.rollLoot), so it's
-    -- rolled here, once. Dust goes to the host like any kill's and reaches the client as shared dust ("C"); items go to
-    -- both.
-    local function payKillLoot(name, actor)
-        local dust, items, level = game.rollLoot(actor)
-        local _, pawn = getPlayer1()
-        local paid = {}
-        if dust > 0 and valid(pawn) and pcall(function() pawn:ChangeDustNumInternal(dust) end) then
-            paid[#paid + 1] = dust .. " dust"
-        end
-        for _, item in ipairs(items) do
-            for _ = 1, item.count do
-                game.grantLoot(pawn, item.id, item.kind)
-            end
-        end
-        sendItems(name, items, paid)
-        if #paid > 0 then
-            log(string.format("Your partner's kill (%s, level %d): %s.", name, level, table.concat(paid, ", ")))
         end
     end
 
@@ -1332,15 +1411,29 @@ return function(api)
                 and gap3d(actor:K2_GetActorLocation(), hitter) <= OWN_HIT_CM then
                 local wasAlive = not (game.isDead and game.isDead(actor))
                 local boss = net.partnerBosses[name] or (game.isBoss and game.isBoss(actor))
-                game.applyDamage(actor, amount, posture)
+                local real = game.applyDamage(actor, amount, posture, true)
                 game.partnerHit(actor:GetAddress(), from)
-                if wasAlive and game.isDead and game.isDead(actor) then
-                    if game.rollLoot then
+                if wasAlive and (real or (game.isDead and game.isDead(actor))) then
+                    if real and boss and game.rollLoot then
+                        -- The game ran the whole death and paid this player, as for their own blow. A boss's items are
+                        -- the client's too.
+                        local _, items = game.rollLoot(actor)
+                        local paid = {}
+                        sendItems(name, items, paid)
+                        if #paid > 0 then
+                            log("Boss items for your partner too: " .. table.concat(paid, ", ") .. ".")
+                        end
+                    elseif not real and game.rollLoot then
                         payKillLoot(name, actor)
                     end
                     -- At once, not at the enemy's next turn: the partner is looking at a copy held at 1 health.
                     net.deadSent[name] = true
                     sendEvent("K", name)
+                    if game.markBeaten then
+                        -- (Its turn below won't see this death: deadSent is up already. A boss the guest finished came
+                        -- back on the host's next load.)
+                        game.markBeaten(name)
+                    end
                     if boss then
                         endBossFight(name, actor)
                     end
@@ -1454,6 +1547,7 @@ return function(api)
         net.hitHere = {}
         net.fightOf = {}
         net.notOnHost = {}
+        net.bossAsk = {}
         net.joinedBoss, net.joinedWith, net.pullAfterCalm = nil, nil, nil
         reopenFog()
         if game.resetBosses and not elsewhere then
@@ -1789,7 +1883,7 @@ return function(api)
         end
         log("The host has beaten " .. name .. ": beaten here too.")
         net.hostBosses[name] = true        -- (so that the kill below ends the fight here: bar down, walls open)
-        handlers.K(name)
+        handlers.K(name, nil, true)
     end
 
     handlers.B = function(name, from)
@@ -2058,6 +2152,7 @@ return function(api)
 
     -- Forget everything learned from the other side, so nothing from an earlier session is applied.
     local function clearRemoteState()
+        bring.putBackAll()
         net.remoteEnemies = {}
         net.enemyNames = {}
         net.announced = {}
@@ -2075,6 +2170,7 @@ return function(api)
         net.hitHere = {}
         net.fightOf = {}
         net.notOnHost = {}
+        net.bossAsk = {}
         net.joinedBoss, net.joinedWith, net.pullAfterCalm, net.bossOverAt = nil, nil, nil, nil
         net.healTicks = {}
         net.hostSeen = {}
@@ -2303,6 +2399,7 @@ return function(api)
             end
             if last then
                 log("Lost the other player (nothing heard for " .. PARTNER_GONE_S .. " s): fog walls opened, enemies are yours again.")
+                bring.putBackAll()
                 endFights()
                 net.hostBosses, net.pendingBosses = {}, {}
                 reopenFog()

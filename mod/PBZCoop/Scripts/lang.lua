@@ -100,6 +100,7 @@ return function()
             "无法启动:UDP 端口 %1 无法使用(错误 %2)。请在双方的 PhantomPact.ini 里改用别的端口。" },
         { "^无法启动:Steam isn't loaded in this game %(steam_api64%.dll%)$", "无法启动:游戏里没有加载 Steam(steam_api64.dll)。" },
         { "^无法启动:Steam isn't ready: is it running and logged in%?$", "无法启动:Steam 还没准备好,请确认它已运行并已登录。" },
+        { "^your story caught up with the host's: (%d+) steps?%.$", "你的剧情进度已追上房主:%1 步。" },
         -- More than two players. (Each player's own lines are added below.)
         { " Players: (%d) of (%d)%.", " 玩家:%1/%2。" },
         { "^player (%d) is on Phantom Pact (.+) and you're on (.+): use the same version, or enemies won't stay in step%.$",

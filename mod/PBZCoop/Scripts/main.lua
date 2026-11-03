@@ -512,6 +512,7 @@ api.mapicon = dofile(SCRIPT_DIR .. "mapicon.lua")(api)
 api.revive = dofile(SCRIPT_DIR .. "revive.lua")(api)
 api.pvp = dofile(SCRIPT_DIR .. "pvp.lua")(api)
 api.scaling = dofile(SCRIPT_DIR .. "scaling.lua")(api)
+api.story = dofile(SCRIPT_DIR .. "story.lua")(api)
 api.units = dofile(SCRIPT_DIR .. "units.lua")(api)
 api.localcoop = dofile(SCRIPT_DIR .. "localcoop.lua")(api)
 api.panel = dofile(SCRIPT_DIR .. "panel.lua")(api)
@@ -535,6 +536,7 @@ PBZ = {
     coop = coop,
     game = api.game,
     link = api.link,
+    story = api.story,
 }
 
 -- Command file: lets a developer drive tests from outside the game. Write one command per line

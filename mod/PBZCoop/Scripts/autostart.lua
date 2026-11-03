@@ -83,6 +83,9 @@ return function(api)
     end
     api.lang.set(settings.language)
     api.partner.teleport = (settings.partnerteleport or "off"):lower() == "on"
+    if api.story then
+        api.story.follow = (settings.followhoststory or "on"):lower() ~= "off"
+    end
     local role = (settings.role or "off"):lower()
     os.remove(modDir() .. "pads_watch.txt")
     os.remove(modDir() .. "pads_want.txt")      -- left by a crash with a panel open: main.dll would think one still is

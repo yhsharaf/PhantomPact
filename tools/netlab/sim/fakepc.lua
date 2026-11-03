@@ -392,9 +392,129 @@ function Fake.enemy(pc, id, class, x, y, z, hp, posture, boss)
     return e
 end
 
+-- The game's story, as much as story.lua reads: the QA tools' table of story rows, the quest list a narrative component keeps
+-- (quests by class name, branches by ID with a state: 0 not yet, 1 under way, 2 done), and the QA library that applies rows.
+-- A row: its name, its quest steps, optional, and what else it sets.
+Fake.STORY_ROWS = {
+    { "valley-map", "", "False", maps = "PBZ_Valley_WP" },
+    { "valley-wake", "Main-Valley_1_开启任务", "False" },
+    { "valley-meet", "Main-Valley_1_完成任务，Side-Cry_1_开启任务", "False" },
+    { "valley-camp", "", "False", tags = "camp.arrived" },
+    { "valley-boss", "Boss-Puppet_S1_开启任务, Boss-Puppet_S1_完成任务", "False" },
+    { "valley-loot", "", "False", items = "I_1", tags = "item.recipe" },
+    { "valley-side", "Side-Cry_1_完成任务", "True" },
+    { "forest-start", "Main-Forest_1_开启任务", "False" },
+    { "forest-shop", "", "False", ui = "UI.VisibilityTag.Shop" },
+    { "forest-end", "Main-Forest_1_完成任务", "False" },
+}
+
+function Fake.story(pc)
+    local rows = Fake.STORY_ROWS
+    pc.quests, pc.storyMarks, pc.storyApplied = {}, {}, {}
+    local nc = object(pc, "PBZNarrativeComponent", { QuestList = {}, bCompleteLoad = true })
+    pc.narrative = nc
+    local function branchOf(quest, id)
+        local q = pc.quests[quest]
+        if q == nil then
+            q = object(pc, "Quest", { Branches = {} })
+            rawset(q, "__name", quest .. "_C")
+            pc.quests[quest] = q
+            table.insert(rawget(nc, "__fields").QuestList, q)
+        end
+        for _, b in ipairs(rawget(q, "__fields").Branches) do
+            if rawget(b, "__fields").ID:ToString() == id then
+                return b
+            end
+        end
+        local b = object(pc, "QuestBranch", { ID = name(id), state = 0 })
+        defs(pc, b, { GetBranchState = function(self) return rawget(self, "__fields").state end })
+        table.insert(rawget(q, "__fields").Branches, b)
+        return b
+    end
+    -- The test's hand: a branch at least this far along.
+    pc.storyStep = function(quest, id, state)
+        local b = branchOf(quest, id)
+        put(b, "state", math.max(rawget(b, "__fields").state, state))
+    end
+    pc.storyState = function(quest, id)
+        local q = pc.quests[quest]
+        for _, b in ipairs(q and rawget(q, "__fields").Branches or {}) do
+            if rawget(b, "__fields").ID:ToString() == id then
+                return rawget(b, "__fields").state
+            end
+        end
+        return nil
+    end
+    local function apply(rowName)
+        for _, r in ipairs(rows) do
+            if r[1] == rowName then
+                pc.storyApplied[#pc.storyApplied + 1] = rowName
+                for entry in r[2]:gsub("，", ","):gmatch("[^,]+") do
+                    local quest, id, step = entry:match("^%s*(.+)_([^_]+)_([^_]+)%s*$")
+                    pc.storyStep(quest, id, step == "完成任务" and 2 or 1)
+                end
+                for _, k in ipairs({ "tags", "maps", "ui", "items" }) do
+                    if r[k] then
+                        pc.storyMarks[r[k]] = true
+                    end
+                end
+            end
+        end
+    end
+    -- A save that has come this far: the first n rows, as the QA tools would apply them.
+    pc.storyUpTo = function(n)
+        for i = 1, n do
+            apply(rows[i][1])
+        end
+        pc.storyApplied = {}
+    end
+    local tables = object(pc, "DataTableFunctionLibrary")
+    local COLUMNS = { QuestList = 2, Optional = 3 }
+    local OTHER = { AddTags = "tags", ActiveBellMaps = "maps", ActivateUITags = "ui", AddItems = "items" }
+    defs(pc, tables, {
+        GetDataTableRowNames = function(_, _, out)
+            for i, r in ipairs(rows) do
+                out[i] = name(r[1])
+            end
+        end,
+        GetDataTableColumnAsString = function(_, _, column)
+            local c, out = column:ToString(), {}
+            for i, r in ipairs(rows) do
+                out[i] = name((COLUMNS[c] and r[COLUMNS[c]]) or (OTHER[c] and r[OTHER[c]]) or "")
+            end
+            return out
+        end,
+    })
+    local lib = object(pc, "PBZDebugFlowEventLibrary")
+    defs(pc, lib, {
+        ApplyFlowEvents = function(_, _, _, _, names)
+            for _, n in ipairs(names) do
+                apply(n:ToString())
+            end
+        end,
+    })
+    return {
+        ["/Game/PBZContent/Blueprint/FlowGraph/DebugUI/FlowQuest/FlowEventTable.FlowEventTable"] = object(pc, "DataTable"),
+        ["/Game/PBZContent/Blueprint/FlowGraph/DebugUI/FlowQuest/FlowQuestBranchStateDataTable.FlowQuestBranchStateDataTable"] =
+            object(pc, "DataTable"),
+        ["/Script/Engine.Default__DataTableFunctionLibrary"] = tables,
+        ["/Script/ProjectPBZ.Default__PBZDebugFlowEventLibrary"] = lib,
+    }
+end
+
 function Fake.sceneManager(pc)
-    local m = object(pc, "PBZLevelSequenceManager", { playing = false, ActiveSessionPlayer = nil })
-    defs(pc, m, { IsInSequence = function(self) return rawget(self, "__fields").playing end })
+    local m = object(pc, "PBZLevelSequenceManager", { playing = false, ActiveSessionPlayer = nil, sequence = nil, frames = 240 })
+    defs(pc, m, {
+        IsInSequence = function(self) return rawget(self, "__fields").playing end,
+        GetCurrentSequence = function(self) return rawget(self, "__fields").sequence end,
+        -- (The manager stands in for its own sequence player.)
+        GetFrameDuration = function(self) return rawget(self, "__fields").frames end,
+        GetFrameRate = function() return { Numerator = 30, Denominator = 1 } end,
+        GoToEndAndStop = function(self)
+            put(self, "playing", false)
+            put(self, "skipped", (rawget(self, "__fields").skipped or 0) + 1)
+        end,
+    })
     put(m, "ActiveSessionPlayer", m)
     return m
 end
@@ -999,6 +1119,23 @@ function Fake.new(id, scripts, ini, link)
                 given[#given + 1] = class
                 rawset(actor, "__given", given)
             end)
+            if rawget(actor, "__fields").dustLoot ~= nil then
+                -- An enemy's: the only effect ever applied to one is the game's kill, its whole death, paying this PC's
+                -- player as for their own blow.
+                put(asc, "BP_ApplyGameplayEffectToSelf", function()
+                    record(pc, "ASC", "BP_ApplyGameplayEffectToSelf")
+                    Fake.setHealth(actor, 0)
+                    put(actor, "dead", true)
+                    put(actor, "realDeath", true)
+                    -- (The loot is rolled at the enemy's level: 0 pays nothing.)
+                    local set = rawget(actor, "__fields").AttributeSetBase
+                    local level = rawget(rawget(set, "__fields").Level, "__fields").CurrentValue
+                    local dust = rawget(actor, "__fields").dustLoot or 0
+                    if dust > 0 and level > 0 and pc.pawn then
+                        pc.pawn:ChangeDustNumInternal(dust)
+                    end
+                end)
+            end
             put(actor, "asc", asc)
         end
         return asc
@@ -1062,6 +1199,9 @@ function Fake.new(id, scripts, ini, link)
         [BACKPACK] = object(pc, "BackpackClass"),
     }
     rawset(found[BACKPACK], "__path", BACKPACK)
+    for path, o in pairs(Fake.story(pc)) do
+        found[path] = o
+    end
     local statics = object(pc, "StaticObject", {}, true)
     pc.found = found
     pc.montages, pc.weaponConfigs = {}, {}
@@ -1121,6 +1261,8 @@ function Fake.new(id, scripts, ini, link)
             return bell
         elseif class == "PBZLevelSequenceManager" then
             return pc.scene
+        elseif class == "PBZNarrativeComponent" then
+            return pc.narrative
         end
         return nil
     end
