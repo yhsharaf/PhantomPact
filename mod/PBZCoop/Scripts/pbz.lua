@@ -1030,8 +1030,10 @@ return function(api)
             -- AddPropsToBackPack is the backpack's own entry point; if the item count didn't move (seen in the
             -- prologue map, which keeps its own restricted backpack), fall back to the player's GiveItem.
             -- (Notes and keys, R_ and I_, aren't counted in the backpack: no second try for those.)
+            -- Its "push" off: on, a thing new to this player put up the game's full-screen card, as a weapon's "equip it now?"
+            -- did, in a game that isn't paused for it, and on a window that wasn't in front no key could close it.
             local before = game.itemCount(bp, itemId)
-            pcall(function() bp:AddPropsToBackPack(count, FName(itemId), true) end)
+            pcall(function() bp:AddPropsToBackPack(count, FName(itemId), false) end)
             local after = game.itemCount(bp, itemId)
             if after <= before and not itemId:find("^[RI]_%d") then
                 pcall(function() pawn:GiveItem(FName(itemId), count) end)

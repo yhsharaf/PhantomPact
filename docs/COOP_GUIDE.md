@@ -62,7 +62,7 @@ mean and what to do about them.
 | Scene skips | A host scene that ends 1.5 s or more before its length was skipped: `SCENE skip <sequence>`, and the guest's same scene ends too (`GoToEndAndStop` on the flow's own player), also one that starts up to 10 s later | The host skipped `Seq023` at 4.6 of 48.7 s; the guest's ended 30 ms later |
 | Bosses | Boss = codex `bIsBoss` or the HUD calling `RegisterBossHPBar`; a boss fight sends `B <boss>` and the other side shows the boss health bar | ZuoShang (tutorial boss, 2900 HP) shown with the boss bar; boss health and death synced |
 | Aggro on the friend | Host adds the ghost to nearby enemies' hatred lists; ghost does 0 damage itself (hits come as `D`) and stays at full health (the friend's real health is on their PC) | Enemies engage both Huns |
-| Items | A pickup next to you that vanishes sends `I <pickup> <itemId>`; the other side removes its copy and gets the same item (shared loot) | Material (`Weapon_Material_01`) pickup -> `I` -> granted on the other side; page, stone, key item and consumable grants each 0 -> 1 with the game's "item acquired" screen |
+| Items | A pickup next to you that vanishes sends `I <pickup> <itemId>`; the other side removes its copy and gets the same item (shared loot) | Material (`Weapon_Material_01`) pickup -> `I` -> granted on the other side; page, stone, key item and consumable grants each 0 -> 1. They arrive without the game's full-screen card (`AddPropsToBackPack` with its push off): `TU_02001` 0 -> 1, no card |
 | Friend down / other map | The state section carries health and a hash of the map name; the ghost hides while they're at 0 HP or on another map | Ghost hid at 0 HP and came back |
 | Same enemy on both PCs | Enemy id = `sp:<SpawnerID>` of the level AISpawner that made it, or the spawner's own name where it has no SpawnerID (174 of 180 in Xigu). Designer ids are stable; runtime actor names are not: the same placed character was `_2147476826` in one session and `_2147477757` in the next. An `N` event gives each id a number, and enemy lines carry the number. Fallback: nearest same-class enemy within 20 m | Real tutorial boss spawned by its level spawner shows as `sp:ZuoShangyoung_Seq003` in deaths and boss events. Fallback: a fake host reported a thug as `sp:FAKEID`; the client's local thug (another id) took the host's health/posture (150/60) and its hits went back as `D sp:FAKEID 80.0 60.0` |
 | Facing during moves | In PvP, `M` events carry the attacker's yaw and the ghost turns to it before the move. In co-op the state section's yaw does it | Moves sent as `M <ability> 34.5` |
@@ -86,8 +86,8 @@ Known limits found in testing:
 - Item ids are the `ItemId` field of `DT_InventoryData` rows (ASCII, e.g. `Weapon_Material_01`, `Item_001`,
   `K_07001`, `I_10001`, `Page_XC_04`), not the row names (Chinese display names such as `铸造金属`), which the
   backpack silently ignores. Pickups carry the real `ItemId`, so sharing uses the right ids; tests granted a
-  material, a stone, a key item and a consumable (each 0 -> 1, with the game's "item acquired" screen), and a
-  material pickup went through the full pickup -> `I` event -> grant round trip.
+  material, a stone, a key item and a consumable (each 0 -> 1; a partner's find now comes without the game's
+  "item acquired" card), and a material pickup went through the full pickup -> `I` event -> grant round trip.
 - Protocol 3 has only run on one PC: over loopback, and through `relay_cli netem` as a bad connection. A real session
   needs the second PC (desktop-gfqd042 on Tailscale) with a Steam account that owns PBZ.
 
