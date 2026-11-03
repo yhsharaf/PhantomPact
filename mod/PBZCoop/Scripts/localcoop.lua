@@ -52,7 +52,6 @@ return function(api)
     local nextWake = 0
     local woken = {}
     local usedSwitches = {}         -- actor address -> true once player 2 opened it this rest (a rubbish pile paid out on every press otherwise)
-    local swapped = false           -- player 1's controller is driving player 2's body for an interaction (see swapBodies)
     local p2Charges = nil           -- player 2's own gourd charges; nil until the gourd has been seen, reset at a rest
 
     -- (A look through the game's object list takes a millisecond or two of the frame, so this one is kept to five a second, as screenUp's.)
@@ -376,6 +375,13 @@ return function(api)
         if valid(state.p2Pawn) then
             game.setMinHealth(state.p2Pawn, DOWN_HP)
             pcall(V.giveGauge, state.p2Pawn)
+            -- (Once the game has given the new Soul what it gives, so that nothing is given twice.)
+            local soul = state.p2Pawn
+            game.after(V.TEACH_AFTER_S, function()
+                if valid(soul) and soul == state.p2Pawn then
+                    pcall(V.teach, soul)
+                end
+            end)
             wireInteract()
             V.soulAt = os.clock()
         end
@@ -412,20 +418,10 @@ return function(api)
         end)
     end
 
-    -- A rest heals the player and brings the dead back; the same for player 2. The game sees to the body that sat, which is
-    -- player 2's when they rang the bell (see swapBodies), so player 1's is seen to here then.
+    -- A rest heals the player and brings the dead back; the same for player 2.
     local function restPlayers()
         p2Charges, V.lentCharge = nil, nil
         local _, p1 = getPlayer1()
-        if swapped then
-            p1 = state.swapBody1
-            if valid(p1) and not game.isDead(p1) then
-                local _, maxHp = game.getHealth(p1)
-                if maxHp then
-                    game.setHealth(p1, maxHp)
-                end
-            end
-        end
         local p2 = state.p2Pawn
         if valid(p2) and not p2DownSince and not game.isDead(p2) then
             pcall(function() p2["Respawn Recover Attributes"](p2) end)      -- (as for player 1: this clears the low health look)
@@ -900,7 +896,7 @@ return function(api)
         V.nextFogJoin = os.clock() + 0.5
         local waiting = false
         local apart = 0
-        if valid(p2) and not game.isDead(p2) and not p2DownSince and not swapped and not inScene then
+        if valid(p2) and not game.isDead(p2) and not p2DownSince and not inScene then
             apart = distance(p1:K2_GetActorLocation(), p2:K2_GetActorLocation())
             if apart > FOG_APART_CM and p1InFight(p1, p2) then
                 local at2 = p2:K2_GetActorLocation()
@@ -1117,7 +1113,7 @@ return function(api)
 
     local function tick()
         local pc, p1 = getPlayer1()
-        if paused or swapped or not valid(p1) then
+        if paused or not valid(p1) then
             return
         end
         -- (Only a player being added can take the layout, so this needn't be every second.)
@@ -1210,7 +1206,7 @@ return function(api)
         for i, step in ipairs({ wakeEnemies, keepEnemiesAlive, keepDomains, noticePlayer2, wakeBosses }) do
             game.after(V.STEP_S * i, function()
                 local _, body = getPlayer1()
-                if not (swapped or paused or p2DownSince) and valid(body) and valid(state.p2Pawn) then
+                if not (paused or p2DownSince) and valid(body) and valid(state.p2Pawn) then
                     step(body, state.p2Pawn)
                 end
             end)
@@ -1318,9 +1314,6 @@ return function(api)
 
     -- Back to one player: full screen, the normal camera, and the game's own controls for player 1.
     local function goSolo()
-        if swapped then
-            V.unswapBodies()
-        end
         local pc, p1 = getPlayer1()
         paused = true
         -- Player 2 stays as a local player, with no Soul and no screen: really removing them makes the game delete the UI
@@ -1437,7 +1430,7 @@ return function(api)
                     pcall(function() a:SetActorHiddenInGame(false) end)
                 end
             end
-            if valid(pc2) and not swapped and not V.screenHeld then
+            if valid(pc2) and not V.screenHeld then
                 pcall(function() pc2:ResetIgnoreInputFlags() end)
             end
         end
@@ -1457,7 +1450,7 @@ return function(api)
             end
         elseif V.screenHeld then
             V.screenHeld = nil
-            if valid(pc2) and not swapped and not V.sceneHeld then
+            if valid(pc2) and not V.sceneHeld then
                 pcall(function() pc2:ResetIgnoreInputFlags() end)
             end
         end
@@ -1534,7 +1527,6 @@ return function(api)
     -- when the joystick returns or another one claims them.
     local function watchPads()
         local pc, p1 = getPlayer1()
-        p1 = swapped and state.swapBody1 or p1      -- (in a swap, player 1's controller holds player 2's body)
         if not paused and valid(pc) then
             followScene(pc)
         end
@@ -1546,6 +1538,7 @@ return function(api)
         -- The bell's menu doesn't pause the game but is a menu all the same: both players use it with their own pads.
         local menu = not paused and (api.gs():IsGamePaused(pc) or bellMenuUp() or screenUp())
         V.followBoat(p1)
+        pcall(V.watchBell, p1)
         if menu ~= menuOpen then
             menuOpen = menu
             api.gs():SetForceDisableSplitscreen(pc, menu or inScene)
@@ -1561,7 +1554,7 @@ return function(api)
         -- dialogue that ended in a scene): release them. Player 1's controller is the reference: when the game
         -- ignores player 1 too, it's the game's own state and stays.
         local pc2 = state.p2Controller
-        if not inScene and not menuOpen and not V.sceneHeld and not V.screenHeld and not V.closeUp and not swapped and not p2DownSince
+        if not inScene and not menuOpen and not V.sceneHeld and not V.screenHeld and not V.closeUp and not p2DownSince
             and valid(pc2) and not pc:IsMoveInputIgnored() and pc2:IsMoveInputIgnored() then
             V.p2StuckSince = V.p2StuckSince or os.clock()
             if os.clock() - V.p2StuckSince > 1.0 then
@@ -1616,55 +1609,8 @@ return function(api)
 
     local backpackOf, gourdInfo = game.backpackOf, game.gourdInfo
 
-    -- Chests, piles and bells are written for "player 0": the approach walk, the loot and the rest all act on the
-    -- body player 1's controller possesses. So for the length of such an interaction the two controllers swap
-    -- bodies: player 1's controller drives player 2's Soul (which then walks, opens and rests as the game intends),
-    -- each screen keeps its own camera, and control swaps back when the interaction is over. Player 1 never moves.
-    local swapAt, swapIdle = 0, 0
-    local swapIsBell, swapSawMenu = false, false
-    local SWAP_MAX_S = 120           -- a bell: the player may sit in its menu a while
-    local SWAP_BELL_WAIT_S = 20      -- and if that menu hasn't come by now, it isn't coming (hit on the walk, enemies near)
-    local SWAP_SWITCH_MAX_S = 10     -- a chest or pile: the walk and the opening take about six seconds
-    local SWAP_MONTAGE_S = 6         -- after this, a playing animation no longer holds the swap (hits from enemies never stop)
-    local SWAP_IDLE_S = 3.0          -- the bell's walk, ring and menu have gaps between them; swap back only after a real pause
-
-    local function viewOwnBodies(pc1, pc2, b1, b2)
-        pcall(function() pc1:SetViewTargetWithBlend(b1, 0, 0, 0, false) end)
-        pcall(function() pc2:SetViewTargetWithBlend(b2, 0, 0, 0, false) end)
-    end
-
-    local function swapBodies(isBell)
-        local pc1, p1 = getPlayer1()
-        local pc2, p2 = state.p2Controller, state.p2Pawn
-        if swapped or not (valid(pc1) and valid(pc2) and valid(p1) and valid(p2)) then
-            return false
-        end
-        local ok = pcall(function()
-            pc1:UnPossess()
-            pc2:UnPossess()
-            pc1:Possess(p2)
-            pc2:Possess(p1)
-        end)
-        if not ok then
-            pcall(function() pc1:Possess(p1) end)
-            pcall(function() pc2:Possess(p2) end)
-            return false
-        end
-        viewOwnBodies(pc1, pc2, p1, p2)
-        -- Neither pad may steer a body during the swap (pad 2 would be moving player 1's Soul); menus still work.
-        -- Controller flags, not the actors' input stacks: those stacks are rebuilt by possession and a stray push
-        -- left player 1 unable to move once.
-        pcall(function() pc1:SetIgnoreMoveInput(true) pc1:SetIgnoreLookInput(true) end)
-        pcall(function() pc2:SetIgnoreMoveInput(true) pc2:SetIgnoreLookInput(true) end)
-        state.swapBody1, state.swapBody2 = p1, p2
-        swapped, swapAt, swapIdle = true, os.clock(), 0
-        swapIsBell, swapSawMenu = isBell == true, false
-        return true
-    end
-
-    -- A bell clears player 0's control sets, and the game hands them back to whichever controller holds the resting Soul
-    -- by then: player 2's, once the bodies are back. Player 1 is left with none and can't move. So for a while after a
-    -- swap, player 1 gets what player 2 has.
+    -- A controller taking a body clears player 0's control sets, and the game hands them back to whichever controller holds
+    -- the Soul by then. Player 1 is left with none and can't move. So for a while after one, player 1 gets what player 2 has.
     local CONTROLS_WATCH_S, CONTROLS_EVERY_S = 10, 0.5
     local controlsUntil, controlsAt = 0, 0
 
@@ -1737,7 +1683,7 @@ return function(api)
 
     function V.keepHud(pc, p2)
         local class = StaticFindObject(V.HUD_CLASS)
-        if swapped or not valid(class) or V.hudFor == p2:GetAddress()
+        if not valid(class) or V.hudFor == p2:GetAddress()
             or os.clock() - (V.soulAt or 0) < V.HUD_AFTER_S or api.gs():IsGamePaused(pc) then
             return
         end
@@ -1761,7 +1707,7 @@ return function(api)
         if not valid(V.hud) then
             return
         end
-        local up = not (paused or inScene or menuOpen or swapped or p2DownSince or api.panel.open)
+        local up = not (paused or inScene or menuOpen or p2DownSince or api.panel.open)
         if up ~= V.hudUp then
             V.hudUp = up
             pcall(function() V.hud:SetVisibility(up and 3 or 1) end)
@@ -1821,122 +1767,54 @@ return function(api)
         end
     end
 
-    -- The Soul that rested can't guard afterwards: seen after every bell, and gone once it's replaced, as a death does. A
-    -- new one takes its place on the spot. A rest heals anyway.
-    local RENEW_AFTER_S = 1.0
-    V.AFTER_MENU_S = 1.0
-
-    local function renewPlayer2()
-        local old = state.p2Pawn
-        local _, p1 = getPlayer1()
-        if swapped or inScene or p2DownSince or not (valid(old) and valid(p1)) then
+    -- What's trained at a bell is given to player 1's Soul alone, and a new Soul starts from what was last saved. Player 2's is given the same.
+    V.AFTER_BELL_S, V.TEACH_AFTER_S = 1.0, 2.0
+    V.learned = {}
+    function V.abilitiesOf(soul)
+        local asc, out = StaticFindObject("/Script/GameplayAbilities.Default__AbilitySystemBlueprintLibrary"):GetAbilitySystemComponent(soul), {}
+        asc.ActivatableAbilities.Items:ForEach(function(_, v)
+            pcall(function()
+                local class = v:get().Ability:GetClass()
+                out[class:GetFName():ToString()] = class
+            end)
+        end)
+        return out, asc
+    end
+    function V.teach(soul)
+        if next(V.learned) == nil then
             return
         end
-        local at, facing = old:K2_GetActorLocation(), old:K2_GetActorRotation()
-        leaveDomains(old)
-        respawn(p1)
-        if valid(state.p2Pawn) then
-            state.p2Pawn:K2_SetActorLocationAndRotation(at, facing, false, {}, true)
-            log("Player 2 is up from the bell.")
+        local theirs, asc = V.abilitiesOf(soul)
+        for name, class in pairs(V.learned) do
+            if valid(class) and not theirs[name] then
+                asc:K2_GiveAbility(class, 1, -1)
+                log("Player 2 learns " .. name .. ".")
+            end
         end
     end
-
-    local function unswapBodies()
-        local pc1, pc2 = getPlayer1(), state.p2Controller
-        local p1, p2 = state.swapBody1, state.swapBody2
-        local rested = swapIsBell and swapSawMenu       -- (a ring that never came is no rest)
-        swapped = false
-        if not (valid(pc1) and valid(pc2) and valid(p1) and valid(p2)) then
-            -- Whatever's left goes back to its own controller, or that player can't move.
-            for _, pair in ipairs({ { pc1, p1 }, { pc2, p2 } }) do
-                local pc, body = pair[1], pair[2]
-                if valid(pc) then
-                    pcall(function() pc:ResetIgnoreInputFlags() end)
-                    if valid(body) then
-                        pcall(function()
-                            pc:UnPossess()
-                            pc:Possess(body)
-                        end)
-                    end
+    function V.afterBell()
+        local _, p1 = getPlayer1()
+        if valid(p1) and V.knownAtBell then
+            for name, class in pairs(V.abilitiesOf(p1)) do
+                if not V.knownAtBell[name] then
+                    V.learned[name] = class
                 end
             end
-            return
         end
-        pcall(function()
-            pc1:UnPossess()
-            pc2:UnPossess()
-            pc1:Possess(p1)
-            pc2:Possess(p2)
-        end)
-        pcall(function() pc1:ResetIgnoreInputFlags() end)
-        pcall(function() pc2:ResetIgnoreInputFlags() end)
-        viewOwnBodies(pc1, pc2, p1, p2)
-        controlsUntil, controlsAt = os.clock() + CONTROLS_WATCH_S, 0
-        log("Player 2's turn is over: controls are back.")
-        if rested then
-            -- The rest ran on player 2's body. Health written by hand leaves player 1 with the low health look, so it's the bell's step.
-            pcall(game.restHere, p1)
-            game.after(RENEW_AFTER_S, function()
-                local ok, err = pcall(renewPlayer2)
-                if not ok then
-                    log("Player 2's new Soul: " .. tostring(err))
-                end
-            end)
+        if valid(state.p2Pawn) then
+            V.teach(state.p2Pawn)
         end
     end
-
-    V.unswapBodies = unswapBodies
-
-    -- Called often: swaps back once player 2's body has finished (nothing interacting, no bell menu) or on a timeout.
-    local function watchSwap()
-        if not swapped then
-            pcall(giveControlsBack)
+    function V.watchBell(p1)
+        local up = not paused and bellMenuUp()
+        if up == (V.atBell == true) then
             return
         end
-        local body = state.swapBody2
-        -- Player 2 went down or lost its Soul mid-interaction: give the bodies back at once.
-        if p2DownSince or not valid(body) or game.isDead(body) or state.p2Pawn ~= body then
-            unswapBodies()
-            return
-        end
-        local busy = false
-        if valid(body) then
-            local ic = componentOf(body, "PBZInteractComponent")
-            local ok, ing = pcall(function() return ic and ic.InteractingActor end)
-            busy = ok and valid(ing)
-        end
-        local pc1 = getPlayer1()
-        local menu = bellMenuUp()
-        if menu then
-            swapSawMenu = true
-        end
-        local age = os.clock() - swapAt
-        local montage = false
-        if age < SWAP_MONTAGE_S then
-            pcall(function() montage = api.moves.animOf(body):IsAnyMontagePlaying() end)
-        end
-        -- The game clears these flags on its own now and then; while swapped no pad may steer a body.
-        pcall(function() pc1:SetIgnoreMoveInput(true) pc1:SetIgnoreLookInput(true) end)
-        pcall(function() state.p2Controller:SetIgnoreMoveInput(true) state.p2Controller:SetIgnoreLookInput(true) end)
-        -- A bell: the walk, the ringing animation and the menu come with quiet gaps between them, so the swap holds
-        -- until the menu has been up and gone. Anything else: until nothing is interacting or playing.
-        local held = busy or menu or montage or game.inCutscene()
-            or (valid(pc1) and api.gs():IsGamePaused(pc1))
-            or (valid(body) and body.CharacterMovement.MovementMode ~= 1 and body.CharacterMovement.MovementMode ~= 3)
-            or (swapIsBell and not swapSawMenu)
-        if held then
-            swapIdle = 0
+        V.atBell = up
+        if up then
+            V.knownAtBell = V.abilitiesOf(p1)
         else
-            swapIdle = swapIdle + BAR_MS / 1000
-        end
-        local limit = SWAP_SWITCH_MAX_S
-        if swapIsBell then
-            limit = swapSawMenu and SWAP_MAX_S or SWAP_BELL_WAIT_S
-        end
-        -- (The quiet gaps are all before the menu: with it been and gone, both players have waited long enough.)
-        local quiet = (swapIsBell and swapSawMenu) and V.AFTER_MENU_S or SWAP_IDLE_S
-        if (swapIdle >= quiet and age > 3.0) or (age > limit and not (menu or screenUp())) then
-            unswapBodies()
+            game.after(V.AFTER_BELL_S, function() pcall(V.afterBell) end)
         end
     end
 
@@ -2236,7 +2114,7 @@ return function(api)
         local o = V.opening
         local pc1, p1 = getPlayer1()
         local pc2, soul = state.p2Controller, state.p2Pawn
-        if not o or swapped or p2DownSince or not (valid(o.thing) and valid(o.ic) and valid(p1) and valid(pc2) and valid(soul)) then
+        if not o or p2DownSince or not (valid(o.thing) and valid(o.ic) and valid(p1) and valid(pc2) and valid(soul)) then
             V.opening = nil
             return
         end
@@ -2297,7 +2175,7 @@ return function(api)
         local pc2, soul = state.p2Controller, state.p2Pawn
         if valid(pc2) and valid(soul) then
             pc2:SetViewTargetWithBlend(soul, 0.4, 0, 0, false)
-            if not (swapped or V.screenHeld or V.sceneHeld) then
+            if not (V.screenHeld or V.sceneHeld) then
                 pc2:ResetIgnoreInputFlags()
             end
             V.endUse()
@@ -2323,7 +2201,7 @@ return function(api)
         local pc1, p1 = getPlayer1()
         local soul = state.p2Pawn
         local okS, who = pcall(function() return self:get() end)
-        return not swapped and okS and valid(who) and valid(pc1) and who:GetAddress() == pc1:GetAddress()
+        return okS and valid(who) and valid(pc1) and who:GetAddress() == pc1:GetAddress()
             and valid(soul) and valid(p1) and V.acting(soul) and not V.acting(p1)
     end
 
@@ -2352,13 +2230,12 @@ return function(api)
     end
 
     local promptTarget, promptTargetKind, promptTargetAt = nil, nil, 0   -- the prompt's last find, reused on a press
-    -- The end of a load puts player 1's stats on whoever is "the player" then: a bell rung on the way in, a moment before the
-    -- loading page shows, took 40% off player 1's health for good.
+    -- (Just arrived, the loading page is about to go up. Nothing's started under it.)
     V.SOUL_SETTLE_S = 1.5
 
     local function interactP2(want)
         local pawn = state.p2Pawn
-        if swapped or V.opening or V.closeUp or menuOpen or not valid(pawn) or game.isDead(pawn) or p2DownSince
+        if V.opening or V.closeUp or menuOpen or not valid(pawn) or game.isDead(pawn) or p2DownSince
             or os.clock() - (V.soulAt or 0) < V.SOUL_SETTLE_S then
             return
         end
@@ -2434,9 +2311,18 @@ return function(api)
             end)
             return
         end
+        -- A rest is player 1's to the game as a talk is. What the bell's menu does it does to "the player": with the two controllers swapped
+        -- so that player 2's Soul sat, a skill trained there went on that Soul and was lost with it, and nothing came off player 1's dust.
+        -- It's the same page on the same full screen either way.
+        if kind == "switch" then
+            local okC, isBell = pcall(function() return target:IsA(StaticFindObject("/Script/ProjectPBZ.PBZCheckPoint")) end)
+            if okC and isBell then
+                kind = "talk"
+            end
+        end
         if kind == "talk" then
             -- Player 1's own component starts a talk, as its button does. The dialogue fills both screens anyway, and given to
-            -- player 2's component it never opens, with the controllers swapped or not.
+            -- player 2's component it never opens.
             local _, p1 = getPlayer1()
             local ic1 = valid(p1) and componentOf(p1, "PBZInteractComponent") or nil
             if ic1 then
@@ -2453,25 +2339,7 @@ return function(api)
             return
         end
         if kind == "switch" then
-            local best = target
-            local okC, isBell = pcall(function() return best:IsA(StaticFindObject("/Script/ProjectPBZ.PBZCheckPoint")) end)
-            if okC and isBell then
-                -- A bell: the game's rest runs on player 2's body through the controller swap (its menu fills the
-                -- screen anyway), and watchSwap gives the bodies back once the menu has been and gone.
-                if not swapBodies(true) then
-                    return
-                end
-                local ic1 = componentOf(pawn, "PBZInteractComponent")
-                if ic1 then
-                    pcall(function() ic1:CheckAndForceEndInteract() end)
-                    local ok, err = pcall(function() ic1:DoInteract(best) end)
-                    log("Player 2 rings the bell" .. (ok and "." or (": " .. tostring(err))))
-                else
-                    unswapBodies()
-                end
-                return
-            end
-            V.useAsTheirs(pawn, best)
+            V.useAsTheirs(pawn, target)
             return
         end
         if kind == "pickup" and bp then
@@ -2793,7 +2661,7 @@ return function(api)
     local function updatePrompt()
         local pc = getPlayer1()
         local pawn = state.p2Pawn
-        if swapped or paused or inScene or menuOpen or api.panel.open or not (valid(pc) and valid(pawn))
+        if paused or inScene or menuOpen or api.panel.open or not (valid(pc) and valid(pawn))
             or game.isDead(pawn) or p2DownSince then
             hidePrompt(true)
             return
@@ -2993,7 +2861,7 @@ return function(api)
     end
     function V.player2Drinks()
         local p2, p1 = state.p2Pawn, select(2, getPlayer1())
-        return not swapped and valid(p2) and valid(p1) and not V.drinking(p1)
+        return valid(p2) and valid(p1) and not V.drinking(p1)
             and (V.drinking(p2) or os.clock() - (V.drinkPressAt or -1e9) < HEAL_WINDOW_S)
     end
 
@@ -3042,7 +2910,7 @@ return function(api)
     local itemHeld = false
     local function watchHeal(pc, p2pc, p1, p2)
         local pressed = itemPressed(p2pc)
-        if pressed and not itemHeld and not itemPressed(pc) and not swapped then
+        if pressed and not itemHeld and not itemPressed(pc) then
             V.drinkPressAt = os.clock()
             pcall(V.lendCharge, p2, p2pc)
         end
@@ -3067,7 +2935,7 @@ return function(api)
             return
         end
         local _, p1 = getPlayer1()
-        if valid(p1) and valid(state.p2Pawn) and not swapped then
+        if valid(p1) and valid(state.p2Pawn) then
             watchHeal(pc, p2pc, p1, state.p2Pawn)
         end
         local pressed = p2pc:IsInputKeyDown({ KeyName = FName("Gamepad_Special_Right") })
@@ -3131,13 +2999,8 @@ return function(api)
                     V.dropHud()
                     V.dropDeathCard()
                     V.real, V.realUp, V.pointsFor, V.points = nil, false, nil, nil
-                    -- (A swap can't outlive the map: the new one's pawns are the game's, and those bodies are gone. Nor can what's kept of them.)
-                    if swapped then
-                        swapped, state.swapBody1, state.swapBody2 = false, nil, nil
-                        pcall(function() getPlayer1():ResetIgnoreInputFlags() end)
-                    end
                     V.lentCharge, V.gourdKeep, V.drinkPc, V.drinkBody, V.opening, V.closeUp = nil, nil, nil, nil, nil, nil
-                    V.onBoat, V.sailing = false, false
+                    V.onBoat, V.sailing, V.atBell = false, false, false
                     V.maps = V.maps + 1
                     V.looked = {}
                     promptTarget, promptKind, promptTargetKind, V.promptSince, V.ringWas = nil, nil, nil, nil, nil
@@ -3164,7 +3027,7 @@ return function(api)
         end)
         LoopInGameThreadWithDelay(BAR_MS, function()
             local ok, err = pcall(function()
-                watchSwap()         -- (first: a slip in what's drawn must never leave both pads on each other's bodies)
+                pcall(giveControlsBack)
                 updateBar()
                 updateBossBar(getPlayer1())
                 updatePrompt()
@@ -3204,7 +3067,7 @@ return function(api)
     -- F5: bring player 2 back to player 1 by hand (stuck on a ledge, say).
     function localcoop.regroup()
         local _, p1 = getPlayer1()
-        if not swapped and valid(p1) and valid(state.p2Pawn) and not game.isDead(state.p2Pawn) then
+        if valid(p1) and valid(state.p2Pawn) and not game.isDead(state.p2Pawn) then
             moveBeside(state.p2Pawn, p1)
         end
     end

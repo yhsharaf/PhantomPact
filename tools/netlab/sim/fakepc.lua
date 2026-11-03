@@ -420,6 +420,19 @@ function Fake.cameras(pc, second)
     return theirs
 end
 
+-- A skill on a Soul, as training leaves it, and what's been given to one.
+function Fake.ability(pc, soul, class)
+    local name = { ToString = function() return class end }
+    local k = { IsValid = function() return true end, GetFName = function() return name end }
+    local asc = pc.env.StaticFindObject("/Script/GameplayAbilities.Default__AbilitySystemBlueprintLibrary"):GetAbilitySystemComponent(soul)
+    local items = rawget(asc, "__fields").ActivatableAbilities.Items.items
+    items[#items + 1] = { Ability = { GetClass = function() return k end } }
+    return k
+end
+function Fake.given(soul)
+    return rawget(soul, "__given") or {}
+end
+
 -- A flow actor: a switch to the eye, but it isn't one of the game's switches.
 function Fake.flow(pc, class, x, y, z)
     local f = Fake.switch(pc, class, x, y, z)
@@ -968,6 +981,11 @@ function Fake.new(id, scripts, ini, link)
         if asc == nil then
             asc = object(pc, "ASC", { ActivatableAbilities = { Items = list({}) } }, true)
             put(asc, "TryActivateAbilityByClass", function(_, class) put(actor, "used", class) end)
+            put(asc, "K2_GiveAbility", function(_, class)
+                local given = rawget(actor, "__given") or {}
+                given[#given + 1] = class
+                rawset(actor, "__given", given)
+            end)
             put(actor, "asc", asc)
         end
         return asc

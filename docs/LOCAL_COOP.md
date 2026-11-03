@@ -120,6 +120,8 @@ down, the game's death card plays in their half alone, and they get back up off 
   Soul that fell out of the world, wait while the game is paused or a scene plays, so nothing is spawned into a frozen
   world. The game's tutorial hint bars (the little "press twice to drink" strips) are overlays, not pages: they hold
   nobody.
+- **A rest** is player 1's to the game, whoever presses: what the bell's menu trains and buys it does to "the player". Player 2's press
+  sets player 1 down beside them and rests them, and both are rested.
 - **A dropped pad** (battery, cable, DS4Windows restarting) leaves that player's Soul standing with a health floor and
   a message; the same pad coming back, or any free pad held for a second, takes the player over. Checked by faking
   the pad state file: both pads gone and back, a third pad claiming player 1, pad 1 claiming it back.
