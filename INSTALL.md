@@ -136,6 +136,10 @@ You play in the host's world, so the host's story point counts for both of you:
 - **Bosses:** a boss the host has beaten is gone for the guest, and a boss either player finishes dies the game's
   whole way in both worlds: the scene after it plays for both, the next phase comes for both, and when the host skips
   that scene it's skipped for the guest too.
+- **Chests the host opened** before you joined are opened for you too as you come by them, and give you what they
+  hold, so you both have the same things. (`FollowHostStory = Off` leaves them to you.)
+
+Each of you sees the other in the clothes they're wearing, outfit, hat and face, and changes show at once.
 
 ## PvP (duels)
 

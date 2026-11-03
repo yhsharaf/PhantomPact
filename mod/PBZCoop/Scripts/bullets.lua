@@ -23,11 +23,18 @@ return function(api)
     local MAX_PER_S = 40
     local MAX_COORD = 1e7
 
-    local bullets = { sent = 0, shown = 0, refused = 0 }
+    local COPY_MAX_S = 30           -- a ghost's bullet still there this long after it was fired ends (if its end never came)
+
+    local bullets = { sent = 0, shown = 0, refused = 0, ended = 0 }
     local known = {}                -- bullet address -> true: seen already, this player's or anyone else's
     local watchAt = 0
     local cache = {}                -- bullet data path -> its address once checked, or false when it can't be loaded here
     local shots, shotsAt = 0, 0
+    -- A bullet's end goes out too. Some only end when the ability that fired them says so (a lion head's fire loop), and a ghost
+    -- runs none: its copies looped on, one more each time, where the sender's own had long gone.
+    local sentIds, nextId = {}, 0   -- this player's: bullet address -> the id it went out with
+    local copies = {}               -- the ghost's: "<player>:<id>" -> { at, made = what game.fireBullet made }
+    local copiesAt = 0
 
     local function send(b)
         local path = api.moves.pathOf(b.BulletData)
@@ -35,8 +42,31 @@ return function(api)
             return
         end
         local at, r = b:K2_GetActorLocation(), b:K2_GetActorRotation()
-        coop.sendEvent("SHOT", path, string.format("%.0f %.0f %.0f %.1f %.1f %.1f", at.X, at.Y, at.Z, r.Pitch, r.Yaw, r.Roll))
+        nextId = nextId % 1000000 + 1
+        coop.sendEvent("SHOT", path, string.format("%.0f %.0f %.0f %.1f %.1f %.1f %d", at.X, at.Y, at.Z, r.Pitch, r.Yaw, r.Roll,
+            nextId))
+        sentIds[b:GetAddress()] = nextId
         bullets.sent = bullets.sent + 1
+    end
+
+    -- This player's bullets that have gone since the last look: their copies end too.
+    local function sendEnds(seen)
+        for addr, id in pairs(sentIds) do
+            if not seen[addr] then
+                sentIds[addr] = nil
+                coop.sendEvent("SHOTEND", id)
+            end
+        end
+    end
+
+    local function endCopy(key)
+        local c = copies[key]
+        copies[key] = nil
+        for _, made in ipairs(c and c.made or {}) do
+            if game.endBullet(made) then
+                bullets.ended = bullets.ended + 1
+            end
+        end
     end
 
     local function watch(now)
@@ -51,6 +81,7 @@ return function(api)
         end
         if system:GetBulletCount() == 0 then
             known = {}
+            sendEnds(known)
             return
         end
         local mine, seen = pawn:GetAddress(), {}
@@ -63,6 +94,7 @@ return function(api)
             end
         end)
         known = seen
+        sendEnds(seen)
     end
 
     -- Looked up each time, as a montage is (moves.lua).
@@ -87,7 +119,7 @@ return function(api)
     end
 
     coop.handlers.SHOT = function(rest, from)
-        local path, x, y, z, pitch, yaw, roll = (rest or ""):match("^(%S+) (%S+) (%S+) (%S+) (%S+) (%S+) (%S+)$")
+        local path, x, y, z, pitch, yaw, roll, id = (rest or ""):match("^(%S+) (%S+) (%S+) (%S+) (%S+) (%S+) (%S+)%s*(%d*)$")
         x, y, z, pitch, yaw, roll = tonumber(x), tonumber(y), tonumber(z), tonumber(pitch), tonumber(yaw), tonumber(roll)
         if not (path and path:match(ROOT) and api.moves.allowedPath(path) and x and y and z and pitch and yaw and roll
             and math.abs(x) < MAX_COORD and math.abs(y) < MAX_COORD and math.abs(z) < MAX_COORD) then
@@ -107,13 +139,44 @@ return function(api)
         end
         shots = shots + 1
         local d = bulletData(path)
-        if d and game.fireBullet(p.ghost, d, x, y, z, pitch, yaw, roll) then
+        local ok, made = false, nil
+        if d then
+            ok, made = game.fireBullet(p.ghost, d, x, y, z, pitch, yaw, roll)
+        end
+        if ok then
             bullets.shown = bullets.shown + 1
+            if id ~= "" and made and #made > 0 then
+                copies[(from or 1) .. ":" .. id] = { at = now, made = made }
+            end
+        end
+    end
+
+    coop.handlers.SHOTEND = function(rest, from)
+        local id = (rest or ""):match("^(%d+)$")
+        if id then
+            endCopy((from or 1) .. ":" .. id)
+        end
+    end
+
+    -- Copies whose end never came (the sender left, say): over after COPY_MAX_S.
+    local function ageCopies(now)
+        if now < copiesAt then
+            return
+        end
+        copiesAt = now + 1
+        for key, c in pairs(copies) do
+            if now - c.at > COPY_MAX_S then
+                endCopy(key)
+            end
         end
     end
 
     coop.extraTicks.bullets = function()
-        local ok, err = pcall(watch, os.clock())
+        local now = os.clock()
+        local ok, err = pcall(watch, now)
+        if ok then
+            ok, err = pcall(ageCopies, now)
+        end
         if not ok and err ~= bullets.lastError then
             bullets.lastError = err
             log("bullets: " .. tostring(err))
@@ -122,7 +185,8 @@ return function(api)
 
     -- bullets: counters
     function bullets.command()
-        log(string.format("Bullets: sent %d, shown from the ghost %d, refused %d", bullets.sent, bullets.shown, bullets.refused))
+        log(string.format("Bullets: sent %d, shown from the ghost %d, refused %d, ghost's ended with their sender's %d",
+            bullets.sent, bullets.shown, bullets.refused, bullets.ended))
     end
 
     return bullets

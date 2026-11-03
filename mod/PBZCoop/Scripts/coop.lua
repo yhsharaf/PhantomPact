@@ -313,6 +313,9 @@ return function(api)
                 game.ghostGone()
                 game.shieldGhost(p.ghost, not net.pvp)
             end
+            if p.look and game.dressGhost then
+                game.dressGhost(p.ghost, p.look[1], p.look[2], p.look[3])
+            end
         end
         if not p.ghostWalks then
             -- Teleported every tick, so its own movement (gravity, root motion) must stay out of the way.
@@ -343,9 +346,10 @@ return function(api)
         end
         local dead = zero and (os.clock() - p.zeroSince) >= 1.0
         local gone = p.partnerGone == true       -- see watchPartner
-        -- In a cutscene the partner isn't really playing: their ghost would stand idle in your world. Short
-        -- sequences are part of play, and a ghost hidden for each one blinked in and out.
-        local away = otherMap or t.Cine == true
+        -- In a cutscene the partner isn't really playing: their ghost would stand idle in your world. And in one of yours it
+        -- stood in the shot, which a player asked to be rid of. Short sequences are part of play, and a ghost hidden for each
+        -- one blinked in and out.
+        local away = otherMap or t.Cine == true or (game.inCutscene and game.inCutscene())
         if away then
             p.awaySince = p.awaySince or os.clock()
         else
@@ -1175,12 +1179,54 @@ return function(api)
         end
     end
 
+    -- Client: one of this world's own enemies near this player, by its id. The host's lines never pair one the host has
+    -- dead, so a death told for it (BEATEN, or the host's dead as this player syncs) found nothing to kill: a boss the host
+    -- had beaten stood on in the guest's world.
+    function bring.own(name)
+        for addr, e in pairs(reach.near) do
+            if valid(e.actor) and enemyName(e.actor, addr) == name then
+                return e.actor
+            end
+        end
+        return nil
+    end
+
+    -- Client, each round: a death the host told before this world had the enemy loaded, for a copy of its own that has come
+    -- since (the host's lines don't list a dead one, so it's never paired). Its own kill, as syncEnemy does for a paired one.
+    function bring.pending()
+        for name in pairs(net.pendingDeaths) do
+            local own = enemyByName[name] == nil and bring.own(name)
+            if own and not game.isDead(own) then
+                net.pendingDeaths[name] = nil
+                local boss = game.isBoss(own)
+                game.kill(own)
+                log("Host said " .. name .. " died earlier; killed it here now that it's loaded.")
+                if boss then
+                    -- (Its fight may have begun here: bar down and walls open, or the guest stood walled in.)
+                    endBossFight(name, own)
+                    bring.cardsLater()
+                end
+                if game.markBeaten then
+                    game.markBeaten(name)
+                end
+            end
+        end
+    end
+
+    -- Client: a boss ended here for a death in the host's world, maybe as its fight began: its reward's card can come up
+    -- without its buttons (game.closeStuckCards). Looked at twice, a while after.
+    function bring.cardsLater()
+        if game.closeStuckCards then
+            for _, s in ipairs({ 3, 6 }) do
+                game.after(s, function() pcall(game.closeStuckCards, select(2, getPlayer1())) end)
+            end
+        end
+    end
+
     -- Client: what bringBack turned back in this save's records goes back as it was.
     function bring.putBackAll()
-        for name in pairs(net.broughtBack) do
-            if game.putBack then
-                game.putBack(name)
-            end
+        if game.putBack and next(net.broughtBack) then
+            game.putBack(net.broughtBack)
         end
         net.broughtBack, net.bringing = {}, {}
     end
@@ -1209,6 +1255,7 @@ return function(api)
         enemyByName, own = matchRemoteEnemies(reach.near)
         setAside(own, now)
         bring.missing(now)
+        bring.pending()
         local queue = {}
         for name, actor in pairs(enemyByName) do
             queue[#queue + 1] = { name = name, actor = actor }
@@ -1324,6 +1371,10 @@ return function(api)
         log("The other player started sync.")
         net.announced = {}
         net.enemyNames = {}
+        net.lookSent = nil                  -- (what this player wears goes to them at the next look)
+        if isHost() and game.offerChestsAgain then
+            game.offerChestsAgain()         -- (the open chests here: named again, for them)
+        end
         if isHost() and from then
             -- One guest of a party: the others know all this, and what's new to them is what that one holds.
             sendTo(from, "Y", hostWorld)
@@ -1354,6 +1405,9 @@ return function(api)
             if not valid(actor) then
                 actor = stickyEnemy(name)
             end
+            if not valid(actor) then
+                actor = bring.own(name)
+            end
             local fought = net.hostBosses[name] or net.partnerBosses[name] or net.pendingBosses[name]
             local wasBoss = fought or (valid(actor) and game.isBoss and game.isBoss(actor))
             net.hostBosses[name] = nil
@@ -1366,9 +1420,15 @@ return function(api)
                     -- host's, its scene after the fight first (a quiet kill skipped it, and the next phase came unseen).
                     game.killForReal(actor)
                     log("Host says " .. name .. " died; its death runs here too.")
+                elseif not wasBoss and not quiet and game.dissolveKill then
+                    game.dissolveKill(actor)            -- (it dissolves as a death does, paying nothing here)
+                    log("Host says " .. name .. " died; it dies here too.")
                 elseif game.kill then
                     game.kill(actor)
                     log("Host says " .. name .. " died; killed it here.")
+                    if wasBoss then
+                        bring.cardsLater()
+                    end
                 end
             else
                 -- Not loaded (or not matched) here right now: kill it when it shows up (applyRemoteEnemies).
@@ -1486,15 +1546,13 @@ return function(api)
         end
     end
 
+    -- (No tip for them: the user didn't want "your partner found something" on screen. The log says what came.)
     local function takeGifts(pawn)
         for _, gift in ipairs(giftsWaiting) do
             if gift.loot then
                 game.grantLoot(pawn, gift.id, gift.kind)
             else
                 game.receiveGift(pawn, gift.id, gift.count, gift.kind, net.party and (gift.from or 1) or nil)
-            end
-            if gift.kind ~= nil then
-                api.status.notify("gift", "your partner found something: you have it too.")    -- (these come with no popup)
             end
         end
         giftsWaiting = {}
@@ -1507,6 +1565,42 @@ return function(api)
     local function reportChest(name)
         log("Opened " .. name .. ": telling the other player.")
         sendEvent("O", name)
+    end
+
+    -- The host's world decides (FollowHostStory): a chest the host opened before, alone, is opened for a guest too, and pays
+    -- them what it holds there, so both have the same things. The host names the open chests it has loaded (OC).
+    local function offerChest(name)
+        sendEvent("OC", name)
+    end
+
+    handlers.OC = function(name)
+        if isClient() and type(name) == "string" and #name <= MAX_CHEST_NAME and api.story and api.story.follow
+            and game.hostOpened then
+            game.hostOpened(name)
+            net.chestsSoon = true           -- (looked at the next tick, before the player can open it themselves)
+        end
+    end
+
+    -- An effect another player's item showed on their body (a drink from the gourd): on their figure here too.
+    handlers.FX = function(rest, from)
+        local path, socket = (rest or ""):match("^(%S+) (%S+)$")
+        local p = peerOf(from)
+        if path and valid(p.ghost) and not p.ghostHidden and game.ghostEffect then
+            game.ghostEffect(p.ghost, path, socket)
+        end
+    end
+
+    -- What another player wears: their figure here is dressed in it (now, and when it's made anew).
+    handlers.LOOK = function(rest, from)
+        local outfit, hidden, skin = (rest or ""):match("^([%w_]+) ([01]) (%d+)$")
+        if not outfit or #outfit > 64 then
+            return
+        end
+        local p = peerOf(from)
+        p.look = { outfit, hidden == "1", tonumber(skin) }
+        if valid(p.ghost) and game.dressGhost and game.dressGhost(p.ghost, outfit, hidden == "1", tonumber(skin)) then
+            log("The other player wears " .. outfit .. (hidden == "1" and " (hat off)" or "") .. ": their figure here too.")
+        end
     end
 
     local function sendGift(id, count, kind)
@@ -2033,6 +2127,10 @@ return function(api)
         if game.watchHitState then
             game.watchHitState(pawn, sendEvent)
         end
+        if game.watchItemFx and now >= (slow.itemFxAt or 0) then
+            slow.itemFxAt = now + SLOW_S
+            game.watchItemFx(pawn, sendEvent)
+        end
         -- (The game takes the bars down for a cutscene: put back at once, they'd flicker through it.)
         if next(net.partnerBosses) and game.keepBossBar and now >= (slow.barsAt or 0) and not game.inCutscene() then
             slow.barsAt = now + BOSS_BAR_S
@@ -2048,12 +2146,12 @@ return function(api)
             if game.watchPickups(pawn, reportPickup) ~= false then
                 slow.pickupsAt = now + PICKUP_S
             end
-        elseif game.watchChests and now >= (slow.chestsAt or 0) then
-            slow.chestsAt = now + PICKUP_S
+        elseif game.watchChests and (now >= (slow.chestsAt or 0) or net.chestsSoon) then
+            slow.chestsAt, net.chestsSoon = now + PICKUP_S, nil
             game.guardFormations()
             game.hookGifts(sendGift)
             game.hookPiles(reportChest)
-            game.watchChests(pawn, reportChest)
+            game.watchChests(pawn, reportChest, isHost() and offerChest or nil)
         end
         if (#giftsWaiting > 0 or dustWaiting > 0) and not game.isDead(pawn) then
             takeGifts(pawn)
@@ -2061,6 +2159,16 @@ return function(api)
         if game.watchGear and now >= (slow.gearAt or 0) then
             slow.gearAt = now + GEAR_S
             game.watchGear(pawn, sendGift)
+        end
+        -- What this player wears, to the others: when it changes, every half minute, and to someone who joins (S).
+        if game.ownLook and now >= (slow.lookAt or 0) then
+            slow.lookAt = now + 1.0
+            local outfit, hidden, skin = game.ownLook(pawn)
+            local line = outfit and string.format("%s %d %d", outfit, hidden and 1 or 0, skin)
+            if line and (line ~= net.lookSent or now - (net.lookSentAt or -1e9) >= 30) then
+                net.lookSent, net.lookSentAt = line, now
+                sendEvent("LOOK", line)
+            end
         end
         if game.watchCurrency and now >= (slow.dustAt or 0) then
             slow.dustAt = now + CURRENCY_S
@@ -2280,6 +2388,9 @@ return function(api)
 
     pcall(function()
         RegisterLoadMapPreHook(function()
+            -- Enemies this world brought back for the host go back to dead in it before it's saved and left: put back at the
+            -- end of the session, they'd be put back in whatever world is loaded then.
+            pcall(bring.putBackAll)
             -- With a player in the world this is a trip: the same world on another map, and a partner's fight goes on. Only a
             -- load from outside it (the title screen) is a world loaded anew.
             if valid(select(2, getPlayer1())) then
@@ -2409,6 +2520,9 @@ return function(api)
                 net.partnerFighting = false
                 watchFight(false)       -- (what ends a watch is that player's own word, and it won't come now)
                 restEvent("gone")
+                -- What's found alone from here isn't news when they're back: a chest opened meanwhile pays them from its
+                -- own copy (OC), and its dust came twice when the count kept running through the gap.
+                game.forgetLink()
             else
                 log("Lost player " .. p.number .. " (nothing heard for " .. PARTNER_GONE_S .. " s).")
             end

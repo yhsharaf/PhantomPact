@@ -25,7 +25,6 @@ return function()
         ["Couldn't start the relay: dlls\\main.dll can't be reached. Reinstall Phantom Pact, check your antivirus didn't remove it, and use the UE4SS build from the install guide."] =
             "无法启动联机模块:找不到 dlls\\main.dll。请重新安装 Phantom Pact,检查杀毒软件是否删除了它,并使用安装说明里的 UE4SS 版本。",
         -- the partner
-        ["your partner found something: you have it too."] = "队友找到了东西:你也获得了一份。",
         ["your partner is down."] = "队友倒下了。",
         ["your partner is back."] = "队友回来了。",
         ["your partner is watching a cutscene."] = "队友正在观看过场动画。",

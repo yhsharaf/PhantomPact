@@ -27,7 +27,9 @@ return function(api)
 
     local BITS = { 1, 2, 4, 8 }
 
-    local rows = nil                -- the table as followed, read once: false if it can't be read
+    local rows = nil                -- the table as followed, read once: false if it couldn't be, until RETRY_S later
+    local RETRY_S = 60
+    local rowsFailedAt = -1e9
 
     local function text(v)
         local s
@@ -82,10 +84,10 @@ return function(api)
     -- Which rows are followed. A row with quest steps is followed when the host's world has done all of them; the host only
     -- needs these (two columns, read once, kept as text).
     local function readTable()
-        if rows ~= nil then
+        if rows or (rows == false and os.clock() - rowsFailedAt < RETRY_S) then
             return rows
         end
-        rows = false
+        rows, rowsFailedAt = false, os.clock()
         local t, _, lib = tables()
         if not t then
             log("Story: the game's story table isn't there: each player's story stays their own.")
@@ -468,7 +470,8 @@ return function(api)
     -- game's own flow: the guest's copy of the boss dies the whole way (coop.lua). The host skipping it skips the same scene
     -- here, one that only starts a moment later included, so the two go on together. SCENE skip <sequence name>.
     local SCENE_S = 0.25
-    local SKIPPED_S = 1.5               -- a scene that ended this much before its length was skipped
+    local SKIPPED_S = 3                 -- a scene that ended this much before its length was skipped (its start can be seen up to
+                                        -- 2 s late after a load, and a scene watched to its end mustn't read as skipped)
     local LATE_S = 10                   -- a skip still ends our scene that starts this long after it
     local mine, mineAt, mineLength = nil, 0, nil
     local nextScene = 0
@@ -509,11 +512,10 @@ return function(api)
             return
         end
         local t = coop.net.target
-        if name ~= ended and hostSkipped[name] and now - hostSkipped[name] <= LATE_S and t and t.Map == coop.net.localMap then
-            ended = name
-            if game.skipScene() then
-                log("The host skipped " .. name .. ": skipped here too.")
-            end
+        if name ~= ended and hostSkipped[name] and now - hostSkipped[name] <= LATE_S and t and t.Map == coop.net.localMap
+            and game.skipScene() then
+            ended = name                        -- (until it takes: the scene's player can be found a moment after it starts)
+            log("The host skipped " .. name .. ": skipped here too.")
         end
     end
 

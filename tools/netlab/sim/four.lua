@@ -224,6 +224,15 @@ local function sharing()
     Fake.put(a.chests[1], "CurSwitchState", true)
     s:run(1.5)
     check(field(h.chests[1], "CurSwitchState") == true and field(b.chests[1], "CurSwitchState") == true and field(c.chests[1], "CurSwitchState") == true, "a chest one guest opens stops paying everywhere")
+    local swung = true
+    for _, pc in ipairs({ h, b, c }) do
+        local lid, glow = field(pc.chests[1], "Chest"), field(pc.chests[1], "Niagara")
+        swung = swung and field(lid, "anim") == pc.found["/HuaShira/SceneProp/Chest/Anim/Chest_Close2Open.Chest_Close2Open"]
+            and field(lid, "at") > 1 and field(lid, "VisibilityBasedAnimTickOption") == 0 and field(glow, "on") == false
+            and field(pc.chests[1], "swept") == false
+    end
+    check(swung and field(field(a.chests[1], "Chest"), "anim") == nil,
+        "and looks open there: its lid swings open, its glow and sweeping light go (the opener's is left to the game)")
     Session.moveTo(b, 300, 0)
     s:run(1.5)
     b.pickups[1]:K2_DestroyActor()
@@ -233,6 +242,15 @@ local function sharing()
         gone = gone and not rawget(pc.pickups[1], "__alive")
     end
     check(gone, "a pickup one guest takes goes from every world")
+    local opened = Fake.chest(b, "BP_Chest_C_2", 300.0, 200.0, 100.0)
+    s:run(1.5)
+    Fake.put(opened, "CurSwitchState", true)
+    s:run(1.5)
+    local late = Fake.chest(c, "BP_Chest_C_2", 300.0, 200.0, 100.0)
+    s:run(1.5)
+    check(field(late, "CurSwitchState") == true and field(field(late, "Chest"), "anim") == c.found["/HuaShira/SceneProp/Chest/Anim/Chest_Open.Chest_Open"]
+        and field(field(late, "Niagara"), "on") == false and field(late, "swept") == false,
+        "a chest that wasn't loaded yet is open when it loads, lid and all")
     allErrors(s)
 end
 
@@ -266,6 +284,12 @@ local function enemiesAndHits()
     check(field(Session.enemyOn(h, "near"), "dead") == true, "a guest's killing blow kills it on the host")
     check(field(Session.enemyOn(a, "near"), "dead") == true and field(Session.enemyOn(c, "near"), "dead") == true, "and on every guest's copy")
     check(count(h.sent, "^E K sp:near$") == 1, "once")
+    local copy = Session.enemyOn(a, "near")
+    local dissolving = false
+    for _, e in ipairs(a.effectsOn) do
+        dissolving = dissolving or (e.path:find("NS_DeathDissolve_001", 1, true) ~= nil and e.on == field(copy, "Mesh"))
+    end
+    check(dissolving, "a guest's copy of it dies as a death looks here: the game's dissolve on its body")
     Fake.put(Session.enemyOn(h, "thug1"), "dustLoot", 300)
     swing(c, Session.enemyOn(c, "thug1"), 1)
     s:run(2.5)
@@ -280,14 +304,15 @@ local function enemiesAndHits()
     check(select(1, Fake.health(Session.enemyOn(h, "thug2"))) == left - 50, "a hit counts from where its sender stands, however far off the first guest is")
     Session.moveTo(a, 500, 0)
     s:run(1)
+    check(field(field(copy, "Mesh"), "shown") == false, "and goes as the dissolve takes it (no standing there frozen)")
     -- A guest restarts its sync: it's told of the deaths alone.
-    local before = count(a.logs, "died; killed it here")
+    local before = count(a.logs, "Host says .* died; ")
     Session.command(b, "netoff")
     s:run(1)
     Session.command(b, "neton client")
     s:run(2)
     check(count(h.sent, "^T3 K sp:near$") == 1, "a guest who restarts hears what's dead, by itself")
-    check(count(a.logs, "died; killed it here") == before, "and the others aren't told again")
+    check(count(a.logs, "Host says .* died; ") == before, "and the others aren't told again")
     check(field(Session.enemyOn(b, "near"), "dead") == true, "and its copy stays dead")
     Session.command(h, "netoff")
     s:run(1)
@@ -911,6 +936,65 @@ local function beatenInBoth()
     allErrors(r)
 end
 
+-- The host's world decides: a chest the host opened before, alone, is open for a guest too, and pays them what it held.
+local function hostsChests()
+    part("the host's chests")
+    local LOOT, OPEN = "Xigu.004.Weapon_Material_04", "/HuaShira/SceneProp/Chest/Anim/Chest_Open.Chest_Open"
+    local s, h, g = pair()
+    local opened = Fake.chest(h, "BP_Chest_C_9", 600.0, 0.0, 100.0, LOOT)
+    Fake.put(opened, "CurSwitchState", true)
+    local shut = Fake.chest(g, "BP_Chest_C_9", 600.0, 0.0, 100.0, LOOT)
+    Fake.put(shut, "InteractPlayer", g.pawn)        -- (the game sets it for whoever stands by it)
+    local dustH, dustG = Session.dust(h), Session.dust(g)
+    s:run(3)
+    check(field(shut, "CurSwitchState") == true and field(field(shut, "Chest"), "anim") == g.found[OPEN] and field(shut, "swept") == false,
+        "a chest the host opened before is open for the guest too")
+    check(Session.items(g, "Weapon_Material_04") == 6 and Session.items(g, "Weapon_Material_13") == 2 and Session.dust(g) == dustG + 441,
+        "and pays them what it holds, as the game's table says (a medicine's dust is for later play-throughs)")
+    check(count(g.trace, "AddWeaponItem") == 1 and count(g.trace, "PushAccessoryToInventory") == 1 and count(g.trace, "PushMedicineToInventory") == 1,
+        "its Phantom Edge, medicine and accessory too")
+    check(Session.items(h, "Weapon_Material_04") == 0 and Session.dust(h) == dustH and count(h.trace, "AddWeaponItem") == 0,
+        "and none of it goes back to the host")
+    local far = Fake.chest(h, "BP_Chest_C_10", 900.0, 0.0, 100.0, "Xigu.AC_Deflect")
+    Fake.put(far, "CurSwitchState", true)
+    s:run(2)
+    local late = Fake.chest(g, "BP_Chest_C_10", 900.0, 0.0, 100.0, "Xigu.AC_Deflect")
+    s:run(2)
+    check(field(late, "CurSwitchState") == true and count(g.trace, "PushAccessoryToInventory") == 2,
+        "one that wasn't loaded on the guest's side pays when it is")
+    s:run(65)
+    check(Session.items(g, "Weapon_Material_04") == 6 and count(g.trace, "PushAccessoryToInventory") == 2,
+        "named again (for one who joins later), nothing pays twice")
+    local live = Fake.chest(h, "BP_Chest_C_11", 100.0, 0.0, 100.0, LOOT)
+    local liveThere = Fake.chest(g, "BP_Chest_C_11", 100.0, 0.0, 100.0, LOOT)
+    s:run(2)
+    Fake.put(live, "CurSwitchState", true)
+    s:run(3)
+    check(field(liveThere, "CurSwitchState") == true and Session.items(g, "Weapon_Material_04") == 6,
+        "one the host opens now isn't paid from the table: its things come as the host gets them")
+    local hostHas = Fake.chest(h, "BP_Chest_C_12", 700.0, 0.0, 100.0, "Xigu.AC_Deflect")
+    local guestOpening = Fake.chest(g, "BP_Chest_C_12", 700.0, 0.0, 100.0, "Xigu.AC_Deflect")
+    Fake.put(field(g.pawn, "interact"), "InteractingActor", guestOpening)
+    Fake.put(hostHas, "CurSwitchState", true)
+    s:run(3)
+    check(field(guestOpening, "CurSwitchState") == false and count(g.trace, "PushAccessoryToInventory") == 2,
+        "not one the guest is opening right then: the game's own opening pays it")
+    Fake.put(field(g.pawn, "interact"), "InteractingActor", nil)
+    s:run(2)
+    check(field(guestOpening, "CurSwitchState") == true and count(g.trace, "PushAccessoryToInventory") == 3,
+        "(and if they stopped, it's paid after all)")
+    allErrors(s)
+
+    local o, oh, og = pair("FollowHostStory = Off\n")
+    local hers = Fake.chest(oh, "BP_Chest_C_9", 600.0, 0.0, 100.0, LOOT)
+    Fake.put(hers, "CurSwitchState", true)
+    local his = Fake.chest(og, "BP_Chest_C_9", 600.0, 0.0, 100.0, LOOT)
+    o:run(3)
+    check(field(his, "CurSwitchState") == false and Session.items(og, "Weapon_Material_04") == 0,
+        "FollowHostStory = Off: the guest's chests stay their own")
+    allErrors(o)
+end
+
 -- The host's story point is the party's: a guest behind it is brought up to it at a quiet moment, and nothing goes back.
 local function followTheHost()
     part("the host's story point")
@@ -987,6 +1071,25 @@ local function followTheHost()
     check(field(bg.spawners[Session.indexOf(bg, "boss")], "record") == false, "and written down there")
     check(count(bh.sent, "^E BEATEN sp:boss$") == 1, "the host answers once")
     allErrors(b)
+
+    -- The host's boss died while the guest's sync was off; the guest's world has it standing, never paired with anything.
+    local r = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES)
+    local rh, rg = r.pcs[1], r.pcs[2]
+    Session.moveTo(rh, 3000, 2800)
+    Session.moveTo(rg, 3000, 2700)
+    r:run(3)
+    Session.command(rg, "netoff")
+    r:run(1)
+    local gone = Session.enemyOn(rh, "boss")
+    Fake.setHealth(gone, 0)
+    Fake.put(gone, "dead", true)
+    r:run(2)
+    Session.command(rg, "neton client")
+    r:run(5)
+    check(field(Session.enemyOn(rg, "boss"), "dead") == true,
+        "a boss the host beat while the guest was away is gone on the guest's side once they sync")
+    check(field(rg.spawners[Session.indexOf(rg, "boss")], "record") == false, "and beaten in the guest's world")
+    allErrors(r)
 end
 
 -- A guest whose save has played further: the host's enemies are long dead in it. Its spawners bring them back for the host,
@@ -1223,7 +1326,63 @@ local function weaponsFound()
         end
     end
     check(not asked, "without the game's full-screen question: their game goes on")
-    check(count(g.logs, "your partner found something") == 1, "a tip says so")
+    check(count(g.logs, "your partner found something") == 0, "and no tip about it on screen (the user didn't want one)")
+    allErrors(s)
+end
+
+-- What each player wears is theirs: their figure on the other PC wears it, and follows when they change.
+local function looks()
+    part("what each player wears")
+    local s, h, g = pair()
+    local function wear(pc, outfit, hidden)
+        Fake.put(field(pc.pawn, "look"), "outfit", outfit)
+        Fake.put(field(pc.pawn, "look"), "hidden", hidden)
+    end
+    wear(h, "Hun_OutFit_MoTian", false)
+    wear(g, "Hun_OutFit_JiGuanMoQu", true)
+    s:run(3)
+    local onHost, onGuest = field(net(h).ghost, "look"), field(net(g).ghost, "look")
+    check(field(onHost, "outfit") == "Hun_OutFit_JiGuanMoQu" and field(onHost, "hidden") == true,
+        "the guest's figure on the host's PC wears what the guest wears, hat off")
+    check(field(onGuest, "outfit") == "Hun_OutFit_MoTian" and field(onGuest, "hidden") == false, "and the host's on the guest's PC, hat on")
+    check(field(field(h.pawn, "look"), "outfit") == "Hun_OutFit_MoTian" and field(field(g.pawn, "look"), "outfit") == "Hun_OutFit_JiGuanMoQu",
+        "nobody's own clothes change")
+    check(field(onHost, "suppressed") == true and field(onHost, "bUseConfiguredAppearance") == true,
+        "a figure's look is held as configured, and kept out of this player's save")
+    check(field(onHost, "CurrentOutfit"):ToString() == "Hun_OutFit_JiGuanMoQu",
+        "and its current outfit is theirs, which its face goes by (it had this player's plain face)")
+    wear(h, "Hun_OutFit_Climax", false)
+    s:run(2)
+    check(field(onGuest, "outfit") == "Hun_OutFit_Climax", "a change shows within a second or two")
+    local dressed = field(onGuest, "dressed")
+    s:run(35)
+    check(field(onGuest, "dressed") == dressed, "the same look told again doesn't dress it again")
+    rawset(net(g).ghost, "__alive", false)
+    s:run(3)
+    check(field(field(net(g).ghost, "look"), "outfit") == "Hun_OutFit_Climax", "a figure made anew (a map change) comes dressed")
+    allErrors(s)
+end
+
+-- An item in use (a drink from the gourd) shows its effects on the player's body: their figure on the other PC shows them too.
+local function itemEffects()
+    part("an item's effects")
+    local POTION = "/PBZVFXPack/VFX/BattleFX/Common/Potions/NS_Potion_001.NS_Potion_001"
+    local s, h, g = pair()
+    Fake.effectOn(g, g.pawn, "/PBZVFXPack/VFX/Weapon/NS_Trail.NS_Trail")
+    Fake.running(g, g.pawn, "GA_Medicine_Common_Additive_C", true)
+    s:run(0.5)
+    Fake.effectOn(g, g.pawn, POTION)
+    Fake.effectOn(g, g.pawn, "/PBZVFXPack/VFX/Common/NS_RunFootStep_Water_201.NS_RunFootStep_Water_201")
+    s:run(1)
+    Fake.running(g, g.pawn, "GA_Medicine_Common_Additive_C", false)
+    s:run(1)
+    local on = h.effectsOn
+    check(#on == 1 and on[1].path == POTION and on[1].on == field(net(h).ghost, "Mesh") and on[1].socket == "None",
+        "a drink's effect on the guest's body shows on their figure on the host's PC (not what was on them before, nor footsteps)")
+    s:run(5)
+    Fake.effectOn(g, g.pawn, POTION)
+    s:run(1)
+    check(#h.effectsOn == 1, "an effect long after the item's use isn't sent")
     allErrors(s)
 end
 
@@ -1340,6 +1499,31 @@ local function shots()
     end
     check(#g.fired <= 3 + 40, "and a flood stops at forty a second")
     allErrors(s)
+
+    -- A loop that only ends when the ability that fired it says so: the copy ends with the sender's own.
+    local e, eh, eg = pair()
+    e:run(3)
+    local loop = Session.bullet(eh, eh.pawn, flower, 120.0, 340.0, 100.0)
+    e:run(1)
+    local copy = eg.fired[1] or {}
+    check(copy.started == true and copy.ended == false, "a looping effect's copy comes up on the partner's PC")
+    e:run(5)
+    check(copy.ended == false, "and stays while the sender's does")
+    for i = #eh.liveBullets, 1, -1 do
+        if eh.liveBullets[i] == loop then
+            table.remove(eh.liveBullets, i)
+        end
+    end
+    e:run(1)
+    check(copy.ended == true, "the sender's ends: the copy ends with it, by its own end")
+    check(count(eh.sent, "^E SHOTEND ") == 1, "told once")
+    Session.bullet(eh, eh.pawn, flower, 220.0, 340.0, 100.0)
+    e:run(1)
+    local orphan = eg.fired[2] or {}
+    Session.command(eh, "netoff")
+    e:run(32)
+    check(orphan.started == true and orphan.ended == true, "and one whose end never comes is over after 30 s")
+    allErrors(e)
     local q = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES, "PvP = On\n")
     q:run(4)
     Session.moveTo(q.pcs[1], 0, 0)
@@ -2555,6 +2739,9 @@ return function(print_, scripts)
     fightsAndWhoIsLeft()
     beatenInBoth()
     followTheHost()
+    hostsChests()
+    looks()
+    itemEffects()
     hostsEnemiesHere()
     bossScenes()
     afterATrip()

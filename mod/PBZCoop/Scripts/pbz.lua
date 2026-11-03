@@ -496,18 +496,36 @@ return function(api)
             end)
         end
         local ok = pcall(function() s:ClaimSeqSpawn(false, true, true) end)
+        if not ok and dead then
+            game.putBack(enemyId)           -- (nothing came: the save keeps it dead)
+        end
         return ok, dead
     end
 
-    -- A spawner bringBack turned back, as this save had it: dead.
-    function game.putBack(enemyId)
-        local s = spawnerOf(enemyId)
-        return s ~= nil and pcall(function()
-            s.ShouldSpawn = false
-            if s:IsA(StaticFindObject(SPAWNER_BP)) then
-                s:Save()
-            end
-        end)
+    -- Spawners bringBack turned back, as this save had them: dead. One id, or a set of ids (id -> true) in one look
+    -- through the spawners.
+    function game.putBack(ids)
+        if type(ids) == "string" then
+            ids = { [ids] = true }
+        end
+        local n = 0
+        for _, s in ipairs(next(ids) and FindAllOf("AISpawner") or {}) do
+            pcall(function()
+                if not valid(s) then
+                    return
+                end
+                local sid = s.SpawnerID:ToString()
+                local name = "sp:" .. (sid ~= "None" and sid or s:GetFName():ToString())
+                if ids[name] then
+                    s.ShouldSpawn = false
+                    if s:IsA(StaticFindObject(SPAWNER_BP)) then
+                        s:Save()
+                    end
+                    n = n + 1
+                end
+            end)
+        end
+        return n > 0
     end
 
     -- Cached for ENEMY_CACHE_S: the host and client halves (and aggro) all ask within the same tick.
@@ -745,6 +763,61 @@ return function(api)
         end
     end
 
+    -- An enemy copy dies here as the host's did. The quiet kill alone left it standing, frozen, until it went; the game's
+    -- own death (its kill effect) pays this player its dust a moment later, whatever the enemy's level, and the host's
+    -- kill already reaches them as shared dust. So: the quiet kill, then the game's death dissolve on each skeletal mesh
+    -- of its body and what it holds (as the game puts it there), and the body hidden as the dissolve takes it.
+    local DISSOLVE = { PATH = "/PBZVFXPack/VFX/BattleFX/Common/NS_DeathDissolve_001.NS_DeathDissolve_001", HIDE_S = 1.6 }
+
+    function DISSOLVE.meshes(actor)
+        local out = {}
+        pcall(function()
+            local skel = StaticFindObject("/Script/Engine.SkeletalMeshComponent")
+            if not actor:IsA(StaticFindObject("/Script/Engine.Character")) then
+                return
+            end
+            local function add(c, depth)
+                if c:IsA(skel) then
+                    out[#out + 1] = c
+                end
+                if depth < 2 then
+                    for i = 0, c:GetNumChildrenComponents() - 1 do
+                        local child = c:GetChildComponent(i)
+                        if valid(child) then
+                            add(child, depth + 1)
+                        end
+                    end
+                end
+            end
+            add(actor.Mesh, 0)
+        end)
+        return out
+    end
+
+    function game.dissolveKill(actor)
+        game.kill(actor)
+        pcall(function()
+            local sys = StaticFindObject(DISSOLVE.PATH)
+            if not valid(sys) and type(LoadAsset) == "function" then
+                pcall(LoadAsset, DISSOLVE.PATH)
+                sys = StaticFindObject(DISSOLVE.PATH)
+            end
+            local lib = StaticFindObject("/Script/Niagara.Default__NiagaraFunctionLibrary")
+            for _, mesh in ipairs(valid(sys) and DISSOLVE.meshes(actor) or {}) do
+                lib:SpawnSystemAttached(sys, mesh, FName("None"), { X = 0.0, Y = 0.0, Z = 0.0 }, { Pitch = 0.0, Yaw = 0.0, Roll = 0.0 },
+                    0, true, true, 0, true)
+            end
+        end)
+        local addr = actor:GetAddress()
+        game.after(DISSOLVE.HIDE_S, function()
+            if valid(actor) and actor:GetAddress() == addr then
+                for _, mesh in ipairs(DISSOLVE.meshes(actor)) do
+                    pcall(function() mesh:SetVisibility(false, true) end)
+                end
+            end
+        end)
+    end
+
     -- The player's own death, the game's normal flow (screen, respawn, refresh): the game's own kill effect. A player has
     -- no Kill, and health set to 0 by hand only leaves them lying there with no way back.
     local KILL_EFFECT = "/Game/PBZContent/Blueprint/Ability/GameplayEffects/GE_Kill"
@@ -755,9 +828,40 @@ return function(api)
                 LoadAsset(KILL_EFFECT)
                 effect = StaticFindObject(KILL_EFFECT .. ".GE_Kill_C")
             end
-            StaticFindObject("/Script/GameplayAbilities.Default__AbilitySystemBlueprintLibrary")
-                :GetAbilitySystemComponent(actor):BP_ApplyGameplayEffectToSelf(effect, 1.0, {})
+            -- (Asked of each, never called on nothing: in UE4SS that's a crash, not an error.)
+            local asc = StaticFindObject("/Script/GameplayAbilities.Default__AbilitySystemBlueprintLibrary")
+                :GetAbilitySystemComponent(actor)
+            if not (valid(effect) and valid(asc)) then
+                error("no kill effect or ability system")
+            end
+            asc:BP_ApplyGameplayEffectToSelf(effect, 1.0, {})
         end)
+    end
+
+    -- A loot card the game put up and never finished: no button to focus, so no key confirms it, and the player is stuck
+    -- behind it. Seen when a boss of the partner's world was ended here the moment its fight began: its reward's card came up
+    -- in the middle of that. The backpack holds no card by then and the item is in it already; the card's own confirm closes
+    -- it. A card the backpack still holds, or one with its button, is left alone. Returns how many were closed.
+    function game.closeStuckCards(pawn)
+        local bp = valid(pawn) and game.backpackOf(pawn)
+        local showing = true
+        pcall(function() showing = bp.bShowPickItemWidget == true end)
+        if not bp or showing then
+            return 0
+        end
+        local n = 0
+        for _, w in ipairs(FindAllOf("W_pickupgear_C") or {}) do
+            pcall(function()
+                if valid(w) and w:IsVisible() and not valid(w.CurrentFocusButton) then
+                    w:ClickBackKey()
+                    n = n + 1
+                end
+            end)
+        end
+        if n > 0 then
+            log(n .. " item card(s) the game left without buttons, closed: the item is in the backpack.")
+        end
+        return n
     end
 
     function game.killPlayer(pawn)
@@ -1105,6 +1209,36 @@ return function(api)
     local activeLocal = {}        -- ability class path -> true while active on the local player
     local localMoveAt, ghostMoveAt = -1e9, -1e9   -- os.clock() when the local player / the ghost last started a move
 
+    -- An item in use (the gourd, a medicine) shows effects on the player's body from the item's own ability, which the
+    -- ghost doesn't run: the drinking it shows is the animation alone. Each effect that appears on the body while an item
+    -- is in use is sent (FX) and put on the ghost's. Those already there, and footsteps (the ghost makes its own), aren't.
+    local itemFx = { FOR_S = 3.0, untilAt = -1e9, using = false, seen = {} }
+
+    function itemFx.isUse(name)
+        return (name:find("^GA_Medicine") ~= nil or name:find("^GA_Item") ~= nil or name:find("^GA_Use") ~= nil)
+            and name:find("Passive") == nil
+    end
+
+    function itemFx.scan(pawn, sendEvent)
+        pcall(function()
+            local niagara = StaticFindObject("/Script/Niagara.NiagaraComponent")
+            if not (valid(niagara) and pawn:IsA(StaticFindObject("/Script/Engine.Character"))) then
+                return
+            end
+            local mesh = pawn.Mesh
+            for i = 0, mesh:GetNumChildrenComponents() - 1 do
+                local c = mesh:GetChildComponent(i)
+                if valid(c) and not itemFx.seen[c:GetAddress()] and c:IsA(niagara) and c:IsActive() then
+                    itemFx.seen[c:GetAddress()] = true
+                    local path = c:GetAsset():GetFullName():gsub("^%S+ ", "")
+                    if sendEvent and not path:find("FootStep") then
+                        sendEvent("FX", path, c:GetAttachSocketName():ToString())
+                    end
+                end
+            end
+        end)
+    end
+
     -- Who caused an enemy's health drop: the local player's swing (a real hit to report) or the ghost's replay
     -- of the other player's swing (that hit is the other PC's, already reported there: counting it here would
     -- double it).
@@ -1156,6 +1290,28 @@ return function(api)
         activeLocal = nowActive
     end
 
+    -- Ten times a second, co-op or PvP: an item coming into use, and the effects it puts on the body for a while.
+    function game.watchItemFx(pawn, sendEvent)
+        local asc = abilitySystem(pawn)
+        if not asc then
+            return
+        end
+        local using = false
+        forEachSpec(asc, function(spec)
+            if not using and (tonumber(spec.ActiveCount) or 0) > 0 then
+                local ok, name = pcall(function() return spec.Ability:GetClass():GetFName():ToString() end)
+                using = ok and itemFx.isUse(name)
+            end
+        end)
+        if using and not itemFx.using then
+            itemFx.seen, itemFx.untilAt = {}, os.clock() + itemFx.FOR_S
+            itemFx.scan(pawn, nil)          -- (what's on the body already isn't the item's)
+        elseif os.clock() < itemFx.untilAt then
+            itemFx.scan(pawn, sendEvent)
+        end
+        itemFx.using = using
+    end
+
     -- Replays the remote player's move on the ghost. Gives the ability first if the ghost lacks it.
     local loadTried = {}          -- class path -> true once we tried loading it (a failed load isn't retried)
     function game.playMove(ghost, classPath, yaw)
@@ -1188,6 +1344,26 @@ return function(api)
         if not (ok and activated) then
             log("Ghost couldn't play " .. classPath:match("([^.]+)$"))
         end
+    end
+
+    -- An effect the partner's item showed on their body (FX), on the ghost's: the same system, on the same socket.
+    function game.ghostEffect(ghost, path, socket)
+        if not (path:match("^/[%w_/%-]+%.[%w_%-]+$") and #path <= 200 and socket:match("^[%w_]+$")) then
+            return false
+        end
+        local sys = StaticFindObject(path)
+        if not valid(sys) and not loadTried[path] and type(LoadAsset) == "function" then
+            loadTried[path] = true
+            pcall(LoadAsset, path)
+            sys = StaticFindObject(path)
+        end
+        return (pcall(function()
+            if valid(sys) and sys:IsA(StaticFindObject("/Script/Niagara.NiagaraSystem"))
+                and ghost:IsA(StaticFindObject("/Script/Engine.Character")) then
+                StaticFindObject("/Script/Niagara.Default__NiagaraFunctionLibrary"):SpawnSystemAttached(sys, ghost.Mesh,
+                    FName(socket), { X = 0.0, Y = 0.0, Z = 0.0 }, { Pitch = 0.0, Yaw = 0.0, Roll = 0.0 }, 0, true, true, 0, true)
+            end
+        end))
     end
 
     -- The class path of the first running ability that isn't passive(name), or nil.
@@ -1563,6 +1739,57 @@ return function(api)
             atk.BaseValue = 0
             atk.CurrentValue = 0
         end)
+    end
+
+    -- What each player wears is theirs. The ghost is a copy of this player's class, so it came in this player's clothes
+    -- (and followed this player's changes): it's dressed in what the partner says they wear (coop.lua, LOOK), through the
+    -- game's own appearance component, held there as its configured look, and kept out of this player's save.
+    local APPEARANCE = "/Script/ProjectPBZ.PBZAppearanceComponent"
+
+    local function appearanceOf(actor)
+        local ok, c = pcall(function() return actor:GetComponentByClass(StaticFindObject(APPEARANCE)) end)
+        return ok and valid(c) and c or nil
+    end
+
+    -- This player's look: outfit, hat hidden, skin colour; or nil.
+    function game.ownLook(pawn)
+        local c = appearanceOf(pawn)
+        if not c then
+            return nil
+        end
+        local ok, outfit, hidden, skin = pcall(function()
+            return c:GetEffectiveOutfit():ToString(), c:IsEffectiveHatHidden(), c:GetEffectiveSkinColor()
+        end)
+        if ok and type(outfit) == "string" and outfit:match("^[%w_]+$") and #outfit <= 64 then
+            return outfit, hidden == true, math.floor(tonumber(skin) or 0)
+        end
+        return nil
+    end
+
+    -- True when it dressed it: false when it was so already, or it couldn't be.
+    function game.dressGhost(ghost, outfit, hatHidden, skin)
+        local c = appearanceOf(ghost)
+        if not c then
+            return false
+        end
+        local ok, same = pcall(function()
+            return c.bUseConfiguredAppearance == true and c.CurrentOutfit:ToString() == outfit
+                and c:GetEffectiveOutfit():ToString() == outfit and c:IsEffectiveHatHidden() == hatHidden
+                and c:GetEffectiveSkinColor() == skin
+        end)
+        if ok and same then
+            return false
+        end
+        return (pcall(function()
+            c:BeginSuppressAppearanceSave()
+            -- The face goes by this one: left as this player's (the ghost began as a copy of them), a ghost made anew in
+            -- an outfit with a face of its own had this player's plain face on it.
+            c.CurrentOutfit = FName(outfit)
+            c:SetConfiguredAppearance(FName(outfit), hatHidden, skin)
+            c:SetUseConfiguredAppearance(true)
+            c:ApplyOutfitVisual(FName(outfit), not hatHidden, skin, true)
+            pcall(function() c:RefreshHealthMaterial(1.0) end)
+        end))
     end
 
     -- Enemies here can't touch the ghost: the partner takes their hits on their own PC, and the ghost is told what
@@ -2185,7 +2412,7 @@ return function(api)
     end
 
     -- The game's own spawner, on its default object: it holds nothing of a shot's. It only makes the bullet: starting it is the
-    -- step that puts it in the world. No ability, as a ghost hasn't got one.
+    -- step that puts it in the world. No ability, as a ghost hasn't got one. Returns true and what it made, as { bullet, name }.
     function game.fireBullet(owner, data, x, y, z, pitch, yaw, roll)
         local fired = {}
         local ok = pcall(function()
@@ -2195,10 +2422,41 @@ return function(api)
         if not ok or #fired == 0 then
             return false
         end
+        local made = {}
         for i = 1, #fired do
-            pcall(function() fired[i]:get():Start() end)
+            pcall(function()
+                local b = fired[i]:get()
+                b:Start()
+                made[#made + 1] = { bullet = b, name = b:GetFName():ToString() }
+            end)
         end
-        return true
+        return true, made
+    end
+
+    -- A bullet ended the way its own timer ends it. Only the one that was made: by now its address can be another bullet's,
+    -- so its name has to match too. A particle bullet's look is a system of its own in the world (the level owns it, not the
+    -- bullet), which the ability that fired it turns off: turned off here first, to fade as it does there, or a lion head's
+    -- fire burned on with nothing left to end it. (Its field is only asked of a particle bullet.)
+    local PARTICLE_BULLET = "/Script/PBZCombatAsset.PBZ_ParticleBullet"
+    function game.endBullet(made)
+        local ok = false
+        pcall(function()
+            local b = made.bullet
+            if valid(b) and b:GetFName():ToString() == made.name then
+                pcall(function()
+                    local cls = lib(PARTICLE_BULLET)
+                    if valid(cls) and b:IsA(cls) then
+                        local fx = b.ParticleComponent
+                        if valid(fx) then
+                            fx:Deactivate()
+                        end
+                    end
+                end)
+                b:OnTimeToDestroy()
+                ok = true
+            end
+        end)
+        return ok
     end
 
     ------------------------------------------------------------------ currency (dust)
@@ -2513,6 +2771,14 @@ return function(api)
     local CHEST_WATCH_CM = 2000     -- a chest that opens after being this close to the player: they opened it
     local closedNear, retiring, searched = {}, {}, {}
     local pileHooked = false
+    -- The host's open chests (coop.lua, OC): named to the guests again every OFFER_S, for one who joins later, and paid
+    -- on a guest PAYS a second at most. And what's needed to show a chest open that opened without its sequence.
+    local chests = { OFFER_S = 60, PAYS = 3, offered = {}, offeredAt = -1e9, owed = {},
+        OPENING = "/HuaShira/SceneProp/Chest/Anim/Chest_Close2Open.Chest_Close2Open",
+        OPENED = "/HuaShira/SceneProp/Chest/Anim/Chest_Open.Chest_Open",
+        LID_S = 1.9,                -- Chest_Close2Open is shut until about here, then opens in a second and a half
+        MESH = "/Script/Engine.SkeletalMeshComponent",
+        LOOT = "/Game/PBZContent/DataTable/DT_LevelLootDataTable.DT_LevelLootDataTable", levelLoot = nil }
 
     -- Sync stopped: dust earned and things taken alone from now on aren't news for the next partner.
     function game.forgetLink()
@@ -2520,11 +2786,148 @@ return function(api)
         gearKnown = nil
         watched = {}
         closedNear = {}
+        chests.offered, chests.owed = {}, {}
     end
 
     local function chestOpen(chest)
         local ok, open, started = pcall(function() return chest.CurSwitchState, chest.bInteracted end)
         return not ok or open == true or started == true
+    end
+
+    -- A chest switched open without its sequence still looks shut: its lid is posed here by the game's own animation
+    -- for that mesh (the one the blueprint names is for another skeleton), and its glow and the light that sweeps over
+    -- it go, as on the opener's side. In view it swings open; one that loads later is just open.
+    function chests.showOpen(chest, swing)
+        pcall(function()
+            local mesh, kind = chest.Chest, StaticFindObject(chests.MESH)
+            local anim = StaticFindObject(swing and chests.OPENING or chests.OPENED)
+            if valid(mesh) and valid(kind) and mesh:IsA(kind) and valid(anim)
+                and anim.Skeleton:GetFullName() == mesh:GetSkeletalMeshAsset().Skeleton:GetFullName() then
+                mesh:SetComponentTickEnabled(true)
+                mesh.VisibilityBasedAnimTickOption = 0      -- (left as it is, a shut chest's pose doesn't move)
+                mesh:PlayAnimation(anim, false)
+                if swing then
+                    mesh:SetPosition(chests.LID_S, false)
+                end
+            end
+        end)
+        pcall(function()
+            local glow = chest.Niagara
+            if valid(glow) then
+                glow:Deactivate()
+                glow:SetVisibility(false, false)
+            end
+        end)
+        pcall(function() chest["Not Swipe"](chest) end)
+    end
+
+    function chests.text(v)
+        if type(v) == "string" then
+            return v
+        end
+        local ok, s = pcall(function() return v:get():ToString() end)
+        if not (ok and s) then
+            ok, s = pcall(function() return v:ToString() end)
+        end
+        return ok and s or ""
+    end
+
+    -- What a chest holds, from the game's table of what's placed in the world: { dust, { id, count, kind }... }, or nil.
+    -- Read as text, once, as the game's own table tools do: its own roll can't be called from here (that took the game down).
+    -- (First play-through amounts: the table's dust for later ones is a multiple this doesn't know.)
+    function chests.loot(chest)
+        local text = chests.text
+        if chests.levelLoot == nil then
+            local lib, t = StaticFindObject("/Script/Engine.Default__DataTableFunctionLibrary"), StaticFindObject(chests.LOOT)
+            if not (valid(lib) and valid(t)) then
+                return nil
+            end
+            local names = {}
+            lib:GetDataTableRowNames(t, names)
+            local entries = lib:GetDataTableColumnAsString(t, FName("EntryDatas"))
+            chests.levelLoot = {}
+            for i = 1, #names do
+                chests.levelLoot[text(names[i])] = text(entries[i])
+            end
+        end
+        local entry = chests.levelLoot[text(chest["Loot Item ID"])]
+        if not entry then
+            return nil
+        end
+        local function rolled(p)
+            return math.random() <= (tonumber(p) or 1)
+        end
+        local function amount(lo, hi)
+            lo, hi = math.floor(tonumber(lo) or 1), math.floor(tonumber(hi) or tonumber(lo) or 1)
+            return hi > lo and math.random(lo, hi) or lo
+        end
+        local loot = { dust = 0 }
+        for lo, hi, times, p in (entry:match("LootDusts=(%b())") or ""):gmatch("MinDust=(%d+),MaxDust=(%d+),CycleDustMultipliers=%(([%d.]+)[^)]*%),Probability=([%d.]+)") do
+            if rolled(p) then
+                loot.dust = loot.dust + math.floor(amount(lo, hi) * (tonumber(times) or 1) + 0.5)
+            end
+        end
+        for id, lo, hi, p in entry:gmatch('ItemId="([^"]+)",MinAmount=(%d+),MaxAmount=(%d+),Probability=([%d.]+)') do
+            if rolled(p) then
+                loot[#loot + 1] = { id = id, count = amount(lo, hi) }
+            end
+        end
+        for id, main, p in entry:gmatch('WeaponID="([^"]+)",IsMainWeapon=(%a+),Probability=([%d.]+)') do
+            if rolled(p) then
+                loot[#loot + 1] = { id = id, count = 1, kind = main == "True" and "weapon" or "weapon2" }
+            end
+        end
+        for id, p in entry:gmatch('MedicineID="([^"]+)",.-Probability=([%d.]+)') do
+            if rolled(p) then
+                loot[#loot + 1] = { id = id, count = 1, kind = "medicine" }
+            end
+        end
+        for id, p in entry:gmatch('AccessoryID="([^"]+)",Probability=([%d.]+)') do
+            if rolled(p) then
+                loot[#loot + 1] = { id = id, count = 1, kind = "accessory" }
+            end
+        end
+        return loot
+    end
+
+    -- A chest the host has open and this player's world still has shut: it pays them, then shows open. False, and left
+    -- as it is, while the game's table isn't there to say what it holds.
+    function chests.pay(chest, name, pawn)
+        local ok, loot = pcall(chests.loot, chest)
+        if not ok or chests.levelLoot == nil then
+            return false
+        end
+        for _, item in ipairs(loot or {}) do
+            game.grantLoot(pawn, item.id, item.kind, item.count)
+        end
+        if loot then
+            game.addCurrency(pawn, loot.dust)
+        end
+        pcall(function() chest:SwitchWithoutPlaySequence() end)
+        chests.showOpen(chest, false)
+        log("The host's " .. name .. " is open: " .. (loot and (#loot .. " things and " .. loot.dust .. " dust from it here too.")
+            or "it isn't in the game's table, so nothing to pay."))
+        return true
+    end
+
+    -- Guest: a chest the host has open (OC). It pays when it's next seen shut here (watchChests).
+    function game.hostOpened(name)
+        chests.owed[name] = true
+    end
+
+    -- The address of what this player is opening right now, if anything. (Not the chest's InteractPlayer: that's whoever
+    -- stands by it.)
+    function chests.opening(pawn)
+        local ok, addr = pcall(function()
+            local thing = pawn:GetComponentByClass(StaticFindObject("/Script/ProjectPBZ.PBZInteractComponent")):GetInteractingActor()
+            return valid(thing) and thing:GetAddress() or nil
+        end)
+        return ok and addr or nil
+    end
+
+    -- Host: someone (re)joined. The open chests here are named again at the next look.
+    function game.offerChestsAgain()
+        chests.offeredAt = -1e9
     end
 
     -- A pile says nothing once searched, so its own step is what's watched.
@@ -2544,23 +2947,45 @@ return function(api)
         end)
     end
 
-    -- Once a second: a chest that was near this player and closed, and now isn't, they opened.
-    function game.watchChests(pawn, report)
+    -- Once a second: a chest that was near this player and closed, and now isn't, they opened. offer (the host's): each
+    -- chest open here is named to the guests, once a while.
+    function game.watchChests(pawn, report, offer)
         local here = pawn:K2_GetActorLocation()
         local closed = {}
+        local pays, offered, owed = chests.PAYS, chests.offered, chests.owed
+        if offer and os.clock() - chests.offeredAt >= chests.OFFER_S then
+            offered = {}
+            chests.offered, chests.offeredAt = offered, os.clock()
+        end
+        local busy = next(owed) ~= nil and chests.opening(pawn) or nil
         for _, c in ipairs(FindAllOf(CHEST_CLASS) or {}) do
             if valid(c) then
                 local name = c:GetFName():ToString()
                 if chestOpen(c) then
-                    retiring[name] = nil
+                    retiring[name], owed[name] = nil, nil
                     if closedNear[name] then
+                        offered[name] = true    -- (opened just now: its things go by what the game gives)
                         report(name)
+                    elseif offer and not offered[name] then
+                        offered[name] = true
+                        offer(name)
                     end
                 elseif retiring[name] then
                     retiring[name] = nil
                     pcall(function() c:SwitchWithoutPlaySequence() end)
-                elseif closedNear[name] or distance(c:K2_GetActorLocation(), here) <= CHEST_WATCH_CM then
-                    closed[name] = true         -- (Near once is enough: the player can walk off while it opens.)
+                    chests.showOpen(c, false)
+                else
+                    local paid = false
+                    if owed[name] and pays > 0 and c:GetAddress() ~= busy then    -- (not one they're opening)
+                        pays = pays - 1
+                        paid = chests.pay(c, name, pawn)
+                        if paid then
+                            owed[name] = nil
+                        end
+                    end
+                    if not paid and (closedNear[name] or distance(c:K2_GetActorLocation(), here) <= CHEST_WATCH_CM) then
+                        closed[name] = true     -- (Near once is enough: the player can walk off while it opens.)
+                    end
                 end
             end
         end
@@ -2584,6 +3009,7 @@ return function(api)
                     pcall(function() c:K2_DestroyActor() end)
                 elseif not chestOpen(c) then
                     pcall(function() c:SwitchWithoutPlaySequence() end)
+                    chests.showOpen(c, true)
                 end
                 return
             end

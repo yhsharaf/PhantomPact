@@ -167,8 +167,11 @@ function Fake.character(pc, class, x, y, z, hp, posture)
         Montage_Play = function(self, m) put(self, "montage", m) put(self, "played", (rawget(self, "__fields").played or 0) + 1) return 1.0 end,
         Montage_Stop = function(self) put(self, "montage", nil) end,
     })
-    local mesh = object(pc, "Mesh")
-    defs(pc, mesh, { GetAnimInstance = function() return anim end })
+    local mesh = object(pc, "Mesh", { children = {}, shown = true })
+    defs(pc, mesh, { GetAnimInstance = function() return anim end,
+        GetNumChildrenComponents = function(self) return #rawget(self, "__fields").children end,
+        GetChildComponent = function(self, i) return rawget(self, "__fields").children[i + 1] end,
+        SetVisibility = function(self, on) put(self, "shown", on) end })
     put(a, "Mesh", mesh)
     put(a, "anim", anim)
     local weapons = object(pc, "Weapons", { armed = false, config = nil, edgeArmed = false, edgeConfig = nil })
@@ -267,13 +270,57 @@ function Fake.pickup(pc, id, item, x, y, z)
     return p
 end
 
-function Fake.chest(pc, id, x, y, z)
-    local c = object(pc, "BP_Chest_C", { CurSwitchState = false, bInteracted = false })
+-- Its lid is a skeletal mesh that keeps the last animation it was given, its glow an effect that's on until put out.
+-- loot: its row in the level loot table (Fake.LEVEL_LOOT).
+function Fake.chest(pc, id, x, y, z, loot)
+    local mesh = object(pc, "SkeletalMeshComponent", { VisibilityBasedAnimTickOption = 4 })
+    pc.chestSkeleton = pc.chestSkeleton or object(pc, "Skeleton")
+    local skin = object(pc, "SkeletalMesh", { Skeleton = pc.chestSkeleton })
+    defs(pc, mesh, { GetSkeletalMeshAsset = function() return skin end, SetComponentTickEnabled = false,
+        PlayAnimation = function(self, anim) put(self, "anim", anim) put(self, "at", 0) end,
+        SetPosition = function(self, at) put(self, "at", at) end })
+    local glow = object(pc, "PBZNiagaraComponent", { on = true })
+    defs(pc, glow, { Deactivate = function(self) put(self, "on", false) end, SetVisibility = false })
+    local c = object(pc, "BP_Chest_C", { CurSwitchState = false, bInteracted = false, Chest = mesh, Niagara = glow, swept = true,
+        ["Loot Item ID"] = name(loot or "None") })
     rawset(c, "__name", id)
     defs(pc, c, { K2_GetActorLocation = function() return { X = x, Y = y, Z = z } end,
-        SwitchWithoutPlaySequence = function(self) put(self, "CurSwitchState", true) end })
+        SwitchWithoutPlaySequence = function(self) put(self, "CurSwitchState", true) end,
+        ["Not Swipe"] = function(self) put(self, "swept", false) end })
     pc.chests[#pc.chests + 1] = c
     return c
+end
+
+-- An ability of an actor running or not, as the game's list of them has it.
+function Fake.running(pc, actor, class, active)
+    local asc = pc.env.StaticFindObject("/Script/GameplayAbilities.Default__AbilitySystemBlueprintLibrary"):GetAbilitySystemComponent(actor)
+    local items = rawget(asc, "__fields").ActivatableAbilities.Items.items
+    for _, spec in ipairs(items) do
+        if spec.class == class then
+            spec.ActiveCount = active and 1 or 0
+            return
+        end
+    end
+    local cls = { IsValid = function() return true end, GetFName = function() return name(class) end,
+        GetFullName = function() return "BlueprintGeneratedClass /Game/Fake/" .. class .. "." .. class end }
+    items[#items + 1] = { class = class, ActiveCount = active and 1 or 0,
+        Ability = { IsValid = function() return true end, GetClass = function() return cls end } }
+end
+
+-- An effect on a body, as the game puts one there: a system from the effects pack, on its mesh.
+function Fake.effectOn(pc, actor, path, socket)
+    local system = pc.found[path]
+    if not system then
+        system = object(pc, "NiagaraSystem")
+        rawset(system, "__path", path)
+        pc.found[path] = system
+    end
+    local fx = object(pc, "NiagaraComponent", { on = true })
+    defs(pc, fx, { IsActive = function(self) return rawget(self, "__fields").on end, GetAsset = function() return system end,
+        GetAttachSocketName = function() return name(socket or "None") end })
+    local children = rawget(rawget(actor, "__fields").Mesh, "__fields").children
+    children[#children + 1] = fx
+    return fx
 end
 
 function Fake.setHealth(a, hp)
@@ -471,14 +518,27 @@ function Fake.story(pc)
     local tables = object(pc, "DataTableFunctionLibrary")
     local COLUMNS = { QuestList = 2, Optional = 3 }
     local OTHER = { AddTags = "tags", ActiveBellMaps = "maps", ActivateUITags = "ui", AddItems = "items" }
+    local levelLoot = object(pc, "DataTable")
     defs(pc, tables, {
-        GetDataTableRowNames = function(_, _, out)
+        GetDataTableRowNames = function(_, t, out)
+            if t == levelLoot then
+                for i, r in ipairs(Fake.LEVEL_LOOT) do
+                    out[i] = { get = function() return name(r[1]) end }
+                end
+                return
+            end
             for i, r in ipairs(rows) do
                 out[i] = name(r[1])
             end
         end,
-        GetDataTableColumnAsString = function(_, _, column)
+        GetDataTableColumnAsString = function(_, t, column)
             local c, out = column:ToString(), {}
+            if t == levelLoot then
+                for i, r in ipairs(Fake.LEVEL_LOOT) do
+                    out[i] = { get = function() return name(c == "EntryDatas" and r[2] or "") end }
+                end
+                return out
+            end
             for i, r in ipairs(rows) do
                 out[i] = name((COLUMNS[c] and r[COLUMNS[c]]) or (OTHER[c] and r[OTHER[c]]) or "")
             end
@@ -499,8 +559,21 @@ function Fake.story(pc)
             object(pc, "DataTable"),
         ["/Script/Engine.Default__DataTableFunctionLibrary"] = tables,
         ["/Script/ProjectPBZ.Default__PBZDebugFlowEventLibrary"] = lib,
+        ["/Game/PBZContent/DataTable/DT_LevelLootDataTable.DT_LevelLootDataTable"] = levelLoot,
     }
 end
+
+-- What's placed in the world, as the game's table has it: rows of { loot id, EntryDatas as its text }.
+Fake.LEVEL_LOOT = {
+    { "Xigu.004.Weapon_Material_04", '((EnemyLevel=0,LootDusts=((MinDust=441,MaxDust=441,CycleDustMultipliers=(1.000000,10.900000),'
+        .. 'Probability=1.000000)),LootItems=((ItemId="Weapon_Material_04",MinAmount=6,MaxAmount=6,Probability=1.000000),'
+        .. '(ItemId="Weapon_Material_13",MinAmount=2,MaxAmount=2,Probability=1.000000)),Weapons=((WeaponID="ShachiHook",'
+        .. 'IsMainWeapon=False,Probability=1.000000)),Medicines=((MedicineID="NingFengDan",MinDust=5400,MaxDust=5400,'
+        .. 'CycleDustMultipliers=(0.000000,10.900000),Probability=1.000000)),Accessories=((AccessoryID="AC_Deflect",'
+        .. 'Probability=1.000000)),ItemLevel=B))' },
+    { "Xigu.AC_Deflect", '((EnemyLevel=0,LootDusts=,LootItems=,Weapons=,Medicines=,Accessories=((AccessoryID="AC_Deflect",'
+        .. 'Probability=1.000000)),ItemLevel=S))' },
+}
 
 function Fake.sceneManager(pc)
     local m = object(pc, "PBZLevelSequenceManager", { playing = false, ActiveSessionPlayer = nil, sequence = nil, frames = 240 })
@@ -820,7 +893,30 @@ function Fake.new(id, scripts, ini, link)
         put(ic, "GetValidDistance", function(_, thing) return rawget(thing, "__seen") == true end)
         pc.interactComps[#pc.interactComps + 1] = ic
         put(p, "interact", ic)
-        put(p, "GetComponentByClass", function(_, class) return class == pc.interactClass and ic or nil end)
+        -- What it wears: a figure spawned here comes in this player's clothes, as the game's does.
+        local own = pc.pawn and rawget(pc.pawn, "__fields").look
+        local mine = own and rawget(own, "__fields") or {}
+        local look = object(pc, "PBZAppearanceComponent", { outfit = mine.outfit or "Hun_OutFit_Default", hidden = mine.hidden == true,
+            skin = mine.skin or 0, bUseConfiguredAppearance = false, suppressed = false, dressed = 0,
+            CurrentOutfit = name(mine.outfit or "Hun_OutFit_Default") })
+        defs(pc, look, {
+            GetEffectiveOutfit = function(self) return name(rawget(self, "__fields").outfit) end,
+            IsEffectiveHatHidden = function(self) return rawget(self, "__fields").hidden end,
+            GetEffectiveSkinColor = function(self) return rawget(self, "__fields").skin end,
+            BeginSuppressAppearanceSave = function(self) put(self, "suppressed", true) end,
+            SetConfiguredAppearance = false,
+            SetUseConfiguredAppearance = function(self, on) put(self, "bUseConfiguredAppearance", on) end,
+            ApplyOutfitVisual = function(self, outfit, showHat, skin)
+                put(self, "outfit", outfit:ToString())
+                put(self, "hidden", not showHat)
+                put(self, "skin", skin)
+                put(self, "dressed", rawget(self, "__fields").dressed + 1)
+            end,
+        })
+        put(p, "look", look)
+        put(p, "GetComponentByClass", function(_, class)
+            return (class == pc.interactClass and ic) or (class == pc.appearanceClass and look) or nil
+        end)
         local points = {}
         local pointPairs = {}
         for _, kind in ipairs({ "Execution", "ShachiWeapon", "SpecialAttack" }) do
@@ -997,7 +1093,12 @@ function Fake.new(id, scripts, ini, link)
     defs(pc, gourd, { SetCurrentTime = function(self, n) put(self, "CurrentTime", n) end, SetDisplayTime = false })
     pc.gourd = gourd
     local gourds = { ForEach = function(_, fn) fn({ get = function() return name("Hulu") end }, { get = function() return gourd end }) end }
-    local bag = object(pc, "Backpack", { MedicineInfos = gourds, BottomMedicineID = name("Hulu"), Accessories = list({}), Inventories = list({}), items = {} })
+    local bag = object(pc, "Backpack", { MedicineInfos = gourds, BottomMedicineID = name("Hulu"), Accessories = list({}), items = {} })
+    put(bag, "Inventories", { ForEach = function(_, fn)        -- (what's been added, as the game counts it)
+        for id, n in pairs(rawget(bag, "__fields").items) do
+            fn({ get = function() return name(id) end }, { get = function() return { CurrentAmount = n } end })
+        end
+    end })
     pc.bag = bag
     local BELL_HEAL = "/Script/ProjectPBZ.MelodiousBell:RestoreHealth"
     local bell = object(pc, "Bell")
@@ -1031,11 +1132,15 @@ function Fake.new(id, scripts, ini, link)
     defs(pc, bulletSystem, { GetBulletCount = function() return #pc.liveBullets end })
     local spawner = object(pc, "BulletSpawnBurst")
     defs(pc, spawner, { SpawnBullets = function(_, owner, _, _, data, tf, fired)
-        local shot = { owner = owner, data = data, at = tf.Translation, started = false }
+        local shot = { owner = owner, data = data, at = tf.Translation, started = false, ended = false }
         pc.fired[#pc.fired + 1] = shot
-        fired[#fired + 1] = { get = function()
-            return { Start = function() shot.started = true end }
-        end }
+        local n = #pc.fired
+        -- (Its own end, as the game's timer ends it: a copy that ended is gone, as an object.)
+        local made = { Start = function() shot.started = true end,
+            GetFName = function() return { ToString = function() return "PBZ_ParticleBullet_" .. n end } end,
+            IsValid = function() return not shot.ended end,
+            OnTimeToDestroy = function() shot.ended = true end }
+        fired[#fired + 1] = { get = function() return made end }
     end })
     defs(pc, subsystems, { GetWorldSubsystem = function(_, _, cls)
         local path = rawget(cls, "__path")
@@ -1202,6 +1307,26 @@ function Fake.new(id, scripts, ini, link)
     for path, o in pairs(Fake.story(pc)) do
         found[path] = o
     end
+    found["/Game/PBZContent/Blueprint/Ability/GameplayEffects/GE_Kill.GE_Kill_C"] = object(pc, "Class")
+    found["/Script/Engine.SkeletalMeshComponent"] = object(pc, "Class")
+    pc.appearanceClass = pc.appearanceClass or object(pc, "Class")
+    found["/Script/ProjectPBZ.PBZAppearanceComponent"] = pc.appearanceClass
+    -- Effects: spawned on a body (the ghost's), and what was spawned where.
+    for _, k in ipairs({ "/Script/Niagara.NiagaraComponent", "/Script/Niagara.NiagaraSystem", "/Script/Engine.Character" }) do
+        found[k] = object(pc, "Class")
+    end
+    pc.effectsOn = {}
+    local niagara = object(pc, "NiagaraFunctionLibrary")
+    defs(pc, niagara, { SpawnSystemAttached = function(_, system, on, socket)
+        pc.effectsOn[#pc.effectsOn + 1] = { path = rawget(system, "__path"), on = on, socket = socket:ToString() }
+    end })
+    found["/Script/Niagara.Default__NiagaraFunctionLibrary"] = niagara
+    pc.chestSkeleton = pc.chestSkeleton or object(pc, "Skeleton")
+    for _, anim in ipairs({ "Chest_Close2Open", "Chest_Open" }) do
+        local path = "/HuaShira/SceneProp/Chest/Anim/" .. anim .. "." .. anim
+        found[path] = object(pc, "AnimSequence", { Skeleton = pc.chestSkeleton })
+        rawset(found[path], "__path", path)
+    end
     local statics = object(pc, "StaticObject", {}, true)
     pc.found = found
     pc.montages, pc.weaponConfigs = {}, {}
@@ -1228,6 +1353,12 @@ function Fake.new(id, scripts, ini, link)
                 pc.montages[path] = m
             end
             return m
+        end
+        if path:find("^/PBZVFXPack/") then     -- (the effects are in every copy of the game)
+            local system = object(pc, "NiagaraSystem")
+            rawset(system, "__path", path)
+            found[path] = system
+            return system
         end
         if path:find("^/PBZCombatAsset/ActorData/Players/") then
             local d = pc.bulletData[path]
