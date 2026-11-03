@@ -214,10 +214,14 @@ return function(api)
     end
 
     -- The floor is only there while a revive is possible: anything else is a normal death.
+    -- Written again for a new body (a trip makes one, and it starts with no floor) and once a second while armed: other
+    -- code sets the same floor (watching a fight sets it, then takes it off), and the next blow was a real death.
+    local armedOn, armedAt = nil, 0
     local function arm(pawn)
         local want = allowed()
-        if want ~= armed then
-            armed = want
+        local addr = pawn:GetAddress()
+        if want ~= armed or addr ~= armedOn or (want and os.clock() - armedAt >= 1.0) then
+            armed, armedOn, armedAt = want, addr, os.clock()
             game.setMinHealth(pawn, want and 1 or 0)
         end
     end
@@ -409,6 +413,7 @@ return function(api)
             end
         end
         down, armed = false, false
+        setVeto(false)      -- (with no body here, a load, the way above never ran it: saves stayed blocked)
         hideRing()
     end
 

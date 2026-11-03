@@ -439,8 +439,9 @@ return function(api)
     end
 
     -- The other player's boss, on this PC too: a boss only spawns on the PC whose player started the fight. Returns
-    -- its spawner's location, or nil for an enemy that doesn't come from a named spawner.
-    function game.spawnBoss(enemyId)
+    -- its spawner's location, or nil for an enemy that doesn't come from a named spawner. revive false: one this save has
+    -- beaten stays so.
+    function game.spawnBoss(enemyId, revive)
         local id = enemyId:match("^sp:(.+)$")
         for _, s in ipairs(id and FindAllOf("AISpawner") or {}) do
             local sid = nil
@@ -450,7 +451,11 @@ return function(api)
                 local at = s:K2_GetActorLocation()
                 local alive = false
                 pcall(function() alive = valid(s.SpawnedAI) and not game.isDead(s.SpawnedAI) end)
-                if not alive and game.isBeaten(enemyId) then
+                local beaten = not alive and game.isBeaten(enemyId)
+                if beaten and revive == false then
+                    return { X = at.X, Y = at.Y, Z = at.Z }
+                end
+                if beaten then
                     -- Beaten here and not in the partner's world, whose fight it is: back for it, or they'd fight it unseen.
                     pcall(function()
                         s.ShouldSpawn = true
@@ -1135,7 +1140,11 @@ return function(api)
     function game.setBossFog(at, closed)
         local n = 0
         for _, door in ipairs(FindAllOf("BP_FogDoor_C") or {}) do
-            local ok, loc = pcall(function() return door:K2_GetActorLocation() end)
+            -- (By the wall's nearest point, not the actor: that stands at the wall's first point, up to 50 m from the rest.)
+            local ok, loc = pcall(function() return door.Spline:FindLocationClosestToWorldLocation(at, 1) end)
+            if not (ok and loc and loc.X) then
+                ok, loc = pcall(function() return door:K2_GetActorLocation() end)
+            end
             if ok and loc.X and distance(loc, at) <= FOG_RADIUS_CM then
                 local fn = closed and "Close By Mob Script" or "OpenByMobScript"
                 if pcall(function() door[fn](door) end) then
@@ -1149,16 +1158,131 @@ return function(api)
         return n
     end
 
-    -- Is this spot on the far side of the arena's fog wall? The walls stand at its edge, so the nearest one tells.
-    function game.outsideFog(spot, at)
-        local door, best = nil, 1e12
-        for _, d in ipairs(FindAllOf("BP_FogDoor_C") or {}) do
-            local ok, loc = pcall(function() return d:K2_GetActorLocation() end)
-            if ok and loc.X and distance(loc, at) <= FOG_RADIUS_CM and distance(loc, spot) < best then
-                door, best = loc, distance(loc, spot)
+    -- A fog wall is a spline (the actor stands at its first point, up to 50 m from the far end) laid along the ground,
+    -- with spline meshes that block only while the wall is up: collision 3 closed, 0 open (read on A-Hua's walls).
+    -- (Kept in one table: this file is at the 200 locals a function may have.)
+    -- pass: how far past the wall; fall: a drop this big after it means no floor; watch: for this long.
+    local FOG = { MESH = "/Script/Engine.SplineMeshComponent", PASS_CM = 300, FALL_CM = 400, WATCH_S = 2.0 }
+    function FOG.closed(door)
+        local closed = false
+        pcall(function()
+            local meshes = door:K2_GetComponentsByClass(StaticFindObject(FOG.MESH))
+            for i = 1, #meshes do
+                if meshes[i]:get():GetCollisionEnabled() ~= 0 then
+                    closed = true
+                    return
+                end
+            end
+        end)
+        return closed
+    end
+
+    -- The closed fog wall nearest a spot, within `within` of it along the ground: { at = nearest point on the wall,
+    -- normal = across the wall, flat }, or nil.
+    function game.closedFogNear(spot, within)
+        local best, bestGap = nil, within
+        for _, door in ipairs(FindAllOf("BP_FogDoor_C") or {}) do
+            local ok, at, right = pcall(function()
+                local s = door.Spline
+                return s:FindLocationClosestToWorldLocation(spot, 1), s:FindRightVectorClosestToWorldLocation(spot, 1)
+            end)
+            local gap = ok and at.X and math.sqrt((at.X - spot.X) ^ 2 + (at.Y - spot.Y) ^ 2)
+            if gap and gap <= bestGap and math.abs(at.Z - spot.Z) < 600 and FOG.closed(door) then
+                local len = math.sqrt(right.X ^ 2 + right.Y ^ 2)
+                if len > 0.1 then
+                    best, bestGap = { at = { X = at.X, Y = at.Y, Z = at.Z }, normal = { X = right.X / len, Y = right.Y / len } }, gap
+                end
             end
         end
-        return door ~= nil and (spot.X - door.X) * (at.X - door.X) + (spot.Y - door.Y) * (at.Y - door.Y) < 0
+        return best
+    end
+
+    -- Which side of that wall a spot is on: + or -, by the distance across it.
+    function game.fogSide(wall, spot)
+        return (spot.X - wall.at.X) * wall.normal.X + (spot.Y - wall.at.Y) * wall.normal.Y
+    end
+
+    -- Whether there's floor under a spot: the player is put there and swept straight down, all in this frame. Stopped by
+    -- something on the way, that's where they stand; through the whole drop, or not moved at all (in a wall), it's no place.
+    -- The game must never see them fall there: half a second in a void starts its fall death, which went on after they
+    -- were put back (a doorway at Zhengdaodaying, 3 m past it a drop; the player died where they had pressed).
+    FOG.PROBE_CM = 450
+    FOG.TRY_CM = { 300, 200, 450, 600, 120 }
+    function FOG.floorAt(pawn, spot)
+        pawn:K2_SetActorLocation(spot, false, {}, true)
+        pawn:K2_SetActorLocation({ X = spot.X, Y = spot.Y, Z = spot.Z - FOG.PROBE_CM }, true, {}, false)
+        local z = pawn:K2_GetActorLocation().Z
+        return z < spot.Z - 2 and z > spot.Z - FOG.PROBE_CM + 2
+    end
+
+    -- Through the wall to the side `toward` is on (the fight's side), a few metres past it, onto floor found first. Nil,
+    -- and the player left where they are, if there's none. It's walked, as a Souls wall is: the player walks into it, is
+    -- across the moment they reach it (or after WALK_S), and walks on a moment there. A drop in the next moments still
+    -- sends them back.
+    FOG.WALK_S = 0.7                -- longest walk up to the wall
+    FOG.ON_S = 0.4                  -- and on, past it
+    FOG.REACH_CM = 90               -- this close to the wall counts as reaching it
+    function game.passFog(pawn, wall, toward)
+        local from = pawn:K2_GetActorLocation()
+        local side = game.fogSide(wall, toward) >= 0 and 1 or -1
+        local spot = nil
+        pawn.CharacterMovement:SetMovementMode(5, 0)        -- (flying for the sweeps: nothing pulls them down meanwhile)
+        for _, cm in ipairs(FOG.TRY_CM) do
+            local try = {
+                X = wall.at.X + wall.normal.X * cm * side,
+                Y = wall.at.Y + wall.normal.Y * cm * side,
+                Z = math.max(wall.at.Z, from.Z) + 150,
+            }
+            if FOG.floorAt(pawn, try) then
+                spot = pawn:K2_GetActorLocation()
+                break
+            end
+        end
+        if not spot then
+            pawn:K2_SetActorLocation(from, false, {}, true)
+            pawn.CharacterMovement:SetMovementMode(1, 0)
+            log("No floor past the fog wall here: the player stays where they are.")
+            return nil
+        end
+        spot = { X = spot.X, Y = spot.Y, Z = spot.Z }
+        pawn:K2_SetActorLocation(from, false, {}, true)     -- (back for the walk up to it)
+        pawn.CharacterMovement:SetMovementMode(1, 0)
+        local into = { X = wall.normal.X * side, Y = wall.normal.Y * side, Z = 0 }
+        local started, acrossAt = os.clock(), nil
+        local function watch()
+            if not valid(pawn) or game.isDead(pawn) then
+                return
+            end
+            if pawn:K2_GetActorLocation().Z < spot.Z - FOG.FALL_CM then
+                log("No floor past the fog wall: back where the player pressed.")
+                pawn:K2_SetActorLocation({ X = from.X, Y = from.Y, Z = from.Z + 30 }, false, {}, true)
+                return
+            end
+            if os.clock() - acrossAt < FOG.WATCH_S then
+                game.after(0.1, watch)
+            end
+        end
+        local function walk()
+            if not valid(pawn) or game.isDead(pawn) then
+                return
+            end
+            local now = os.clock()
+            if not acrossAt then
+                local gap = math.abs(game.fogSide(wall, pawn:K2_GetActorLocation()))
+                if gap <= FOG.REACH_CM or now - started >= FOG.WALK_S then
+                    pawn:K2_SetActorLocation(spot, false, {}, true)
+                    acrossAt = now
+                    log(string.format("Through the fog wall: %.0f %.0f %.0f.", spot.X, spot.Y, spot.Z))
+                    game.after(0.1, watch)
+                end
+            elseif now - acrossAt >= FOG.ON_S then
+                return
+            end
+            pcall(function() pawn:AddMovementInput(into, 1.0, true) end)
+            game.after(0.02, walk)
+        end
+        walk()
+        return spot
     end
 
     -- fog: test helper, list fog walls with distance to player 1 and their state.

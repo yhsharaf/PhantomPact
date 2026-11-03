@@ -182,6 +182,9 @@ return function(api)
 
     -- F3, online. (Read on the game thread, like the panels' keys.)
     function partner.go()
+        if coop.joinFarFight() then
+            return
+        end
         if not partner.teleport then
             tip("join", "TP > PARTNER is off. Turn it on in MORE (F5).")
             return

@@ -40,7 +40,6 @@ return function(api)
     local puppets = { attacks = 0, played = 0, failed = 0, noCopy = 0 }
     local byAddr = {}             -- guest: actor address -> { actor, name, target, busyUntil }
     local hostSeen = {}           -- host: enemy name -> { addr, pos } of the montage last sent
-    local hostAnim = {}           -- host: actor address -> its AnimInstance
     local failedOnce = {}         -- guest: moves already logged as not replayed
 
     local function passive(name)
@@ -54,13 +53,11 @@ return function(api)
 
     -- Host, once a snapshot for every living enemy it shares.
     function puppets.watchHost(name, actor, addr)
-        local ai = hostAnim[addr]
-        if not valid(ai) then
-            ai = api.moves.animOf(actor)
-            if not ai then
-                return
-            end
-            hostAnim[addr] = ai
+        -- (Asked each time: kept by address, the list only grew, and a new enemy on a used address could be read through
+        -- the old one's animation while that lingered.)
+        local ai = api.moves.animOf(actor)
+        if not ai then
+            return
         end
         local m = ai:GetCurrentActiveMontage()
         local s = hostSeen[name]

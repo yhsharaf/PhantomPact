@@ -59,14 +59,13 @@ return function(api)
     local GHOST_BUSY_PULL = 0.1   -- share of the gap, per frame
     local GHOST_FAILED_LANDING_S = 3.0 -- back in the air this soon after landing: there's no floor here for it
     local GHOST_HOVER_S = 6.0     -- then it stays gliding this long (the partner's ground isn't loaded on this PC)
-    local BOSS_JOIN_CM = 5000     -- further than this from the other player's boss, you're brought to it: arenas are
+    local BOSS_JOIN_CM = 5000     -- further than this from the other player's boss, F3 takes you to it: some arenas are
     local BOSS_JOIN_SIDE_CM = 300 -- apart from the map (Xigu's is 20 km up, no way to walk there). This far from its spot
     local JOIN_NEAR_CM = 1500     -- going to the partner from closer than this does nothing
     local ARRIVE_HOLD_S = 3.0     -- kept in the air this long on arrival, while the ground there loads
     local ARRIVE_WATCH_S = 25.0   -- for this long, a player dropping through ground that isn't there yet is put back
     local ARRIVE_FALL_CM = 300    -- this far below the arrival point counts as dropping through
     local ARRIVE_SETTLE_S = 0.6   -- after the hold, this long to find the ground or start falling
-    local RESPAWN_CALM_S = 30.0   -- this long after a respawn, the partner's boss fight doesn't pull this player in
     local BOSS_RETURN_S = 8.0     -- after the boss dies, this long before following a partner who left the arena
     local BOSS_BAR_S = 1.0        -- during the other player's boss fight, how often its bar here is looked at
     local GHOST_AWAY_S = 3.0      -- a sequence or other map must last this long to hide the ghost (climbs, finishers)
@@ -158,7 +157,8 @@ return function(api)
 
     -- Who an event came from. No tag: the host, or with two players the partner.
     local function peerOf(from)
-        if from == nil then
+        -- (Number 1 is the host: on a guest that's net itself, not one more peer. A fight the host started goes by 1.)
+        if from == nil or (from == 1 and net.slot ~= 1) then
             return net
         end
         local p = net.peers[from]
@@ -674,7 +674,9 @@ return function(api)
         net.pendingBosses[name] = nil
         if net.joinedBoss == name then
             net.joinedBoss = nil
-            net.bossOverAt = os.clock() + BOSS_RETURN_S
+            if net.joinedFar then
+                net.bossOverAt = os.clock() + BOSS_RETURN_S     -- (an arena apart from the map has no way back)
+            end
         end
         if valid(actor) then
             at = at or actor:K2_GetActorLocation()
@@ -1825,12 +1827,13 @@ return function(api)
 
     handlers.I = function(rest)
         local name, itemId, kind = rest:match("^(%S+)%s*(%S*)%s*(%S*)")
-        if name and game.takeRemotePickup then
+        -- (Every way on gets the same limits: the item went to the backpack unchecked when this player was there.)
+        if name and game.takeRemotePickup and #name <= MAX_CHEST_NAME and #itemId <= MAX_ITEM_NAME and #kind <= 16 then
             local _, pawn = getPlayer1()
             kind = (kind ~= "" and kind ~= "-") and kind or nil
             if valid(pawn) or name:sub(1, 5) ~= "loot:" then
                 game.takeRemotePickup(name, itemId, pawn, kind)
-            elseif #itemId <= MAX_ITEM_NAME then
+            else
                 giftsWaiting[#giftsWaiting + 1] = { id = itemId, count = 1, kind = kind, loot = true }
             end
         end
@@ -1956,7 +1959,7 @@ return function(api)
         net.fightOf = {}
         net.notOnHost = {}
         net.bossAsk = {}
-        net.joinedBoss, net.joinedWith, net.pullAfterCalm = nil, nil, nil
+        net.joinedBoss, net.joinedWith, net.farFight = nil, nil, nil
         reopenFog()
         if game.resetBosses and not elsewhere then
             game.resetBosses()
@@ -1982,9 +1985,6 @@ return function(api)
 
     local function onLocalRest(kind)
         restEvent(kind)
-        if kind == "death" then
-            net.noPullUntil = os.clock() + RESPAWN_CALM_S
-        end
         if kind == "death" and net.role == "client" then
             log("You died and respawned: your world refreshed, the host's goes on. Enemies the host already killed stay dead.")
             local again = 0
@@ -1994,7 +1994,6 @@ return function(api)
             end
             for name in pairs(net.hostBosses) do
                 net.pendingBosses[name] = true
-                net.pullAfterCalm = { name = name, p = net.party and peerOf(net.fightOf[name]) or net }
             end
             reopenFog()
             if game.resetBosses then
@@ -2134,11 +2133,14 @@ return function(api)
         net.arrival = net.arrival or { spot = spot, untilClock = os.clock() + ARRIVE_WATCH_S }
     end
 
-    -- A boss fight on the other PC: the same boss here, and this player beside it. Anyone outside the fog would stand
-    -- at a closed wall with the fight on the other side.
+    -- A boss fight on the other PC: the same boss here, and walls closed around it. Nobody is brought in: a player who
+    -- wants to fight alone can, and the other joins by choice, E at the black wall, or F3 for an arena apart from the
+    -- map (see fogPress, joinFarFight).
     local function joinBossFight(name, p)
         local _, pawn = getPlayer1()
-        local at = game.spawnBoss and game.spawnBoss(name)
+        -- (Another guest's fight, on a guest: only the host's world can say the boss lives, so one this save has beaten
+        -- isn't brought back for it. The host tells everyone if it's beaten there.)
+        local at = game.spawnBoss and game.spawnBoss(name, not (isClient() and p ~= net))
         if not at and sameMap(p.target) then
             at = p.target
         end
@@ -2148,18 +2150,85 @@ return function(api)
         if not at or not valid(pawn) or game.isDead(pawn) or p.ghostHidden == nil then
             return
         end
-        -- Just respawned: the partner's fight goes on without being dragged back into it, which killed the player again.
-        -- It waits for the calm to end, not for good: the walls are closed behind the partner, and there's no walking in.
-        if os.clock() < (net.noPullUntil or 0) then
-            net.pullAfterCalm = { name = name, p = p }
+        if gap3d(pawn:K2_GetActorLocation(), at) > BOSS_JOIN_CM then
+            net.farFight = { name = name, p = p, at = { X = at.X, Y = at.Y, Z = at.Z } }
+            api.status.notify("join", "your partner is in a boss fight: F3 takes you there, if you want to join.")
+        else
+            net.farFight = nil
+            api.status.notify("join", "your partner is in a boss fight: press E at the black wall to join.")
+        end
+    end
+
+    -- F3 during a partner's fight in an arena apart from the map. True if it took this player there. (Not TP > PARTNER:
+    -- there's no other way in.)
+    local function joinFarFight()
+        local far = net.farFight
+        local _, pawn = getPlayer1()
+        if not (far and net.partnerBosses[far.name] and valid(pawn)) or game.isDead(pawn) then
+            return false
+        end
+        net.farFight = nil
+        log("Joining the other player's boss fight, in an arena apart from the map.")
+        net.joinedBoss, net.joinedWith, net.joinedFar = far.name, far.p, true
+        net.arrival = nil
+        arriveAt(pawn, far.at)
+        return true
+    end
+
+    do      -- (a block of its own: this function is at the 200 locals Lua allows)
+    local FOG_PRESS_CM = 1000     -- how close to a closed fog wall E takes you through it, into the partner's fight
+
+    -- Whether a boss fight here is this player's own (its walls keep them in), not one mirrored from a partner.
+    local function ownBossFight()
+        for _, actor in ipairs(game.bossActors and game.bossActors() or {}) do
+            local mirrored = false
+            for name in pairs(net.partnerBosses) do
+                mirrored = mirrored or enemyByName[name] == actor
+            end
+            if not mirrored then
+                return true
+            end
+        end
+        return false
+    end
+
+    -- E (or the pad's interact) at a closed fog wall, during a partner's boss fight on this map, with that partner on the
+    -- far side: through it. Never out of a fight: the walls are there to keep its players in.
+    local function fogPress()
+        local controller, pawn = getPlayer1()
+        local down = net.partnerFighting and next(net.partnerBosses) ~= nil and valid(pawn)
+            and (controller:IsInputKeyDown({ KeyName = FName("E") })
+                or controller:IsInputKeyDown({ KeyName = FName("Gamepad_FaceButton_Right") }))
+        local pressed = down and not net.fogKeyDown
+        net.fogKeyDown = down
+        if not pressed or game.isDead(pawn) or net.joinedBoss or ownBossFight() or not game.closedFogNear then
             return
         end
         local here = pawn:K2_GetActorLocation()
-        if gap3d(here, at) > BOSS_JOIN_CM or (game.outsideFog and game.outsideFog(here, at)) then
-            log("Joining the other player's boss fight.")
-            net.joinedBoss, net.joinedWith = name, p
-            arriveAt(pawn, at)
+        local wall = game.closedFogNear(here, FOG_PRESS_CM)
+        if not wall then
+            return
         end
+        for name in pairs(net.partnerBosses) do
+            local p = net.party and peerOf(net.fightOf[name]) or net
+            local inside = (sameMap(p.target) and p.target) or (valid(enemyByName[name]) and enemyByName[name]:K2_GetActorLocation())
+            if inside and (game.fogSide(wall, here) >= 0) ~= (game.fogSide(wall, inside) >= 0) then
+                if game.passFog(pawn, wall, inside) then
+                    log("Through the fog wall, into the other player's boss fight.")
+                    net.joinedBoss, net.joinedWith, net.joinedFar = name, p, false
+                else
+                    api.status.notify("join", "no ground past the wall here: try another part of it.")
+                end
+                return
+            end
+        end
+    end
+    extraTicksEarly.fogPress = function()
+        local ok, err = pcall(fogPress)
+        if not ok then
+            log("Fog wall key error: " .. tostring(err))
+        end
+    end
     end
 
     -- With more than two players, who F3 goes to: the nearest on this map who's up. If nobody is, a guest goes to the host
@@ -2225,7 +2294,7 @@ return function(api)
     end
 
     local function watchArrival()
-        if not (net.arriveUntil or net.arrival or net.bossOverAt or net.pullAfterCalm) then
+        if not (net.arriveUntil or net.arrival or net.bossOverAt) then
             return
         end
         local _, pawn = getPlayer1()
@@ -2250,14 +2319,6 @@ return function(api)
             elseif not net.arriveUntil and os.clock() >= (net.landedCheckAt or 0)
                 and pawn.CharacterMovement.MovementMode == MOVE_WALKING then
                 net.arrival = nil       -- on the ground: from here a drop is a slope or a ledge, and the player's own
-            end
-        end
-        -- Over a respawn, with the fight still on: into it.
-        local pull = net.pullAfterCalm
-        if pull and os.clock() >= (net.noPullUntil or 0) then
-            net.pullAfterCalm = nil
-            if net.partnerFighting and (net.partnerBosses[pull.name] or net.hostBosses[pull.name]) then
-                joinBossFight(pull.name, pull.p)
             end
         end
         -- The boss is dead and the partner has gone back to the map: don't leave this player stranded in the arena.
@@ -2298,7 +2359,7 @@ return function(api)
 
     handlers.B = function(name, from)
         if isHost() and game.isBeaten and game.isBeaten(name) then
-            tellBeaten(name, from)
+            tellBeaten(name, nil)       -- (to everyone: the relay gave the other guests this fight too)
             return
         end
         log("The other player started a boss fight with " .. name .. ".")
@@ -2425,6 +2486,7 @@ return function(api)
                 slow.map = name
                 net.localMap = link.map(name)
                 reach.list, reach.at, reach.near = {}, 1, {}
+                net.matchSticky = {}    -- (the old map's addresses are free for new enemies: a late K must not find them)
                 if game.forgetActors then
                     game.forgetActors()
                 end
@@ -2603,7 +2665,7 @@ return function(api)
         net.fightOf = {}
         net.notOnHost = {}
         net.bossAsk = {}
-        net.joinedBoss, net.joinedWith, net.pullAfterCalm, net.bossOverAt = nil, nil, nil, nil
+        net.joinedBoss, net.joinedWith, net.farFight, net.bossOverAt = nil, nil, nil, nil
         net.healTicks = {}
         net.hostSeen = {}
         net.partnerDowned = false
@@ -2886,6 +2948,7 @@ return function(api)
     -- Someone new in a party: a fight that's on is news to them now, not at the next telling.
     handlers.J = function()
         net.fightToldAt = 0
+        net.lookSent = nil      -- (and what this player wears: it waited up to 30 s for the next telling)
     end
 
     handlers.F = function(on, from)
@@ -3118,6 +3181,7 @@ return function(api)
         extraTicks = extraTicks,
         frameTicks = frameTicks,
         joinPartner = joinPartner,
+        joinFarFight = joinFarFight,
         watchFight = function(on)
             watchFight(on)
         end,

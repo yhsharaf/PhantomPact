@@ -1359,7 +1359,10 @@ local function fightsAndWhoIsLeft()
     s:run(2)
     g.hudLayout:RegisterBossHPBar(Session.enemyOn(g, "boss"))
     s:run(2)
-    check(gap(at(h.pawn), at(g.pawn)) < 1000, "a host far off is brought into a guest's fight")
+    check(gap(at(h.pawn), at(g.pawn)) > 20000, "a host far off isn't brought into a guest's fight: one player can fight alone")
+    h.env.PBZ.coop.joinFarFight()
+    s:run(2)
+    check(gap(at(h.pawn), at(g.pawn)) < 1000, "F3 takes them in, the arena being apart from where they are")
     Session.moveTo(g, 30000, 3000)
     s:run(1)
     local boss = Session.enemyOn(h, "boss")
@@ -1379,8 +1382,57 @@ local function fightsAndWhoIsLeft()
     c:run(5)
     check(gap(at(ch.pawn), at(cg.pawn)) > 20000, "just respawned, the host isn't dragged into a guest's fight")
     c:run(28)
-    check(gap(at(ch.pawn), at(cg.pawn)) < 1000, "over it, with the walls closed and the fight still on, it is")
+    check(gap(at(ch.pawn), at(cg.pawn)) > 20000, "nor later: nobody is brought in")
     allErrors(c)
+
+    -- The black wall: E beside it, from outside, goes through; from inside it does nothing.
+    local w, wh, wg = pair()
+    local hostWall, guestWall = Fake.fogWall(wh, 2000, 0, 2000, 6000, 100), Fake.fogWall(wg, 2000, 0, 2000, 6000, 100)
+    Session.moveTo(wg, 3000, 2900)
+    Session.moveTo(wh, 1500, 3000)
+    w:run(1)
+    wg.hudLayout:RegisterBossHPBar(Session.enemyOn(wg, "boss"))
+    guestWall["Close By Mob Script"](guestWall)
+    w:run(3)
+    check(rawget(hostWall, "__fields").closed, "the guest's fight closes the host's copy of the wall")
+    check(at(wh.pawn).X < 2000, "the host is left outside it")
+    wh.keys.E = true
+    w:run(0.2)
+    wh.keys.E = false
+    w:run(1)
+    local inside = at(wh.pawn)
+    check(inside.X > 2000 and inside.X < 2600 and math.abs(inside.Y - 3000) < 50, "E at the wall: through it, a few metres in")
+    wh.keys.E = true
+    w:run(0.2)
+    wh.keys.E = false
+    w:run(1)
+    check(at(wh.pawn).X > 2000, "and E again doesn't let them out")
+    Session.moveTo(wg, 2300, 4000)
+    wg.keys.E = true
+    w:run(0.2)
+    wg.keys.E = false
+    w:run(1)
+    check(at(wg.pawn).X > 2000, "nor the one whose fight it is")
+    allErrors(w)
+
+    -- No floor past the wall: E leaves the player where they are, never over the drop.
+    local v, vh, vg = pair()
+    Fake.fogWall(vh, 2000, 0, 2000, 6000, 100)
+    Fake.fogWall(vg, 2000, 0, 2000, 6000, 100)
+    vh.noFloor = function(l) return l.X > 2000 end
+    Session.moveTo(vg, 3000, 2900)
+    Session.moveTo(vh, 1500, 3000)
+    v:run(1)
+    vg.hudLayout:RegisterBossHPBar(Session.enemyOn(vg, "boss"))
+    v:run(3)
+    vh.keys.E = true
+    v:run(0.2)
+    vh.keys.E = false
+    v:run(1)
+    local stayed = at(vh.pawn)
+    check(stayed.X < 2000 and math.abs(stayed.Z - 100) < 50, "no floor past it: E leaves them where they stood")
+    check(count(vh.logs, "No floor past the fog wall") == 1, "and says why")
+    allErrors(v)
 
     local e, eh, eg = pair()
     Session.respawned(eh)
@@ -2646,6 +2698,43 @@ local function fogAfterLeaving()
     s:run(14)
     check(next(net(b).foggedBosses) == nil and next(net(s.pcs[4]).foggedBosses) == nil, "the one fighting leaves: the walls open, whoever else's bar is up")
     allErrors(s)
+
+    -- A boss the host has beaten, fought by one guest: every guest hears so, and another whose save has it beaten too
+    -- doesn't bring it back for that fight.
+    local t = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest", "Guest" }, true, ENEMIES)
+    local th, ta, tb = t.pcs[1], t.pcs[2], t.pcs[3]
+    Fake.put(th.spawners[Session.indexOf(th, "boss")], "record", false)
+    table.remove(th.enemies, Session.indexOf(th, "boss"))      -- (beaten there: gone)
+    Session.moveTo(th, 30000, 3000)                             -- (far off: nobody asks after it before the fight)
+    Fake.put(tb.spawners[Session.indexOf(tb, "boss")], "record", false)
+    local hers = Session.enemyOn(tb, "boss")
+    Fake.setHealth(hers, 0)
+    Fake.put(hers, "dead", true)
+    t:run(5)
+    ta.hudLayout:RegisterBossHPBar(Session.enemyOn(ta, "boss"))
+    t:run(3)
+    check(count(tb.logs, "is back for their fight") == 0, "another guest's save that has it beaten keeps it so")
+    check(count(tb.logs, "The host has beaten") >= 1 and count(t.pcs[4].logs, "The host has beaten") >= 1,
+        "and every guest hears the host has beaten it, not just the one fighting")
+    allErrors(t)
+
+    -- The host's own fight, on a guest: the host is that guest's partner already, not one more.
+    local u = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest" }, true, ENEMIES)
+    local uh, ug = u.pcs[1], u.pcs[2]
+    Fake.fogWall(ug, 2000, 0, 2000, 6000, 100)
+    Session.moveTo(uh, 3000, 2900)
+    Session.moveTo(ug, 1500, 3000)
+    u:run(5)
+    local before = #net(ug).peerList
+    uh.hudLayout:RegisterBossHPBar(Session.enemyOn(uh, "boss"))
+    u:run(3)
+    ug.keys.E = true
+    u:run(0.2)
+    ug.keys.E = false
+    u:run(1)
+    check(at(ug.pawn).X > 2000, "a guest goes through the wall into the host's fight")
+    check(#net(u.pcs[2]).peerList == before, "the host's fight adds no one to a guest's players (" .. before .. " -> " .. #net(u.pcs[2]).peerList .. ")")
+    allErrors(u)
 end
 
 local function devUnits()

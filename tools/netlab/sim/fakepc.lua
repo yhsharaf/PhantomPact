@@ -218,8 +218,14 @@ function Fake.character(pc, class, x, y, z, hp, posture)
             return { X = l.X, Y = l.Y, Z = l.Z }
         end,
         K2_GetActorRotation = function(self) return { Pitch = 0.0, Yaw = rawget(self, "__fields").yaw, Roll = 0.0 } end,
-        K2_SetActorLocation = function(self, l)
-            put(self, "loc", { X = l.X, Y = l.Y, Z = l.Z })
+        -- (Swept, it stops on the floor: flat at 100 everywhere, unless pc.noFloor says there's none at a spot.)
+        K2_SetActorLocation = function(self, l, sweep)
+            local z = l.Z
+            local from = rawget(self, "__fields").loc
+            if sweep and from and z < from.Z and not (pc.noFloor and pc.noFloor(l)) then
+                z = math.max(z, math.min(from.Z, 100.0))
+            end
+            put(self, "loc", { X = l.X, Y = l.Y, Z = z })
             return true
         end,
         K2_SetActorLocationAndRotation = function(self, l, r)
@@ -306,6 +312,31 @@ function Fake.stone(pc, id, x, y, z)
     pc.stones = pc.stones or {}
     pc.stones[#pc.stones + 1] = s
     return s
+end
+
+-- A boss arena's fog wall: a straight spline from (x1, y1) to (x2, y2) laid at z, open until closed. Its meshes block
+-- (collision 3) only while it's closed, as the game's do.
+function Fake.fogWall(pc, x1, y1, x2, y2, z)
+    local dx, dy = x2 - x1, y2 - y1
+    local len = math.sqrt(dx * dx + dy * dy)
+    local spline = object(pc, "SplineComponent")
+    defs(pc, spline, {
+        FindLocationClosestToWorldLocation = function(_, at)
+            local t = math.max(0, math.min(1, ((at.X - x1) * dx + (at.Y - y1) * dy) / (len * len)))
+            return { X = x1 + dx * t, Y = y1 + dy * t, Z = z }
+        end,
+        FindRightVectorClosestToWorldLocation = function() return { X = -dy / len, Y = dx / len, Z = 0 } end,
+    })
+    local wall = object(pc, "BP_FogDoor_C", { Spline = spline, closed = false })
+    local mesh = object(pc, "SplineMeshComponent")
+    defs(pc, mesh, { GetCollisionEnabled = function() return rawget(wall, "__fields").closed and 3 or 0 end })
+    defs(pc, wall, { K2_GetActorLocation = function() return { X = x1, Y = y1, Z = z } end,
+        K2_GetComponentsByClass = function() return { { get = function() return mesh end } } end,
+        ["Close By Mob Script"] = function(self) put(self, "closed", true) end,
+        OpenByMobScript = function(self) put(self, "closed", false) end })
+    pc.fogWalls = pc.fogWalls or {}
+    pc.fogWalls[#pc.fogWalls + 1] = wall
+    return wall
 end
 
 -- An ability of an actor running or not, as the game's list of them has it.
@@ -1455,6 +1486,8 @@ function Fake.new(id, scripts, ini, link)
             return pc.chests
         elseif class == "BP_KickStone_C" then
             return pc.stones or {}
+        elseif class == "BP_FogDoor_C" then
+            return pc.fogWalls or {}
         elseif class == "WB_MapNew_C" then
             return { mapScreen }
         elseif class == "PBZInteractComponent" then

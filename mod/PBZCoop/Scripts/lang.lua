@@ -47,6 +47,9 @@ return function()
         -- revive
         ["you're down: you'll be back when the fight is over."] = "你倒下了:战斗结束后才会复活。",
         ["your partner is in a boss fight: you'll join them when it's over."] = "队友正在首领战中:战斗结束后你会前往队友身边。",
+        ["your partner is in a boss fight: press E at the black wall to join."] = "队友正在首领战中:在黑色雾墙前按 E 即可加入。",
+        ["your partner is in a boss fight: F3 takes you there, if you want to join."] = "队友正在首领战中:想加入的话按 F3 传送过去。",
+        ["no ground past the wall here: try another part of it."] = "这里的雾墙后面没有落脚处:换一段墙试试。",
         ["You're back on your feet."] = "你重新站起来了。",
         ["You're down: your partner can strike you to bring you back."] = "你倒下了:队友攻击你就能把你救起。",
         ["Your partner is down: strike them to bring them back."] = "队友倒下了:攻击队友就能把对方救起。",

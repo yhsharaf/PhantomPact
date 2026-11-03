@@ -817,112 +817,50 @@ return function(api)
         pcall(function() pawn.NBCamera:SetAdditiveSocketOffset({ X = 0, Y = -SHOULDER_CM, Z = 0 }, CENTRE_SPEED) end)
     end
 
-    local function nearFog(pawn)
-        local here = pawn:K2_GetActorLocation()
-        for _, door in ipairs(FindAllOf("BP_FogDoor_C") or {}) do
-            local ok, at = pcall(function() return door:K2_GetActorLocation() end)
-            if ok and at.X and distance(at, here) <= FOG_CM then
-                return true
-            end
-        end
-        return false
-    end
-
     local function interactPressed(controller)
         return controller:IsInputKeyDown({ KeyName = FName("Gamepad_FaceButton_Right") })
             or controller:IsInputKeyDown({ KeyName = FName("E") })
     end
 
-    -- A boss's fog wall, Souls style: whoever is left outside walks up to it and presses interact to join the fight. The
-    -- walls aren't interactive objects, and only player 1 can use those anyway, so this is the mod's own. Tip from tick.
+    -- A fight's fog wall, Souls style: whoever is left outside walks up to it and presses interact (E, or Circle) to go
+    -- through, a few metres in on the other side. Only into a fight, from the side away from the other player: the walls
+    -- keep a fight's players in. Nobody is brought in otherwise, so one player can fight alone. The walls aren't
+    -- interactive objects, and only player 1 can use those anyway, so this is the mod's own. Tip from tick.
     local function followFog(p1)
         local c1, c2, p2 = getPlayer1(), state.p2Controller, state.p2Pawn
-        if paused or not (game.bossFightActive() and valid(c2) and valid(p2)) then
+        if paused or not (valid(c2) and valid(p2)) then
             return
         end
         for n, who in ipairs({ { p1, p2, c1 }, { p2, p1, c2 } }) do
             local pawn, other, controller = who[1], who[2], who[3]
             local pressed = interactPressed(controller)
-            if pressed and not fogHeld[n] and not game.isDead(pawn) and not game.isDead(other)
-                and distance(pawn:K2_GetActorLocation(), other:K2_GetActorLocation()) > FOG_APART_CM and nearFog(pawn) then
-                log(string.format("Player %d went through the fog.", n))
-                moveBeside(pawn, other)
+            if pressed and not fogHeld[n] and not game.isDead(pawn) and not game.isDead(other) then
+                local here, there = pawn:K2_GetActorLocation(), other:K2_GetActorLocation()
+                local wall = distance(here, there) > FOG_APART_CM and game.closedFogNear(here, FOG_CM)
+                if wall and (game.fogSide(wall, here) >= 0) ~= (game.fogSide(wall, there) >= 0) then
+                    if game.passFog(pawn, wall, there) then
+                        log(string.format("Player %d went through the fog.", n))
+                    else
+                        api.status.notify("localcoop", "no ground past the wall here: try another part of it.")
+                    end
+                end
             end
             fogHeld[n] = pressed
         end
     end
 
     local function fogTip(p1, p2)
-        if not (game.bossFightActive() and valid(p2)) then
+        if os.clock() < (V.fogTipLookAt or 0) then
+            return
+        end
+        V.fogTipLookAt = os.clock() + 0.5       -- (every wall of the level is looked at)
+        if not valid(p2) or distance(p1:K2_GetActorLocation(), p2:K2_GetActorLocation()) <= FOG_APART_CM then
             fogTipped = false
             return
         end
-        local apart = distance(p1:K2_GetActorLocation(), p2:K2_GetActorLocation()) > FOG_APART_CM
-        if apart and not fogTipped and (nearFog(p1) or nearFog(p2)) then
+        if not fogTipped and (game.closedFogNear(p1:K2_GetActorLocation(), FOG_CM) or game.closedFogNear(p2:K2_GetActorLocation(), FOG_CM)) then
             fogTipped = true
-            api.status.notify("localcoop", "press interact at the fog, or wait there a moment, to join the fight.")
-        end
-    end
-
-    -- A fight's fog walls close around whoever started it. Player 2, left outside, walks up to the fog and is set
-    -- down beside player 1 after a few seconds there without getting any closer (the interact button does it at
-    -- once, see followFog). The walls themselves are the game's: what blocks at the fog line is level collision,
-    -- not something the mod can open for one player. Fights are a boss, or a fight area player 1 is listed in with
-    -- enemies still up.
-    V.FOG_JOIN_CM = 1500        -- how close to a fog wall player 2 has to stand
-    V.FOG_JOIN_S = 4.0          -- for how long, without coming closer to player 1
-    V.fogWait = nil             -- { since, apart } while player 2 stands at the fog
-    V.fogJoinedAt = 0
-    local function p1InFight(p1, p2)
-        if game.bossFightActive() then
-            return true
-        end
-        local here = p1:K2_GetActorLocation()
-        for _, d in ipairs(FindAllOf("BP_MobDomain_C") or {}) do
-            local ok, at = pcall(function() return d:K2_GetActorLocation() end)
-            if ok and at.X and distance(at, here) <= 8000 then
-                local listed, nearest = domainMembers(d, p1, p2)      -- player 2 is no enemy of player 1
-                if listed > 0 and nearest ~= nil then
-                    return true
-                end
-            end
-        end
-        return false
-    end
-    local function joinThroughFog(p1, p2)
-        if os.clock() < (V.nextFogJoin or 0) then
-            return
-        end
-        V.nextFogJoin = os.clock() + 0.5
-        local waiting = false
-        local apart = 0
-        if valid(p2) and not game.isDead(p2) and not p2DownSince and not inScene then
-            apart = distance(p1:K2_GetActorLocation(), p2:K2_GetActorLocation())
-            if apart > FOG_APART_CM and p1InFight(p1, p2) then
-                local at2 = p2:K2_GetActorLocation()
-                for _, door in ipairs(FindAllOf("BP_FogDoor_C") or {}) do
-                    local ok, at = pcall(function() return door:K2_GetActorLocation() end)
-                    if ok and at.X and distance(at, at2) <= V.FOG_JOIN_CM then
-                        waiting = true
-                        break
-                    end
-                end
-            end
-        end
-        if not waiting then
-            V.fogWait = nil
-            return
-        end
-        local w = V.fogWait
-        if not w or apart < w.apart - 150 then
-            V.fogWait = { since = os.clock(), apart = apart }      -- new, or still getting closer on its own
-            return
-        end
-        if os.clock() - w.since >= V.FOG_JOIN_S and os.clock() - V.fogJoinedAt > 10.0 then
-            V.fogJoinedAt = os.clock()
-            V.fogWait = nil
-            log("Player 2 joins the fight through the fog.")
-            moveBeside(p2, p1)
+            api.status.notify("localcoop", "press E or Circle at the black wall to join the fight.")
         end
     end
 
@@ -1455,6 +1393,7 @@ return function(api)
             end
         end
     end
+    V.WALK_IN_CM = 15000        -- a fight this close is one player 2 can walk to (an arena apart from the map isn't)
     local function followScene(pc)
         local p2 = state.p2Pawn
         local playing = game.inCutscene()
@@ -1467,10 +1406,13 @@ return function(api)
             end
             holdForScene(out)
             log(playing and "Scene: full screen." or "Scene over: split screen.")
-            -- A scene can move player 1 somewhere new, as the story goes on: player 2 goes along.
+            -- A scene can move player 1 somewhere new, as the story goes on: player 2 goes along. Not a boss's opening
+            -- scene with player 2 still in walking reach: they come in through the wall if they want to.
             local _, p1 = getPlayer1()
-            if not out and valid(p1) and valid(p2)
-                and distance(p1:K2_GetActorLocation(), p2:K2_GetActorLocation()) > SCENE_REGROUP_CM then
+            local apart = valid(p1) and valid(p2) and distance(p1:K2_GetActorLocation(), p2:K2_GetActorLocation()) or 0
+            local fightNear = apart <= V.WALK_IN_CM
+                and (game.bossFightActive() or game.closedFogNear(p1:K2_GetActorLocation(), V.WALK_IN_CM))
+            if not out and apart > SCENE_REGROUP_CM and not fightNear then
                 moveBeside(p2, p1)
             end
         end
@@ -3037,9 +2979,6 @@ return function(api)
                 local _, p1 = getPlayer1()
                 if valid(p1) then
                     followFog(p1)
-                    if not paused and valid(state.p2Pawn) then
-                        joinThroughFog(p1, state.p2Pawn)
-                    end
                 end
             end)
             if not ok then

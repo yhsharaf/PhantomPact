@@ -43,6 +43,24 @@ return function(api)
         end)
     end
 
+    -- Whether this is the actor scaled at that address: same name, and still the most health it was given. A placed enemy
+    -- coming back (a rest, streaming in again) is a new actor with the old name, often on the old address, at base health:
+    -- by name alone it was taken for done and fought at 100%.
+    local scaledMax = {}            -- enemy address -> the Health_Max it was scaled to
+    local function maxOf(e)
+        local ok, v = pcall(function() return e.AttributeSetBase.Health_Max.CurrentValue end)
+        return ok and v or nil
+    end
+    -- (The host's only: a guest's copies take the host's Health_Max, which isn't theirs to judge by. And only a body below
+    -- what it was given: one the game raises itself is still the one scaled.)
+    local function same(e, addr, name)
+        if scaled[addr] ~= name then
+            return false
+        end
+        local was, now = scaledMax[addr], api.coop.isHost() and maxOf(e)
+        return not (was and now and now < was * 0.99)
+    end
+
     local function forPlayers(base, players)
         return base + (base - 1) * (players - 2)
     end
@@ -59,7 +77,7 @@ return function(api)
 
     -- More than two players: true if this took a scaling, which is what a tick may spend.
     local function scaleForParty(e, addr, name, players)
-        local before = scaled[addr] == name and (scaledFor[addr] or 2) or nil
+        local before = same(e, addr, name) and (scaledFor[addr] or 2) or nil
         if before and (before >= players or not api.coop.isHost() or (game.bossFightActive() and game.isBoss(e, addr))) then
             return false
         end
@@ -74,6 +92,7 @@ return function(api)
         end
         scaleAttr(set, "Health", "Health_Max", health)
         scaleAttr(set, "Shachi", "Shachi_Max", posture)
+        scaledMax[addr] = maxOf(e)
         return true
     end
 
@@ -137,12 +156,13 @@ return function(api)
                     n = n + 1
                     return
                 end
-            elseif name and scaled[addr] ~= name then
-                scaled[addr] = name       -- (or it's dead, and nothing brings it back as the same actor)
+            elseif name and not same(e, addr, name) then
+                scaled[addr], scaledMax[addr] = name, nil       -- (or it's dead, and nothing brings it back as the same actor)
                 if not game.isDead(e) then
                     local set = e.AttributeSetBase
                     scaleAttr(set, "Health", "Health_Max", scaling.health)
                     scaleAttr(set, "Shachi", "Shachi_Max", scaling.posture)
+                    scaledMax[addr] = maxOf(e)
                     n = n + 1
                     return
                 end
