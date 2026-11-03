@@ -372,8 +372,21 @@ function Fake.enemy(pc, id, class, x, y, z, hp, posture, boss)
         end,
         GetCombatLootDataBySelf = function(self, _, data) data.LootDust = f.dustLoot end,
     })
-    local spawner = object(pc, "AISpawner", { SpawnerID = name(id), SpawnedAI = e })
-    defs(pc, spawner, { K2_GetActorLocation = function() return { X = x, Y = y, Z = z } end, ClaimSeqSpawn = false })
+    -- (As the game's blueprint spawner: a boss's never brings it back, and Save writes ShouldSpawn into the world's list.)
+    local spawner = object(pc, "AISpawner", { SpawnerID = name(id), SpawnedAI = e, ShouldSpawn = true, SetShouldNotSpawnAfterDead = boss == true })
+    defs(pc, spawner, {
+        K2_GetActorLocation = function() return { X = x, Y = y, Z = z } end,
+        ClaimSeqSpawn = function(self) put(self, "claimed", (rawget(self, "__fields").claimed or 0) + 1) end,
+        IsA = function() return true end,
+        Save = function(self) put(self, "record", rawget(self, "__fields").ShouldSpawn) end,
+        IsShouldToSpawn = function(self)
+            local r = rawget(self, "__fields").record
+            if r == nil then
+                return true
+            end
+            return r
+        end,
+    })
     pc.spawners[#pc.spawners + 1] = spawner
     pc.enemies[#pc.enemies + 1] = e
     return e

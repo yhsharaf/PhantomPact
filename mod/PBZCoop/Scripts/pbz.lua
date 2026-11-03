@@ -386,6 +386,58 @@ return function(api)
         end
     end
 
+    -- A boss is beaten in a world when its spawner says so: one that never brings its enemy back turns ShouldSpawn off as the
+    -- enemy dies and saves that in the world's list of spawners, which goes into the save and which IsShouldToSpawn reads back.
+    -- The game starts that from a mark on the dying body, and a copy killed for the partner's kill dies without it: the boss
+    -- was beaten in one save only, and after a load one player had it back and fought it alone.
+    local SPAWNER_BP = "/SGameAI/Tools/Spawner/BP_AISpawner.BP_AISpawner_C"
+    local function spawnerOf(enemyId)
+        local id = enemyId and enemyId:match("^sp:(.+)$")
+        for _, s in ipairs(id and FindAllOf("AISpawner") or {}) do
+            local sid = nil
+            pcall(function() sid = s.SpawnerID:ToString() end)
+            -- (A spawner with no designer id goes by its level name: see readSpawner.)
+            if valid(s) and (sid == id or (sid == "None" and s:GetFName():ToString() == id)) then
+                return s
+            end
+        end
+        return nil
+    end
+
+    -- The game's own step for a spawner whose enemy has died: what it does is up to the spawner. (Its flags are its blueprint's,
+    -- so only asked of one: UE4SS answers a property by name from whatever class has it.)
+    function game.markBeaten(enemyId)
+        local s = spawnerOf(enemyId)
+        local ok, once = pcall(function()
+            return s:IsA(StaticFindObject(SPAWNER_BP)) and s.SetShouldNotSpawnAfterDead == true
+        end)
+        if not (ok and once) then
+            return false
+        end
+        local beaten = game.isBeaten(enemyId)
+        local saved = pcall(function()
+            s.ShouldSpawn = false
+            s:Save()
+        end)
+        if saved and beaten == false then
+            log("Beaten in this world too: " .. enemyId .. ".")
+        end
+        return saved
+    end
+
+    -- True when this world has the boss beaten, false when it hasn't, nil when its spawner isn't loaded here.
+    function game.isBeaten(enemyId)
+        local s = spawnerOf(enemyId)
+        if not s then
+            return nil
+        end
+        local ok, should = pcall(function() return s:IsShouldToSpawn() end)
+        if not ok or type(should) ~= "boolean" then
+            return nil
+        end
+        return not should
+    end
+
     -- The other player's boss, on this PC too: a boss only spawns on the PC whose player started the fight. Returns
     -- its spawner's location, or nil for an enemy that doesn't come from a named spawner.
     function game.spawnBoss(enemyId)
@@ -398,6 +450,16 @@ return function(api)
                 local at = s:K2_GetActorLocation()
                 local alive = false
                 pcall(function() alive = valid(s.SpawnedAI) and not game.isDead(s.SpawnedAI) end)
+                if not alive and game.isBeaten(enemyId) then
+                    -- Beaten here and not in the partner's world, whose fight it is: back for it, or they'd fight it unseen.
+                    pcall(function()
+                        s.ShouldSpawn = true
+                        if s:IsA(StaticFindObject(SPAWNER_BP)) then
+                            s:Save()
+                        end
+                    end)
+                    log("Beaten here but not in the other player's world: " .. enemyId .. " is back for their fight.")
+                end
                 if not alive then
                     local ok, err = pcall(function() s:ClaimSeqSpawn(false, true, true) end)
                     if not ok then

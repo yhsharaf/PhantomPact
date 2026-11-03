@@ -752,6 +752,9 @@ return function(api)
                 net.deadSent[name] = true
                 sendEvent("K", name)
                 log("Enemy died here: " .. name .. "; telling the other player.")
+                if game.markBeaten then
+                    game.markBeaten(name)
+                end
                 local boss = net.partnerBosses[name] or net.pendingBosses[name] or (game.isBoss and game.isBoss(actor))
                 if boss and not paidThere and game.rollLoot then
                     -- The game paid the host. A boss's items are the client's too.
@@ -980,6 +983,9 @@ return function(api)
             if game.kill and not net.remoteEnemies[name] and not (game.isDead and game.isDead(actor)) then
                 game.kill(actor)
                 log("Host said " .. name .. " died earlier; killed it here now that it's loaded.")
+            end
+            if game.markBeaten then
+                game.markBeaten(name)
             end
         elseif not (game.isDead and game.isDead(actor)) then
             if net.pendingBosses[name] then
@@ -1272,6 +1278,9 @@ return function(api)
                 -- Not loaded (or not matched) here right now: kill it when it shows up (applyRemoteEnemies).
                 net.pendingDeaths[name] = true
                 log("Host says " .. name .. " died; not matched here yet, will kill it when it is.")
+            end
+            if game.markBeaten then
+                game.markBeaten(name)
             end
             if wasBoss then
                 endBossFight(name, actor)
@@ -1568,6 +1577,17 @@ return function(api)
         end
     end
 
+    -- The host's world is everyone's truth, and a boss beaten there is beaten: a guest whose save still has it (a save from
+    -- before, or one 1.5.1 didn't write the kill into) fought it alone behind its walls, and the host saw them swing at nothing.
+    local function tellBeaten(name, from)
+        if from then
+            sendTo(from, "BEATEN", name)
+        else
+            sendEvent("BEATEN", name)
+        end
+        log("The other player's " .. name .. " is beaten here: telling them.")
+    end
+
     -- A guest asks after an enemy of its own. Anything loaded here counts, however far from this player: only "no" is sent.
     handlers.HAS = function(name, from)
         if not isHost() then
@@ -1579,7 +1599,9 @@ return function(api)
                 return
             end
         end
-        if from then
+        if game.isBeaten and game.isBeaten(name) then
+            tellBeaten(name, from)
+        elseif from then
             sendTo(from, "NOT", name)
         else
             sendEvent("NOT", name)
@@ -1761,8 +1783,27 @@ return function(api)
         end
     end
 
+    handlers.BEATEN = function(name)
+        if not isClient() or type(name) ~= "string" or #name > MAX_ITEM_NAME then
+            return
+        end
+        log("The host has beaten " .. name .. ": beaten here too.")
+        net.hostBosses[name] = true        -- (so that the kill below ends the fight here: bar down, walls open)
+        handlers.K(name)
+    end
+
     handlers.B = function(name, from)
+        if isHost() and game.isBeaten and game.isBeaten(name) then
+            tellBeaten(name, from)
+            return
+        end
         log("The other player started a boss fight with " .. name .. ".")
+        if net.role == "client" then
+            -- The host has it alive and is fighting it, whatever this session last heard (their world loaded again, say): a copy
+            -- brought back for the fight would be killed on sight as the host's old kill.
+            net.hostKilled[name] = nil
+            net.pendingDeaths[name] = nil
+        end
         net.partnerBosses[name] = true
         if net.party then
             net.fightOf[name] = from or 1
@@ -1798,6 +1839,9 @@ return function(api)
                 if valid(actor) then
                     game.kill(actor)
                     game.hideBossBar(actor)
+                end
+                if game.markBeaten then
+                    game.markBeaten(name)
                 end
             end)
             return
