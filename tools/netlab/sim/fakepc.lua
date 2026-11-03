@@ -218,6 +218,7 @@ function Fake.character(pc, class, x, y, z, hp, posture)
             return { X = l.X, Y = l.Y, Z = l.Z }
         end,
         K2_GetActorRotation = function(self) return { Pitch = 0.0, Yaw = rawget(self, "__fields").yaw, Roll = 0.0 } end,
+        Respawn = function(self) put(self, "respawned", (rawget(self, "__fields").respawned or 0) + 1) end,     -- (to the bell)
         -- (Swept, it stops on the floor: flat at 100 everywhere, unless pc.noFloor says there's none at a spot.)
         K2_SetActorLocation = function(self, l, sweep)
             local z = l.Z
@@ -762,13 +763,14 @@ end
 -- The end of the game's walk up to a thing, some time after the press: what starts then sees who "the player" is.
 function Fake.arrive(pc, thing)
     local path = "/Script/ProjectPBZ.PBZSwitchBase:FinishMoveToAsync"
+    local self = { get = function() return thing end }      -- (a hook's params come wrapped, as UE4SS gives them)
     for _, fn in ipairs(pc.hooks[path] or {}) do
-        fn(thing)
+        fn(self)
     end
     put(thing, "theplayer", rawget(pc.controller, "__fields").Pawn)
     rawget(thing, "__fields").FinishMoveToAsync(thing)
     for _, fn in ipairs(pc.afterHooks[path] or {}) do
-        fn(thing)
+        fn(self)
     end
 end
 

@@ -73,6 +73,7 @@ function WALLS.stand(i, side)
     end
     p.CharacterMovement:SetMovementMode(5, 0)
     p:K2_SetActorLocation(off(w, side, 600, 200), false, {}, true)
+    game.setMinHealth(p, 1)         -- (walls stand where fights are: enemies killed the tester, which read as a fall)
     return "hovering"
 end
 

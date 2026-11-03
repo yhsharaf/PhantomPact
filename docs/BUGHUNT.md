@@ -184,3 +184,16 @@ What changed first, at the user's word: nobody is brought into a partner's boss 
 118. With Revive on, the floor that turns a lethal hit into going down was only written when Revive's state changed: a trip to the partner gives a new body with no floor, and watching a fight takes the floor off as it ends. The next blow was a real death. It's written for each new body and once a second while armed.
 119. Turning sync off during a load, while down, left the game's saves blocked for the rest of the session: with no body to stand up, the block was never lifted. It's lifted either way.
 120. An enemy that came back (a rest, or streaming in again) on its old address, under its old name, was taken for one already made tougher, and fought at 100% in co-op. The host remembers the health it gave each one, and a body below that is a new one.
+
+### Local, 121 to 130
+
+121. Both players down never went to the bell: player 2 down is held at a sliver of health, never dead, so player 1's death took them for up, brought player 1 back beside player 2's body, and six seconds later player 2 beside player 1. A player 2 with no pad counted as up too. Down, or padless, is down now: both down, both to the bell. Sim: `localPlay`.
+122. The wake-up for player 2's enemies kept each one's AI component by address, across frames and maps: an enemy on a reused address was read through another's, and a fighting one put down from the air, or a frozen one left there. It's checked to still be that enemy's, and the list goes with each map.
+123. The times kept by enemy address for player 2's wake-ups (entered a fight area, noticed, a boss armed, a failed entry) went on into the next map, where new enemies get those addresses: an old time could hold one back from waking for player 2 for up to 10 s, or skip its fight area. They go with the map.
+124. Player 1 pulling a lever or opening a door of their own in the seconds after player 2 used one had it played on player 2's body: the step that hands "the player" over looked only at whether player 2 was using something. It's only for the thing player 2 is using.
+125. One error in player 2's buttons (Options, climbing, using things, drinks, the death card) ended them for the rest of the session: that loop returned "stop" on an error, which ends it. It goes on, and says each new error once.
+126. Player 1 drinking in the moment player 2's charge was lent to the empty shared gourd drank it for free: player 2's charge stayed, and the lent one was gone. It's player 2's charge spent now.
+127. Going back to one player in that moment left the lent charge in the gourd for player 1, and dust player 2 had just earned went with their Soul. The charge is taken back and the dust passed first.
+128. A scene's floor under player 2's health was 0 if their health couldn't be read as it began: a hit in the scene was then their real death, which takes player 1 to the bell. The floor is the usual sliver then.
+129. Player 2 back from down under a talk, a shop or the bell came in unheld (only scenes and the pause menu held them), and the menu's hold stayed on the old Soul. They wait for the menu now.
+130. Dust player 2 earned in the second before a map load was dropped with their Soul: the load came before it was passed. It's passed first.

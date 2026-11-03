@@ -531,7 +531,9 @@ return function(api)
                                     pcall(function()
                                         V.aiComps = V.aiComps or {}
                                         local ai = V.aiComps[addr]
-                                        if not valid(ai) then
+                                        -- (Only if it's still this enemy's: an address comes back for another one.)
+                                        if not (valid(ai) and valid(owner.Controller)
+                                            and ai:GetOwner():GetAddress() == owner.Controller:GetAddress()) then
                                             ai = valid(owner.Controller) and componentOf(owner.Controller, "BP_SGameAIComponent_C") or nil
                                             V.aiComps[addr] = ai
                                         end
@@ -1064,7 +1066,9 @@ return function(api)
             downSince = downSince or os.clock()
             if os.clock() - downSince >= RESPAWN_S then
                 downSince = nil
-                if valid(p2) and not game.isDead(p2) then
+                -- (Player 2 down is held at a sliver of health, never dead: going by that, both down brought player 1 back
+                -- beside player 2's body, and nobody ever went to the bell. Nor is a player 2 with no pad any help.)
+                if valid(p2) and not game.isDead(p2) and not p2DownSince and not waiting[2] then
                     revivePlayer1(p1, p2)
                 else
                     log("Both players are down: back to the bell.")
@@ -1112,7 +1116,8 @@ return function(api)
         -- Timers run on the clock, which the pause menu doesn't stop: a Soul spawned while the game is paused never
         -- ticks, hangs in "falling" and is "rescued" for nothing when the menu closes. A scene is the same: the new Soul
         -- would stand in the shot, unhidden. Both wait for the game to run again.
-        local held = inScene or api.gs():IsGamePaused(pc)
+        -- (A menu too: a Soul back from down under a talk, a shop or the bell came in unheld, the hold still on the old one.)
+        local held = inScene or menuOpen or api.gs():IsGamePaused(pc)
         passDust(p1, p2)
         if p2DownSince or game.isDead(p2) or (hp and hp <= DOWN_HP) then
             if not p2DownSince then
@@ -1257,10 +1262,16 @@ return function(api)
         -- Player 2 stays as a local player, with no Soul and no screen: really removing them makes the game delete the UI
         -- entry player 1's menus and map open through.
         if valid(state.p2Pawn) then
+            -- (A charge lent to the empty gourd stayed in it for player 1, and the last dust player 2 earned went.)
+            if valid(p1) then
+                pcall(passDust, p1, state.p2Pawn)
+            end
+            pcall(V.takeChargeBack, state.p2Pawn)
             leaveDomains(state.p2Pawn)
             state.p2Pawn:K2_DestroyActor()
         end
         state.p2Pawn = nil
+        V.lentCharge = nil
         V.dropHud()
         V.dropDeathCard()
         V.real, V.realUp, V.pointsFor, V.points = nil, false, nil, nil
@@ -1402,7 +1413,8 @@ return function(api)
             api.gs():SetForceDisableSplitscreen(pc, playing or menuOpen)
             local out = playing or V.sailing
             if valid(p2) then
-                game.setMinHealth(p2, out and (game.getHealth(p2) or 0) or DOWN_HP)
+                -- (A failed health read isn't 0: a floor of 0 made a hit in the scene player 2's real death.)
+                game.setMinHealth(p2, out and (game.getHealth(p2) or DOWN_HP) or DOWN_HP)
             end
             holdForScene(out)
             log(playing and "Scene: full screen." or "Scene over: split screen.")
@@ -2014,9 +2026,14 @@ return function(api)
             return
         end
         V.useHooked = true
-        RegisterHook(V.FINISH_WALK, function()
+        RegisterHook(V.FINISH_WALK, function(self)
             local pc1, p1 = getPlayer1()
-            if V.opening and not V.opening.chest and not V.usePc and valid(pc1) and valid(p1) and valid(state.p2Pawn) then
+            -- (Only the thing player 2 is using: player 1 pulling a lever of their own in those seconds had it played on
+            -- player 2's body.)
+            local thing = V.opening and V.opening.thing
+            local mine = false
+            pcall(function() mine = valid(thing) and self:get():GetAddress() == thing:GetAddress() end)
+            if mine and not V.opening.chest and not V.usePc and valid(pc1) and valid(p1) and valid(state.p2Pawn) then
                 V.usePc, V.useBody = pc1, p1
                 pc1.Pawn = state.p2Pawn
                 pc1.Character = state.p2Pawn
@@ -2816,6 +2833,14 @@ return function(api)
             if gourd and V.gourdKeep then
                 V.gourdKeep = V.gourdKeep - 1       -- (player 1 drank theirs while one was being put back for player 2)
             end
+            if gourd and V.lentCharge then
+                -- Player 1 drank the charge lent to the empty gourd for player 2's press: it was player 2's, and it's
+                -- spent, or player 1 drank for free.
+                V.lentCharge = nil
+                if p2Charges and p2Charges > 0 then
+                    p2Charges = p2Charges - 1
+                end
+            end
             return
         end
         V.drinkDry = gourd and not spendPlayer2Charge(p2)
@@ -2934,9 +2959,16 @@ return function(api)
                 local ok, err = pcall(function()
                     local had = valid(state.p2Controller)
                     if valid(state.p2Pawn) then
+                        local _, p1 = getPlayer1()
+                        if valid(p1) then
+                            pcall(passDust, p1, state.p2Pawn)       -- (what they earned in the last moment was dropped)
+                        end
                         pcall(leaveDomains, state.p2Pawn)
                         pcall(V.keepGauge, state.p2Pawn)
                     end
+                    -- Kept by enemy address: the next map's enemies get those addresses, and an old time could hold one
+                    -- back from waking for player 2, or skip its fight area.
+                    V.armed, V.noticed, V.bossArmed, V.domainFailAt, V.aiComps = {}, {}, {}, {}, {}
                     api.removePlayer2()
                     V.dropHud()
                     V.dropDeathCard()
@@ -2988,10 +3020,11 @@ return function(api)
         end)
         LoopInGameThreadWithDelay(BUTTON_MS, function()
             local ok, err = pcall(relayButtons)
-            if not ok then
+            if not ok and err ~= V.lastRelayError then
+                V.lastRelayError = err       -- (each new error once: it runs 30 times a second)
                 log("Button relay error: " .. tostring(err))
-                return true
             end
+            -- (Never true: true ends the loop, and one error took player 2's buttons for the rest of the session.)
             return false
         end)
         LoopInGameThreadWithDelay(WATCH_MS, function()

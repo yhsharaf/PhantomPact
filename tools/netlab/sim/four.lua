@@ -2196,6 +2196,17 @@ local function localPlay()
     check(Session.dust(pc) == 500, "what player 2 earned just before going down reaches player 1")
     allErrors(s)
 
+    -- Both down: back to the bell. Player 2 down is held at a sliver of health, never dead, and was taken for up.
+    local w, wpc, wstate = localGame()
+    w:run(1.5)
+    Fake.setHealth(wstate.p2Pawn, 1)
+    w:run(1.5)
+    Fake.setHealth(wpc.pawn, 0)
+    w:run(7)
+    check(count(wpc.logs, "Both players are down") == 1 and count(wpc.logs, "Player 1 is back") == 0,
+        "both down: back to the bell, not player 1 up beside player 2's body")
+    allErrors(w)
+
     local c, cpc, cstate = localGame()
     local min = field(field(cstate.p2Pawn, "AttributeSetBase"), "Health_Min")
     c:run(1.5)

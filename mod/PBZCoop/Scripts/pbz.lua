@@ -1204,8 +1204,8 @@ return function(api)
 
     -- Whether there's floor under a spot: the player is put there and swept straight down, all in this frame. Stopped by
     -- something on the way, that's where they stand; through the whole drop, or not moved at all (in a wall), it's no place.
-    -- The game must never see them fall there: half a second in a void starts its fall death, which went on after they
-    -- were put back (a doorway at Zhengdaodaying, 3 m past it a drop; the player died where they had pressed).
+    -- Never over a drop to find out: a doorway at Zhengdaodaying has one 3 m past it, and the player fell for 0.6 s
+    -- before the watch below put them back.
     FOG.PROBE_CM = 450
     FOG.TRY_CM = { 300, 200, 450, 600, 120 }
     function FOG.floorAt(pawn, spot)
