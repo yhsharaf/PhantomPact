@@ -1363,6 +1363,34 @@ local function looks()
     allErrors(s)
 end
 
+-- A kick-stone (a boulder shutting a shortcut) kicked away in one world stood in the way in the other.
+local function kickStones()
+    part("kick-stones")
+    local s, h, g = pair()
+    local mine = Fake.stone(g, "BP_KickStone_C_1", 300.0, 0.0, 100.0)
+    local theirs = Fake.stone(h, "BP_KickStone_C_1", 300.0, 0.0, 100.0)
+    s:run(1.5)
+    Fake.put(mine, "CurSwitchState", true)
+    local rest = { X = 1600.0, Y = -900.0, Z = -640.0 }
+    Fake.put(field(mine, "SkeletalMesh"), "at", rest)
+    s:run(2)
+    check(field(theirs, "CurSwitchState") == false, "a stone isn't told before it has come to rest")
+    s:run(3.5)
+    local at = field(field(theirs, "SkeletalMesh"), "at")
+    check(field(theirs, "CurSwitchState") == true and math.abs(at.X - 1600) < 1 and math.abs(at.Z + 640) < 1,
+        "the guest kicks one away: the host's is open too, its boulder where the guest's came to rest")
+    s:run(6)
+    check(count(h.sent, "KS BP_KickStone_C_1") == 0, "and the host doesn't take it for its own kick and tell it back")
+    local far = Fake.stone(g, "BP_KickStone_C_2", 600.0, 0.0, 100.0)
+    s:run(1.5)
+    Fake.put(far, "CurSwitchState", true)
+    s:run(6)
+    local late = Fake.stone(h, "BP_KickStone_C_2", 600.0, 0.0, 100.0)
+    s:run(1.5)
+    check(field(late, "CurSwitchState") == true, "and one not loaded on the host's side then is open when it is")
+    allErrors(s)
+end
+
 -- Walking, jogging and sprinting: a figure has no stick for its locomotion to read, so it jogged at any speed.
 local function gaits()
     part("walking, jogging, sprinting")
@@ -2809,6 +2837,7 @@ return function(print_, scripts)
     itemEffects()
     guardStance()
     gaits()
+    kickStones()
     hostsEnemiesHere()
     bossScenes()
     afterATrip()

@@ -1591,6 +1591,16 @@ return function(api)
         end
     end
 
+    -- A kick-stone another player kicked away: open here too, its boulder where theirs came to rest.
+    handlers.KS = function(rest)
+        local name, x, y, z, pitch, yaw, roll = (rest or ""):match("^(%S+) (%S+) (%S+) (%S+) (%S+) (%S+) (%S+)$")
+        x, y, z, pitch, yaw, roll = num(x), num(y), num(z), num(pitch), num(yaw), num(roll)
+        if name and #name <= MAX_CHEST_NAME and x and y and z and pitch and yaw and roll and game.stoneKicked then
+            game.stoneKicked(name, { X = x, Y = y, Z = z }, { Pitch = pitch, Yaw = yaw, Roll = roll })
+            log("The other player kicked " .. name .. " away: here too.")
+        end
+    end
+
     -- An effect another player's item showed on their body (a drink from the gourd): on their figure here too.
     handlers.FX = function(rest, from)
         local path, socket = (rest or ""):match("^(%S+) (%S+)$")
@@ -2162,6 +2172,12 @@ return function(api)
             game.hookGifts(sendGift)
             game.hookPiles(reportChest)
             game.watchChests(pawn, reportChest, isHost() and offerChest or nil)
+            if game.watchStones then
+                game.watchStones(pawn, function(name, at, rot)
+                    log("Kicked " .. name .. " away: telling the other player where it lies.")
+                    sendEvent("KS", name, string.format("%.1f %.1f %.1f %.2f %.2f %.2f", at.X, at.Y, at.Z, rot.Pitch, rot.Yaw, rot.Roll))
+                end)
+            end
         end
         if (#giftsWaiting > 0 or dustWaiting > 0) and not game.isDead(pawn) then
             takeGifts(pawn)

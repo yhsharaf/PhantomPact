@@ -2983,6 +2983,60 @@ return function(api)
         chests.offeredAt = -1e9
     end
 
+    -- A kick-stone, a boulder that shuts a shortcut until it's kicked away, is each world's own, and a copy can't be kicked
+    -- from here: the kick is the kicker's own animation (its physics and finishing steps alone leave it where it stands), so
+    -- the partner's stood in the way ("the guest opened a gate, it did not open for host"). The kicker's world says where its
+    -- boulder came to rest (coop.lua, KS), and the partner's is switched open and put there; one not loaded yet, when it is.
+    chests.STONE, chests.STONE_REST_S = "BP_KickStone_C", 4.0
+    chests.stones = { shut = {}, settling = {}, pending = {} }
+
+    function chests.placeStone(stone, at, rot)
+        pcall(function()
+            if stone.CurSwitchState ~= true then
+                stone:SwitchWithoutPlaySequence()
+            end
+            stone.SkeletalMesh:K2_SetWorldLocationAndRotation(at, rot, false, {}, true)
+        end)
+    end
+
+    -- Once a second: a stone that was shut near this player and is open now, they kicked; told once it has come to rest.
+    function game.watchStones(pawn, report)
+        local here, st, shut = pawn:K2_GetActorLocation(), chests.stones, {}
+        for _, s in ipairs(FindAllOf(chests.STONE) or {}) do
+            if valid(s) then
+                local name = s:GetFName():ToString()
+                local open = s.CurSwitchState == true
+                if st.pending[name] then
+                    chests.placeStone(s, st.pending[name].at, st.pending[name].rot)
+                    st.pending[name] = nil
+                elseif open and st.shut[name] then
+                    st.settling[name] = os.clock() + chests.STONE_REST_S
+                elseif not open and distance(s:K2_GetActorLocation(), here) <= CHEST_WATCH_CM then
+                    shut[name] = true
+                end
+                if open and st.settling[name] and os.clock() >= st.settling[name] then
+                    st.settling[name] = nil
+                    pcall(function()
+                        local m = s.SkeletalMesh
+                        report(name, m:K2_GetComponentLocation(), m:K2_GetComponentRotation())
+                    end)
+                end
+            end
+        end
+        st.shut = shut
+    end
+
+    function game.stoneKicked(name, at, rot)
+        chests.stones.shut[name], chests.stones.settling[name] = nil, nil     -- (not this player's kick: not told back)
+        for _, s in ipairs(FindAllOf(chests.STONE) or {}) do
+            if valid(s) and s:GetFName():ToString() == name then
+                chests.placeStone(s, at, rot)
+                return
+            end
+        end
+        chests.stones.pending[name] = { at = at, rot = rot }
+    end
+
     -- A pile says nothing once searched, so its own step is what's watched.
     function game.hookPiles(report)
         if pileHooked or not valid(StaticFindObject(PILE_SEARCHED)) then

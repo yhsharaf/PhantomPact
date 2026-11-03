@@ -293,6 +293,21 @@ function Fake.chest(pc, id, x, y, z, loot)
     return c
 end
 
+-- A kick-stone: shut until kicked, its boulder (a skeletal mesh) where it stands until then.
+function Fake.stone(pc, id, x, y, z)
+    local mesh = object(pc, "SkeletalMeshComponent", { at = { X = x, Y = y, Z = z }, rot = { Pitch = 0.0, Yaw = 0.0, Roll = 0.0 } })
+    defs(pc, mesh, { K2_GetComponentLocation = function(self) return rawget(self, "__fields").at end,
+        K2_GetComponentRotation = function(self) return rawget(self, "__fields").rot end,
+        K2_SetWorldLocationAndRotation = function(self, at, rot) put(self, "at", at) put(self, "rot", rot) end })
+    local s = object(pc, "BP_KickStone_C", { CurSwitchState = false, SkeletalMesh = mesh })
+    rawset(s, "__name", id)
+    defs(pc, s, { K2_GetActorLocation = function() return { X = x, Y = y, Z = z } end,
+        SwitchWithoutPlaySequence = function(self) put(self, "CurSwitchState", true) end })
+    pc.stones = pc.stones or {}
+    pc.stones[#pc.stones + 1] = s
+    return s
+end
+
 -- An ability of an actor running or not, as the game's list of them has it.
 function Fake.running(pc, actor, class, active)
     local asc = pc.env.StaticFindObject("/Script/GameplayAbilities.Default__AbilitySystemBlueprintLibrary"):GetAbilitySystemComponent(actor)
@@ -1430,6 +1445,8 @@ function Fake.new(id, scripts, ini, link)
             return alive
         elseif class == "BP_Chest_C" then
             return pc.chests
+        elseif class == "BP_KickStone_C" then
+            return pc.stones or {}
         elseif class == "WB_MapNew_C" then
             return { mapScreen }
         elseif class == "PBZInteractComponent" then
