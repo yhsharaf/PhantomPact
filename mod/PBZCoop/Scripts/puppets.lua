@@ -32,6 +32,7 @@ return function(api)
     local MOVE_LOOK_S = 0.1
     local RESTART_S = 0.05        -- the same montage at an earlier position = played again
     local AI_EVERY_S = 0.1        -- how often each copy's AI is stopped again: the game restarts it by itself
+    local REACT_S = 2.5           -- a copy's own reaction to this player's hit plays out this long at most, before any move
     -- Abilities that stay on and aren't moves. (Bosses keep a "Subtitles" one up for their lines: taken for the move, the
     -- real attack was never replayed and only its animation reached the guest, which hurts no one.)
     local PASSIVE = { "Passive", "Locomotion", "SpaceState", "Stance", "Utilities", "HitMirror", "Subtitles" }
@@ -97,6 +98,40 @@ return function(api)
         p.target = target
     end
 
+    -- A hit of this player's on a copy here, which the game answered with a reaction (a flinch, a break, a knockdown, the far end
+    -- of an execution): its montage, where it is in it, and the hit state, to go with the hit to whoever runs the enemy, or nil.
+    -- Without it the enemy itself only lost health there: it never flinched, and threw a molotov while it was being executed.
+    function puppets.reactionOf(actor)
+        local tag = game.hitStateOf and game.hitStateOf(actor)
+        if not (tag and tag:lower():find("hitreact", 1, true)) then
+            return nil
+        end
+        local ai = api.moves.animOf(actor)
+        local path, pos = "-", 0
+        pcall(function()
+            local m = ai:GetCurrentActiveMontage()
+            if valid(m) and api.moves.allowedPath(api.moves.pathOf(m)) then
+                path, pos = api.moves.pathOf(m), ai:Montage_GetPosition(m) or 0
+            end
+        end)
+        return path, pos, tag
+    end
+
+    -- Whoever runs the enemy: the reaction the partner's copy played to their hit, on the enemy itself, from where theirs was.
+    -- Not sent back to them as a move of its own: their copy plays it already.
+    function puppets.react(name, actor, path, pos, tag)
+        local m = path ~= "-" and api.moves.allowedPath(path) and api.moves.montage(path)
+        local ai = m and api.moves.animOf(actor)
+        local hold = 0.9
+        if ai and pcall(function() ai:Montage_Play(m, 1.0, 0, pos + (net.rttMs or 0) / 2000, true) end) then
+            pcall(function() hold = math.max(0.3, math.min(REACT_S, m:GetPlayLength() - pos)) end)
+            hostSeen[name] = { addr = m:GetAddress(), pos = pos }
+        end
+        if tag ~= "-" and game.setHitState then
+            game.setHitState(actor, tag, hold)
+        end
+    end
+
     -- It died: nothing steers it through its death.
     function puppets.drop(actor)
         byAddr[actor:GetAddress()] = nil
@@ -144,6 +179,15 @@ return function(api)
         local p = valid(actor) and byAddr[actor:GetAddress()]
         if not p or game.isDead(actor) then
             puppets.noCopy = puppets.noCopy + 1
+            return
+        end
+        -- Its own reaction to this player's hit plays out first (the enemy itself is told, and does the same): a move from the
+        -- other side, sent before that arrived there, cut it short, an execution too.
+        local state = game.hitStateOf and game.hitStateOf(actor)
+        if state ~= p.reactState then
+            p.reactState, p.reactSince = state, os.clock()
+        end
+        if state and state ~= "None" and os.clock() - p.reactSince < REACT_S then
             return
         end
         local target = p.target

@@ -886,10 +886,15 @@ return function(api)
     -- lethal: our copy is held at 1 health (only the host kills it), so a killing blow can't show its full damage
     -- here; it's sent as lethal and the host kills the enemy.
     -- A host reports its hits on one the guest's game runs (handover), the other way round.
+    -- With the reaction the hit made here (puppets.reactionOf: montage, position, hit state), for the enemy itself to show.
     local function reportHit(id, enemy, hpDamage, postureDamage, lethal)
         if net.enabled and (isClient() or net.guestRuns[id]) and valid(enemy) then
+            local path, pos, tag
+            if api.puppets and not lethal then
+                path, pos, tag = api.puppets.reactionOf(enemy)
+            end
             sendEvent("D", id, string.format("%.1f", hpDamage), string.format("%.1f", postureDamage or 0),
-                lethal and "L" or "-")
+                lethal and "L" or "-", path or "-", string.format("%.2f", pos or 0), tag or "-")
             net.stats.hitsReported = (net.stats.hitsReported or 0) + 1
             if isClient() and hpDamage > 0 then
                 net.hitHere[id] = true      -- (see GK in syncEnemy)
@@ -1734,12 +1739,25 @@ return function(api)
             amount = math.huge      -- the client's killing blow (its copy can't show the full damage)
             log("Partner's killing blow on " .. tostring(name) .. (valid(enemyByName[name]) and "." or ", which isn't loaded here."))
         end
+        -- The reaction the hit made on the sender's copy, played on the enemy itself (puppets.react). Only a hit state.
+        local rpath, rpos, rtag = rest:match("^%S+ %S+ %S+ %S+ (%S+) (%S+) (%S+)$")
+        rpos = num(rpos)
+        if not (rtag and rtag:match("^CharacterState%.[%w%.]+$") and rtag:lower():find("hitreact", 1, true)
+            and rpos and rpos >= 0 and rpos < 600 and #rpath <= 256) then
+            rtag = nil
+        end
+        local function react(actor)
+            if rtag and api.puppets and not (game.isDead and game.isDead(actor)) then
+                api.puppets.react(name, actor, rpath, rpos, rtag)
+            end
+        end
         if isClient() and name and net.mine[name] then
             -- The host's hit on one this game runs (handover): it lands here, where the enemy lives. A killing blow is its
             -- whole death here, paying this player, and that dust reaches the host as any of this player's does.
             local actor = enemyByName[name]
             if valid(actor) and game.applyDamage and net.target and gap3d(actor:K2_GetActorLocation(), net.target) <= OWN_HIT_CM then
                 game.applyDamage(actor, amount, posture, true)
+                react(actor)
                 local left = { hp = game.getHealth(actor), posture = game.getPosture and game.getPosture(actor),
                     addr = actor:GetAddress() }
                 seen[name] = left           -- (a reported hit: its turn mustn't weigh it again, nor undo it)
@@ -1758,6 +1776,7 @@ return function(api)
                 local boss = net.partnerBosses[name] or (game.isBoss and game.isBoss(actor))
                 local real = game.applyDamage(actor, amount, posture, true)
                 game.partnerHit(actor:GetAddress(), from)
+                react(actor)
                 if wasAlive and (real or (game.isDead and game.isDead(actor))) then
                     if real and boss and game.rollLoot then
                         -- The game ran the whole death and paid this player, as for their own blow. A boss's items are

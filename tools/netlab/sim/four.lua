@@ -974,6 +974,45 @@ local function pair(extraIni)
     return s, s.pcs[1], s.pcs[2]
 end
 
+-- A guest's hit that makes their copy flinch: the host's enemy itself flinches the same way, and its next move doesn't cut the
+-- copy's reaction short.
+local function hitReactions()
+    part("an enemy's reaction to a hit")
+    local s, h, g = pair()
+    local REACT, HIT = "CharacterState.Hitreact.State.Normal", "/Game/Move/Hit1.Hit1"
+    local copy, theirs = Session.enemyOn(g, "near"), Session.enemyOn(h, "near")
+    local function stateOf(e)
+        return field(field(e, "hit"), "state")
+    end
+    local function playing(e)
+        local m = field(field(e, "anim"), "montage")
+        return m and m:GetFullName():gsub("^%S+ ", "") or "-"
+    end
+    Session.enemyMove(g, "near", HIT)
+    Fake.put(field(copy, "hit"), "state", REACT)
+    local mark = #h.sent
+    swing(g, copy, select(1, Fake.health(copy)) - 50)
+    s:run(0.5)
+    check(count(g.sent, "^E D sp:near 50%.0 0%.0 %- /Game/Move/Hit1%.Hit1 0%.25 CharacterState%.Hitreact%.State%.Normal$") == 1,
+        "a guest's hit goes with the reaction it made on their copy")
+    check(playing(theirs) == HIT and stateOf(theirs) == REACT, "and the host's enemy plays that reaction, in that hit state")
+    local echo = 0
+    for i = mark + 1, #h.sent do
+        echo = echo + (h.sent[i]:find("^E A sp:near %- /Game/Move/Hit1%.Hit1") and 1 or 0)
+    end
+    check(echo == 0, "not sent back to the guest as a move of its own")
+    Session.enemyMove(h, "near", "/Game/Move/E1.E1")
+    s:run(0.5)
+    check(playing(copy) == HIT, "the host's next move doesn't cut the copy's own reaction short")
+    Fake.put(field(copy, "hit"), "state", "None")
+    Session.enemyMove(h, "near", "/Game/Move/E2.E2")
+    s:run(0.5)
+    check(playing(copy) == "/Game/Move/E2.E2", "and plays once it's over")
+    s:run(1.5)
+    check(stateOf(theirs) == "None", "the hit state set on the host's enemy by hand is let go")
+    allErrors(s)
+end
+
 -- A boss beaten in co-op is beaten in both saves, and two saves that disagree are brought round to the host's.
 local function beatenInBoth()
     part("a boss beaten in both worlds")
@@ -2929,6 +2968,7 @@ return function(print_, scripts)
     enemiesAndHits()
     farEnemy()
     guestRunsWhatsNearIt()
+    hitReactions()
     rests()
     sits()
     sitsForTwo()

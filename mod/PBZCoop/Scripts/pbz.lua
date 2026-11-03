@@ -1596,13 +1596,41 @@ return function(api)
     -- A hit state set by hand has no animation to end it, and while it lasts the character can't start a move
     -- (a PvP attacker stayed stuck after a parry). Clear it again after a moment, unless something replaced it.
     local HIT_STATE_HOLD_S = 0.9
-    clearHitStateLater = function(comp, tag)
-        game.after(HIT_STATE_HOLD_S, function()
+    clearHitStateLater = function(comp, tag, holdS)
+        game.after(holdS or HIT_STATE_HOLD_S, function()
             -- (A map can load first, and a gone object's memory gets reused: pcall can't catch that crash, valid can.)
             if valid(comp) and comp:GetCurrentHitState().TagName:ToString() == tag then
                 comp:ChangeHitState({ TagName = FName("None") }, nil, false)
             end
         end)
+    end
+
+    -- An enemy's hit state ("None" when it's reacting to nothing), and its component. Looked up once an enemy: a search of
+    -- every component in the world.
+    local enemyHitComps = {}      -- enemy address -> its HitreactComponent
+    function game.hitStateOf(actor)
+        local addr = actor:GetAddress()
+        local comp = enemyHitComps[addr]
+        if not valid(comp) or comp:GetOwner():GetAddress() ~= addr then
+            comp = hitreactComponent(actor)
+            enemyHitComps[addr] = comp
+        end
+        if not comp then
+            return nil
+        end
+        local ok, tag = pcall(function() return comp:GetCurrentHitState().TagName:ToString() end)
+        return ok and tag or nil, comp
+    end
+
+    -- The partner's hit made their copy of this enemy react, and this is the enemy itself: the same hit state, held as long as
+    -- the reaction plays (set by hand, it has no animation to end it), so that its own moves keep off it meanwhile.
+    function game.setHitState(actor, tag, holdS)
+        local _, comp = game.hitStateOf(actor)
+        if comp and pcall(function() comp:ChangeHitState({ TagName = FName(tag) }, nil, false) end) then
+            clearHitStateLater(comp, tag, holdS)
+            return true
+        end
+        return false
     end
 
     -- PvP: the local player reacts to a hit the game itself didn't deal (a parried swing).
