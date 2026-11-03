@@ -136,8 +136,12 @@ return function(api)
 
     -- Looked up each time, not kept: a kept object can go with a map, and its address can then be something else entirely, which
     -- valid() can't tell.
+    -- (A load that failed is tried again a while later: a move first seen mid-load or mid-trip was refused for the whole
+    -- session, and that move never showed on the partner's figure again. Only what isn't a montage is refused for good.)
+    local LOAD_AGAIN_S = 30
+    local failedAt = {}
     local function montage(path)
-        if cache[path] == false then
+        if cache[path] == false or os.clock() - (failedAt[path] or -1e9) < LOAD_AGAIN_S then
             return nil
         end
         local m = StaticFindObject(path)
@@ -153,7 +157,11 @@ return function(api)
             cache[path] = m:GetAddress()
             return m
         end
-        cache[path] = false
+        if valid(m) then
+            cache[path] = false
+        else
+            failedAt[path] = os.clock()
+        end
         return nil
     end
 
@@ -514,15 +522,21 @@ return function(api)
             end
         end
         local now = os.clock()
+        -- (Each on its own: one error in this player's own gear, a load say, left every partner's figure empty-handed.)
+        local errs = {}
         ok, err = pcall(watchGear, now)
+        if not ok then
+            errs[#errs + 1] = err
+        end
         for _, p in ipairs(coop.partners()) do
-            if ok then
-                ok, err = pcall(dressGhost, p, now)
+            local dressed, why = pcall(dressGhost, p, now)
+            if not dressed then
+                errs[#errs + 1] = why
             end
         end
-        if not ok and err ~= gear.lastError then
-            gear.lastError = err
-            log("moves (gear): " .. tostring(err))
+        if errs[1] and errs[1] ~= gear.lastError then
+            gear.lastError = errs[1]
+            log("moves (gear): " .. tostring(errs[1]))
         end
     end
 

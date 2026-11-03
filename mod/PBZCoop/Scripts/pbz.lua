@@ -439,8 +439,9 @@ return function(api)
     end
 
     -- The other player's boss, on this PC too: a boss only spawns on the PC whose player started the fight. Returns
-    -- its spawner's location, or nil for an enemy that doesn't come from a named spawner. revive false: one this save has
-    -- beaten stays so.
+    -- its spawner's location, or nil for an enemy that doesn't come from a named spawner, and true if it was beaten in this
+    -- save and turned back for the fight (the caller puts it back: see bringBack). revive false: one this save has beaten
+    -- stays so.
     function game.spawnBoss(enemyId, revive)
         local id = enemyId:match("^sp:(.+)$")
         for _, s in ipairs(id and FindAllOf("AISpawner") or {}) do
@@ -471,7 +472,7 @@ return function(api)
                         log("Couldn't spawn " .. id .. ": " .. tostring(err))
                     end
                 end
-                return { X = at.X, Y = at.Y, Z = at.Z }
+                return { X = at.X, Y = at.Y, Z = at.Z }, beaten
             end
         end
         return nil

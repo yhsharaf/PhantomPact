@@ -1079,6 +1079,27 @@ local function beatenInBoth()
     allErrors(r)
 end
 
+-- The guest's side, through a bad link and more.
+local function guestSide()
+    part("the guest's side")
+    local s, h, g = pair()
+    Session.moveTo(h, 0, 0)
+    Session.moveTo(g, 0, 300)
+    s:run(3)
+    local copy = Session.enemyOn(g, "near")
+    local min = field(field(copy, "AttributeSetBase"), "Health_Min")
+    check(field(min, "CurrentValue") == 1, "a guest's copy of a host enemy is held")
+    h.cut = true
+    local lowest = 1
+    s:run(2.5, function() lowest = math.min(lowest, field(min, "CurrentValue")) end)
+    check(lowest == 1 and g.env.PBZ.net.remoteEnemies["sp:near"] ~= nil,
+        "two and a half seconds without a packet: still the host's, not let go to fight the guest on its own")
+    h.cut = false
+    s:run(2)
+    check(field(min, "CurrentValue") == 1, "and still held when the host is heard again")
+    allErrors(s)
+end
+
 -- The host's world decides: a chest the host opened before, alone, is open for a guest too, and pays them what it held.
 local function hostsChests()
     part("the host's chests")
@@ -3076,6 +3097,7 @@ return function(print_, scripts)
     otherMaps()
     fightsAndWhoIsLeft()
     beatenInBoth()
+    guestSide()
     followTheHost()
     hostsChests()
     looks()

@@ -910,8 +910,15 @@ return function(api)
     -- same-class enemies pair up the same way every tick (pairs() order is arbitrary).
     local function matchRemoteEnemies(locals)
         local byId, byAddr, used, matched = {}, {}, {}, {}
+        -- (Two can share an id: a spawner's new enemy while the old body still lies there. The live one is that id's, or
+        -- the body was synced and the live one, unheld, fought this player on its own.)
+        local isDead = game.isDead or function() return false end
         for _, e in pairs(locals) do
-            byId[enemyName(e.actor, e.addr)] = e
+            local id = enemyName(e.actor, e.addr)
+            local had = byId[id]
+            if not had or (isDead(had.actor) and not isDead(e.actor)) then
+                byId[id] = e
+            end
             byAddr[e.addr] = e
         end
         local ids = {}
@@ -925,7 +932,9 @@ return function(api)
         end
         for _, id in ipairs(ids) do
             local e = byId[id]
-            if e and not used[e.addr] then
+            -- (Not a body: matched to a host enemy that's alive, its death here was sent on as the guest's kill, GK, and
+            -- killed the host's, a fresh one after a rest too.)
+            if e and not used[e.addr] and not isDead(e.actor) then
                 take(id, e)
             end
         end
@@ -975,7 +984,10 @@ return function(api)
         end
         for _, e in pairs(locals) do
             if not used[e.addr] then
-                matched[enemyName(e.actor, e.addr)] = e.actor
+                local id = enemyName(e.actor, e.addr)
+                if matched[id] == nil then          -- (never over the one paired with the host's under that id)
+                    matched[id] = e.actor
+                end
                 if not paired[e.addr] then
                     own[#own + 1] = e
                 end
@@ -1004,7 +1016,14 @@ return function(api)
     local function setAside(own, now)
         local t = net.target
         if t and not net.partnerGone and os.clock() - (net.lastRemoteAt or -1e9) > ENEMY_STALE_S then
-            return                  -- (a hitch on the host's side says nothing about its enemies)
+            -- (A hitch on the host's side says nothing about its enemies: nothing changes. But the hidden ones are kept
+            -- stopped: the game starts their AI again by itself, and over a load's silence one walked about unseen and hit.)
+            for _, a in pairs(net.aside) do
+                if a.hidden and valid(a.actor) then
+                    a.brain = game.stopAI(a.actor, a.brain)
+                end
+            end
+            return
         end
         local here = t ~= nil and not net.partnerGone and t.Map == net.localMap
         local kept, gone, bosses = {}, 0, {}
@@ -1162,8 +1181,7 @@ return function(api)
                 handover.share(name, actor, addr)
             end
             nextSeen[name] = { hp = hp, posture = posture, addr = addr }
-        elseif (net.remoteEnemies[name] or net.hitHere[name] or net.mine[name]) and not net.hostKilled[name]
-            and not net.guestKillSent[name] then
+        elseif (net.hitHere[name] or net.mine[name]) and not net.hostKilled[name] and not net.guestKillSent[name] then
             -- It died here before the host had it loaded (we were far apart): the host's copy follows. In a party so does
             -- that of any guest near it. An enemy past the host's reach has no owner: it sleeps on the host, so each guest
             -- by it fights a copy of its own, as a guest alone does, and the first to kill it kills it for everyone.
@@ -1476,7 +1494,19 @@ return function(api)
         if game.refreshEnemyIds then
             game.refreshEnemyIds()
         end
-        for name, r in pairs(net.remoteEnemies) do
+        -- (Not while the whole link is quiet: a second or two without packets, common over Radmin and the like, let every
+        -- copy go to its own game at once, and they woke and fought this player by themselves until the host was heard
+        -- again: "the enemy ... can still move, attack, and deal damage to me", issue #12. The partner gone is another way.)
+        local linkQuiet = os.clock() - (net.lastRemoteAt or os.clock()) > ENEMY_STALE_S and not net.partnerGone
+        -- (Nor in the second after it's back: the first packet is the player's, and the enemies' lines come over the next
+        -- round, so every copy read as stale for a moment and woke between the two.)
+        if linkQuiet then
+            net.linkWasQuiet = true
+        elseif net.linkWasQuiet then
+            net.linkWasQuiet, net.linkBackAt = false, os.clock()
+        end
+        local settling = os.clock() - (net.linkBackAt or -1e9) < ENEMY_STALE_S
+        for name, r in pairs((linkQuiet or settling) and {} or net.remoteEnemies) do
             if now - r.at > ENEMY_STALE_S then
                 net.remoteEnemies[name] = nil
             end
@@ -2001,6 +2031,9 @@ return function(api)
             end
             seen = {}
             releaseHeld(nil)
+            -- (And the round under way with it: its end put back what it had held as held, with the floor gone, so the
+            -- floor was never set again and host enemies died here on this player's own hits.)
+            round.seen, round.held = nil, {}
             net.mine = {}       -- (this world's enemies are new ones: what it ran for the host, the host takes back unheard of)
             if again > 0 then
                 log(again .. " enemies the host killed will be removed again as they load.")
@@ -2140,7 +2173,15 @@ return function(api)
         local _, pawn = getPlayer1()
         -- (Another guest's fight, on a guest: only the host's world can say the boss lives, so one this save has beaten
         -- isn't brought back for it. The host tells everyone if it's beaten there.)
-        local at = game.spawnBoss and game.spawnBoss(name, not (isClient() and p ~= net))
+        local at, turned = nil, false
+        if game.spawnBoss then
+            at, turned = game.spawnBoss(name, not (isClient() and p ~= net))
+        end
+        if turned and isClient() then
+            -- (Written alive in this save for the host's fight: dead again when the session ends, unless the host's kill
+            -- makes it beaten for real. It stayed alive here for good when the host lost, rested or left.)
+            net.broughtBack[name] = true
+        end
         if not at and sameMap(p.target) then
             at = p.target
         end
@@ -2647,6 +2688,10 @@ return function(api)
     local function clearRemoteState()
         bring.putBackAll()
         handover.reset()
+        -- (Which world the host had: a guest turning sync on again with another host, or one that restarted meanwhile,
+        -- took the first word of it for that host loading again, and refreshed this player's world in the middle of play,
+        -- a fight of their own too. A host restarting while the guest stays linked still does.)
+        net.hostWorld = nil
         net.remoteEnemies = {}
         net.enemyNames = {}
         net.announced = {}
