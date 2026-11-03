@@ -141,6 +141,7 @@ down, the game's death card plays in their half alone, and they get back up off 
 - Doors that are barred from the other side are as they are for player 1: a push and a "won't open".
 - An execution by player 2 was not seen through to its animation: the press reaches their own binding, and the prompt shows in their half.
 - Rumble goes by who's in the middle of something, as the game doesn't say who it's for. When both players are at it, it stays on player 1's pad.
+- A boat has one place on it, and the game seats player 1 whoever presses. Player 2 sits the ride out, as they do a scene, and is brought along when it ends.
 - A talk is player 1's to the game: player 2's press starts it and sets player 1 down beside them, and the dialogue screen is shared.
 - Shops and training are pages of the bell menu, which both players share. Doors that need an item (the game's
   switches with required items) do not occur in chapter 1 on Xigu and are untested for player 2; the mod's route

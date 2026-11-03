@@ -412,6 +412,19 @@ function Fake.switch(pc, class, x, y, z, bell, noState)
     return s
 end
 
+-- A page of the game's, by class. Take it away from pc.screens again to close it.
+function Fake.screen(pc, class)
+    local name = { ToString = function() return class end }
+    local s = {
+        IsValid = function() return true end,
+        IsActivated = function() return true end,
+        IsVisible = function() return true end,
+        GetClass = function() return { GetFName = function() return name end } end,
+    }
+    pc.screens[#pc.screens + 1] = s
+    return s
+end
+
 -- The game's rumble and camera shake, on the first controller as it plays them.
 function Fake.rumble(pc)
     local path = "/Script/Engine.PlayerController:ClientPlayForceFeedback_Internal"

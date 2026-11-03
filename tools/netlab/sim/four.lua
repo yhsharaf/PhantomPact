@@ -1554,6 +1554,33 @@ local function localPlay()
     check(field(far, "cancelled") == true and field(field(hstate2.p2Pawn, "PBZNBInput"), "resets") == 1, "a hit on the way to a chest ends it, and they have their pad at once")
     allErrors(hitOn)
 
+    local sail, spc, sstate = localGame()
+    sail:run(1.5)
+    Fake.screen(spc, "W_ShipHudLayout_C")
+    sail:run(0.6)
+    check(field(sstate.p2Controller, "ignored") == true, "on a boat, player 2 sits it out, as they do a scene")
+    Session.moveTo(spc, 30000, 0)
+    local page = spc.screens[1]
+    spc.screens[1] = nil
+    Session.scene(spc, true)
+    sail:run(0.6)
+    Session.scene(spc, false)
+    spc.screens[1] = page
+    sail:run(0.6)
+    check(field(sstate.p2Controller, "ignored") == true, "a scene on the way, with the boat's page down for it, doesn't let them out")
+    check(math.abs(field(sstate.p2Pawn, "loc").X - 30000) > 1000, "nor bring them along yet")
+    spc.screens[1] = nil
+    sail:run(0.6)
+    check(field(sstate.p2Controller, "ignored") == false, "and has their pad back when it's over")
+    check(math.abs(field(sstate.p2Pawn, "loc").X - 30000) < 1000, "beside player 1, who has sailed off with them")
+    Session.moveTo(spc, 30000, 0)
+    Fake.put(sstate.p2Pawn, "loc", { X = 30000.0, Y = 300.0, Z = 100.0 })
+    local wharf = Fake.switch(spc, "BP_Wharf_C", 30100.0, 300.0, 100.0)
+    sail:run(0.5)
+    Session.press2(sail, "Gamepad_FaceButton_Right")
+    check(field(wharf, "opened") == 0, "a wharf isn't for player 2: whoever presses, the game seats player 1")
+    allErrors(sail)
+
     local f, fpc, fstate = localGame()
     f:run(1.5)
     local swing = field(fstate.p2Pawn, "anim")
@@ -1606,6 +1633,24 @@ local function localPlay()
     u:run(2)
     check(upc.env.PBZ.valid(ustate.p2Pawn), "player 2 is back after a map change")
     allErrors(u)
+
+    local late, lpc, lstate = localGame()
+    late:run(1.5)
+    Fake.switch(lpc, "BP_Bell_C", 8000.0, 0.0, 100.0, true)
+    Session.loadMap(lpc)
+    for _ = 1, 50 do
+        late:run(0.1)
+        if lpc.env.PBZ.valid(lstate.p2Pawn) then
+            break
+        end
+    end
+    Fake.put(lstate.p2Pawn, "loc", { X = 8000.0, Y = 100.0, Z = 100.0 })
+    Session.press2(late, "Gamepad_FaceButton_Right")
+    check(field(lpc.controller, "Pawn") == lpc.pawn, "as a load ends a bell is left alone: its end puts player 1's stats on whoever is the player")
+    late:run(1.6)
+    Session.press2(late, "Gamepad_FaceButton_Right")
+    check(field(lpc.controller, "Pawn") == lstate.p2Pawn, "a moment later it isn't")
+    allErrors(late)
 
     local b, bpc, bstate = localGame()
     b:run(1.5)

@@ -92,18 +92,19 @@ return function(api)
         end
         V.nextScreenCheck = os.clock() + 0.2
         local up, cls = false, nil
+        V.onBoat = false
         for _, w in ipairs(FindAllOf("CommonActivatableWidget") or {}) do
             local ok, hit = pcall(function()
                 if not (w:IsActivated() and w:IsVisible()) then
                     return nil
                 end
                 local name = w:GetClass():GetFName():ToString()
+                V.onBoat = V.onBoat or name == "W_ShipHudLayout_C"
                 -- Tutorial hint bars (W_TutorialBar_Hint_*) are passive overlays, not pages: they hold nobody.
                 return (not ALWAYS_ON_SCREENS[name] and not name:find("^W_TutorialBar_")) and name or nil
             end)
             if ok and hit then
                 up, cls = true, hit
-                break
             end
         end
         if up ~= V.screenNow then
@@ -1155,7 +1156,7 @@ return function(api)
         -- The game's death flow sends "the player" to the bell, and that's player 1 whichever Soul died. So player 2 never
         -- really dies: health stops at DOWN_HP, and that counts as down until they're back beside player 1.
         if not waiting[2] then
-            if not inScene then
+            if not (inScene or V.sailing) then
                 game.setMinHealth(p2, DOWN_HP)
             end
         end
@@ -1186,6 +1187,9 @@ return function(api)
         game.guardFormations()
         if not held then
             V.keepHud(pc, p2)
+        end
+        if V.sailing then           -- (they're out of the world for the ride: nothing to wake or walk into)
+            return
         end
         matchPlayer1(p1, p2)
         -- One after another: each looks through the game's object list, and all in one frame they held it up by 8 ms, once a second.
@@ -1450,19 +1454,39 @@ return function(api)
         if playing ~= inScene then
             inScene = playing
             api.gs():SetForceDisableSplitscreen(pc, playing or menuOpen)
+            local out = playing or V.sailing
             if valid(p2) then
-                game.setMinHealth(p2, playing and (game.getHealth(p2) or 0) or DOWN_HP)
+                game.setMinHealth(p2, out and (game.getHealth(p2) or 0) or DOWN_HP)
             end
-            holdForScene(playing)
+            holdForScene(out)
             log(playing and "Scene: full screen." or "Scene over: split screen.")
             -- A scene can move player 1 somewhere new, as the story goes on: player 2 goes along.
             local _, p1 = getPlayer1()
-            if not playing and valid(p1) and valid(p2)
+            if not out and valid(p1) and valid(p2)
                 and distance(p1:K2_GetActorLocation(), p2:K2_GetActorLocation()) > SCENE_REGROUP_CM then
                 moveBeside(p2, p1)
             end
         end
     end
+
+    -- A boat has one place on it, player 1's, and the game won't seat a second Soul. It takes the whole screen, so player 2 sits the ride
+    -- out as they do a scene, and is brought along at the end of it.
+    function V.followBoat(p1)
+        if V.onBoat == V.sailing or inScene then        -- (the landing scene takes the boat's page down for a moment)
+            return
+        end
+        V.sailing = V.onBoat
+        log(V.sailing and "On the boat: player 2 rides along." or "Off the boat.")
+        holdForScene(V.sailing)
+        local p2 = state.p2Pawn
+        if valid(p2) then
+            game.setMinHealth(p2, V.sailing and (game.getHealth(p2) or DOWN_HP) or DOWN_HP)
+        end
+        if not V.sailing and valid(p1) and valid(p2) and distance(p1:K2_GetActorLocation(), p2:K2_GetActorLocation()) > SCENE_REGROUP_CM then
+            moveBeside(p2, p1)
+        end
+    end
+    V.onBoat, V.sailing = false, false
 
     local function pawnOf(n, p1)
         return n == 1 and p1 or state.p2Pawn
@@ -1507,6 +1531,7 @@ return function(api)
         -- there, so both players can use it.
         -- The bell's menu doesn't pause the game but is a menu all the same: both players use it with their own pads.
         local menu = not paused and (api.gs():IsGamePaused(pc) or bellMenuUp() or screenUp())
+        V.followBoat(p1)
         if menu ~= menuOpen then
             menuOpen = menu
             api.gs():SetForceDisableSplitscreen(pc, menu or inScene)
@@ -1785,6 +1810,7 @@ return function(api)
     -- The Soul that rested can't guard afterwards: seen after every bell, and gone once it's replaced, as a death does. A
     -- new one takes its place on the spot. A rest heals anyway.
     local RENEW_AFTER_S = 1.0
+    V.AFTER_MENU_S = 1.0
 
     local function renewPlayer2()
         local old = state.p2Pawn
@@ -1893,7 +1919,9 @@ return function(api)
         if swapIsBell then
             limit = swapSawMenu and SWAP_MAX_S or SWAP_BELL_WAIT_S
         end
-        if (swapIdle >= SWAP_IDLE_S and age > 3.0) or (age > limit and not (menu or screenUp())) then
+        -- (The quiet gaps are all before the menu: with it been and gone, both players have waited long enough.)
+        local quiet = (swapIsBell and swapSawMenu) and V.AFTER_MENU_S or SWAP_IDLE_S
+        if (swapIdle >= quiet and age > 3.0) or (age > limit and not (menu or screenUp())) then
             unswapBodies()
         end
     end
@@ -1987,6 +2015,7 @@ return function(api)
         return (dx * f.X + dy * f.Y) / len >= (minDot or 0.7)
     end
     V.TALK_CM = 400
+    V.PLAYER1S = { BP_Wharf_C = true }      -- (whoever presses, the game seats player 1, who is carried off without a word)
     V.GAP_CM = 3000             -- a gap blocker is used from afar (its DisplayPointDistance)
     V.RING_CM = 2000            -- the game's ring shows on a thing from about here
 
@@ -2075,7 +2104,7 @@ return function(api)
             if d then
                 if d <= INTERACT_CM and (bestD == nil or d < bestD) then
                     local okS, done = pcall(function() return s.CurSwitchState end)
-                    if not (okS and done == true) and not usedSwitches[s:GetAddress()] and V.gameAllows(pawn, s) then
+                    if not (okS and done == true) and not usedSwitches[s:GetAddress()] and not V.PLAYER1S[s:GetClass():GetFName():ToString()] and V.gameAllows(pawn, s) then
                         best, bestD = s, d
                     end
                 end
@@ -2297,9 +2326,14 @@ return function(api)
     end
 
     local promptTarget, promptTargetKind, promptTargetAt = nil, nil, 0   -- the prompt's last find, reused on a press
+    -- The end of a load puts player 1's stats on whoever is "the player" then: a bell rung on the way in, a moment before the
+    -- loading page shows, took 40% off player 1's health for good.
+    V.SOUL_SETTLE_S = 1.5
+
     local function interactP2(want)
         local pawn = state.p2Pawn
-        if swapped or V.opening or V.closeUp or not valid(pawn) or game.isDead(pawn) or p2DownSince then
+        if swapped or V.opening or V.closeUp or menuOpen or not valid(pawn) or game.isDead(pawn) or p2DownSince
+            or os.clock() - (V.soulAt or 0) < V.SOUL_SETTLE_S then
             return
         end
         local kind, target, bp
@@ -3067,6 +3101,7 @@ return function(api)
                         pcall(function() getPlayer1():ResetIgnoreInputFlags() end)
                     end
                     V.lentCharge, V.gourdKeep, V.drinkPc, V.drinkBody, V.opening, V.closeUp = nil, nil, nil, nil, nil, nil
+                    V.onBoat, V.sailing = false, false
                     V.maps = V.maps + 1
                     V.looked = {}
                     promptTarget, promptKind, promptTargetKind, V.promptSince, V.ringWas = nil, nil, nil, nil, nil
