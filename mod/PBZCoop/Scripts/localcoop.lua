@@ -498,6 +498,7 @@ return function(api)
         V.nextOpt = os.clock() + 1.0
         local b = p2:K2_GetActorLocation()
         local seen = {}
+        local character = StaticFindObject("/Script/Engine.Character")
         for _, proxy in ipairs(FindAllOf("OptimizationProxyComponent") or {}) do
             local ok, owner = pcall(function() return proxy:GetOwner() end)
             if ok and valid(owner) then
@@ -516,7 +517,10 @@ return function(api)
                         pcall(function() proxy:DisableAllOptimizations() end)
                         V.unoptimized[addr] = true
                     end
-                    if V.unoptimized[addr] then
+                    -- (Flowers and such have a proxy too. Asked for a Soul's parts, UE4SS can answer from some class it has seen, and calling into
+                    -- what it hands back killed the game beside a Memory Flower.)
+                    local okK, soul = pcall(function() return owner:IsA(character) end)
+                    if V.unoptimized[addr] and okK and soul then
                         -- Switching the optimization off leaves what its far-away wave did: the Soul's enemies
                         -- are set flying (movement mode 5), their movement and controller tick every few
                         -- hundred ms and their animation ticks only for montages. An enemy left like that stands
@@ -1057,11 +1061,21 @@ return function(api)
     local MATCH_EVERY_S = 2.0
     local nextMatch = 0
 
+    -- The game sets how far player 1's camera may tilt, and a new controller's has the engine's own limits: player 2 could look straight down on their hat.
+    function V.matchCamera()
+        local pc1, pc2 = getPlayer1(), state.p2Controller
+        local mine, theirs = pc1.PlayerCameraManager, pc2.PlayerCameraManager
+        if valid(mine) and valid(theirs) and theirs.ViewPitchMax ~= mine.ViewPitchMax then
+            theirs.ViewPitchMin, theirs.ViewPitchMax = mine.ViewPitchMin, mine.ViewPitchMax
+        end
+    end
+
     local function matchPlayer1(p1, p2)
         if os.clock() < nextMatch then
             return
         end
         nextMatch = os.clock() + MATCH_EVERY_S
+        pcall(V.matchCamera)
         pcall(function()
             local from, to = p1.AttributeSetBase, p2.AttributeSetBase
             local full = select(1, game.getHealth(p2)) >= to.Health_Max.CurrentValue - 0.5
@@ -2063,7 +2077,7 @@ return function(api)
                 -- grab point. Player 2 looking at one within that range has it as their target, ahead of all else.
                 if isGapBlocker(v) then
                     local okL, loc = pcall(function() return v:K2_GetActorLocation() end)
-                    local okR, range = pcall(function() return v.DisplayPointDistance end)
+                    local okR, range = pcall(function() return v:GetDisplayPointDistance() end)
                     range = (okR and type(range) == "number" and range > 0) and range or 2500
                     if okL and loc.X and distance(at, loc) <= range and facing(pawn, loc, 0.85) then
                         return "gap", v, bp
@@ -2124,6 +2138,18 @@ return function(api)
         end
         if person then
             return "talk", person, bp
+        end
+        -- A Memory Flower, a thing to look at or to read: what the game calls a flow actor. Each runs a little story, and those only start
+        -- from player 1's side, as a talk does.
+        local flow, flowD = nil, INTERACT_CM
+        for _, f in ipairs(V.around("PBZFlowInteractActorBase", INTERACT_CM, at)) do
+            local okL, loc = pcall(function() return f:K2_GetActorLocation() end)
+            if okL and loc.X and distance(at, loc) < flowD and V.gameAllows(pawn, f) then
+                flow, flowD = f, distance(at, loc)
+            end
+        end
+        if flow then
+            return "talk", flow, bp
         end
         for _, p in ipairs(V.around("PBZPickupActor", INTERACT_CM, at)) do
             local okL, loc = pcall(function() return p:K2_GetActorLocation() end)
@@ -2691,10 +2717,20 @@ return function(api)
         local at, best = pawn:K2_GetActorLocation(), V.RING_CM
         for _, s in ipairs(V.around("PBZSwitchBase", V.RING_CM, at)) do
             local d = reach(at, s)
-            if d and d < best and not usedSwitches[s:GetAddress()] then
+            if d and d < best and not usedSwitches[s:GetAddress()] and not V.PLAYER1S[s:GetClass():GetFName():ToString()] then
                 local ok, near = pcall(function() return s.CurSwitchState ~= true and ic:GetValidDistance(s, pawn) end)
                 if ok and near == true then
                     V.ringWas, best = s, d
+                end
+            end
+        end
+        for _, f in ipairs(V.around("PBZFlowInteractActorBase", V.RING_CM, at)) do
+            local okL, loc = pcall(function() return f:K2_GetActorLocation() end)
+            local d = okL and loc.X and distance(at, loc) or nil
+            if d and d < best then
+                local ok, near = pcall(function() return ic:GetValidDistance(f, pawn) end)
+                if ok and near == true then
+                    V.ringWas, best = f, d
                 end
             end
         end

@@ -412,6 +412,49 @@ function Fake.switch(pc, class, x, y, z, bell, noState)
     return s
 end
 
+-- The game's limits on how far a camera tilts, on the first controller's, and the engine's on any other.
+function Fake.cameras(pc, second)
+    rawget(pc.controller, "__fields").PlayerCameraManager = { IsValid = function() return true end, ViewPitchMin = -80.0, ViewPitchMax = 45.0 }
+    local theirs = { IsValid = function() return true end, ViewPitchMin = -89.9, ViewPitchMax = 89.9 }
+    rawget(second, "__fields").PlayerCameraManager = theirs
+    return theirs
+end
+
+-- A flow actor: a switch to the eye, but it isn't one of the game's switches.
+function Fake.flow(pc, class, x, y, z)
+    local f = Fake.switch(pc, class, x, y, z)
+    pc.switches[#pc.switches] = nil
+    pc.flows = pc.flows or {}
+    pc.flows[#pc.flows + 1] = f
+    return f
+end
+
+-- Something with a place in the game's optimizer that isn't a Soul. What it's asked for is counted.
+function Fake.flower(pc, x, y, z)
+    local asked = {}
+    local methods = {
+        IsValid = function() return true end,
+        IsA = function() return false end,
+        K2_GetActorLocation = function() return { X = x, Y = y, Z = z } end,
+    }
+    local owner = setmetatable({}, { __index = function(_, name)
+        if methods[name] then
+            return methods[name]
+        end
+        asked[#asked + 1] = name
+        return nil
+    end })
+    pc.proxies = pc.proxies or {}
+    pc.proxies[#pc.proxies + 1] = {
+        IsValid = function() return true end,
+        GetOwner = function() return owner end,
+        GetAddress = function() return 7000 + #pc.proxies end,
+        DisableAllOptimizations = function() end,
+        EnableOptimizations = function() end,
+    }
+    return asked
+end
+
 -- A page of the game's, by class. Take it away from pc.screens again to close it.
 function Fake.screen(pc, class)
     local name = { ToString = function() return class end }
@@ -1085,6 +1128,10 @@ function Fake.new(id, scripts, ini, link)
             return pc.inputContexts
         elseif class == "EnhancedInputLocalPlayerSubsystem" then
             return pc.inputSubsystems
+        elseif class == "OptimizationProxyComponent" then
+            return pc.proxies
+        elseif class == "PBZFlowInteractActorBase" then
+            return pc.flows
         end
         return nil
     end
