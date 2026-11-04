@@ -245,6 +245,45 @@ return function(out, scripts, seeds, steps)
                 end
                 return "no boss to fight"
             end,
+            function()
+                local pc = pick(2)
+                local boss = Session.enemyOn(pc, "boss")
+                if boss and not field(boss, "dead") and not pc.cut then
+                    Session.moveTo(pc, 2800, 3000)
+                    pc.hudLayout:RegisterBossHPBar(boss)
+                    return name(pc) .. " starts the boss fight"
+                end
+                return name(pc) .. " finds no boss"
+            end,
+            function()
+                local pc = pick(2)
+                local boss = Session.enemyOn(pc, "boss")
+                if boss and not field(boss, "dead") then
+                    pc.env.PBZ.game.noteLocalMove()
+                    Fake.setHealth(boss, 1)
+                    return name(pc) .. " strikes the boss to 1"
+                end
+                return name(pc) .. " finds no boss"
+            end,
+            function()
+                local pc = pick(2)
+                if pc.cut then
+                    return name(pc) .. " is cut off"
+                end
+                Session.command(pc, "netoff")
+                s:run(1)
+                Session.command(pc, "neton client")
+                return name(pc) .. " turns sync off and on"
+            end,
+            function()
+                if math.random() < 0.5 then
+                    return "host keeps sync"
+                end
+                Session.command(h, "netoff")
+                s:run(1)
+                Session.command(h, "neton host")
+                return "host turns sync off and on"
+            end,
         }
         for step = 1, nsteps do
             local a = actions[math.random(1, #actions)]

@@ -3411,6 +3411,42 @@ local function sixPlayers()
     allErrors(m)
 end
 
+-- Gaps (found by chaos.lua): a guest who misses deaths, through a short gap, a long one, or one the host restarted sync in,
+-- still has those enemies dead once back.
+local function gaps()
+    part("deaths missed in a gap")
+    local s = party(nil, nil, { "Host", "Guest", "Guest" })
+    local h, a = s.pcs[1], s.pcs[2]
+    Session.moveTo(a, 400, 0)
+    Session.moveTo(s.pcs[3], 600, 0)
+    s:run(3)
+    a.cut = true
+    Session.enemyOn(h, "near"):Kill(1)
+    s:run(5)
+    a.cut = false
+    s:run(6)
+    check(field(Session.enemyOn(a, "near"), "dead") == true, "a 5 s gap: the death in it is told again once they're back")
+    a.cut = true
+    Session.enemyOn(h, "thug1"):Kill(1)
+    s:run(16)
+    a.cut = false
+    s:run(6)
+    check(field(Session.enemyOn(a, "thug1"), "dead") == true, "a gap long enough to count as gone: the same")
+    a.cut = true
+    Session.enemyOn(h, "thug2"):Kill(1)
+    s:run(2)
+    Session.command(h, "netoff")
+    s:run(1)
+    Session.command(h, "neton host")
+    s:run(4)
+    a.cut = false
+    Session.moveTo(a, -1500, 200)
+    s:run(10)
+    check(field(Session.enemyOn(a, "thug2"), "dead") == true, "the host restarts sync while they're away: still told")
+    check(field(Session.enemyOn(s.pcs[3], "thug2"), "dead") == true, "and the one who was there all along has it dead too")
+    allErrors(s)
+end
+
 local function backToTwo()
     part("back to two")
     local s = party(nil, nil, { "Host", "Guest", "Guest" })
@@ -3472,6 +3508,7 @@ return function(print_, scripts)
     lateJoinerGuestFight()
     scaling()
     sixPlayers()
+    gaps()
     leaving()
     sizeTips()
     lateHello()

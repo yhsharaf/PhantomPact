@@ -2903,6 +2903,7 @@ return function(api)
         -- a fight of their own too. A host restarting while the guest stays linked still does.)
         net.hostWorld = nil
         net.hostLethal, net.deadBodies = {}, {}
+        net.everHeard, net.gapped, net.retellAt = nil, nil, nil
         net.bagSent, net.bagDue, net.bagWaiting = false, nil, nil
         net.remoteEnemies = {}
         net.enemyNames = {}
@@ -3222,6 +3223,24 @@ return function(api)
             -- (S tells them all of it). One never told left that enemy standing in their world.
             if isHost() then
                 p.retellAt = os.clock() + 2.0     -- (a player back from a gap: 2 s for their S to come first)
+            end
+        end
+        -- (And the first word from them since this player started sync: one who stayed linked through the host's restart
+        -- starts nothing anew, and what the host told as it started, they may have missed.)
+        if p.lastRemoteAt and not p.everHeard then
+            p.everHeard = true
+            if isHost() and not p.retellAt then
+                p.retellAt = os.clock() + 2.0
+            end
+        end
+        -- (A shorter gap too, never long enough to count as gone: what was said in it can be lost the same way.)
+        local quiet = p.lastRemoteAt and os.clock() - p.lastRemoteAt
+        if quiet and quiet > 3.0 then
+            p.gapped = true
+        elseif p.gapped and quiet and quiet < 1.0 and not p.partnerGone then
+            p.gapped = nil
+            if isHost() and not p.retellAt then
+                p.retellAt = os.clock() + 2.0
             end
         end
         if p.retellAt and os.clock() >= p.retellAt then
