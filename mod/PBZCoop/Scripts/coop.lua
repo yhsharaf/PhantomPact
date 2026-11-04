@@ -518,10 +518,12 @@ return function(api)
         end
     end
 
-    handlers.M = function(rest)
+    handlers.M = function(rest, from)
         local path, yaw = rest:match("^(%S+)%s*(%S*)")
-        if path and valid(net.ghost) and game.playMove then
-            game.playMove(net.ghost, path, tonumber(yaw))
+        -- (On the sender's own ghost: in a party, net.ghost is the lead's, and every player's move played on it.)
+        local ghost = net.party and peerOf(from).ghost or net.ghost
+        if path and valid(ghost) and game.playMove then
+            game.playMove(ghost, path, tonumber(yaw))
         end
     end
 
@@ -1742,6 +1744,12 @@ return function(api)
         net.lookSent = nil                  -- (what this player wears goes to them at the next look)
         net.bagSent, net.bagDue = false, os.clock() + 3     -- (and what's in this bag, once they're up: game.mergeBag)
         net.bagWaiting = nil                                -- (what they sent before is old now)
+        -- (In a party, to that one guest: sent to all, every guest still in its first minute topped its bag up again at
+        -- each join and each reconnect, the bombs and herbs it had used since.)
+        if isHost() and from then
+            net.bagTo = net.bagTo or {}
+            net.bagTo[from] = true
+        end
         if isHost() and game.offerChestsAgain then
             game.offerChestsAgain()         -- (the open chests here: named again, for them)
         end
@@ -1970,18 +1978,28 @@ return function(api)
         end
         local list, line, lines = game.bagSummary(pawn), {}, 0
         local size = 0
+        local to = net.party and net.bagTo and next(net.bagTo) and net.bagTo or nil
+        local function send(text)
+            if to then
+                for slot in pairs(to) do
+                    sendTo(slot, "BAG", text)
+                end
+            else
+                sendEvent("BAG", text)
+            end
+        end
         for _, e in ipairs(list) do
             if size + #e + 1 > BAG_LINE and #line > 0 then
-                sendEvent("BAG", table.concat(line, ","))
+                send(table.concat(line, ","))
                 line, size, lines = {}, 0, lines + 1
             end
             line[#line + 1], size = e, size + #e + 1
         end
         if #line > 0 then
-            sendEvent("BAG", table.concat(line, ","))
+            send(table.concat(line, ","))
             lines = lines + 1
         end
-        net.bagSent = true
+        net.bagSent, net.bagTo = true, nil
         log(string.format("Sent what's in this bag (%d things, %d lines): the partner takes what they lack.", #list, lines))
         return true
     end

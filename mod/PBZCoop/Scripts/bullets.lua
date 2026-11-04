@@ -28,7 +28,8 @@ return function(api)
     local bullets = { sent = 0, shown = 0, refused = 0, ended = 0 }
     local known = {}                -- bullet address -> true: seen already, this player's or anyone else's
     local watchAt = 0
-    local cache = {}                -- bullet data path -> its address once checked, or false when it can't be loaded here
+    local cache = {}                -- bullet data path -> its address once checked, or false when it isn't bullet data
+    local retryAt = {}              -- bullet data path -> os.clock() before which a path not found isn't looked up again
     local shots, shotsAt = 0, 0
     -- A bullet's end goes out too. Some only end when the ability that fired them says so (a lion head's fire loop), and a ghost
     -- runs none: its copies looped on, one more each time, where the sender's own had long gone.
@@ -102,6 +103,11 @@ return function(api)
         if cache[path] == false then
             return nil
         end
+        -- (One not found is tried again after a while, as moves.montage does: not found only meant still loading, mid-trip,
+        -- and that bullet was never shown again all session.)
+        if retryAt[path] and os.clock() < retryAt[path] then
+            return nil
+        end
         local d = StaticFindObject(path)
         if not valid(d) and type(LoadAsset) == "function" then
             if not api.moves.countLoad() then
@@ -111,10 +117,14 @@ return function(api)
             d = StaticFindObject(path)
         end
         if valid(d) and (cache[path] == d:GetAddress() or game.isBulletData(d)) then
-            cache[path] = d:GetAddress()
+            cache[path], retryAt[path] = d:GetAddress(), nil
             return d
         end
-        cache[path] = false
+        if valid(d) then
+            cache[path] = false             -- (there, and no bullet: never one)
+        else
+            retryAt[path] = os.clock() + 10
+        end
         return nil
     end
 

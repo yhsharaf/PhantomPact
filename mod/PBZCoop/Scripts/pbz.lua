@@ -1558,6 +1558,10 @@ return function(api)
     -- Replays the remote player's move on the ghost. Gives the ability first if the ghost lacks it.
     local loadTried = {}          -- class path -> true once we tried loading it (a failed load isn't retried)
     function game.playMove(ghost, classPath, yaw)
+        -- (A path off the wire: an asset path's shape only, as playAbility asks; and only ever an ability class below.)
+        if type(classPath) ~= "string" or #classPath > 256 or not classPath:match("^/[%w_/%-]+%.[%w_%-]+$") then
+            return
+        end
         local cls = StaticFindObject(classPath)
         if not valid(cls) and not loadTried[classPath] and type(LoadAsset) == "function" then
             -- A move of a weapon the local player doesn't carry isn't in memory yet (other weapons, Phantom Edge).
@@ -1567,6 +1571,9 @@ return function(api)
         end
         if not valid(cls) then
             log("Move class not loaded here: " .. classPath)
+            return
+        end
+        if not game.isAbilityClass(cls) then
             return
         end
         local asc = abilitySystem(ghost)
@@ -1650,13 +1657,29 @@ return function(api)
     -- guest's copy has its AI stopped, so more than half of what the host's enemy did wasn't there to replay: it's given
     -- here, once per copy and move.
     local movesLookedAt = {}      -- enemy address .. class path -> true
+
+    -- Only an ability class goes to the ability system: any other class from a line off the wire, its default object
+    -- taken for an ability inside the game, is a crash no pcall catches. Cached by class (a table field: this file is at
+    -- Lua's limit of locals).
+    game.abilityClassSeen = {}
+    function game.isAbilityClass(cls)
+        local key = cls:GetAddress()
+        if game.abilityClassSeen[key] == nil then
+            local ok, yes = pcall(function()
+                return cls:GetCDO():IsA(StaticFindObject("/Script/GameplayAbilities.GameplayAbility"))
+            end)
+            game.abilityClassSeen[key] = ok and yes == true
+        end
+        return game.abilityClassSeen[key]
+    end
+
     function game.playAbility(actor, classPath)
         if not classPath:match("^/[%w_/%-]+%.[%w_%-]+$") or #classPath > 256 then
             return false
         end
         local asc = abilitySystem(actor)
         local cls = StaticFindObject(classPath)
-        if not (asc and valid(cls)) then
+        if not (asc and valid(cls) and game.isAbilityClass(cls)) then
             return false
         end
         local function start()

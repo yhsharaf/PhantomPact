@@ -3492,6 +3492,19 @@ local function gaps()
     q:run(3)
     check(net(q.pcs[2]).hostBosses["sp:boss"] == nil, "a guest's boss fight, passed on to another guest, isn't taken for the host's")
     allErrors(q)
+
+    -- A guest syncing anew gets the host's bag; the others, past their first merge, aren't sent it again.
+    local b = party()
+    local bh = b.pcs[1]
+    b:run(8)
+    local toAll = count(bh.sent, "^E BAG ")
+    Session.command(b.pcs[3], "netoff")
+    b:run(1)
+    Session.command(b.pcs[3], "neton client")
+    b:run(8)
+    check(count(bh.sent, "^E BAG ") == toAll and count(bh.sent, "^T3 BAG ") >= 1,
+        "a guest re-syncing gets the host's bag alone, not every guest again (" .. count(bh.sent, "^T3 BAG ") .. ")")
+    allErrors(b)
 end
 
 local function backToTwo()
