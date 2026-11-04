@@ -358,7 +358,22 @@ return function(api)
         end
         local n, check, hex = rest:match("^(%d+) (%d+) (%x+)$")
         if n and tonumber(n) == #rows.quests and tonumber(check) == rows.check then
-            guestDone[from or 0] = { done = decode(hex, #rows.quests), at = os.clock() }
+            -- Only steps the guest finishes while linked: the first report is where they stood, and counts for nothing.
+            -- A guest far ahead (a finished NG+ save) otherwise finished a newcomer host's quests for them on joining.
+            -- (The bow in the tower, done together, still counts: the user's rule, the host gives and the guest
+            -- doesn't.)
+            local all = decode(hex, #rows.quests)
+            local g = guestDone[from or 0]
+            if not g then
+                g = { base = all, done = {} }
+                guestDone[from or 0] = g
+            end
+            g.done, g.at = {}, os.clock()
+            for k in pairs(all) do
+                if not g.base[k] then
+                    g.done[k] = true
+                end
+            end
             lookAt = math.min(lookAt, os.clock() - LOOK_S + 2)  -- (a look soon: there may be something to take)
         end
     end

@@ -1944,11 +1944,17 @@ return function(api)
         end
     end
 
-    -- The two bags, on linking (see game.mergeBag): each side sends what it has once per link, in lines a few hundred
-    -- characters long, and takes from the other's what it lacks, at a moment with a body to put it on.
+    -- The bags, on linking (see game.mergeBag): the host sends what it has once per link, in lines a few hundred
+    -- characters long, and a guest takes from it what it lacks, at a moment with a body to put it on. Only the host
+    -- gives (the user's rule, after a report): a guest catches up to the host's world, boss weapons the story needs
+    -- included, but a guest far ahead (a finished NG+ save) gave a newcomer host everything, and spoiled their game.
     do      -- (a block of its own: this function is at the 200 locals Lua allows)
     local BAG_LINE = 600
     function net.sendBag()
+        if not isHost() then
+            net.bagSent = true      -- (a guest's bag is its own: nothing goes to the host)
+            return true
+        end
         local _, pawn = getPlayer1()
         if not (game.bagSummary and valid(pawn)) or game.isDead(pawn) then
             return false
@@ -1970,8 +1976,9 @@ return function(api)
         log(string.format("Sent what's in this bag (%d things, %d lines): the partner takes what they lack.", #list, lines))
         return true
     end
-    handlers.BAG = function(rest)
-        if type(rest) ~= "string" or #rest > BAG_LINE + 80 then
+    handlers.BAG = function(rest, from)
+        -- (The host's bag only: a host takes nothing, and in a party a guest takes nothing from another guest.)
+        if isHost() or from ~= nil or type(rest) ~= "string" or #rest > BAG_LINE + 80 then
             return
         end
         net.bagWaiting = net.bagWaiting or {}

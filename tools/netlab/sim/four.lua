@@ -1007,8 +1007,11 @@ local function otherMaps()
 end
 
 -- Two players beside each other, near no boss yet.
-local function pair(extraIni)
+local function pair(extraIni, before)
     local s = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES, extraIni)
+    if before then
+        before(s.pcs[1], s.pcs[2])      -- (each save as it is before they link)
+    end
     s:run(4)
     Session.moveTo(s.pcs[1], 0, 0)
     Session.moveTo(s.pcs[2], 500, 0)
@@ -1261,18 +1264,46 @@ local function followTheHost()
     check(#g.storyApplied == applied, "nothing is applied twice, as the host keeps telling its point")
     allErrors(s)
 
-    local a, ah, ag = pair()
-    ah.storyUpTo(3)
-    ag.storyUpTo(all)
+    -- A guest who joins far ahead (a finished save) changes nothing in the host's world: what they did before joining is
+    -- their own (1.6.2, after a report of a newcomer's game spoiled).
+    local a, ah, ag = pair(nil, function(ph, pg)
+        ph.storyUpTo(3)
+        pg.storyUpTo(all)
+    end)
     a:run(60)
     check(#ag.storyApplied == 0, "a guest ahead of the host stays ahead")
-    -- The other way: a quest both have under way that the guest finished (the bow in the tower) is finished for the host
-    -- too. Not the guest's later quests, which the host hasn't started: the host's world keeps its point.
-    check(ah.storyState("Side-Cry", "1") == 2, "a quest the host is on, finished by the guest, is finished for the host")
-    check(ah.storyState("Main-Forest", "1") ~= 2 and ah.storyState("Boss-Puppet", "S1") ~= 2,
-        "but nothing the host hasn't started: the host's point stays its own")
-    check(count(ah.logs, "a guest finished") == 1, "said once")
+    check(ah.storyState("Side-Cry", "1") ~= 2 and ah.storyState("Main-Forest", "1") ~= 2,
+        "and the steps they'd done before joining don't reach the host")
+    check(count(ah.logs, "a guest finished") == 0, "nothing said")
     allErrors(a)
+
+    -- The other way, done together: a quest both have under way that the guest finishes while linked (the bow in the
+    -- tower) is finished for the host too. Not the guest's later quests: the host's world keeps its point.
+    local e, eh, eg = pair(nil, function(ph, pg)
+        ph.storyUpTo(3)
+        pg.storyUpTo(6)
+    end)
+    e:run(30)
+    check(eh.storyState("Side-Cry", "1") ~= 2, "(not yet finished by anyone)")
+    eg.storyUpTo(all)
+    e:run(60)
+    check(eh.storyState("Side-Cry", "1") == 2, "a quest the host is on, finished by the guest while linked, is finished for the host")
+    check(eh.storyState("Main-Forest", "1") ~= 2 and eh.storyState("Boss-Puppet", "S1") ~= 2,
+        "but nothing the host hasn't started: the host's point stays its own")
+    check(count(eh.logs, "a guest finished") == 1, "said once")
+    allErrors(e)
+
+    -- The bags on joining: only the host gives. A guest gets what the host has and they lack; a guest's own things
+    -- (a finished save's weapons and money) stay theirs and don't fill a newcomer host's bag.
+    local b, bh, bg = pair(nil, function(ph, pg)
+        Session.gainItem(ph, "R_700", 2)
+        Session.gainItem(pg, "R_800", 5)
+    end)
+    b:run(20)
+    check(Session.items(bg, "R_700") == 2, "a guest joining gets what's in the host's bag")
+    check(Session.items(bh, "R_800") == 0, "but the host gets nothing from the guest's bag")
+    check(Session.items(bg, "R_800") == 5 and Session.items(bh, "R_700") == 2, "and each keeps their own")
+    allErrors(b)
 
     local c, ch, cg = pair()
     ch.storyUpTo(all)
