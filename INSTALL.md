@@ -1,4 +1,4 @@
-# Phantom Pact 1.6.0: online co-op for Phantom Blade Zero
+# Phantom Pact 1.6.1: online co-op for Phantom Blade Zero
 
 Play the campaign with a friend: you see each other as a second Soul, fight the same enemies and bosses, and
 share loot, dust and bell rests. The host's world decides enemies, bosses and deaths; the guest's world follows.
@@ -28,8 +28,10 @@ repository (`native/`).
 ## Install (both players)
 
 1. Open the game folder: Steam > right-click the game > Manage > Browse local files.
-2. Extract everything in the zip into that folder (the `PBZ` folder) and say yes to merging folders.
-   The mod lands in `platform\steam\ue4ss\Mods\PBZCoop`.
+2. Extract everything in the zip into that folder (the `PBZ` folder) and say yes to merging folders, and to replacing
+   files. The mod lands in `platform\steam\ue4ss\Mods\PBZCoop`. Two small files also go into
+   `platform\steam\ue4ss\UE4SS_Signatures` (`GNatives.lua`, `GUObjectArray.lua`): Phantom Pact's own, which let UE4SS
+   start on the game as it is since the November 4 update, and on the build before it.
 3. Open `platform\steam\ue4ss\Mods\PBZCoop\PhantomPact.ini` in Notepad:
    - **Host:** change `Role = Off` to `Role = Host`
    - **Guest:** change `Role = Off` to `Role = Guest`, and set `HostAddress` to the host's Tailscale IP (it starts
@@ -184,6 +186,9 @@ Not in PvP yet: executions (posture break only staggers).
 - **`connected=no`, or it feels laggy:** see Connection problems below.
 - **No `[PBZCoop] Loaded` line at all:** UE4SS isn't installed in `PBZ\platform\steam`, or the mod folder isn't at
   `platform\steam\ue4ss\Mods\PBZCoop`.
+- **UE4SS stops at launch with "AOB scans could not be completed" (`GNatives`, `GUObjectArray`):** a game update moved
+  what UE4SS looks for. The two files in `platform\steam\ue4ss\UE4SS_Signatures` from this zip handle the game as of the
+  November 4 update; if a later update breaks them, look for a newer Phantom Pact.
 
 ## Connection problems
 

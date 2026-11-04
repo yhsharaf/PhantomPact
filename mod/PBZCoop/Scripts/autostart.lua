@@ -15,6 +15,7 @@ return function(api)
     -- Another build still runs, with a warning: function and field names may have changed. (From appdoze's PR #2.)
     local KNOWN_BUILDS = {
         [511072344] = "Steam build 26266538",
+        [498913272] = "Steam build 26367565",     -- the 2026-11-04 update
     }
     pcall(function()
         local f = io.open(modRoot() .. "../../../PBZ.exe", "rb")

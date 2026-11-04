@@ -25,6 +25,10 @@ Copy-Item (Join-Path $root 'INSTALL.md') (Join-Path $stage 'Phantom Pact - INSTA
 Copy-Item (Join-Path $root 'docs\LOCAL_COOP.md') (Join-Path $stage 'Phantom Pact - LOCAL CO-OP.md')
 foreach ($f in 'enabled.txt', 'PhantomPact.ini') { Copy-Item (Join-Path $root "mod\PBZCoop\$f") $mod }
 Copy-Item (Join-Path $root 'mod\PBZCoop\Scripts\*.lua') (Join-Path $mod 'Scripts')
+# Phantom Pact's own UE4SS signatures (GNatives, GUObjectArray): UE4SS starts on the game since the 2026-11-04 update.
+$sigs = Join-Path $stage 'platform\steam\ue4ss\UE4SS_Signatures'
+New-Item -ItemType Directory -Force $sigs | Out-Null
+Copy-Item (Join-Path $root 'mod\ue4ss\UE4SS_Signatures\*.lua') $sigs
 # The PvP victory calligraphy (生还, painted in Lumina), loaded by pbz.lua at run time.
 New-Item -ItemType Directory -Force (Join-Path $mod 'art') | Out-Null
 Copy-Item (Join-Path $root 'mod\PBZCoop\art\*') (Join-Path $mod 'art') -Recurse
