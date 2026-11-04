@@ -987,7 +987,9 @@ return function(api)
             if matched[id] == nil and r.Class and not id:match("^tw%d+:") then
                 local best, bestD = nil, ENEMY_MATCH_CM
                 for _, e in pairs(locals) do
-                    if not used[e.addr] then
+                    -- (Not a body either: one lying where the host's live enemy stood was paired as it, and as one
+                    -- found it was never brought back, so the host's enemy had no body here to hit.)
+                    if not used[e.addr] and not isDead(e.actor) then
                         e.class = e.class or enemyClass(e.actor)    -- three calls through UE4SS, for each pair, each round
                         if e.class == r.Class then
                             local d = distance(e.loc, r)
@@ -1023,7 +1025,12 @@ return function(api)
         for _, e in pairs(locals) do
             if not used[e.addr] then
                 local id = enemyName(e.actor, e.addr)
-                if matched[id] == nil then          -- (never over the one paired with the host's under that id)
+                -- (Never over the one paired with the host's under that id. Nor a body under the id of one alive there,
+                -- unless it's this player's kill still to tell (GK, in syncEnemy): any other was steered as the host's live
+                -- enemy and, being found, never brought back.)
+                local body = net.remoteEnemies[id] and isDead(e.actor)
+                    and not ((net.hitHere[id] or net.mine[id]) and not net.guestKillSent[id])
+                if matched[id] == nil and not body then
                     matched[id] = e.actor
                 end
                 if not paired[e.addr] then
@@ -1687,6 +1694,11 @@ return function(api)
             return
         end
         if on == "0" then
+            -- (This game ran it: a death here from now on is sent as GK. A killing blow landed as RUN 0 came had nothing
+            -- to send it, and the enemy lived on on the host.)
+            if net.mine[name] then
+                net.hitHere[name] = true
+            end
             net.mine[name] = nil            -- (the host's lines take it from here, and pair it up again)
             return
         end
@@ -2201,8 +2213,12 @@ return function(api)
                 net.pendingDeaths[name] = true
                 again = again + 1
             end
-            for name in pairs(net.hostBosses) do
-                net.pendingBosses[name] = true
+            -- (Only while the host's fight is on: one the host never joined, or walked out of, came back as a bar and shut
+            -- walls with nobody's fight behind them.)
+            if (net.party and peerOf(nil).fights) or (not net.party and net.partnerFighting) then
+                for name in pairs(net.hostBosses) do
+                    net.pendingBosses[name] = true
+                end
             end
             reopenFog()
             if game.resetBosses then
@@ -3351,6 +3367,9 @@ return function(api)
         -- in as well: what they fight is a copy of that boss, which does nothing once its own player's fight is over, and
         -- they stood shut in by the walls with it. (The bar came back every second, and the walls stayed shut for nobody.)
         if was and on ~= "1" then
+            if from == nil and isClient() then
+                net.hostBosses = {}         -- (the host's fights are all over: none comes back at this player's death)
+            end
             local whose = net.party and (from or 1) or nil
             for name in pairs(net.partnerBosses) do
                 if whose == nil or net.fightOf[name] == whose then

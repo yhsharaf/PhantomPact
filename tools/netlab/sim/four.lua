@@ -3522,6 +3522,63 @@ local function backToTwo()
     allErrors(s)
 end
 
+-- Races in the two-player enemy sync: a killing blow landed as the host takes an enemy back, a body taken for the host's live
+-- enemy, and a boss fight the host never joined coming back at the guest's death.
+local function syncRaces()
+    part("races in the enemy sync")
+    local list = { { "byguest", THUG, 11500.0, 0.0, 100.0, 600, 100 } }
+    local s = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, list)
+    local h, g = s.pcs[1], s.pcs[2]
+    s:run(4)
+    Session.moveTo(h, 0, 0)
+    Session.moveTo(g, 11000, 0)
+    s:run(3)
+    check(net(g).mine["sp:byguest"] == true, "(apart: the guest's game runs it)")
+    local onH, onG = Session.enemyOn(h, "byguest"), Session.enemyOn(g, "byguest")
+    local handlers = g.env.PBZ.coop.handlers
+    local run = handlers.RUN
+    handlers.RUN = function(rest, from)
+        run(rest, from)
+        if rest == "sp:byguest 0" then
+            swing(g, onG, 0)            -- (the killing blow, landed just as the host took it back)
+            Fake.put(onG, "dead", true)
+        end
+    end
+    Session.moveTo(h, 11000, 300)       -- together: the host takes it back
+    s:run(3)
+    handlers.RUN = run
+    check(count(h.sent, "^E RUN sp:byguest 0$") == 1, "(together: the host took it back)")
+    check(count(g.sent, "^E GK sp:byguest$") == 1, "a kill landed as the host takes an enemy back is told to the host")
+    check(select(1, Fake.health(onH)) == 0 or field(onH, "dead") == true, "and the enemy dies there too")
+    allErrors(s)
+
+    local b, _, bg = pair()
+    local body = Session.enemyOn(bg, "thug1")
+    Fake.setHealth(body, 0)
+    Fake.put(body, "dead", true)        -- (dead here only, its kill never told)
+    b:run(8)
+    check(count(bg.logs, "brought back while you play together") == 1,
+        "a body under the id of the host's live enemy isn't taken for it: that enemy is brought back")
+    allErrors(b)
+
+    local c, ch, cg = pair()
+    Session.moveTo(ch, -30000, 0)       -- far off: the host never joins
+    Session.moveTo(cg, 2800, 2800)
+    c:run(2)
+    local boss = Session.enemyOn(cg, "boss")
+    cg.hudLayout:RegisterBossHPBar(boss)
+    c:run(3)
+    Session.die(cg)
+    cg.hudLayout:UnRegisterBossHPBar(boss)
+    c:run(2)
+    Session.respawned(cg)
+    Session.revive(cg)
+    c:run(4)
+    check(next(net(cg).pendingBosses) == nil and not cg.env.PBZ.game.bossFightActive(),
+        "a boss fight the host never joined doesn't come back at the guest's death")
+    allErrors(c)
+end
+
 return function(print_, scripts)
     out = print_
     SIM_SCRIPTS = scripts
@@ -3531,6 +3588,7 @@ return function(print_, scripts)
     enemiesAndHits()
     farEnemy()
     guestRunsWhatsNearIt()
+    syncRaces()
     hitReactions()
     rests()
     sits()
