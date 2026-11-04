@@ -193,7 +193,15 @@ return function(api)
         end
 
         if s.mismatch and s.mismatch ~= "-" and s.mismatch ~= last.mismatch then
-            notify("mismatch", "settings differ from your partner's: " .. s.mismatch:gsub(",", ", "))
+            -- (A password set and the two clocks over 2 minutes apart: everything's turned down, and that's all there was.)
+            local clock = s.mismatch:find("clock", 1, true)
+            local rest = s.mismatch:gsub(",?clock", ""):gsub("^,", "")
+            if clock then
+                notify("clock", "your PC's clock and your partner's are over 2 minutes apart: set both to the right time.")
+            end
+            if rest ~= "" then
+                notify("mismatch", "settings differ from your partner's: " .. rest:gsub(",", ", "))
+            end
         end
 
         local theirs = s.partner_version

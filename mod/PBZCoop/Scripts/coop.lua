@@ -229,7 +229,9 @@ return function(api)
         for _, v in ipairs({ ... }) do
             parts[#parts + 1] = tostring(v)
         end
-        local line = table.concat(parts, " ")
+        -- (One line: the partner's inbox is split at line breaks, and with two players one inside a value came out as an event of
+        -- its own, made up of the rest. A party's host refused those; here they're flattened.)
+        local line = table.concat(parts, " "):gsub("[\r\n]", " ")
         if QUICK[kind] then
             link.quick(line)
         else
@@ -240,7 +242,7 @@ return function(api)
 
     -- A party's host: a sure event for one guest alone.
     local function sendTo(slot, kind, ...)
-        link.send_to(slot, table.concat({ kind, ... }, " "))
+        link.send_to(slot, (table.concat({ kind, ... }, " "):gsub("[\r\n]", " ")))
         net.stats.sent = net.stats.sent + 1
     end
 
@@ -1926,7 +1928,7 @@ return function(api)
     handlers.T = function(rest, from)
         local id, count, kind = rest:match("^(%S+) (%d+) (%S+)$")
         count = num(count)
-        if id and #id <= MAX_ITEM_NAME and count and count >= 1 and count <= MAX_GIFT then
+        if id and #id <= MAX_ITEM_NAME and #kind <= 16 and count and count >= 1 and count <= MAX_GIFT then
             giftsWaiting[#giftsWaiting + 1] = { id = id, count = count, kind = kind ~= "-" and kind or nil, from = from }
         end
     end
@@ -1983,9 +1985,10 @@ return function(api)
         local _, pawn = getPlayer1()
         if waiting and valid(pawn) and not game.isDead(pawn) and not (game.inCutscene and game.inCutscene()) and game.mergeBag then
             net.bagWaiting = nil
-            -- (Counts once a game run: what's used up since stays used.)
-            local came = game.mergeBag(pawn, waiting, not net.bagCounted)
-            net.bagCounted = true
+            -- (Counts once a game run: what's used up since stays used. A big bag comes in several lines, and those can come
+            -- a tick or more apart: all that come in the first minute are counted, or only the first line's were.)
+            net.bagCounted = net.bagCounted or now + 60
+            local came = game.mergeBag(pawn, waiting, now < net.bagCounted)
             if came > 0 then
                 log(string.format("Took %d things from the partner's bag that this one lacked.", came))
                 api.status.notify("bag", string.format("your bag now has what your partner's has (%d new).", came))
@@ -2033,7 +2036,9 @@ return function(api)
     handlers.KS = function(rest)
         local name, x, y, z, pitch, yaw, roll = (rest or ""):match("^(%S+) (%S+) (%S+) (%S+) (%S+) (%S+) (%S+)$")
         x, y, z, pitch, yaw, roll = num(x), num(y), num(z), num(pitch), num(yaw), num(roll)
-        if name and #name <= MAX_CHEST_NAME and x and y and z and pitch and yaw and roll and game.stoneKicked then
+        -- (In the world: "1e30" is a number, and a boulder put there.)
+        if name and #name <= MAX_CHEST_NAME and x and y and z and pitch and yaw and roll and game.stoneKicked
+            and math.abs(x) < 1e7 and math.abs(y) < 1e7 and math.abs(z) < 1e7 then
             game.stoneKicked(name, { X = x, Y = y, Z = z }, { Pitch = pitch, Yaw = yaw, Roll = roll })
             log("The other player kicked " .. name .. " away: here too.")
         end
@@ -2082,7 +2087,9 @@ return function(api)
     -- A world refreshed: every boss fight can happen again. After a death the dead mostly stay dead, so a guest goes on by what
     -- the host killed, or what it never saw die there comes alive here alone. Only a new world ("bell": the host loaded its
     -- world again, or a mod's respawns) starts from nothing.
-    local function forgetDeaths(kind, elsewhere)
+    -- whose: in a party, the guest whose rest it was. Only their fights end: one another player is in goes on, its bar and
+    -- walls with it (a third player's bell rest took them down, and its B, told once, never put them back).
+    local function forgetDeaths(kind, elsewhere, whose)
         if kind ~= "death" then
             net.deadSent = {}
             net.guestKilled = {}
@@ -2092,6 +2099,13 @@ return function(api)
         net.pendingDeaths = {}
         for name in pairs(net.hostKilled) do
             net.pendingDeaths[name] = true
+        end
+        if whose then
+            endFights(whose)
+            game.forgetFocus()
+            game.forgetMoves()
+            handover.reset()
+            return
         end
         net.pendingBosses = {}
         net.partnerBosses = {}
@@ -2172,7 +2186,22 @@ return function(api)
         end
         -- From another map it says nothing about the enemies here, or the fight this player may be in.
         local elsewhere = not sameMap(peerOf(from).target)
-        forgetDeaths(kind, elsewhere)
+        -- Nor, at a bell, about a boss fight of this player's own (not a copy of one of theirs): a partner resting isn't in it.
+        -- Its bar came down and every monster came back mid-fight. (A host's death is everyone's: that one ends it.)
+        if kind ~= "death" and not elsewhere then
+            for _, actor in ipairs(game.bossActors and game.bossActors() or {}) do
+                local mirrored = false
+                for name in pairs(net.partnerBosses) do
+                    mirrored = mirrored or enemyByName[name] == actor
+                end
+                if not mirrored then
+                    elsewhere = true
+                    log("A boss fight of your own is on: it goes on, and enemies here come back at the next rest.")
+                    break
+                end
+            end
+        end
+        forgetDeaths(kind, elsewhere, net.party and from or nil)
         seen = {}
         if game.refreshEnemies and not elsewhere then
             game.refreshEnemies()
@@ -2752,6 +2781,14 @@ return function(api)
         if p.lastRemoteAt and clock - p.lastRemoteAt >= GAP_LOG_S and silenceMs / 1000 < GAP_LOG_S then
             log(string.format("No packet for %.1f s.", clock - p.lastRemoteAt))
         end
+        -- (Heard again after the silence of the load they told of (LOAD): it's over. Its minute went on, and a crash in it was
+        -- a frozen figure and a held fight for a minute, not 12 s.)
+        if p.loadingUntil and p.lastRemoteAt and heardAt - p.lastRemoteAt >= 3 then
+            p.loadingUntil = nil
+        end
+        if p.byeAt and heardAt > p.byeAt + 1 then
+            p.byeAt = nil           -- (their sync is on again: see BYE)
+        end
         p.lastRemoteAt = heardAt
         local t = p.target or {}
         t.X, t.Y, t.Z, t.Yaw, t.VX, t.VY, t.VZ = x, y, z, yaw, vx, vy, vz
@@ -2827,6 +2864,7 @@ return function(api)
         net.localLoc = nil
         net.lastRemoteAt = nil
         net.partnerGone = false
+        net.loadingUntil, net.byeAt = nil, nil     -- (a load told last session: its minute, for a crash in this one)
         net.matchSticky = {}
         net.pendingDeaths = {}
         net.pendingBosses = {}
@@ -2980,7 +3018,14 @@ return function(api)
 
     local watchFight
 
+    -- Sync turned off on the other PC: they're gone now, not after 12 s of a figure standing frozen and enemies held for them.
+    handlers.BYE = function(_, from)
+        peerOf(from).byeAt = os.clock()
+        log("The other player turned sync off.")
+    end
+
     local function stop()
+        pcall(sendEvent, "BYE")
         net.enabled = false
         net.partnerFighting, net.toldFighting = false, nil
         game.holdRespawn(nil, false)
@@ -3080,7 +3125,7 @@ return function(api)
         -- (One who said they're loading, LOAD, gets a minute: a trip or a bell's fast travel is silent for 15 s and more on
         -- a slow PC, and as gone they had their fight ended here and, on a guest, every copy woke and fought this player.)
         local wait = os.clock() < (p.loadingUntil or 0) and 60.0 or PARTNER_GONE_S
-        local gone = p.lastRemoteAt ~= nil and os.clock() - p.lastRemoteAt >= wait
+        local gone = p.lastRemoteAt ~= nil and (os.clock() - p.lastRemoteAt >= wait or p.byeAt ~= nil)
         if gone and not p.partnerGone then
             p.partnerGone = true
             p.fights = nil
@@ -3093,7 +3138,8 @@ return function(api)
                 end
             end
             if last then
-                log("Lost the other player (nothing heard for " .. wait .. " s): fog walls opened, enemies are yours again.")
+                log("Lost the other player (" .. (p.byeAt and "they turned sync off" or "nothing heard for " .. wait .. " s")
+                    .. "): fog walls opened, enemies are yours again.")
                 bring.putBackAll()
                 endFights()
                 net.hostBosses, net.pendingBosses = {}, {}
@@ -3109,7 +3155,7 @@ return function(api)
                 -- own copy (OC), and its dust came twice when the count kept running through the gap.
                 game.forgetLink()
             else
-                log("Lost player " .. p.number .. " (nothing heard for " .. wait .. " s).")
+                log("Lost player " .. p.number .. " (" .. (p.byeAt and "they turned sync off" or "nothing heard for " .. wait .. " s") .. ").")
             end
             if net.party then
                 countFights()

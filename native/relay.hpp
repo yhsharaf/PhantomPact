@@ -201,6 +201,7 @@ public:
     static constexpr double REPLAY_WINDOW_S = 120.0;
     static constexpr size_t SESSIONS_KEPT = 8;
     static constexpr uint64_t COUNTERS_KEPT = 64;      // the network can reorder: a late packet isn't a replay
+    long long clock_off = 0;        // packets signed right but sent at a time over the window from this PC's clock
 
     Auth(const std::string& secret, const std::string& role) {
         std::string master = crypto::scrypt(secret, "PhantomPact/relay/1", 1 << 14, 8, 32);
@@ -243,7 +244,12 @@ public:
         uint64_t counter = get_u64(body.data() + 13);
         uint64_t sent_ms = get_u64(body.data() + 21);
         if (body[4] == role_ || session == session_) return std::nullopt;
-        if (std::fabs(wall_seconds() * 1000 - static_cast<double>(sent_ms)) > REPLAY_WINDOW_S * 1000) return std::nullopt;
+        if (std::fabs(wall_seconds() * 1000 - static_cast<double>(sent_ms)) > REPLAY_WINDOW_S * 1000) {
+            // Signed with the right Secret and only the time wrong: the two PCs' clocks differ by more than the window.
+            // Counted, for the status to say so: before, they just never connected, with nothing to tell why.
+            clock_off++;
+            return std::nullopt;
+        }
         Seen entry{session, counter, 1};
         auto it = std::find_if(seen_.begin(), seen_.end(), [&](const Seen& s) { return s.session == session; });
         if (it != seen_.end()) {
@@ -1006,6 +1012,7 @@ public:
         if (rtt_ms_ >= 0) std::snprintf(rtt, sizeof rtt, "%.0f", rtt_ms_);
         std::string mismatch;
         for (const auto& k : mismatch_) mismatch += (mismatch.empty() ? "" : ",") + k;
+        if (auth_ && auth_->clock_off > 0 && !connected) mismatch += std::string(mismatch.empty() ? "" : ",") + "clock";
         const long long got = received_ - received_mark_, lost = lost_ - lost_mark_;
         const double loss = got + lost > 0 ? 100.0 * lost / static_cast<double>(got + lost) : 0;
         received_mark_ = received_;
@@ -1114,6 +1121,8 @@ private:
         Mailbox::Outgoing out;
         box_.take_outgoing(out);
         if (out.reset) new_session();
+        // Held events the game had no room for: tried again here too, for a partner with nothing new to send (lanes.hpp).
+        sure_in_.drain([this](const std::string& t) { return hub_ ? hub_->on_sure(my_slot_, t) : box_.on_event(t); });
         if (out.map_changed) {
             map_name_ = std::move(out.map);
             hello_due_ = true;

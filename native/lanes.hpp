@@ -88,6 +88,9 @@ public:
     // unconfirmed and the partner sends it again, so an acknowledgement always means the game will see it.
     template <typename Fn>
     void on_event(uint32_t id, std::string text, Fn&& deliver) {
+        // Held ones next in line first: one the game had no room for when its turn came was never tried again, it being
+        // acknowledged already (bits) and so never sent again, and every sure event behind it waited for good.
+        drain(deliver);
         const int32_t ahead = static_cast<int32_t>(id - next_);
         if (ahead < 0 || ahead >= MAX_AHEAD) return;
         if (ahead > 0) {
@@ -97,6 +100,12 @@ public:
         if (!deliver(text)) return;
         next_++;
         count++;
+        drain(deliver);
+    }
+
+    // The held events that are next in line, as far as the game takes them. Also for a quiet partner (Relay::flush).
+    template <typename Fn>
+    void drain(Fn&& deliver) {
         for (auto it = held_.find(next_); it != held_.end(); it = held_.find(next_)) {
             if (!deliver(it->second)) return;
             held_.erase(it);

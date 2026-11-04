@@ -490,6 +490,35 @@ local function rests()
     check(refreshes(a) == 2 and refreshes(b) == 1 and refreshes(c) == 2, "and every world refreshes")
     allErrors(s)
 
+    -- The host fights a boss; a guest elsewhere rests at a bell. The others' copy of the host's fight goes on.
+    local f = party()
+    spread(f)
+    f:run(2)
+    f.pcs[1].hudLayout:RegisterBossHPBar(Session.enemyOn(f.pcs[1], "boss"))     -- (bossStart, defined further down)
+    f:run(5)
+    local fa = f.pcs[2]
+    check(next(fa.env.PBZ.net.partnerBosses) ~= nil, "a guest mirrors the host's boss fight")
+    Session.bell(f.pcs[3])
+    f:run(2)
+    check(next(fa.env.PBZ.net.partnerBosses) ~= nil, "and another guest's bell rest doesn't end it there")
+    check(next(f.pcs[1].env.PBZ.net.partnerBosses) == nil and f.pcs[1].env.PBZ.game.bossFightActive(),
+        "nor the host's own")
+    allErrors(f)
+
+    -- Two players: the host in a boss fight of its own, the guest far off on the same map rests at a bell.
+    local w = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES)
+    local wh, wg = w.pcs[1], w.pcs[2]
+    Session.moveTo(wg, 30000, 0)
+    w:run(3)
+    wh.hudLayout:RegisterBossHPBar(Session.enemyOn(wh, "boss"))
+    w:run(3)
+    local before = refreshes(wh)
+    Session.bell(wg)
+    w:run(2)
+    check(wh.env.PBZ.game.bossFightActive() and refreshes(wh) == before,
+        "two players: the guest's bell rest leaves the host's own boss fight be, bar and enemies")
+    allErrors(w)
+
     local t = party()
     spread(t)
     t:run(2)
@@ -925,6 +954,10 @@ local function twoSaves()
     Session.command(g, "netoff")
     s:run(1)
     check(field(copy, "hidden") == false, "sync off: everything's back as it was")
+    check(h.env.PBZ.net.partnerGone == true, "and the host knows at once they've gone, not 12 s on")
+    Session.command(g, "neton client")
+    s:run(4)
+    check(h.env.PBZ.net.partnerGone == false, "sync on again: they're back")
     allErrors(s)
 
     -- It ran after the guest, right next to the host, and the host's own copy is far off. Not in the host's lines, but the host has it.
@@ -1106,7 +1139,20 @@ local function guestSide()
     check(held and not g.env.PBZ.net.partnerGone, "the host loading for 20 s isn't gone: the guest's copies stay held, no fight of theirs on their own")
     h.cut = false
     s:run(3)
+    -- Back from the load, then quiet for good (a crash): gone at the usual 12 s, not at the end of the load's minute.
+    h.cut = true
+    s:run(14)
+    check(g.env.PBZ.net.partnerGone, "back from the load, a host that goes quiet is gone after 12 s again")
+    h.cut = false
+    s:run(3)
     allErrors(s)
+
+    -- A host with no Phantom Edge on says so, and the guest's figure of them carries none.
+    local e2, eh2, eg2 = pair()
+    e2:run(10)
+    local theirs = eg2.env.PBZ.net.gear
+    check(theirs and theirs.edgePath == "-", "no Phantom Edge on: \"none\" is said, and the partner's figure is told so")
+    allErrors(e2)
 
     -- A guest's fight that ends with the boss alive (they died in it, walked out): over on the host too.
     local f, fh, fg = pair()

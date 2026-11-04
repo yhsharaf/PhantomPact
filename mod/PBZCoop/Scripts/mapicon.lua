@@ -61,6 +61,13 @@ return function(api)
             return
         end
         local mapId = ms:GetCurrentMapID()
+        -- (The scale is each map's own: 2.6 times apart between two of them. Kept over a trip, the partner was put by the
+        -- last map's until this player stood somewhere that projects.)
+        local okKey, mapKey = pcall(function() return mapId:ToString() end)
+        mapKey = okKey and mapKey or tostring(net.localMap)
+        if mapKey ~= mapicon.scaleMap then
+            mapicon.scaleMap, scaleX, scaleY = mapKey, nil, nil
+        end
         local function project(x, y, z)
             local uv = ms:ProjectWorldLocationToMap({ X = x, Y = y, Z = z }, mapId)
             if not uv or (uv.X == 0 and uv.Y == 0) then
@@ -144,6 +151,13 @@ return function(api)
             return
         end
         local mapId = ms:GetCurrentMapID()
+        -- (The scale is each map's own: 2.6 times apart between two of them. Kept over a trip, the partner was put by the
+        -- last map's until this player stood somewhere that projects.)
+        local okKey, mapKey = pcall(function() return mapId:ToString() end)
+        mapKey = okKey and mapKey or tostring(net.localMap)
+        if mapKey ~= mapicon.scaleMap then
+            mapicon.scaleMap, scaleX, scaleY = mapKey, nil, nil
+        end
         local function project(x, y, z)
             local uv = ms:ProjectWorldLocationToMap({ X = x, Y = y, Z = z }, mapId)
             if not uv or (uv.X == 0 and uv.Y == 0) then

@@ -238,6 +238,33 @@ void test_lanes() {
     });
     check(first == 1 && first_text == "c", "a new partner gets nothing meant for the last one, and numbers from 1");
 
+    // A held event whose turn comes while the game has no room: acknowledged already (bits), it's never sent again, so it
+    // must be tried again from here, by the next event that comes or by the relay's own flush.
+    relay::SureReceiver held;
+    std::vector<std::string> took;
+    int room = 99;                          // how many more the game takes
+    auto give = [&](const std::string& t) {
+        if (room <= 0) return false;
+        room--;
+        took.push_back(t);
+        return true;
+    };
+    held.on_event(2, "two", give);          // ahead: held, and acknowledged in bits
+    room = 1;
+    held.on_event(1, "one", give);          // "one" in; "two" next, with no room: stuck, never sent again
+    check(took.size() == 1 && held.next() == 2, "a held event the game has no room for waits");
+    room = 99;
+    held.drain(give);                       // the relay's flush
+    check(took.size() == 2 && took[1] == "two" && held.next() == 3, "and goes in from the flush, once there's room");
+    held.on_event(5, "five", give);         // held
+    room = 1;
+    held.on_event(3, "three", give);        // in
+    held.on_event(4, "four", give);         // no room: "four" waits to be sent again
+    room = 99;
+    held.on_event(6, "six", give);          // held; nothing in: "four" isn't here
+    held.on_event(4, "four", give);         // sent again: in, then "five" and "six"
+    check(took.size() == 6 && took[3] == "four" && took[5] == "six", "in order to the end");
+
     relay::QuickReceiver q;
     check(q.fresh(5), "quick: first sight plays");
     check(!q.fresh(5), "quick: a repeat doesn't play twice");
