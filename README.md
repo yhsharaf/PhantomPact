@@ -32,7 +32,7 @@ share loot and dust, and rest at bells together. The host's world leads, and you
   pad. Player 2 climbs, opens chests, rings bells, drinks and fights on their own, with the game's own HUD, button prompts,
   boss bars and execution points in their half of the screen, and one shared backpack
   ([docs/LOCAL_COOP.md](docs/LOCAL_COOP.md))
-- 4 players (beta) and 6 players (experimental): the host picks PLAYERS under MORE in the F5 panel, and up to three or
+- 4 players (beta) and 6 players (experimental): the host picks Players under MORE in the F5 panel, and up to three or
   five guests can join. Enemies and bosses get 50% more health for each person connected, up to four players. With five or
   six, every enemy and boss gets a cyan ghost twin with red eyes instead: two bosses in each arena
   ([INSTALL.md](INSTALL.md#4-players-beta-and-6-players-experimental))

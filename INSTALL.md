@@ -52,20 +52,20 @@ a home network; Other Network is for ZeroTier and UU Accelerator. If you want a 
 password on both PCs before you connect. English and 中文 at the top of the panel switch the language of the panel
 and the co-op messages. Your choices are kept for the next start.
 
-**MORE** opens the settings: TP > PARTNER, PvP, the partner compass, your partner on the map and Steam Direct, each ON or
-OFF, PLAYERS (2, 4 or 6), and Mode: MULTIPLAYER, or LOCAL for two players on this PC. Mode works from the next time you start the
+**MORE** opens the settings: TP > Partner, PvP, the partner compass, your partner on the map and Steam Direct, each ON or
+OFF, Players (2, 4 or 6), and Mode: MULTIPLAYER, or LOCAL for two players on this PC. Mode works from the next time you start the
 game. Revive is coming soon. Enemy difficulty is the game's own setting. With a partner, enemies always get extra health and
 posture on top of it.
 
 **Going to your partner.** Joining takes you to the host once, even on another map, so a friend with a new save can
 join a host further into the story. Your save stays where you land, so your own story can get ahead of where you were.
-After that, **F3** takes you to your partner if you turn TP > PARTNER on under MORE. It's off by default, because it's a
+After that, **F3** takes you to your partner if you turn TP > Partner on under MORE. It's off by default, because it's a
 lot of power to have on one key. Neither works during a boss fight, a cutscene, a duel or a menu, or while you or your
 partner are down.
 
 ### 4 players (Beta) and 6 players (Experimental)
 
-PLAYERS under MORE is 2 by default, and with 2 nothing changes. Pick 4 before you press Host and up to three guests can join;
+Players under MORE is 2 by default, and with 2 nothing changes. Pick 4 before you press Host and up to three guests can join;
 pick 6 and up to five can. Only the host's choice counts: guests follow it, whatever theirs says. It works from the next Host
 (`PartySize = 4` or `6` in the ini does the same; the older `FourPlayers = On` still means 4). Everyone joins as they would with
 two players, and everyone needs the same version. Neither has been played by that many people yet: tell us what breaks.
@@ -126,7 +126,7 @@ Like Elden Ring, enemies and bosses get tougher while your partner is with you: 
 default. Change `CoopEnemyHealth` / `CoopEnemyPosture` in `PhantomPact.ini` (percent; 100 = normal). Both
 players should use the same numbers.
 
-With 4 or 6 PLAYERS, each person connected adds the same again, wherever they are, on another map, loading or down: 200%
+With 4 or 6 Players, each person connected adds the same again, wherever they are, on another map, loading or down: 200%
 and 160% with two connected, 250% and 190% with three, and it stops there. With five or six, the ghost twins make it harder
 instead of more health. It only goes up, so a boss doesn't lose health when someone dies or
 leaves. Someone who joins during a boss fight only watches, so that boss keeps its number until the fight is over, while other
