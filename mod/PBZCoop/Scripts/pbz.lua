@@ -636,6 +636,9 @@ return function(api)
             pcall(function()
                 local addr = actor:GetAddress()
                 local hud = FindFirstOf("PBZHUDLayout")
+                if not valid(hud) then
+                    return          -- (no HUD, mid-load: a call on nothing is a crash in UE4SS, not an error)
+                end
                 local bars = hud:GetBossHPBarInstances()
                 for i = 1, #bars do
                     local bar = bars[i]:get()
@@ -655,6 +658,9 @@ return function(api)
         local addr = boss:GetAddress()
         local shown = false
         local hud = FindFirstOf("PBZHUDLayout")
+        if not valid(hud) then
+            return true             -- (no HUD, mid-load: asked again next time, not counted as a bar gone)
+        end
         pcall(function()
             local bars = hud:GetBossHPBarInstances()
             for i = 1, #bars do
@@ -849,9 +855,10 @@ return function(api)
                     0, true, true, 0, true)
             end
         end)
-        local addr = actor:GetAddress()
+        local addr, name = actor:GetAddress(), actor:GetFName():ToString()
         game.after(DISSOLVE.HIDE_S, function()
-            if valid(actor) and actor:GetAddress() == addr then
+            -- (And by name: one respawned at that address in the meantime was hidden for good.)
+            if valid(actor) and actor:GetAddress() == addr and actor:GetFName():ToString() == name then
                 for _, mesh in ipairs(DISSOLVE.meshes(actor)) do
                     pcall(function() mesh:SetVisibility(false, true) end)
                 end
@@ -1363,6 +1370,10 @@ return function(api)
         for _, e in ipairs(game.listEnemies()) do
             if game.isBoss(e) and not game.isDead(e) then
                 local hud = FindFirstOf("PBZHUDLayout")
+                if not valid(hud) then
+                    log("No HUD layout.")
+                    return
+                end
                 local ok, err = pcall(function() hud:RegisterBossHPBar(e) end)
                 log("RegisterBossHPBar(" .. e:GetFName():ToString() .. "): " .. tostring(ok) .. " " .. tostring(err))
                 return
@@ -1512,11 +1523,14 @@ return function(api)
                 end
             end)
         end)
+        if not valid(driver) then
+            return false            -- (none, or one gone: written through before this was asked)
+        end
         local ok, took = pcall(function()
             driver.DefaultAttitudeStateTag.TagName = FName(tag)
             return driver.ActorStateComponent:TryActivateNewState(driver.DefaultAttitudeStateTag)
         end)
-        return valid(driver) and ok and took == true
+        return ok and took == true
     end
 
     -- Whether this player holds a guard stance (the right button): its ability runs as long as it's held.
@@ -1573,12 +1587,16 @@ return function(api)
             log("Move class not loaded here: " .. classPath)
             return
         end
-        if not game.isAbilityClass(cls) then
+        if not game.isAbilityClass(cls, classPath) then
             return
         end
         local asc = abilitySystem(ghost)
         if not asc then
             return
+        end
+        -- (A yaw off the wire: "nan" and "1e999" read as numbers, and went into the ghost's rotation.)
+        if yaw and not (yaw == yaw and math.abs(yaw) <= 720) then
+            yaw = nil
         end
         if yaw then
             pcall(function() ghost:K2_SetActorRotation({ Pitch = 0.0, Yaw = yaw, Roll = 0.0 }, false) end)
@@ -1589,7 +1607,7 @@ return function(api)
             pcall(function() asc:K2_GiveAbility(cls, 1, -1) end)
             ok, activated = pcall(function() return asc:TryActivateAbilityByClass(cls, true) end)
         end
-        ghostBusyUntil = os.clock() + GHOST_BUSY_S
+        holdGhost(ghost)            -- (each ghost of a party its own: one timer for all held every other ghost too)
         ghostMoveAt = os.clock()
         if not (ok and activated) then
             log("Ghost couldn't play " .. classPath:match("([^.]+)$"))
@@ -1660,10 +1678,10 @@ return function(api)
 
     -- Only an ability class goes to the ability system: any other class from a line off the wire, its default object
     -- taken for an ability inside the game, is a crash no pcall catches. Cached by class (a table field: this file is at
-    -- Lua's limit of locals).
+    -- Lua's limit of locals). By address and path: a class unloaded, another object at its address was taken for it.
     game.abilityClassSeen = {}
-    function game.isAbilityClass(cls)
-        local key = cls:GetAddress()
+    function game.isAbilityClass(cls, path)
+        local key = tostring(cls:GetAddress()) .. (path or "")
         if game.abilityClassSeen[key] == nil then
             local ok, yes = pcall(function()
                 return cls:GetCDO():IsA(StaticFindObject("/Script/GameplayAbilities.GameplayAbility"))
@@ -1679,7 +1697,7 @@ return function(api)
         end
         local asc = abilitySystem(actor)
         local cls = StaticFindObject(classPath)
-        if not (asc and valid(cls) and game.isAbilityClass(cls)) then
+        if not (asc and valid(cls) and game.isAbilityClass(cls, classPath)) then
             return false
         end
         local function start()
