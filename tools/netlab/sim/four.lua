@@ -3254,6 +3254,31 @@ local function sixPlayers()
     s:run(1)
     check(count(h.logs, "Players: 6 of 6%. You're the host") == 1 and count(s.pcs[6].logs, "Players: 6 of 6%. You're player 6 %(pink%)%.") == 1,
         "the panel says six of six, and player 6 is pink")
+    -- The map and the HUD stretch to five others, each in their own colour.
+    h.mapOpen = true
+    s:run(2)
+    local pointers, colours, distinct = 0, {}, 0
+    for _, w in ipairs(h.mapWidgets or {}) do
+        if field(w, "visibility") == 3 then
+            pointers = pointers + 1
+            local c = field(w, "colour")
+            local key = c and string.format("%.2f %.2f %.2f", c.R or 0, c.G or 0, c.B or 0) or "none"
+            if not colours[key] then
+                colours[key] = true
+                distinct = distinct + 1
+            end
+        end
+    end
+    check(pointers == 5 and distinct == 5, "the open map: a pointer for each of the five others, each its own colour (" .. pointers .. ", " .. distinct .. ")")
+    h.mapOpen = false
+    s:run(1)
+    s.pcs[6].map = "Map_Other"
+    s:run(2)
+    Session.command(h, "onlinepanel status")
+    s:run(1)
+    check(count(h.logs, "Players: 6 of 6") >= 2, "one on another map still counts as connected")
+    s.pcs[6].map = h.map
+    s:run(2)
     local _, hp, posture = Fake.health(Session.enemyOn(h, "thug1"))
     check(hp == 1500 and math.abs(posture - 190) < 0.01, "six connected: health and posture stop at four players' 250% and 190%")
     local ht = twinsOn(h)
