@@ -1536,6 +1536,22 @@ return function(api)
             end
             if waiting[n] and valid(pawn) then
                 game.setMinHealth(pawn, waiting[n])
+                if n == 1 then
+                    V.waitFloor1 = waiting[n]
+                end
+            end
+        end
+        -- Player 1 has no floor of ours unless their pad is gone. Once in testing the waiting floor (all their health) stayed
+        -- after the pad was back, and nothing could hurt player 1 for minutes: whatever left it, it doesn't last. (Only that
+        -- floor, of that value: one the game sets itself, a fight the story won't let be lost, is the game's.)
+        if not waiting[1] and V.waitFloor1 and valid(p1) then
+            local ok, floor = pcall(function() return p1.AttributeSetBase.Health_Min.CurrentValue end)
+            if ok and type(floor) == "number" and math.abs(floor - V.waitFloor1) < 0.5 and floor > 0.5 then
+                game.setMinHealth(p1, 0)
+                log(string.format("Player 1's health floor was left at %.0f: cleared.", floor))
+            end
+            if ok and type(floor) == "number" and floor <= 0.5 then
+                V.waitFloor1 = nil
             end
         end
         for i = 1, 2 do                 -- (pad_route.hpp moves one of two joysticks: a third would claim a player and reach nobody)
