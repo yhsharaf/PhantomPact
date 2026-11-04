@@ -180,6 +180,11 @@ return function(api)
             notify("relay", "co-op couldn't start: " .. s.error)
         end
         reportSilence(s)
+        -- A host's party full: someone knocked and got no answer, and only the host can see it (the relay counts them).
+        local away, before = tonumber(s.turned_away), tonumber(last.turned_away)
+        if away and before and away > before and net.party then
+            notify("full", string.format("someone tried to join, but the party is full (%d players).", net.party))
+        end
 
         if s.connected ~= "yes" and s.link_problem and s.link_problem ~= "-" and s.link_problem ~= last.link_problem then
             notify("link", "Steam couldn't connect: " .. s.link_problem:gsub("_", " ") .. ". See Connection problems in the install guide.")

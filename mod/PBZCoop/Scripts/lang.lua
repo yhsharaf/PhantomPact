@@ -36,6 +36,8 @@ return function()
         ["your partner turned co-op sync off."] = "队友关闭了联机同步。",
         ["PvP is off with more than two players."] = "超过两名玩家时 PvP 关闭。",
         ["Local co-op starts the next time you start the game."] = "下次启动游戏时开始本地分屏。",
+        ["Only the host's Players setting counts."] = "只有房主的人数设置有效。",
+        ["Players: from your next Host (Leave, then Host)."] = "人数:下次开房时生效(先离开,再开房)。",
         ["Multiplayer starts the next time you start the game."] = "下次启动游戏时恢复多人联机。",
         ["TP > PARTNER is off. Turn it on in MORE (F5)."] = "传送到队友已关闭。可在 F5 的“更多”里开启。",
         ["couldn't reach your partner in time. TP > PARTNER in MORE (F5) can take you there."] =
@@ -109,6 +111,7 @@ return function()
         { "^your story caught up with the host's: (%d+) steps?%.$", "你的剧情进度已追上房主:%1 步。" },
         -- More than two players. (Each player's own lines are added below.)
         { " Players: (%d) of (%d)%.", " 玩家:%1/%2。" },
+        { "^someone tried to join, but the party is full %((%d) players%)%.$", "有人想加入,但队伍已满(%1 名玩家)。" },
         { "^player (%d) is on Phantom Pact (.+) and you're on (.+): use the same version, or enemies won't stay in step%.$",
             "玩家 %1 使用 Phantom Pact %2,你使用 %3:请使用相同的版本,否则敌人会不同步。" },
     }

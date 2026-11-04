@@ -80,7 +80,7 @@ return function(api)
         end
         options = {
             teleport = onOff(s.partnerteleport, "off"),
-            pvp = onOff(s.pvp, "off"),
+            pvp = api.coop.net.party and "off" or onOff(s.pvp, "off"),     -- (off in a party, whatever the ini says)
             compass = onOff(s.partnercompass, "on"),
             mapicon = onOff(s.partnermapicon, "on"),
             direct = onOff(s.steamdirect, "off"),
@@ -123,6 +123,13 @@ return function(api)
             save({ SteamDirect = word })
         elseif row == "players" then
             save({ PartySize = value })
+            -- (Read by the relay as it starts: said, or a change while hosting looked like it did nothing.)
+            local net = api.coop.net
+            if api.online and api.online.current() and net.enabled and not api.coop.isHost() then
+                api.status.notify("players", "Only the host's Players setting counts.")
+            elseif api.online and api.online.current() then
+                api.status.notify("players", "Players: from your next Host (Leave, then Host).")
+            end
         elseif row == "mode" and value == "local" then
             save({ Role = "Local" })
             api.status.lastShown.mode = nil

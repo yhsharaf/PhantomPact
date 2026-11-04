@@ -2608,8 +2608,18 @@ return function(api)
 
     -- A partner heard from a moment ago.
     local LINKED_S = 5.0
+    -- (Any of them, in a party: net is only the lead there, and one guest in a loading screen stopped the host's story for
+    -- every guest, their quest steps' baselines wiped.)
     local function linked()
-        return net.enabled and not net.partnerGone and net.lastRemoteAt ~= nil and os.clock() - net.lastRemoteAt < LINKED_S
+        if not net.enabled then
+            return false
+        end
+        for _, p in ipairs(partners()) do
+            if not p.partnerGone and p.lastRemoteAt ~= nil and os.clock() - p.lastRemoteAt < LINKED_S then
+                return true
+            end
+        end
+        return false
     end
 
     -- Never paused with a partner linked: their game goes on, so a menu here is a menu in a live world, as in any co-op.
