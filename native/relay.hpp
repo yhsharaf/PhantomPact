@@ -44,7 +44,7 @@
 
 namespace relay {
 
-constexpr int PROTOCOL = 3;
+constexpr int PROTOCOL = 4;   // 4: parties of up to 6 (1.7.0): a 1.6 guest took a 6-player hello for two players
 constexpr unsigned char MARKER = 0xA3;     // first byte of every packet: never '{' (protocol 2) or 'P' (a signed packet)
 constexpr double TICK = 0.005;             // how often the relay looks at its timers when nothing else wakes it
 constexpr double KEEPALIVE_EVERY = 0.25;   // the game thread can stand still (a load): the relay still says it's here
@@ -1180,7 +1180,10 @@ private:
             return true;
         };
         Writer w(p);
-        if (out.have_sample) {
+        // Nobody heard for PEER_TIMEOUT (left, loading, or a link gap): only the hello and the keepalive go out. Sure events
+        // wait in their queue as they always did; where this player is, quick events and enemy lines are for now, and were
+        // sent to an empty address for good after a guest left a party, a packet a frame for every slot so left.
+        if (out.have_sample && partner_here) {
             w.put<uint8_t>(SEC_STATE);
             put_sample(w, out.sample);
         }
@@ -1201,7 +1204,7 @@ private:
                 return true;
             });
         }
-        quick_out_.for_each(now, QUICK_GAP, [&](const QuickSender::Item& item, double age) {
+        if (partner_here) quick_out_.for_each(now, QUICK_GAP, [&](const QuickSender::Item& item, double age) {
             if (!room(1 + 4 + 2 + 2 + item.text.size())) return false;
             w.put<uint8_t>(SEC_QUICK);
             w.put<uint32_t>(item.id);
@@ -1209,12 +1212,13 @@ private:
             w.text(item.text);
             return true;
         });
+        if (!partner_here) enemy_out_.clear();
         while (!enemy_out_.empty() && room(1 + 2 + enemy_out_.front().size())) {
             w.put<uint8_t>(SEC_ENEMY);
             w.text(enemy_out_.front());
             enemy_out_.pop_front();
         }
-        if (players_waiting_ && now - last_players_ >= PLAYERS_EVERY) {
+        if (players_waiting_ && partner_here && now - last_players_ >= PLAYERS_EVERY) {
             last_players_ = now;
             players_waiting_ = false;
             for (size_t i = 0; i < players_out_.size(); i++) {
