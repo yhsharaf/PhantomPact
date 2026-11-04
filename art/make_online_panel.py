@@ -23,10 +23,10 @@ WORDS = {
                  ("Partner compass", "shows where your partner is"),
                  ("Partner on the map", "their mark on the game's map"),
                  ("Steam Direct", "less delay, but your partner can see your IP"),
-                 ("4 PLAYERS (Beta)", "host's choice: up to 3 guests. PvP stays off"),
+                 ("PLAYERS", "host's choice. 6: ghost twins (test)"),
                  ("Mode", "local: split screen on this PC, from the next start")],
         "soon": "(Coming soon)",
-        "foot": ["Kept for next time. Steam Direct and 4 PLAYERS: next connection. Mode: next game start.",
+        "foot": ["Kept for next time. Steam Direct and PLAYERS: next connection. Mode: next game start.",
                  "Difficulty is the game's own. With a partner, enemies always get more health."],
         "cards": {"online_steam": ("Steam", "friends, no setup"),
                   "online_tailscale": ("Tailscale", "also Hamachi, Radmin"),
@@ -52,10 +52,10 @@ WORDS = {
                  ("队友指南针", "显示队友所在的方向"),
                  ("地图上的队友", "在游戏地图上显示队友的位置"),
                  ("Steam 直连", "延迟更低,但队友能看到你的 IP"),
-                 ("4 人模式(测试版)", "由房主决定:最多 3 名队友,PvP 关闭"),
+                 ("人数", "房主决定。6 人:幽灵双生(实验)"),
                  ("模式", "本地:同一台电脑分屏,下次启动生效")],
         "soon": "(即将推出)",
-        "foot": ["设置会保存。Steam 直连和 4 人模式下次连接时生效,模式下次启动游戏时生效。",
+        "foot": ["设置会保存。Steam 直连和人数下次连接时生效,模式下次启动游戏时生效。",
                  "难度使用游戏自己的设置。有队友时,敌人总会获得更多生命。"],
         "cards": {"online_steam": ("Steam", "好友联机,无需设置"),
                   "online_tailscale": ("Tailscale", "也适用于 Hamachi、Radmin"),
@@ -139,6 +139,8 @@ def worded(w_):
     option(prefix + "opt_on", w_["on"], face)
     option(prefix + "opt_multiplayer", w_["multiplayer"], face)
     option(prefix + "opt_local", w_["local"], face)
+    for n in ("2", "4", "6"):
+        option(prefix + "opt_" + n, n, font)
 
 
 if __name__ == "__main__":

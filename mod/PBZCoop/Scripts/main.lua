@@ -512,6 +512,7 @@ api.mapicon = dofile(SCRIPT_DIR .. "mapicon.lua")(api)
 api.revive = dofile(SCRIPT_DIR .. "revive.lua")(api)
 api.pvp = dofile(SCRIPT_DIR .. "pvp.lua")(api)
 api.scaling = dofile(SCRIPT_DIR .. "scaling.lua")(api)
+api.twins = dofile(SCRIPT_DIR .. "twins.lua")(api)
 api.story = dofile(SCRIPT_DIR .. "story.lua")(api)
 api.units = dofile(SCRIPT_DIR .. "units.lua")(api)
 api.localcoop = dofile(SCRIPT_DIR .. "localcoop.lua")(api)
@@ -570,6 +571,7 @@ for name, fn in pairs(api.game.commands or {}) do
 end
 COMMANDS.pvp = api.pvp.command
 COMMANDS.scale = api.scaling.command
+COMMANDS.twins = api.twins.command
 COMMANDS.tips = api.status.command
 COMMANDS.partner = api.partner.command
 COMMANDS.moves = api.moves.command

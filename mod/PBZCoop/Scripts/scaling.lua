@@ -11,6 +11,8 @@
 -- stays 100. An enemy only goes up: scaled again on the host when someone connects, where the guests' copies follow. It doesn't
 -- go back down when someone leaves, or a boss would lose health as a player dropped out. New enemies get the number of the
 -- moment. Someone who joins during a boss fight only watches, so that boss keeps its number until the fight is over.
+-- It stops at four players (250 and 190): with five or six every enemy has a ghost twin instead (twins.lua), which is harder
+-- enough. scaling.players() is how many are connected, for twins.lua.
 
 return function(api)
     local log, valid, game = api.log, api.valid, api.game
@@ -66,8 +68,9 @@ return function(api)
         return not (was and now and now < was * 0.99)
     end
 
+    local MOST_SCALED = 4           -- players: past this, twins.lua adds enemies instead
     local function forPlayers(base, players)
-        return base + (base - 1) * (players - 2)
+        return base + (base - 1) * (math.min(players, MOST_SCALED) - 2)
     end
 
     local function playersConnected()
@@ -78,6 +81,14 @@ return function(api)
             end
         end
         return n
+    end
+
+    -- Everyone connected, this player too: a party's count, or 2 with a partner synced, else 1.
+    function scaling.players()
+        if net.party then
+            return playersConnected()
+        end
+        return (net.enabled and net.target and not net.partnerGone) and 2 or 1
     end
 
     -- More than two players: true if this took a scaling, which is what a tick may spend.

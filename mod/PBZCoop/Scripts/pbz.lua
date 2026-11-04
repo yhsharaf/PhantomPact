@@ -325,10 +325,23 @@ return function(api)
         spawnerAt = stop + 1
     end
 
+    -- Ghost twins (twins.lua): an id both PCs give their copy, "tw<n>:" and the original's id. A twin is never the boss of a
+    -- fight to the mod: its death ends no fight and marks nothing beaten, and the story goes by the original's alone.
+    local twinIds = {}              -- actor address -> twin id
+    function game.markTwin(addr, id)
+        twinIds[addr] = id
+    end
+    function game.forgetTwin(addr)
+        twinIds[addr] = nil
+    end
+    function game.twinId(addr)
+        return twinIds[addr]
+    end
+
     -- addr: the actor's address, when the caller has it.
     function game.enemyId(actor, addr)
         addr = addr or actor:GetAddress()
-        local id = spawnerIds[addr]
+        local id = twinIds[addr] or spawnerIds[addr]
         if id then
             return id
         end
@@ -1057,6 +1070,9 @@ return function(api)
 
     function game.isBoss(actor, addr)
         addr = addr or actor:GetAddress()
+        if twinIds[addr] then
+            return false
+        end
         if bosses[addr] then
             return true
         end
@@ -1088,7 +1104,7 @@ return function(api)
     pcall(function()
         RegisterHook("/Script/ProjectPBZ.PBZHUDLayout:RegisterBossHPBar", function(_, bossParam)
             local boss = bossParam:get()
-            if valid(boss) and not bosses[boss:GetAddress()] then
+            if valid(boss) and not bosses[boss:GetAddress()] and not twinIds[boss:GetAddress()] then
                 bosses[boss:GetAddress()] = true
                 bossActors[boss:GetAddress()] = boss
                 log("Boss fight: " .. boss:GetFName():ToString())

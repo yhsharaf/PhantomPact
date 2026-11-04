@@ -38,7 +38,7 @@ return function(api)
         { name = "compass", y = 237, choices = { "off", "on" } },
         { name = "mapicon", y = 288, choices = { "off", "on" } },
         { name = "direct", y = 339, choices = { "off", "on" } },
-        { name = "four", y = 390, choices = { "off", "on" } },
+        { name = "players", y = 390, choices = { "2", "4", "6" } },
         { name = "mode", y = 441, choices = { "multiplayer", "local" } },
     }
 
@@ -71,21 +71,28 @@ return function(api)
         local function onOff(value, default)
             return (value or default):lower() == "on" and "on" or "off"
         end
+        local function partySize(st)
+            local n = tonumber(st.partysize)
+            if n then
+                return n >= 6 and "6" or n >= 4 and "4" or "2"
+            end
+            return onOff(st.fourplayers, "off") == "on" and "4" or "2"
+        end
         options = {
             teleport = onOff(s.partnerteleport, "off"),
             pvp = onOff(s.pvp, "off"),
             compass = onOff(s.partnercompass, "on"),
             mapicon = onOff(s.partnermapicon, "on"),
             direct = onOff(s.steamdirect, "off"),
-            four = onOff(s.fourplayers, "off"),
+            players = partySize(s),
             -- Only Role = Local is local: Off, Host and Guest, and a fresh install, are all multiplayer. Read each time this
             -- page opens, as Host, Guest and Leave write Role too.
             mode = (s.role or "off"):lower() == "local" and "local" or "multiplayer",
         }
     end
 
-    -- Kept in PhantomPact.ini, and in force at once. (Steam Direct and 4 players from the next connection: the relay reads
-    -- them as it starts. 4 players is the host's choice: a guest follows what the host's relay says. Mode from the next start
+    -- Kept in PhantomPact.ini, and in force at once. (Steam Direct and the players from the next connection: the relay reads
+    -- them as it starts. The players are the host's choice: a guest follows what the host's relay says. Mode from the next start
     -- of the game: Role is read once, and local co-op can't be taken down live.)
     local function choose(row, value)
         options[row] = value
@@ -114,8 +121,8 @@ return function(api)
             api.mapicon.on = on
         elseif row == "direct" then
             save({ SteamDirect = word })
-        elseif row == "four" then
-            save({ FourPlayers = word })
+        elseif row == "players" then
+            save({ PartySize = value })
         elseif row == "mode" and value == "local" then
             save({ Role = "Local" })
             api.status.lastShown.mode = nil

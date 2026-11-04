@@ -194,6 +194,9 @@ return function(api)
                 neton(current.modRole)
                 api.partner.goOnLink(current.modRole == "client")
                 log("Phantom Pact " .. (current.modRole == "host" and "Host" or "Guest") .. ": co-op on.")
+                if api.twins and s.ghosttwins and s.ghosttwins ~= "" then
+                    api.twins.setFrom(s.ghosttwins)
+                end
                 if api.scaling and (tonumber(s.coopenemyhealth) or tonumber(s.coopenemyposture)) then
                     -- (Whole numbers: %d throws on 150.5, and the throw skipped the PvP settings below too.)
                     api.scaling.command(string.format("%d %d", math.floor(tonumber(s.coopenemyhealth) or 150),

@@ -442,6 +442,8 @@ function Fake.enemy(pc, id, class, x, y, z, hp, posture, boss)
     local f = rawget(e, "__fields")
     put(e, "BIsMonster", true)
     put(e, "boss", boss == true)
+    put(e, "baseHp", hp)                -- (what a new one of its class starts with, before the mod scales it)
+    put(e, "basePosture", posture or 100)
     put(e, "dustLoot", 0)
     hatredOf(pc, e)
     local picker = object(pc, "AIScript_TargetSelector_C", { LastSwitchTime = -1e9, SwitchTargetCooldown = 1.5 })
@@ -1116,6 +1118,17 @@ function Fake.new(id, scripts, ini, link)
                 local g = newPawn(t.Translation.X, t.Translation.Y, t.Translation.Z)
                 pc.spawned[#pc.spawned + 1] = g
                 return g
+            end
+            -- An enemy's class (a fake enemy is its own class): one more of it, with no spawner (twins.lua).
+            local cf = type(cls) == "table" and rawget(cls, "__fields")
+            if cf and cf.BIsMonster then
+                pc.twinCount = (pc.twinCount or 0) + 1
+                local e = Fake.enemy(pc, "spawned" .. pc.twinCount, rawget(cls, "__class"), t.Translation.X, t.Translation.Y,
+                    t.Translation.Z, cf.baseHp, cf.basePosture, cf.boss)
+                table.remove(pc.spawners)
+                rawset(e, "__name", rawget(cls, "__name"))
+                pc.spawned[#pc.spawned + 1] = e
+                return e
             end
             local cam = object(pc, "CameraActor", { loc = { X = t.Translation.X, Y = t.Translation.Y, Z = t.Translation.Z } }, true)
             put(cam, "K2_GetActorLocation", function(self) return rawget(self, "__fields").loc end)

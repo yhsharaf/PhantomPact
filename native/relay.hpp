@@ -61,7 +61,7 @@ constexpr size_t MAX_ENEMY_LINES = 128;    // waiting to go: the oldest are out 
 constexpr size_t MAX_INBOX_BYTES = 1 << 20;
 constexpr size_t MAX_QUICK_WAITING = 256;
 constexpr int MAX_PACKETS_PER_RECEIVE = 256;
-constexpr int HOST_SLOT = 1, FIRST_GUEST_SLOT = 2, MAX_SLOT = 4;   // who's who with more than two players (party.hpp)
+constexpr int HOST_SLOT = 1, FIRST_GUEST_SLOT = 2, MAX_SLOT = 6;   // who's who with more than two players (party.hpp)
 constexpr double PLAYERS_EVERY = 1.0 / 60;  // where the others are goes to a guest this often at most: it mostly rides along
 
 inline std::wstring widen(const std::string& s) {
@@ -322,6 +322,21 @@ inline const char* const SHARED_SETTINGS[] = {"coopenemyhealth", "coopenemypostu
 
 inline bool is_shared_setting(const std::string& key) {
     return std::any_of(std::begin(SHARED_SETTINGS), std::end(SHARED_SETTINGS), [&](const char* k) { return key == k; });
+}
+
+// How many players a host takes: PartySize 2, 4 or 6 (6 is experimental), or the older FourPlayers = On for 4. Anything
+// else is 2: one guest, no party.
+inline int party_size(const Ini& ini) {
+    auto size = ini.find("partysize");
+    if (size != ini.end()) {
+        const long n = std::strtol(size->second.c_str(), nullptr, 10);
+        if (n >= 6) return 6;
+        if (n >= 4) return 4;
+        if (n >= 2) return 2;
+    }
+    auto four = ini.find("fourplayers");
+    if (four != ini.end() && lower(four->second) == "on") return 4;
+    return 2;
 }
 
 // An IPv4 address and port (host byte order), or a SteamID64.
@@ -722,7 +737,7 @@ private:
     Timeline timeline_;
     std::string events_, enemies_, status_;
     std::deque<Waiting> quick_;
-    std::array<Timeline, MAX_SLOT - HOST_SLOT> players_;    // a party: slots 2 to 4
+    std::array<Timeline, MAX_SLOT - HOST_SLOT> players_;    // a party: slots 2 to 6
     int party_players_ = 0, party_slot_ = 0;
 };
 
@@ -1378,7 +1393,7 @@ inline void run(Options o, const std::function<void(const std::string&)>& log) {
             }
         };
         // The host's setting decides: a guest follows what the host's hello says, whatever its own ini has.
-        if (o.role == "host" && lower(ini["fourplayers"]) == "on") {
+        if (o.role == "host" && party_size(ini) > 2) {
             Party party(o.dir, std::move(link), signed_packets ? &secret : nullptr, ini, o.version, log);
             serve(party);
         } else {

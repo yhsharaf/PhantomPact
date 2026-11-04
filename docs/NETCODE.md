@@ -70,7 +70,7 @@ Enemy lines don't carry names: an `N` event gives each enemy a number first.
 
 ## More than two players
 
-Only a host with `FourPlayers = On` runs this (`native/party.hpp`, written from EXACG's design in PR #11). It runs one `Relay` per
+Only a host with `PartySize` 4 or 6 (or `FourPlayers = On`) runs this (`native/party.hpp`, written from EXACG's design in PR #11). It runs one `Relay` per
 guest on one socket, each with its own Mailbox for what goes out, so a guest's end is the same as with two players. Packets go to
 the Relay already talking to that address, else a free slot, else one silent for 3 s. All of it is on the relay thread.
 

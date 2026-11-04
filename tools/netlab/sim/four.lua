@@ -2106,7 +2106,7 @@ local function offAndBack()
     Session.command(ph, "onlinepanel press 700 500")
     Session.command(ph, "onlinepanel press 441 430")
     p:run(1)
-    check(ph.files["PhantomPact.ini"]:find("Secret = hunter2\nFourPlayers = On\n", 1, true) ~= nil, "a setting added to an ini with no line end at its end keeps both")
+    check(ph.files["PhantomPact.ini"]:find("Secret = hunter2\nPartySize = 4\n", 1, true) ~= nil, "a setting added to an ini with no line end at its end keeps both")
     allErrors(p)
 
     local lang = dofile(SIM_SCRIPTS .. "/lang.lua")()
@@ -3177,13 +3177,16 @@ local function panel()
     s:run(2)
     local h = s.pcs[1]
     Session.command(h, "onlinepanel press 700 500")      -- MORE
-    Session.command(h, "onlinepanel press 441 430")      -- the row's ON
+    Session.command(h, "onlinepanel press 441 430")      -- the PLAYERS row's 4
     s:run(1)
-    check(h.files["PhantomPact.ini"]:find("FourPlayers = On\n", 1, true) ~= nil, "ON is kept in the ini")
+    check(h.files["PhantomPact.ini"]:find("PartySize = 4\n", 1, true) ~= nil, "4 is kept in the ini")
     check(h.files["PhantomPact.ini"]:find("Role = Host\n", 1, true) ~= nil and h.files["PhantomPact.ini"]:find("CoopEnemyHealth = 150\n", 1, true) ~= nil, "and nothing else moves")
-    Session.command(h, "onlinepanel press 305 430")      -- OFF
+    Session.command(h, "onlinepanel press 577 430")      -- 6
     s:run(1)
-    check(h.files["PhantomPact.ini"]:find("FourPlayers = Off\n", 1, true) ~= nil, "OFF too")
+    check(h.files["PhantomPact.ini"]:find("PartySize = 6\n", 1, true) ~= nil, "6 too")
+    Session.command(h, "onlinepanel press 305 430")      -- 2
+    s:run(1)
+    check(h.files["PhantomPact.ini"]:find("PartySize = 2\n", 1, true) ~= nil, "and 2")
     Session.command(h, "onlinepanel press 305 100")      -- the TP row, moved up to fit
     Session.command(h, "onlinepanel press 441 100")
     s:run(1)
@@ -3215,6 +3218,135 @@ local function cost()
     local h4, g4 = measure({ "Host", "Guest", "Guest", "Guest" })
     out(string.format("       a party of 2: host %.1f, guest %.1f calls a frame; of 4: host %.1f, guest %.1f", h2, g2, h4, g4))
     check(h4 < h2 * 3.2 and g4 < g2 * 3.2, "four players cost no more than three times two, per PC")
+end
+
+-- Six players (PartySize = 6): health and posture stop at four players' numbers, and every enemy near a player has a ghost
+-- twin (twins.lua), on the host and on each guest under the same id.
+local function sixPlayers()
+    part("six players and ghost twins")
+    local function twinsOn(pc)
+        local out = {}
+        for _, e in ipairs(pc.enemies) do
+            local id = pc.env.PBZ.game.twinId(e:GetAddress())
+            if id and e:IsValid() then
+                out[id] = e
+            end
+        end
+        return out
+    end
+    local function size(t)
+        local n = 0
+        for _ in pairs(t) do
+            n = n + 1
+        end
+        return n
+    end
+    local SIX = { "Host", "Guest", "Guest", "Guest", "Guest", "Guest" }
+    local s = Session.new(SIM_SCRIPTS, SIX, 6, ENEMIES)
+    for i = 2, 6 do
+        Session.moveTo(s.pcs[i], 200 * i, 0)
+    end
+    s:run(14)
+    local h = s.pcs[1]
+    check(net(h).party == 6 and net(s.pcs[6]).slot == 6, "a host with PartySize 6 has six places, and the last guest is number 6")
+    Session.command(h, "onlinepanel status")
+    Session.command(s.pcs[6], "onlinepanel status")
+    s:run(1)
+    check(count(h.logs, "Players: 6 of 6%. You're the host") == 1 and count(s.pcs[6].logs, "Players: 6 of 6%. You're player 6 %(pink%)%.") == 1,
+        "the panel says six of six, and player 6 is pink")
+    local _, hp, posture = Fake.health(Session.enemyOn(h, "thug1"))
+    check(hp == 1500 and math.abs(posture - 190) < 0.01, "six connected: health and posture stop at four players' 250% and 190%")
+    local ht = twinsOn(h)
+    local near = { "sp:thug1", "sp:thug2", "sp:near", "sp:boss" }
+    local all = true
+    for _, id in ipairs(near) do
+        local found = false
+        for tid in pairs(ht) do
+            found = found or tid:match("^tw%d+:(.+)$") == id
+        end
+        all = all and found
+    end
+    check(all, "the host makes a twin for each enemy near a player, the boss's too")
+    local far = false
+    for tid in pairs(ht) do
+        far = far or tid:find("toofar", 1, true) ~= nil
+    end
+    check(not far, "none for enemies far from everyone")
+    check(everyone(s, function(pc, i) return i == 1 or size(twinsOn(pc)) == size(ht) end), "each guest has a copy of every twin, under the host's id")
+    local bossTwin
+    for tid, e in pairs(ht) do
+        if tid:match(":sp:boss$") then
+            bossTwin = e
+        end
+    end
+    check(bossTwin ~= nil and h.env.PBZ.game.isBoss(bossTwin) == false, "a boss's twin is never the boss of a fight to the mod")
+    local _, twinHp = Fake.health(bossTwin)
+    check(twinHp == 5000 * 2.5, "a twin gets the same health as its original")
+
+    -- One twin killed on the host dies on every guest too.
+    local thugTwinId, thugTwin
+    for tid, e in pairs(ht) do
+        if tid:match(":sp:thug1$") then
+            thugTwinId, thugTwin = tid, e
+        end
+    end
+    thugTwin:Kill(1)
+    s:run(4)
+    check(everyone(s, function(pc, i)
+        local e = twinsOn(pc)[thugTwinId]
+        return i == 1 or (e ~= nil and rawget(e, "__fields").dead == true)
+    end), "a twin's death on the host is its death everywhere")
+    check(Session.enemyOn(h, "thug1"):IsValid() and not rawget(Session.enemyOn(h, "thug1"), "__fields").dead, "and its original lives on")
+
+    -- A guest's hit and killing blow on a twin: as on any enemy, by its id.
+    local nearTwinId
+    for tid in pairs(ht) do
+        if tid:match(":sp:near$") then
+            nearTwinId = tid
+        end
+    end
+    local g = s.pcs[3]
+    local onG = twinsOn(g)[nearTwinId]
+    local before = select(1, Fake.health(ht[nearTwinId]))
+    swing(g, onG, select(1, Fake.health(onG)) - 50)
+    s:run(1)
+    check(select(1, Fake.health(ht[nearTwinId])) == before - 50, "a guest's hit on a twin lands on the host's twin")
+    swing(g, onG, 1)
+    s:run(2)
+    check(rawget(ht[nearTwinId], "__fields").dead == true, "a guest's killing blow kills the twin on the host")
+    check(everyone(s, function(pc, i)
+        local e = twinsOn(pc)[nearTwinId]
+        return i == 1 or i == 3 or (e ~= nil and rawget(e, "__fields").dead == true)
+    end), "and on every other guest")
+
+    -- The boss dies: its twin fades with it.
+    Session.enemyOn(h, "boss"):Kill(1)
+    s:run(4)
+    check(rawget(bossTwin, "__fields").dead == true, "the boss dies, and its twin goes with it")
+    check(count(h.logs, "fades with it") == 1, "said once")
+
+    -- A rest at a bell (a guest's): every twin goes, on every PC, and the enemies near a player get new ones.
+    local oldTwin = ht[thugTwinId]
+    Session.bell(s.pcs[2])
+    s:run(1)
+    check(not oldTwin:IsValid() and everyone(s, function(pc) return twinsOn(pc)[thugTwinId] == nil end), "a rest takes the twins away, on every PC")
+    s:run(12)
+    local fresh = 0
+    for tid in pairs(twinsOn(h)) do
+        fresh = fresh + ((tid ~= thugTwinId and tid:match(":sp:thug1$")) and 1 or 0)
+    end
+    check(fresh == 1, "and a new one comes for an enemy near a player, under a new id")
+    allErrors(s)
+
+    -- Four players: no twins. Six with GhostTwins = Off: none either.
+    local f = party()
+    f:run(10)
+    check(size(twinsOn(f.pcs[1])) == 0 and count(f.pcs[1].logs, "Ghost twin") == 0, "four players: no twins")
+    allErrors(f)
+    local o = Session.new(SIM_SCRIPTS, SIX, 6, ENEMIES, "GhostTwins = Off\n")
+    o:run(12)
+    check(size(twinsOn(o.pcs[1])) == 0, "six with GhostTwins = Off: none")
+    allErrors(o)
 end
 
 local function backToTwo()
@@ -3277,6 +3409,7 @@ return function(print_, scripts)
     lateJoiner()
     lateJoinerGuestFight()
     scaling()
+    sixPlayers()
     leaving()
     sizeTips()
     lateHello()

@@ -1382,10 +1382,10 @@ void test_hostile() {
     check(taker.field("received") == counted, "session 0 is nobody");
 }
 
-// A host with FourPlayers = On, in the same simulated network as End.
+// A host with FourPlayers = On (or the PartySize its ini says), in the same simulated network as End.
 struct Hosting {
-    Hosting(FakeNet& net, uint32_t ip, const std::string* secret = nullptr)
-        : addr(at(ip)), net_(net), party(L".", std::make_unique<FakeLink>(net, addr, std::nullopt, std::vector<relay::Addr>{}), secret, {}, "1.5.0",
+    Hosting(FakeNet& net, uint32_t ip, const std::string* secret = nullptr, const relay::Ini& ini = {})
+        : addr(at(ip)), net_(net), party(L".", std::make_unique<FakeLink>(net, addr, std::nullopt, std::vector<relay::Addr>{}), secret, ini, "1.5.0",
                                          [](const std::string&) {}, box) {}
 
     void step() {
@@ -1438,6 +1438,30 @@ int slot_of(End& guest) {
     int players = 0, slot = 0;
     guest.box.party(players, slot);
     return slot;
+}
+
+// PartySize = 6: five guests, slots 2 to 6, and a sixth guest turned away. And how the setting reads.
+void test_six() {
+    std::puts("six players:");
+    check(relay::party_size({}) == 2 && relay::party_size({{"fourplayers", "On"}}) == 4 && relay::party_size({{"partysize", "6"}}) == 6,
+          "PartySize 6 is six, FourPlayers On four, nothing two");
+    check(relay::party_size({{"partysize", "2"}, {"fourplayers", "On"}}) == 2 && relay::party_size({{"partysize", "9"}}) == 6 &&
+              relay::party_size({{"partysize", "5"}}) == 4 && relay::party_size({{"partysize", "x"}, {"fourplayers", "on"}}) == 4,
+          "PartySize first, at most 6, odd sizes down to 4, a word falls back to FourPlayers");
+    FakeNet net;
+    Hosting host(net, 1, nullptr, {{"partysize", "6"}});
+    End a(net, "client", 2, at(1)), b(net, "client", 3, at(1)), c(net, "client", 4, at(1)), d(net, "client", 5, at(1)),
+        e(net, "client", 6, at(1));
+    run(net, host, {&a, &b, &c, &d, &e}, 0.6);
+    check(host.field("guests") == "5" && host.field("players") == "6", "five guests on one host, six players");
+    check(slot_of(a) == 2 && slot_of(e) == 6 && e.field("players") == "6", "the last is number 6, and each is told there are six");
+    host.box.post_sure("from host");
+    e.box.post_sure("from six");
+    run(net, host, {&a, &b, &c, &d, &e}, 0.3);
+    check(e.count("from host") == 1 && a.count("@6 from six") == 1 && host.count("@6 from six") == 1, "player 6 hears the host, and the others hear player 6");
+    End f(net, "client", 7, at(1));
+    run(net, host, {&a, &b, &c, &d, &e, &f}, 1.0);
+    check(f.field("connected") == "no" && host.field("guests") == "5" && slot_of(f) == 0, "a sixth guest gets no answer and takes nobody's place");
 }
 
 void test_party() {
@@ -1873,6 +1897,7 @@ int run_tests(int argc, wchar_t** argv) {
     test_silence();
     test_hostile();
     test_party();
+    test_six();
     if (opt_number(argc, argv, L"--sockets", 1) != 0) {
         try {
             test_sockets(static_cast<int>(opt_number(argc, argv, L"--port", 47960)));

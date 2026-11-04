@@ -29,7 +29,8 @@
 -- reports its own hits. Each side shows the other's player as a "ghost" Hun steered by movement input.
 -- Who decides what (and why) is written up in docs/AUTHORITY.md.
 --
--- With more than two players (FourPlayers = On on the host, beta) each player has a slot: 1 is the host, 2 to 4 the guests.
+-- With more than two players (PartySize 4 or 6 on the host, beta / experimental) each player has a slot: 1 is the host, 2 to 6
+-- the guests.
 -- The relay passes a guest's events on (native/party.hpp), and they arrive here as "@<slot> <event>"; the host's come as
 -- they always did. Where the code says p, that's one other player: with two players p is net itself, so everything runs
 -- as it always has, and in a party each has a table of their own with the same fields (see partners).
@@ -129,7 +130,7 @@ return function(api)
         healTicks = {},           -- client: host id -> rounds in a row the host's health was clearly above ours
         hostSeen = {},            -- host, PvP: name -> { hp, posture } last tick, to undo the ghost's own hits
         deadSince = nil,          -- os.clock() when the local player died (spectating starts a little later)
-        party = nil,              -- with more than two players: how many at most (the host's FourPlayers); nil with two
+        party = nil,              -- with more than two players: how many at most (the host's PartySize); nil with two
         slot = nil,               -- party: this player's number
         peers = {},               -- party: slot -> what's known of that player (a guest's host is net itself)
         peerList = nil,           -- party: the same, in slot order
@@ -149,6 +150,8 @@ return function(api)
         { name = "player 2 (green)", tint = { R = 0.30, G = 0.85, B = 0.55, A = 1.0 } },
         { name = "player 3 (gold)", tint = { R = 1.0, G = 0.78, B = 0.25, A = 1.0 } },
         { name = "player 4 (blue)", tint = { R = 0.35, G = 0.68, B = 1.0, A = 1.0 } },
+        { name = "player 5 (orange)", tint = { R = 1.0, G = 0.50, B = 0.15, A = 1.0 } },
+        { name = "player 6 (pink)", tint = { R = 1.0, G = 0.45, B = 0.75, A = 1.0 } },
     }
 
     local justNet = { net }
@@ -255,7 +258,7 @@ return function(api)
         end
         for line in text:gmatch("[^\n]+") do
             local kind, rest = line:match("^(%S+)%s*(.*)$")
-            local from = kind and kind:match("^@([2-4])$")      -- another guest, or on the host any guest (native/party.hpp)
+            local from = kind and kind:match("^@([2-6])$")      -- another guest, or on the host any guest (native/party.hpp)
             if from then
                 from = tonumber(from)
                 kind, rest = rest:match("^(%S+)%s*(.*)$")

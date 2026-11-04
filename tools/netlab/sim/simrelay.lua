@@ -8,7 +8,9 @@ Relay.__index = Relay
 local LATENCY = 0.02
 
 function Relay.new(party)
-    return setmetatable({ party = party, pcs = {}, slots = {}, queue = {}, order = 0, hello = {} }, Relay)
+    -- party: false (two players), true (4) or how many at most (6)
+    local size = party == true and 4 or (type(party) == "number" and party or nil)
+    return setmetatable({ party = size and true or false, size = size or 2, pcs = {}, slots = {}, queue = {}, order = 0, hello = {} }, Relay)
 end
 
 local function sample(pc, ...)
@@ -132,7 +134,7 @@ end
 
 function Relay:partyOf(pc)
     if self.party and pc.slot and (pc.slot == 1 or (self.hello[pc.slot] and pc.now >= self.hello[pc.slot])) then
-        return 4, pc.slot
+        return self.size, pc.slot
     end
 end
 
@@ -164,7 +166,7 @@ function Relay:post(pc, kind, value)
             end
         end
     elseif pc.slot == 1 then
-        for slot = 2, 4 do
+        for slot = 2, self.size do
             if self.slots[slot] and not self.slots[slot].cut then
                 self:later(self.slots[slot], kind, value, pc)
             end
@@ -181,7 +183,7 @@ function Relay:post(pc, kind, value)
         if kind == "enemy" or hostAlone then
             return
         end
-        for slot = 2, 4 do
+        for slot = 2, self.size do
             local other = self.slots[slot]
             if other and other ~= pc and not other.cut then
                 self:later(other, kind == "sample" and "sampleOf" or kind, kind == "sample" and { slot = pc.slot, s = value } or tagged, host or pc)
@@ -216,7 +218,7 @@ function Relay:connect(pc)
         pc.slot = 1
         self.slots[1] = pc
     else
-        for slot = 2, 4 do
+        for slot = 2, self.size do
             if self.slots[slot] == nil and (self.party or slot == 2) then
                 pc.slot = slot
                 self.slots[slot] = pc

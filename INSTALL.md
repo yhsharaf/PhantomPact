@@ -52,8 +52,8 @@ a home network; Other Network is for ZeroTier and UU Accelerator. If you want a 
 password on both PCs before you connect. English and 中文 at the top of the panel switch the language of the panel
 and the co-op messages. Your choices are kept for the next start.
 
-**MORE** opens the settings: TP > PARTNER, PvP, the partner compass, your partner on the map, Steam Direct and 4 PLAYERS
-(Beta), each ON or OFF, and Mode: MULTIPLAYER, or LOCAL for two players on this PC. Mode works from the next time you start the
+**MORE** opens the settings: TP > PARTNER, PvP, the partner compass, your partner on the map and Steam Direct, each ON or
+OFF, PLAYERS (2, 4 or 6), and Mode: MULTIPLAYER, or LOCAL for two players on this PC. Mode works from the next time you start the
 game. Revive is coming soon. Enemy difficulty is the game's own setting. With a partner, enemies always get extra health and
 posture on top of it.
 
@@ -63,17 +63,23 @@ After that, **F3** takes you to your partner if you turn TP > PARTNER on under M
 lot of power to have on one key. Neither works during a boss fight, a cutscene, a duel or a menu, or while you or your
 partner are down.
 
-### 4 players (Beta)
+### 4 players (Beta) and 6 players (Experimental)
 
-4 PLAYERS under MORE is off by default, and with it off nothing changes. Turn it on before you press Host, and up to three
-guests can join: four players in all. Only the host's switch counts: guests follow it, whatever theirs says. It works from the
-next Host (`FourPlayers = On` in the ini does the same). Everyone joins as they would with two players, and everyone needs the
-same version. It hasn't been played by four people yet: tell us what breaks.
+PLAYERS under MORE is 2 by default, and with 2 nothing changes. Pick 4 before you press Host and up to three guests can join;
+pick 6 and up to five can. Only the host's choice counts: guests follow it, whatever theirs says. It works from the next Host
+(`PartySize = 4` or `6` in the ini does the same; the older `FourPlayers = On` still means 4). Everyone joins as they would with
+two players, and everyone needs the same version. Neither has been played by that many people yet: tell us what breaks.
+
+**Ghost twins (6 players).** With five or six connected, every enemy and every boss near a player gets a twin: a cyan, see-through
+copy of itself with red eyes, fighting beside it. Two bosses in each arena, twice the enemies. A twin is hit, killed and seen
+the same on every PC. A boss's twin fades when the boss dies, and the story goes on as always. An enemy's twin lives until it's
+killed. A rest at a bell clears the twins, and the enemies that come back get new ones. `GhostTwins` in the ini sets how many
+players it takes (5 by default) or turns them off (`GhostTwins = Off`). Only the host's setting counts.
 
 With more than two players:
 
 - Each player has a number and a colour, the same on every PC, on the compass and the map and in the tips: the host is purple,
-  player 2 green, player 3 gold, player 4 blue. Red still means down. The panel says how many are connected and who you are.
+  player 2 green, player 3 gold, player 4 blue, player 5 orange, player 6 pink. Red still means down. The panel says how many are connected and who you are.
 - F3 goes to the nearest partner who's up. If nobody's on your map, a guest goes to the host.
 - Enemies get more health and posture for each person connected: see [Co-op difficulty](#co-op-difficulty).
 - Die in a boss fight and you wait until the boss dies or everyone else is down too. The camera moves to someone who's still up.
@@ -120,8 +126,9 @@ Like Elden Ring, enemies and bosses get tougher while your partner is with you: 
 default. Change `CoopEnemyHealth` / `CoopEnemyPosture` in `PhantomPact.ini` (percent; 100 = normal). Both
 players should use the same numbers.
 
-With 4 PLAYERS (Beta) on, each person connected adds the same again, wherever they are, on another map, loading or down: 200%
-and 160% with two connected, 250% and 190% with three. It only goes up, so a boss doesn't lose health when someone dies or
+With 4 or 6 PLAYERS, each person connected adds the same again, wherever they are, on another map, loading or down: 200%
+and 160% with two connected, 250% and 190% with three, and it stops there. With five or six, the ghost twins make it harder
+instead of more health. It only goes up, so a boss doesn't lose health when someone dies or
 leaves. Someone who joins during a boss fight only watches, so that boss keeps its number until the fight is over, while other
 enemies rise at once.
 

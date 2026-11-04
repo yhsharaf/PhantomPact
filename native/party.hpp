@@ -1,4 +1,5 @@
-// Four players, the beta behind FourPlayers = On. Only a host with that setting runs this: otherwise run() goes to one Relay
+// Four or six players: the beta behind PartySize = 4 (or FourPlayers = On), and PartySize = 6 (experimental). Only a host with
+// that setting runs this: otherwise run() goes to one Relay
 // and nothing here is reached. Included by relay.hpp, partway down: it needs what comes before it.
 //
 // The shape is EXACG's (PR #11): a star. A guest only ever talks to the host, and the host passes on what the others need.
@@ -8,7 +9,7 @@
 //   - what a guest says reaches the host's game as "@<slot> <event>", and the other guests the same way, so everyone knows
 //     who it came from. Only a host's relay writes that tag, so a guest can't speak for anyone else
 //   - where a guest is goes to the others as SEC_PLAYER, from the relay thread: the host's game can be standing still in a load
-// Slots: 1 is the host, 2 to 4 the guests in the order they came. The hello tells a guest its own.
+// Slots: 1 is the host, 2 to size_ the guests in the order they came. The hello tells a guest its own, and the size.
 #pragma once
 #include <string_view>
 
@@ -45,17 +46,17 @@ class Party : public Hub {
 public:
     Party(const std::wstring& dir, std::unique_ptr<Link> link, const std::string* secret, const Ini& ini, const std::string& version,
           std::function<void(const std::string&)> log, Mailbox& box = mail)
-        : link_(std::move(link)), box_(box), version_(clean_token(version)) {
-        for (int slot = FIRST_GUEST_SLOT; slot <= MAX_SLOT; slot++) {
+        : link_(std::move(link)), box_(box), version_(clean_token(version)), size_(std::max(party_size(ini), 4)) {
+        for (int slot = FIRST_GUEST_SLOT; slot <= size_; slot++) {
             auto guest = std::make_unique<Guest>();
             guest->slot = slot;
             auto sub = std::make_unique<GuestLink>(*link_);
             guest->link = sub.get();
             guest->relay = std::make_unique<Relay>("host", dir, std::move(sub), secret, ini, version, log, guest->box);
-            guest->relay->join_party(this, slot, MAX_SLOT);
+            guest->relay->join_party(this, slot, size_);
             guests_.push_back(std::move(guest));
         }
-        box_.set_party(MAX_SLOT, HOST_SLOT);
+        box_.set_party(size_, HOST_SLOT);
     }
 
     void tick(double now) {
@@ -64,7 +65,7 @@ public:
         box_.take_outgoing(out);
         for (auto& guest : guests_) guest->box.absorb(out, guest->relay->has_partner());
         for (auto& [slot, text] : out.direct)
-            if (slot >= FIRST_GUEST_SLOT && slot <= MAX_SLOT) guests_[slot - FIRST_GUEST_SLOT]->box.post_sure(std::move(text));
+            if (slot >= FIRST_GUEST_SLOT && slot <= size_) guests_[slot - FIRST_GUEST_SLOT]->box.post_sure(std::move(text));
         for (auto& guest : guests_) guest->relay->tick(now);
     }
 
@@ -112,12 +113,12 @@ public:
         const long long rate = seconds > 0 ? static_cast<long long>((sent - rate_bytes_) / seconds / 1024) : 0;
         rate_from_ = now;
         rate_bytes_ = sent;
-        return line + " players=" + std::to_string(MAX_SLOT) + " slot=" + std::to_string(HOST_SLOT) + " guests=" + std::to_string(here) +
+        return line + " players=" + std::to_string(size_) + " slot=" + std::to_string(HOST_SLOT) + " guests=" + std::to_string(here) +
                " turned_away=" + std::to_string(turned_away_) + " upload_kb_s=" + std::to_string(rate) + maps +
                (versions.empty() ? "" : " other_versions=" + versions);
     }
 
-    std::string describe_self() { return link_->describe_self() + ", up to " + std::to_string(MAX_SLOT - HOST_SLOT) + " guests"; }
+    std::string describe_self() { return link_->describe_self() + ", up to " + std::to_string(size_ - HOST_SLOT) + " guests"; }
 
     // Hub: what each guest's Relay hears.
 
@@ -188,6 +189,7 @@ private:
     std::unique_ptr<Link> link_;
     Mailbox& box_;
     std::string version_;
+    int size_;                                  // players at most, this host too: 4 or 6
     std::vector<std::unique_ptr<Guest>> guests_;
     long long turned_away_ = 0, rate_bytes_ = 0;
     double rate_from_ = 0;

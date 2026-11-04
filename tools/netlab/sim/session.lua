@@ -7,9 +7,11 @@ local Session = {}
 Session.__index = Session
 Session.Fake = Fake
 
+-- four: true for FourPlayers = On, or a party size (6) for PartySize.
 local function ini(role, four, extra)
     return "Role = " .. role .. "\nConnect = Tailscale\nHostAddress = 10.0.0.1\nOnlinePanel = On\nLanguage = English\nCoopEnemyHealth = 150\n"
-        .. "CoopEnemyPosture = 130\nFourPlayers = " .. (four and "On" or "Off") .. "\nPartnerTeleport = Off\n" .. (extra or "")
+        .. "CoopEnemyPosture = 130\nFourPlayers = " .. (four and "On" or "Off") .. "\n"
+        .. (type(four) == "number" and ("PartySize = " .. four .. "\n") or "") .. "PartnerTeleport = Off\n" .. (extra or "")
 end
 
 -- roles: "Host", "Guest"... in the order they are PCs 1, 2...; enemies: { { id, class, x, y, z, hp, posture, boss }... }
@@ -22,7 +24,7 @@ function Session.shippedIni()
 end
 
 function Session.new(scripts, roles, party, enemies, extraIni, wholeIni)
-    local self = setmetatable({ pcs = {}, relay = Relay.new(party == true) }, Session)
+    local self = setmetatable({ pcs = {}, relay = Relay.new(party) }, Session)
     -- The relay says the version of these scripts, as a real build does.
     local main = assert(io.open(scripts .. "/main.lua", "rb"))
     self.relay.version = main:read("a"):match('local VERSION = "([^"]+)"')
@@ -33,7 +35,7 @@ function Session.new(scripts, roles, party, enemies, extraIni, wholeIni)
     end
     for i, role in ipairs(roles) do
         local link = {}
-        local pc = Fake.new("pc" .. i, scripts, wholeIni or ini(role, party == true and i == 1, extraIni), link)
+        local pc = Fake.new("pc" .. i, scripts, wholeIni or ini(role, party and i == 1 and party, extraIni), link)
         for k, v in pairs(self.relay:linkFor(pc)) do
             link[k] = v
         end

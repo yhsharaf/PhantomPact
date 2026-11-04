@@ -99,8 +99,9 @@ online panel doesn't pause, and a pause by the game (its menu) is undone at once
 
 ## More than two players (beta)
 
-`FourPlayers = On` on the host, or 4 PLAYERS under MORE in the panel. Only the host's setting counts: its relay tells each guest
-in the hello (`players=4`, `slot=<n>`), and a guest follows that, whatever its own ini says. With it off the code below never
+`PartySize = 4` or `6` on the host (or the older `FourPlayers = On`), or PLAYERS under MORE in the panel. Only the host's setting
+counts: its relay tells each guest
+in the hello (`players=4` or `6`, `slot=<n>`), and a guest follows that, whatever its own ini says. With it off the code below never
 starts, and two players' packets and game calls are the same as without it (`tools/netlab/wirecheck.ps1`, `luasim.py two`).
 
 A slot says who's who: 1 is the host, 2 to 4 the guests in the order they came. The colours go with the slots, the same on every
@@ -122,7 +123,8 @@ tells that guest what's dead (`K`, for it alone) and everyone that someone's new
 | Dying in a boss fight | You wait while a partner who's up and here has a boss bar, so until the boss dies or everyone else is down. The camera moves on if the one you watch goes down |
 | Joining during a fight | Anyone's `F` counts, and the fight may not be the host's. A joiner gives it 2.5 s to be heard of, and everyone tells again on `J`. You watch whoever's in it, and go to the host when it's over |
 | What anyone gets | `T`, `O`, `C`, `I` and bells reach everyone, once. The same thing from two senders within 15 s is one thing here too. Two from one sender are two. A guest's death stays its own: only the host's `R death` goes out |
-| Enemy health | Each person connected adds what the first did, wherever they are: 150/130 with one, 200/160 with two, 250/190 with three. It only goes up, on the host, where guests' copies follow: a boss mustn't lose health because a player left, and a copy that lost health would look like a hit. Someone who joins during a boss fight only watches, so that boss keeps its number until the fight is over. New enemies get the number of the moment |
+| Enemy health | Each person connected adds what the first did, wherever they are: 150/130 with one, 200/160 with two, 250/190 with three, and no more after that. It only goes up, on the host, where guests' copies follow: a boss mustn't lose health because a player left, and a copy that lost health would look like a hit. Someone who joins during a boss fight only watches, so that boss keeps its number until the fight is over. New enemies get the number of the moment |
+| Ghost twins | Five or six connected (`GhostTwins`, the host's): the host's game spawns a twin beside each live enemy within 50 m of a player and runs it as its own, under the id `tw<n>:` and the original's. A guest that hears of a `tw` id it hasn't got spawns its own copy under that id, which the usual pairing steers. A twin is never a boss to the mod: no fight, no beaten mark. A boss's twin fades when the boss dies; one whose original goes out of reach is taken away; a rest clears them all |
 | F3 | The nearest partner who's up. With nobody on your map a guest goes to the host, and a host to its first guest who's up: those are the maps the relay can name |
 | Someone leaves | A guest: their ghost hides on every PC, the others play on, and walls closed for a fight they started open, whoever else shows its bar, as those bars are copies of the same fight. The host: it's over for everyone, as nothing passes between guests but through it |
 | PvP, Revive | Off. Each has one ghost to fight or one partner to bring you back |
