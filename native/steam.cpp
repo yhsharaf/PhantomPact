@@ -382,7 +382,9 @@ private:
         for (const Identity& id : pending)
             if (is_friend(id.steam_id)) accept(id);
         const double now = relay::monotonic();
-        if (now - heard_at_ < ACCEPT_SWEEP_EVERY || now - swept_at_ < ACCEPT_SWEEP_EVERY) return;
+        // (On a timer alone, whoever's talking: with one guest's packets coming all the time, a later guest whose request
+        // the callback missed waited on Steam's retries, and in a long load for good.)
+        if (now - swept_at_ < ACCEPT_SWEEP_EVERY) return;
         swept_at_ = now;
         for (const relay::Addr& a : candidates()) accept(identity(a.steam));
     }

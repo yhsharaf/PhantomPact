@@ -922,14 +922,14 @@ public:
                 peer_ = addr;
                 retired_.clear();
                 new_sender = true;
-                log_("peer connected: " + link_->describe(addr));
+                log_("peer connected: " + logged(addr));
             }
         } else {
             // A guest still looking for its host pins the first host that answers; other guests are ignored.
             if (!from_host) return;
             if (!peer_) {
                 peer_ = addr;
-                log_("found the host: " + link_->describe(addr));
+                log_("found the host: " + logged(addr));
             } else if (*peer_ != addr) {
                 return;
             }
@@ -1297,6 +1297,9 @@ private:
             box_.set_party(party_players_, party_slot_);
         }
     }
+
+    // Who, for relay_log.txt: never a Steam friend's name (players attach the log to bug reports), an address otherwise.
+    std::string logged(const Addr& a) { return a.steam ? std::string("a Steam friend") : link_->describe(a); }
 
     std::string role_;
     std::unique_ptr<Link> link_;
