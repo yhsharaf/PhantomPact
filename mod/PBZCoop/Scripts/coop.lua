@@ -1751,6 +1751,14 @@ return function(api)
 
     -- The partner has just (re)started sync: it knows nothing yet. It hears again what enemies are, and what's dead.
     handlers.S = function(_, from)
+        if isClient() and from then
+            -- Another guest of the party started over, or someone new took that slot (the host passes it on): only what
+            -- this player showed them is news to them. The host's world, its kills and what the two ran is as it was.
+            log("Player " .. tostring(from) .. " started sync.")
+            peerOf(from).syncAt = os.clock()
+            net.lookSent = nil
+            return
+        end
         log("The other player started sync.")
         peerOf(from).syncAt = os.clock()    -- (told all of it now: a retelling after their gap would only say it again)
         handover.reset()                    -- (what either game ran for the other, the other knows nothing of now)

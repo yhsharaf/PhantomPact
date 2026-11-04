@@ -1464,6 +1464,51 @@ void test_six() {
     check(f.field("connected") == "no" && host.field("guests") == "5" && slot_of(f) == 0, "a sixth guest gets no answer and takes nobody's place");
 }
 
+// Edges of a party: a tag that would push a line past what one may be, a slot taken by someone new, a host started over.
+void test_party_edges() {
+    std::puts("party edges:");
+    {
+        FakeNet net;
+        Hosting host(net, 1);
+        End a(net, "client", 2, at(1)), b(net, "client", 3, at(1));
+        run(net, host, {&a, &b}, 0.5);
+        std::string big(relay::MAX_TEXT, 'x'), fits(relay::MAX_TEXT - 3, 'y');
+        a.box.post_sure(big);
+        a.box.post_sure(fits);
+        run(net, host, {&a, &b}, 0.5);
+        check(host.count("@2 " + big) == 0 && b.count("@2 " + big.substr(0, relay::MAX_TEXT - 3)) == 0,
+              "an event too long once tagged goes to nobody, rather than cut short");
+        check(host.count("@2 " + fits) == 1 && b.count("@2 " + fits) == 1, "one that fits with its tag arrives whole");
+    }
+    {
+        FakeNet net;
+        Hosting host(net, 1);
+        End a(net, "client", 2, at(1)), b(net, "client", 3, at(1)), c(net, "client", 4, at(1));
+        run(net, host, {&a, &b, &c}, 0.5);
+        run(net, host, {&b, &c}, 3.5);              // a goes silent
+        End d(net, "client", 9, at(1));
+        run(net, host, {&b, &c, &d}, 0.8);
+        check(slot_of(d) == 2 && b.count("@2 S") >= 1 && c.count("@2 S") >= 1, "someone new in a slot: the other guests hear it too");
+    }
+    {
+        FakeNet net;
+        auto host = std::make_unique<Hosting>(net, 1);
+        End a(net, "client", 2, at(1)), b(net, "client", 3, at(1)), c(net, "client", 4, at(1));
+        run(net, *host, {&a, &b, &c}, 0.5);
+        b.box.post_sample(at_x(2000));
+        c.box.post_sample(at_x(3000));
+        run(net, *host, {&a, &b, &c}, 0.3);
+        host.reset();
+        host = std::make_unique<Hosting>(net, 1);
+        run(net, *host, {&c, &b, &a}, 0.6);
+        bool right = true;
+        relay::Sample out;
+        for (int slot = 2; slot <= 4; slot++)
+            if (sees(a.box, slot, out) && ((out.x == 2000 && slot != slot_of(b)) || (out.x == 3000 && slot != slot_of(c)))) right = false;
+        check(right && slot_of(a) != 0, "a host started over: nobody is seen in a slot that's someone else's now");
+    }
+}
+
 void test_party() {
     std::puts("four players:");
     {
@@ -1654,7 +1699,8 @@ void test_party() {
         run(net, host, {&a, &b}, 0.3);
         host.reading = false;
         const int total = 2000;
-        for (int i = 0; i < total; i++) a.box.post_sure(padded("a", i, relay::MAX_TEXT));
+        // (The longest a guest's event can be and still go on to the others: its "@2 " tag is 3 more.)
+        for (int i = 0; i < total; i++) a.box.post_sure(padded("a", i, relay::MAX_TEXT - 3));
         run(net, host, {&a, &b}, 5);
         check(a.field("pending") != "0", "a host's inbox that's full isn't acknowledged");
         host.reading = true;
@@ -1898,6 +1944,7 @@ int run_tests(int argc, wchar_t** argv) {
     test_hostile();
     test_party();
     test_six();
+    test_party_edges();
     if (opt_number(argc, argv, L"--sockets", 1) != 0) {
         try {
             test_sockets(static_cast<int>(opt_number(argc, argv, L"--port", 47960)));

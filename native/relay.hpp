@@ -614,6 +614,7 @@ public:
     void on_partner_restart() {
         forget_partner();
         Lock hold(lock_);
+        for (auto& line : players_) line.clear();     // (the host started over: its guests may come back in other slots)
         events_ += "S\n";
     }
 
@@ -660,6 +661,9 @@ public:
 
     void set_party(int players, int slot) {
         Lock hold(lock_);
+        // (Slots handed out again, a host restarted: what was heard under a slot was someone else's, this guest's own too.)
+        if (players != party_players_ || slot != party_slot_)
+            for (auto& line : players_) line.clear();
         party_players_ = players;
         party_slot_ = slot;
     }
@@ -922,6 +926,8 @@ public:
                 peer_ = addr;
                 retired_.clear();
                 new_sender = true;
+                echo_ms_ = 0;           // (the one before's timing: a new guest's first round trips read as garbage)
+                rtt_ms_ = -1;
                 log_("peer connected: " + logged(addr));
             }
         } else {

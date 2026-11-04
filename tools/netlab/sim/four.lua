@@ -3614,6 +3614,13 @@ local function syncRaces()
     qg.env.PBZ.coop.handlers.RUN = qrun
     check(count(qh.sent, "^E D sp:byguest ") == 1, "a host's hit before the guest's first line on an enemy handed over is told")
     allErrors(q)
+
+    local w, _, wg = pair()
+    net(wg).hostKilled["sp:thug2"] = true
+    wg.env.PBZ.coop.handlers.S(nil, 3)          -- (another guest of a party started over: the host passes it on)
+    w:run(1)
+    check(net(wg).hostKilled["sp:thug2"] == true, "another guest starting over isn't the host's: what the host killed stays killed")
+    allErrors(w)
 end
 
 return function(print_, scripts)

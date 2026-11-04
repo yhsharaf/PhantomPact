@@ -131,6 +131,9 @@ public:
     bool on_sure(int slot, const std::string& text) override {
         if (!one_line(text)) return true;       // confirmed and dropped: sent again it would only be dropped again
         const std::string tagged = tag(slot) + text;
+        // (Tagged past what a line may be: the host's game got it whole and the other guests cut, its end gone. Dropped,
+        // as one line of two would be.)
+        if (tagged.size() > MAX_TEXT) return true;
         if (!box_.on_event(tagged)) return false;
         if (!for_host_alone(text))
             for (auto& guest : guests_)
@@ -141,12 +144,19 @@ public:
     void on_quick(int slot, std::string_view text, double arrived_ms) override {
         if (!one_line(text)) return;
         const std::string tagged = tag(slot) + std::string(text);
+        if (tagged.size() > MAX_TEXT) return;
         box_.on_quick(tagged, arrived_ms);
         for (auto& guest : guests_)
             if (guest->slot != slot && guest->relay->has_partner()) guest->box.post_quick(tagged);
     }
 
-    void on_restart(int slot) override { box_.on_player_restart(slot); }
+    // A guest started over, or a new one took the slot: the other guests hear it too, or they kept the one before's state
+    // for that slot until the new one happened to say otherwise.
+    void on_restart(int slot) override {
+        box_.on_player_restart(slot);
+        for (auto& guest : guests_)
+            if (guest->slot != slot && guest->relay->has_partner()) guest->box.post_sure(tag(slot) + "S");
+    }
 
 private:
     struct Guest {
