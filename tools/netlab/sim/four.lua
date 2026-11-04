@@ -1097,6 +1097,15 @@ local function guestSide()
     h.cut = false
     s:run(2)
     check(field(min, "CurrentValue") == 1, "and still held when the host is heard again")
+    -- A trip: the host says it's loading, then nothing for 20 s, longer than the 12 s that make a partner gone.
+    h.env.PBZ.net.tellLoading()
+    s:run(0.3)
+    h.cut = true
+    local held = true
+    s:run(20, function() held = held and field(min, "CurrentValue") == 1 end)
+    check(held and not g.env.PBZ.net.partnerGone, "the host loading for 20 s isn't gone: the guest's copies stay held, no fight of theirs on their own")
+    h.cut = false
+    s:run(3)
     allErrors(s)
 
     -- A guest's fight that ends with the boss alive (they died in it, walked out): over on the host too.
@@ -1200,8 +1209,14 @@ local function followTheHost()
     local a, ah, ag = pair()
     ah.storyUpTo(3)
     ag.storyUpTo(all)
-    a:run(20)
-    check(#ag.storyApplied == 0 and #ah.storyApplied == 0, "a guest ahead of the host stays ahead")
+    a:run(60)
+    check(#ag.storyApplied == 0, "a guest ahead of the host stays ahead")
+    -- The other way: a quest both have under way that the guest finished (the bow in the tower) is finished for the host
+    -- too. Not the guest's later quests, which the host hasn't started: the host's world keeps its point.
+    check(ah.storyState("Side-Cry", "1") == 2, "a quest the host is on, finished by the guest, is finished for the host")
+    check(ah.storyState("Main-Forest", "1") ~= 2 and ah.storyState("Boss-Puppet", "S1") ~= 2,
+        "but nothing the host hasn't started: the host's point stays its own")
+    check(count(ah.logs, "a guest finished") == 1, "said once")
     allErrors(a)
 
     local c, ch, cg = pair()

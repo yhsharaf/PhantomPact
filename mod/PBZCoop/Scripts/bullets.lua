@@ -121,8 +121,10 @@ return function(api)
     coop.handlers.SHOT = function(rest, from)
         local path, x, y, z, pitch, yaw, roll, id = (rest or ""):match("^(%S+) (%S+) (%S+) (%S+) (%S+) (%S+) (%S+)%s*(%d*)$")
         x, y, z, pitch, yaw, roll = tonumber(x), tonumber(y), tonumber(z), tonumber(pitch), tonumber(yaw), tonumber(roll)
+        -- (The angles too: "1e999" read as infinity, and a rotation of that went into the game's own spawn as NaN.)
         if not (path and path:match(ROOT) and api.moves.allowedPath(path) and x and y and z and pitch and yaw and roll
-            and math.abs(x) < MAX_COORD and math.abs(y) < MAX_COORD and math.abs(z) < MAX_COORD) then
+            and math.abs(x) < MAX_COORD and math.abs(y) < MAX_COORD and math.abs(z) < MAX_COORD
+            and math.abs(pitch) <= 720 and math.abs(yaw) <= 720 and math.abs(roll) <= 720) then
             bullets.refused = bullets.refused + 1
             return
         end
@@ -130,14 +132,15 @@ return function(api)
         if net.pvp or not valid(p.ghost) or p.ghostHidden or not api.moves.settled(p) then
             return
         end
+        -- (A cap for each player: one counter for a whole party let one player's flowers or cannon use it all up.)
         local now = os.clock()
-        if now - shotsAt >= 1 then
-            shots, shotsAt = 0, now
+        if now - (p.shotsAt or 0) >= 1 then
+            p.shots, p.shotsAt = 0, now
         end
-        if shots >= MAX_PER_S then
+        if (p.shots or 0) >= MAX_PER_S then
             return
         end
-        shots = shots + 1
+        p.shots = (p.shots or 0) + 1
         local d = bulletData(path)
         local ok, made = false, nil
         if d then
@@ -146,7 +149,11 @@ return function(api)
         if ok then
             bullets.shown = bullets.shown + 1
             if id ~= "" and made and #made > 0 then
-                copies[(from or 1) .. ":" .. id] = { at = now, made = made }
+                local key = (from or 1) .. ":" .. id
+                if copies[key] then
+                    endCopy(key)        -- (an id used again, the sender started over: the old copy put out of the list looped on)
+                end
+                copies[key] = { at = now, made = made }
             end
         end
     end
@@ -181,6 +188,14 @@ return function(api)
             bullets.lastError = err
             log("bullets: " .. tostring(err))
         end
+    end
+
+    -- Sync off: every copy ends now (coop.lua's stop), as the ticks that end them stop with it. A copied fire loop burned on.
+    function bullets.endAll()
+        for key in pairs(copies) do
+            endCopy(key)
+        end
+        sentIds = {}
     end
 
     -- bullets: counters

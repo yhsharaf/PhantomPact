@@ -360,9 +360,12 @@ return function(api)
             gear.edgePathAt = now + GEAR_PATH_S
             gear.edgePath = heldConfig(cwc, edgeSlot())
         end
-        if gear.edgePath and (armed ~= gear.sentEdgeArmed or gear.edgePath ~= gear.sentEdgePath) then
-            gear.sentEdgeArmed, gear.sentEdgePath = armed, gear.edgePath
-            coop.sendEvent("E", gear.edgePath, armed and 1 or 0)
+        -- ("-": none. Never said, a partner with none showed this player's own on their figure, from this PC's backpack, and one
+        -- who took theirs off kept it hanging there.)
+        local edge = gear.edgePath or "-"
+        if gear.edgePathAt > 0 and (armed ~= gear.sentEdgeArmed or edge ~= gear.sentEdgePath) then
+            gear.sentEdgeArmed, gear.sentEdgePath = armed, edge
+            coop.sendEvent("E", edge, armed and 1 or 0)
         end
         if armed then
             local ai = gear.edgeAnim
@@ -397,6 +400,11 @@ return function(api)
 
     coop.handlers.E = function(rest, from)
         local path, armed = (rest or ""):match("^(%S+)%s+([01])$")
+        if path == "-" then
+            local theirs = gearOf(coop.peerOf(from))
+            theirs.edgePath, theirs.edgeArmed, theirs.dressAt = "-", false, 0
+            return
+        end
         if not allowedPath(path) then
             moves.refused = moves.refused + 1
             return
@@ -465,8 +473,17 @@ return function(api)
                 cwc:SetArmed(slot, theirs.partnerArmed)
             end
         end
-        if theirs.edgePath and not net.pvp then
+        if theirs.edgePath == "-" and not net.pvp then
+            if theirs.edgeHiddenOn ~= ghost:GetAddress() then      -- (each new figure starts with it shown)
+                theirs.edgeHiddenOn = ghost:GetAddress()
+                pcall(function() cwc:SetWeaponForceHide(edgeSlot(), 0, true) end)
+            end
+        elseif theirs.edgePath and not net.pvp then
             slot = edgeSlot()
+            if theirs.edgeHiddenOn then
+                theirs.edgeHiddenOn = nil
+                pcall(function() cwc:SetWeaponForceHide(slot, 0, false) end)
+            end
             if now >= (theirs.edgeSwapAt or 0) and heldConfig(cwc, slot) ~= theirs.edgePath then
                 theirs.edgeSwapAt = now + GEAR_SWAP_S
                 local cfg = weaponConfig(theirs.edgePath)

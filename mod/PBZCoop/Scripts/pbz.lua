@@ -2974,6 +2974,71 @@ return function(api)
         game.grantLoot(pawn, id, kind, count)
     end
 
+    -- On linking, the two bags come to the most of each (the user: "they adjust to the one that has more so no one
+    -- loses"): weapons, Phantom Edges, accessories and medicines one has, the other gets; a thing that's counted comes to
+    -- the higher count, never the two added; quest things too, the quests themselves going both ways (story.lua). Not
+    -- dust. After that, what anyone finds comes to both as it always did. (No locals here: this file is at its 200.)
+    -- An entry is "kind:id:count", kind w (weapon) e (Phantom Edge) a (accessory) m (medicine) p (counted).
+    function game.bagSummary(pawn)
+        local bp = valid(pawn) and worldSubsystem(pawn, BACKPACK)
+        local out = {}
+        if not bp then
+            return out
+        end
+        for list, kind in pairs({ MainWeaponInfos = "w", ShaqiWeaponInfos = "e", Accessories = "a", MedicineInfos = "m" }) do
+            pcall(function()
+                bp[list]:ForEach(function(k)
+                    out[#out + 1] = kind .. ":" .. k:get():ToString() .. ":1"
+                end)
+            end)
+        end
+        pcall(function()
+            bp.Inventories:ForEach(function(k, v)
+                local n = v:get().CurrentAmount
+                if type(n) == "number" and n > 0 then
+                    out[#out + 1] = "p:" .. k:get():ToString() .. ":" .. math.floor(n)
+                end
+            end)
+        end)
+        return out
+    end
+
+    -- What the partner's bag has and this one lacks. Returns how many things came. counts false: things that are counted
+    -- (used up as they're used) aren't topped up, only what one has or hasn't: after the first merge with a partner, a
+    -- sync started again refilled the bombs and herbs used since.
+    function game.mergeBag(pawn, entries, counts)
+        local bp = valid(pawn) and worldSubsystem(pawn, BACKPACK)
+        if not bp then
+            return 0
+        end
+        local have = {}
+        for _, e in ipairs(game.bagSummary(pawn)) do
+            local kind, id, n = e:match("^(%a):(.+):(%d+)$")
+            have[kind .. ":" .. id] = tonumber(n)
+        end
+        local came = 0
+        for _, e in ipairs(entries) do
+            local kind, id, n = e:match("^(%a):([%w_%-]+):(%d+)$")
+            n = n and math.min(tonumber(n), 9999)
+            local key = kind and kind .. ":" .. id
+            local mine = key and have[key] or nil
+            if kind == "p" and counts ~= false and n and n > (mine or 0) then
+                game.grantLoot(pawn, id, nil, n - (mine or 0))
+                came = came + 1
+            elseif kind and kind ~= "p" and mine == nil then
+                game.grantLoot(pawn, id, ({ w = "weapon", e = "weapon2", a = "accessory", m = "medicine" })[kind])
+                if gearKnown then
+                    gearKnown[id] = true     -- (or the next look at the lists sends it back as found)
+                end
+                came = came + 1
+            end
+            if key and n then
+                have[key] = math.max(n, mine or 0)  -- (two bags in one go: the most of the two, not both gaps added)
+            end
+        end
+        return came
+    end
+
     -- Each world has its own copy of every chest and rubbish pile, named alike. Its items reach the partner as above, so
     -- their copy only has to stop paying: a chest counts as opened, a pile goes, as a pickup's copy does. One that isn't
     -- loaded there goes as soon as it is. (A chest that's locked until a boss dies stays locked for both.)

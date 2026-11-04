@@ -2,6 +2,7 @@
 param([int]$StartAt = 0, [int]$Count = 99, [string]$Out = 'C:\PBZDev\pp-netlab\tour-log.txt')
 . (Join-Path $PSScriptRoot 'tourlib.ps1')
 $stops = @(
+    @{ n = 'Xigu';            from = 1;   to = 97;  bell = 'NLES_003' },
     @{ n = 'Fuji forest';     from = 98;  to = 146; bell = 'LZSJ_010' },
     @{ n = 'Lu village';      from = 147; to = 232; bell = 'SXC_01_01' },
     @{ n = 'Pang town';       from = 233; to = 282; bell = 'SZ_001' },

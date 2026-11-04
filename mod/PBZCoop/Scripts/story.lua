@@ -264,13 +264,109 @@ return function(api)
         return n
     end
 
+    local function calm(pawn)
+        return valid(pawn) and not game.isDead(pawn) and not game.inCutscene() and not game.bossFightActive()
+    end
+
+    -- Table rows applied with the game's own story step, tables and row names fresh in this frame (see tables()). False if
+    -- the game wouldn't.
+    local function applyRows(pawn, list, why)
+        local t, s, lib = tables()
+        local qa = StaticFindObject("/Script/ProjectPBZ.Default__PBZDebugFlowEventLibrary")
+        if not (t and valid(qa)) then
+            return false
+        end
+        local all = {}
+        lib:GetDataTableRowNames(t, all)
+        if #all ~= rows.count then
+            return false
+        end
+        local names = {}
+        for n, i in ipairs(list) do
+            local name = all[i]
+            pcall(function() name = name:get() end)
+            names[n] = name
+        end
+        -- (What the rows hand out isn't sent on as found: the partner had it when they did the step.)
+        game.granting = true
+        local ok, err = pcall(function() qa:ApplyFlowEvents(pawn, t, s, names) end)
+        game.granting = false
+        if not ok then
+            log("Story: the game wouldn't take " .. why .. ": " .. tostring(err))
+        end
+        return ok
+    end
+
     ------------------------------------------------------------------ host
 
     local told, toldAt, lookAt = nil, -1e9, -1e9
 
+    -- A guest's quest steps come the other way too, the ones the host is on: a guest who finished the quest both have under
+    -- way (the bow in the tower, early in Xigu) left the host to do it all over again. Only a quest the host's world has
+    -- started: a guest who is further on doesn't take the host's story past its point, the host's world decides that.
+    -- The step's things came already, as everything the game gives does; the game's own step that follows here gives
+    -- nothing twice that can't be had twice (a weapon, an accessory).
+    local guestDone = {}            -- who (0 for a lone guest) -> { done, at }
+    local hostTried = {}            -- quest rows applied here for a guest this session: not tried again
+    -- A row the host is on: each step it needs is a branch under way in the host's world (or done there already). A branch
+    -- the host hasn't started isn't taken: by quest alone, a guest further on took the host through the whole quest, and
+    -- into a branch its world didn't choose.
+    local function questStarted(states, row)
+        for _, need in ipairs(row.needs) do
+            local st = (states[need.quest] or {})[need.branch]
+            if not st or st < 1 then
+                return false
+            end
+        end
+        return true
+    end
+    local function takeGuestSteps(states, done, now)
+        local _, pawn = api.getPlayer1()
+        if not (story.follow and calm(pawn)) then
+            return
+        end
+        local list, ks = {}, {}
+        for k, row in ipairs(rows.quests) do
+            if not done[k] and not hostTried[k] and questStarted(states, row) then
+                for _, g in pairs(guestDone) do
+                    if g.done[k] and now - g.at < FRESH_S and #list < BATCH then
+                        list[#list + 1], ks[#ks + 1] = row.i, k
+                        break
+                    end
+                end
+            end
+        end
+        if #list == 0 then
+            return
+        end
+        if applyRows(pawn, list, "a guest's story steps") then
+            for _, k in ipairs(ks) do
+                hostTried[k] = true         -- (only once the game took them: a failed look tries again)
+            end
+            log(string.format("Story: a guest finished %d step%s of quests you're on: done here too (rows %d to %d).", #list,
+                #list == 1 and "" or "s", list[1], list[#list]))
+            if api.status and api.status.notify then
+                api.status.notify("story", "your partner finished a quest step you were on: done for you too.")
+            end
+            lookAt = -1e9           -- (read again: the point moved, and the guests hear it)
+        end
+    end
+
+    coop.handlers.GSTORY = function(rest, from)
+        if not coop.isHost() or type(rest) ~= "string" or #rest > 400 or not readTable() then
+            return
+        end
+        local n, check, hex = rest:match("^(%d+) (%d+) (%x+)$")
+        if n and tonumber(n) == #rows.quests and tonumber(check) == rows.check then
+            guestDone[from or 0] = { done = decode(hex, #rows.quests), at = os.clock() }
+            lookAt = math.min(lookAt, os.clock() - LOOK_S + 2)  -- (a look soon: there may be something to take)
+        end
+    end
+
     local function hostTick(now)
         if not coop.linked() then
             reading = nil
+            guestDone = {}          -- (a guest's steps go with them: one who left, or the next who comes, isn't them)
             return
         end
         if reading == nil and now - lookAt >= LOOK_S and readTable() then
@@ -287,6 +383,7 @@ return function(api)
                     point, count(done), #rows.quests))
                 told, toldAt = line, -1e9
             end
+            takeGuestSteps(states, done, now)
         end
         if told and now - toldAt >= TELL_S then
             toldAt = now
@@ -299,6 +396,7 @@ return function(api)
     coop.handlers.S = function(rest, from)
         syncStarted(rest, from)
         lookAt, toldAt = -1e9, -1e9
+        guestDone[from or 0] = nil      -- (whoever starts sync anew tells their steps anew)
     end
 
     ------------------------------------------------------------------ guest
@@ -333,8 +431,15 @@ return function(api)
         host = { done = decode(hex, #rows.quests), point = tonumber(point), at = os.clock(), line = rest, check = true }
     end
 
-    local function calm(pawn)
-        return valid(pawn) and not game.isDead(pawn) and not game.inCutscene() and not game.bossFightActive()
+    -- A guest's own steps, for the host (GSTORY): when they change, and every TELL_S.
+    local ownTold, ownToldAt, ownLookAt, ownReading = nil, -1e9, -1e9, false
+    local function tellOwn(states, now)
+        local done = pointOf(states)
+        local line = string.format("%d %d %s", #rows.quests, rows.check, encode(done, #rows.quests))
+        if line ~= ownTold or now - ownToldAt >= TELL_S then
+            ownTold, ownToldAt = line, now
+            coop.sendEvent("GSTORY", line)
+        end
     end
 
     -- What a catch-up would apply now, in table order: { i (the table row), k (its place among quest rows) or mark }.
@@ -377,9 +482,29 @@ return function(api)
             end
         end
         if not (story.follow and host and host.check and now - host.at < FRESH_S and coop.linked() and calm(pawn)) then
-            calmSince, reading = nil, nil
+            -- (Calm is the player's: kept while nothing goes on, whether or not there's anything to take, so a new point
+            -- heard after a quiet while is taken at once instead of after another 20 s.)
+            calmSince = calm(pawn) and (calmSince or now) or nil
+            -- Not catching up: this world's own steps are read now and then all the same, for the host.
+            if story.follow and coop.linked() and calm(pawn) and readTable() then
+                if not ownReading and now - ownLookAt >= LOOK_S then
+                    ownLookAt, ownReading = now, true
+                    readQuests(true)
+                elseif ownReading then
+                    local states = readQuests()
+                    if states then
+                        ownReading = false
+                        tellOwn(states, now)
+                    elseif reading == nil then
+                        ownReading = false          -- (a load came in between)
+                    end
+                end
+            else
+                reading, ownReading = nil, false
+            end
             return
         end
+        ownReading = false
         calmSince = calmSince or now
         if now - calmSince < CALM_S or now < waitUntil then
             return
@@ -393,6 +518,7 @@ return function(api)
             return
         end
         local done, point = pointOf(states)
+        tellOwn(states, now)
         if batch then
             local missed = 0
             for _, k in ipairs(batch) do
@@ -437,7 +563,9 @@ return function(api)
             end
         end
         local took = os.clock()
+        game.granting = true        -- (the host had what these rows hand out: not sent back to it as found)
         local ok, err = pcall(function() qa:ApplyFlowEvents(pawn, t, s, names) end)
+        game.granting = false
         if not ok then
             log("Story: the game wouldn't take the host's story steps: " .. tostring(err))
             host.check, batch = false, nil

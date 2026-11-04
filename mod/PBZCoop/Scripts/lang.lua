@@ -79,6 +79,7 @@ return function()
         { "^partner connected %(ping (%d+) ms%)", "队友已连接(延迟 %1 毫秒)" },
         { "^partner connected", "队友已连接" },
         { ", signed%.$", ",已签名。" },
+        { "^your bag now has what your partner's has %((%d+) new%)%.$", "你的背包已补齐队友有的东西(新增 %1 件)。" },
         { "^(队友已连接.-)%.$", "%1。" },
         { "^co%-op couldn't start: ", "无法开始联机:" },
         { "^Steam couldn't connect: (.+)%. See Connection problems in the install guide%.$",

@@ -179,7 +179,8 @@ function REAL.near()
     local _, p = PBZ.getPlayer1()
     local here, best, bd, bn = p:K2_GetActorLocation(), nil, 1e12, nil
     for name, a in pairs(coop.enemies()) do
-        if valid(a) and not game.isDead(a) then
+        -- (Not an ally: the story's helpers fight beside the player, and a swing at one does nothing.)
+        if valid(a) and not game.isDead(a) and not a:GetClass():GetFName():ToString():find("NpcHelper", 1, true) then
             local d = PBZ.distance(a:K2_GetActorLocation(), here)
             if d < bd then best, bd, bn = a, d, name end
         end

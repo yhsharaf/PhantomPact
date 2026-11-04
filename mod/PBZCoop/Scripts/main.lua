@@ -517,6 +517,7 @@ api.units = dofile(SCRIPT_DIR .. "units.lua")(api)
 api.localcoop = dofile(SCRIPT_DIR .. "localcoop.lua")(api)
 api.panel = dofile(SCRIPT_DIR .. "panel.lua")(api)
 api.onlinepanel = dofile(SCRIPT_DIR .. "onlinepanel.lua")(api)
+api.mapfog = dofile(SCRIPT_DIR .. "mapfog.lua")(api)
 local net = coop.net
 
 -- Helpers for the "eval" command, so test snippets can reuse the mod's functions.

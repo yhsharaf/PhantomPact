@@ -61,7 +61,8 @@ return function(api)
     local GHOST_HOVER_S = 6.0     -- then it stays gliding this long (the partner's ground isn't loaded on this PC)
     local BOSS_JOIN_CM = 5000     -- further than this from the other player's boss, F3 takes you to it: some arenas are
     local BOSS_JOIN_SIDE_CM = 300 -- apart from the map (Xigu's is 20 km up, no way to walk there). This far from its spot
-    local JOIN_NEAR_CM = 1500     -- going to the partner from closer than this does nothing
+    local JOIN_NEAR_CM = 1500     -- going to the partner from closer than this does nothing (and from 200 m, with the
+                                  -- game's own loading screen: see joinPartner)
     local ARRIVE_HOLD_S = 3.0     -- kept in the air this long on arrival, while the ground there loads
     local ARRIVE_WATCH_S = 25.0   -- for this long, a player dropping through ground that isn't there yet is put back
     local ARRIVE_FALL_CM = 300    -- this far below the arrival point counts as dropping through
@@ -1720,6 +1721,8 @@ return function(api)
         net.announced = {}
         net.enemyNames = {}
         net.lookSent = nil                  -- (what this player wears goes to them at the next look)
+        net.bagSent, net.bagDue = false, os.clock() + 3     -- (and what's in this bag, once they're up: game.mergeBag)
+        net.bagWaiting = nil                                -- (what they sent before is old now)
         if isHost() and game.offerChestsAgain then
             game.offerChestsAgain()         -- (the open chests here: named again, for them)
         end
@@ -1928,6 +1931,69 @@ return function(api)
         end
     end
 
+    -- The two bags, on linking (see game.mergeBag): each side sends what it has once per link, in lines a few hundred
+    -- characters long, and takes from the other's what it lacks, at a moment with a body to put it on.
+    do      -- (a block of its own: this function is at the 200 locals Lua allows)
+    local BAG_LINE = 600
+    function net.sendBag()
+        local _, pawn = getPlayer1()
+        if not (game.bagSummary and valid(pawn)) or game.isDead(pawn) then
+            return false
+        end
+        local list, line, lines = game.bagSummary(pawn), {}, 0
+        local size = 0
+        for _, e in ipairs(list) do
+            if size + #e + 1 > BAG_LINE and #line > 0 then
+                sendEvent("BAG", table.concat(line, ","))
+                line, size, lines = {}, 0, lines + 1
+            end
+            line[#line + 1], size = e, size + #e + 1
+        end
+        if #line > 0 then
+            sendEvent("BAG", table.concat(line, ","))
+            lines = lines + 1
+        end
+        net.bagSent = true
+        log(string.format("Sent what's in this bag (%d things, %d lines): the partner takes what they lack.", #list, lines))
+        return true
+    end
+    handlers.BAG = function(rest)
+        if type(rest) ~= "string" or #rest > BAG_LINE + 80 then
+            return
+        end
+        net.bagWaiting = net.bagWaiting or {}
+        for e in rest:gmatch("[^,]+") do
+            if #e <= MAX_ITEM_NAME + 12 and e:match("^[wemap]:[%w_%-]+:%d+$") and #net.bagWaiting < 4000 then
+                net.bagWaiting[#net.bagWaiting + 1] = e
+            end
+        end
+        if not net.bagSent then
+            net.bagDue = 0          -- (they've sent theirs: ours goes too, if it hasn't this link)
+        end
+    end
+    extraTicksEarly.bags = function()
+        if not net.enabled then
+            return
+        end
+        local now = os.clock()
+        if net.bagDue and now >= net.bagDue and net.sendBag() then
+            net.bagDue = nil
+        end
+        local waiting = net.bagWaiting
+        local _, pawn = getPlayer1()
+        if waiting and valid(pawn) and not game.isDead(pawn) and not (game.inCutscene and game.inCutscene()) and game.mergeBag then
+            net.bagWaiting = nil
+            -- (Counts once a game run: what's used up since stays used.)
+            local came = game.mergeBag(pawn, waiting, not net.bagCounted)
+            net.bagCounted = true
+            if came > 0 then
+                log(string.format("Took %d things from the partner's bag that this one lacked.", came))
+                api.status.notify("bag", string.format("your bag now has what your partner's has (%d new).", came))
+            end
+        end
+    end
+    end
+
     -- (No tip for them: the user didn't want "your partner found something" on screen. The log says what came.)
     local function takeGifts(pawn)
         for _, gift in ipairs(giftsWaiting) do
@@ -2078,7 +2144,8 @@ return function(api)
             releaseHeld(nil)
             -- (And the round under way with it: its end put back what it had held as held, with the floor gone, so the
             -- floor was never set again and host enemies died here on this player's own hits.)
-            round.seen, round.held = nil, {}
+            -- (Its queue too, all of it: the turns left in it went on with the list taken away, an error each one.)
+            round.seen, round.held, round.queue, round.at = nil, {}, {}, 1
             net.mine = {}       -- (this world's enemies are new ones: what it ran for the host, the host takes back unheard of)
             if again > 0 then
                 log(again .. " enemies the host killed will be removed again as they load.")
@@ -2285,9 +2352,9 @@ return function(api)
         local down = net.partnerFighting and next(net.partnerBosses) ~= nil and valid(pawn)
             and (controller:IsInputKeyDown({ KeyName = FName("E") })
                 or controller:IsInputKeyDown({ KeyName = FName("Gamepad_FaceButton_Right") }))
-        local pressed = down and not net.fogKeyDown
-        net.fogKeyDown = down
-        if not pressed or game.isDead(pawn) or net.joinedBoss or ownBossFight() or not game.closedFogNear then
+        local pressed = (down and not net.fogKeyDown) or net.fogPressAsked
+        net.fogKeyDown, net.fogPressAsked = down, nil     -- (asked: the "walljoin" command, as a press of E)
+        if not pressed or not valid(pawn) or game.isDead(pawn) or net.joinedBoss or ownBossFight() or not game.closedFogNear then
             return
         end
         local here = pawn:K2_GetActorLocation()
@@ -2358,11 +2425,23 @@ return function(api)
         if t.Hp == nil or t.Hp <= 0 or t.Cine then
             return "your partner can't be joined right now."
         end
+        if os.clock() < (net.travelUntil or 0) then
+            return nil              -- (on the way already: a second press in the loading screen began the trip again)
+        end
         if not (math.abs(t.X) < 1e7 and math.abs(t.Y) < 1e7 and math.abs(t.Z) < 1e7) then
             return "your partner's position looks wrong."
         end
         if t.Map == net.localMap then
-            if gap3d(pawn:K2_GetActorLocation(), t) > JOIN_NEAR_CM then
+            local gap = gap3d(pawn:K2_GetActorLocation(), t)
+            -- Far off on this map, the ground there isn't loaded: the game's own trip, as a bell's fast travel, with its
+            -- loading screen, sets the player down once it is (15 s on Xigu, landed walking to the centimetre). Near, a
+            -- hop: that ground is loaded already. (The user: "pause them or load them since they could teleport to host on a
+            -- different location that is not loaded".)
+            local level = gap > 20000 and game.travel and game.mapName and game.mapName(pawn)
+            if level and level ~= "?" and game.travel(level, t) then
+                net.travelUntil = os.clock() + 30
+                log(string.format("Going to the other player, %.0f m off: by the game's own trip.", gap / 100))
+            elseif gap > JOIN_NEAR_CM then
                 net.arrival = nil       -- (this trip's spot, not the last one's)
                 arriveAt(pawn, t, 0)
             end
@@ -2375,6 +2454,7 @@ return function(api)
         if not (game.travel and game.travel(level, t)) then
             return "the game wouldn't go there."
         end
+        net.travelUntil = os.clock() + 30
         log("Going to the other player, on " .. level .. ".")
         return nil
     end
@@ -2739,6 +2819,7 @@ return function(api)
         -- a fight of their own too. A host restarting while the guest stays linked still does.)
         net.hostWorld = nil
         net.hostLethal, net.deadBodies = {}, {}
+        net.bagSent, net.bagDue, net.bagWaiting = false, nil, nil
         net.remoteEnemies = {}
         net.enemyNames = {}
         net.announced = {}
@@ -2864,8 +2945,24 @@ return function(api)
         log("Online sync on as " .. role .. ".")
     end
 
+    -- A load is silent, the game held up for its length: the partner hears first that this player is loading, and waits
+    -- (see watchOnePartner). A trip to another map loads one; a bell's fast travel on the same map only teleports, so
+    -- that's told too.
+    handlers.LOAD = function(_, from)
+        peerOf(from).loadingUntil = os.clock() + 60
+    end
+    function net.tellLoading()
+        if net.enabled then
+            pcall(sendEvent, "LOAD")
+        end
+    end
+    pcall(function()
+        RegisterHook("/Script/ProjectPBZ.PBZSaveLoadSubsystem:TeleportTo", net.tellLoading)
+    end)
+
     pcall(function()
         RegisterLoadMapPreHook(function()
+            net.tellLoading()
             -- Enemies this world brought back for the host go back to dead in it before it's saved and left: put back at the
             -- end of the session, they'd be put back in whatever world is loaded then.
             pcall(bring.putBackAll)
@@ -2902,6 +2999,12 @@ return function(api)
         releaseHeld(nil)
         showAside()
         destroyGhosts()
+        if api.mapicon and api.mapicon.hide then
+            pcall(api.mapicon.hide)         -- (its ticks end with sync: the partner's marker stayed on the map)
+        end
+        if api.bullets and api.bullets.endAll then
+            pcall(api.bullets.endAll)       -- (and copies of their effects that loop, with nothing left to end them)
+        end
         leaveParty()
         endFights()
         reopenFog()
@@ -2974,7 +3077,10 @@ return function(api)
                 game.ghostInFight(p.ghost, not silent, (game.enemiesSoFar()))
             end
         end
-        local gone = p.lastRemoteAt ~= nil and os.clock() - p.lastRemoteAt >= PARTNER_GONE_S
+        -- (One who said they're loading, LOAD, gets a minute: a trip or a bell's fast travel is silent for 15 s and more on
+        -- a slow PC, and as gone they had their fight ended here and, on a guest, every copy woke and fought this player.)
+        local wait = os.clock() < (p.loadingUntil or 0) and 60.0 or PARTNER_GONE_S
+        local gone = p.lastRemoteAt ~= nil and os.clock() - p.lastRemoteAt >= wait
         if gone and not p.partnerGone then
             p.partnerGone = true
             p.fights = nil
@@ -2987,7 +3093,7 @@ return function(api)
                 end
             end
             if last then
-                log("Lost the other player (nothing heard for " .. PARTNER_GONE_S .. " s): fog walls opened, enemies are yours again.")
+                log("Lost the other player (nothing heard for " .. wait .. " s): fog walls opened, enemies are yours again.")
                 bring.putBackAll()
                 endFights()
                 net.hostBosses, net.pendingBosses = {}, {}
@@ -3003,7 +3109,7 @@ return function(api)
                 -- own copy (OC), and its dust came twice when the count kept running through the gap.
                 game.forgetLink()
             else
-                log("Lost player " .. p.number .. " (nothing heard for " .. PARTNER_GONE_S .. " s).")
+                log("Lost player " .. p.number .. " (nothing heard for " .. wait .. " s).")
             end
             if net.party then
                 countFights()
@@ -3055,12 +3161,13 @@ return function(api)
             net.partnerFighting = on == "1"
         end
         -- Their bar is down for good (F is sent 3 s after it drops, through a phase change): their fight is over, boss
-        -- alive or not, as when they died in it, walked out or restarted sync. Its mirror here goes too, unless this
-        -- player walked in and fights on: the bar came back every second and the walls stayed shut for nobody.
+        -- alive or not, as when they died in it, walked out or restarted sync. Its mirror here goes too, for one who walked
+        -- in as well: what they fight is a copy of that boss, which does nothing once its own player's fight is over, and
+        -- they stood shut in by the walls with it. (The bar came back every second, and the walls stayed shut for nobody.)
         if was and on ~= "1" then
             local whose = net.party and (from or 1) or nil
             for name in pairs(net.partnerBosses) do
-                if (whose == nil or net.fightOf[name] == whose) and net.joinedBoss ~= name then
+                if whose == nil or net.fightOf[name] == whose then
                     log("The other player's fight with " .. name .. " is over there: over here too.")
                     endBossFight(name, enemyByName[name])
                     net.fightOf[name] = nil
@@ -3291,6 +3398,7 @@ return function(api)
         frameTicks = frameTicks,
         joinPartner = joinPartner,
         joinFarFight = joinFarFight,
+        pressWall = function() net.fogPressAsked = true end,       -- (tests: as a press of E at the wall)
         watchFight = function(on)
             watchFight(on)
         end,

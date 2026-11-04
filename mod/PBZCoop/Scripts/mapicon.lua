@@ -192,10 +192,19 @@ return function(api)
         end
     end
 
+    -- (Sync off ends these ticks: coop.lua's stop hides the markers itself, or the map kept the partner's at their last
+    -- spot every time it was opened.)
+    mapicon.hide = hide
+
     coop.extraTicks.mapicon = function()
         if not mapicon.on then
             hide()
             return
+        end
+        -- Two players to a party or back: the other kind of marker is left drawn otherwise, frozen beside the new one.
+        if (net.party ~= nil) ~= mapicon.wasParty then
+            mapicon.wasParty = net.party ~= nil
+            hide()
         end
         ticks = ticks + 1
         if not net.enabled or ticks % OPEN_TICKS ~= 0 then

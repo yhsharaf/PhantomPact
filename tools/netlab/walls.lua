@@ -82,6 +82,12 @@ function WALLS.land()
     return "landed"
 end
 
+-- The side of wall i a spot is on, +1 or -1 (by the wall's middle).
+function WALLS.sideOf(i, x, y)
+    local w = wall(i)
+    return ((x - w.mid.X) * w.normal.X + (y - w.mid.Y) * w.normal.Y) >= 0 and 1 or -1
+end
+
 -- Whether the player stands on something here, and on which side of wall i, as "<mode> <side> <height above the wall>".
 function WALLS.where(i)
     local w, p = wall(i), pawn()
