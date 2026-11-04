@@ -384,8 +384,14 @@ return function(api)
             end)
             wireInteract()
             V.soulAt = os.clock()
+            -- (A pad still away: its frozen health was the old Soul's, down at 1, and held the new one there, down
+            -- again every few seconds. The new Soul's own health is what's held.)
+            if waiting[2] then
+                waiting[2] = game.getHealth(state.p2Pawn) or waiting[2]
+            end
         end
         downSince = nil
+        p2DownSince = nil       -- (left set when the Soul went while down, the new one was taken as down and replaced again)
     end
 
     -- Adding a local player hands the game's one UI layout entry to the new player, and player 1's menu and map then
@@ -1276,8 +1282,12 @@ return function(api)
         V.dropDeathCard()
         V.real, V.realUp, V.pointsFor, V.points = nil, false, nil, nil
         api.gs():SetForceDisableSplitscreen(pc, true)
+        local hadWait1 = waiting[1] ~= nil
         waiting, configApplied = {}, false
         p2Dust, p2DownSince, fallingSince = nil, nil, nil
+        -- (A screen up as player 2 left (the boat's is one, all ride long): the next look found it gone, took that for the
+        -- menu closing, and split the screen again, a black half for nobody, pads routed to an empty player 2.)
+        menuOpen, V.screenHeld, V.sceneHeld = false, nil, nil
         api.setGamepadOffset(false)
         routePads(nil)
         if valid(pc) then
@@ -1285,7 +1295,11 @@ return function(api)
         end
         if valid(p1) then
             pcall(function() p1.NBCamera:SetAdditiveSocketOffset({ X = 0, Y = 0, Z = 0 }, CENTRE_SPEED) end)
-            game.setMinHealth(p1, 0)
+            -- (Only a floor of ours: one the game set itself stays.)
+            if hadWait1 then
+                game.setMinHealth(p1, V.preWaitFloor1 or 0)
+            end
+            V.preWaitFloor1 = nil
         end
         log("Local co-op: single player.")
     end
@@ -1455,8 +1469,20 @@ return function(api)
 
     local function stopWaiting(n, p1)
         waiting[n] = nil
-        if valid(pawnOf(n, p1)) then
-            game.setMinHealth(pawnOf(n, p1), n == 2 and DOWN_HP or 0)     -- (a real death of player 2's would take player 1 to the bell)
+        local pawn = pawnOf(n, p1)
+        if not valid(pawn) then
+            return
+        end
+        if n == 2 then
+            -- (A real death of player 2's would take player 1 to the bell. In a scene or on the boat they're held where
+            -- they stand, as followScene and followBoat set it: DOWN_HP there let a hit in the scene take them down.)
+            local held = (inScene or V.sailing) and (game.getHealth(pawn) or DOWN_HP) or DOWN_HP
+            game.setMinHealth(pawn, held)
+        else
+            -- (The floor player 1 had before the wait: one the game sets itself, a fight the story won't let be lost, is
+            -- the game's to keep. Wiped to 0, player 1 could die there for real.)
+            game.setMinHealth(pawn, V.preWaitFloor1 or 0)
+            V.preWaitFloor1 = nil
         end
     end
 
@@ -1467,7 +1493,12 @@ return function(api)
             config["p" .. n] = card
             stopWaiting(n, p1)
             saveConfig()
-            applyConfig()
+            -- (Not under a menu: every pad drives it until it closes, and the close puts each pad on its player.)
+            if menuOpen then
+                configApplied = false
+            else
+                applyConfig()
+            end
             tip(string.format("player %d is on a new controller.", n))
         elseif paused then
             config.p2, config.players = card, 2
@@ -1487,13 +1518,20 @@ return function(api)
         if api.panel.open or not valid(p1) then
             return
         end
+        -- (Player 1's controller lent to player 2's Soul for a moment, a gourd drink or a walk-up: p1 here is player 2,
+        -- and a pad's wait or its end would have gone on the wrong body. The next look has them right.)
+        if valid(state.p2Pawn) and p1:GetAddress() == state.p2Pawn:GetAddress() then
+            return
+        end
         -- The game's menus are on player 1's screen: while one is up it fills the whole screen, and every joystick goes
         -- there, so both players can use it.
         -- The bell's menu doesn't pause the game but is a menu all the same: both players use it with their own pads.
         local menu = not paused and (api.gs():IsGamePaused(pc) or bellMenuUp() or screenUp())
         V.followBoat(p1)
         pcall(V.watchBell, p1)
-        if menu ~= menuOpen then
+        if menu ~= menuOpen and paused then
+            menuOpen = menu             -- (single player: there's no split screen to put back, nor pads to share out)
+        elseif menu ~= menuOpen then
             menuOpen = menu
             api.gs():SetForceDisableSplitscreen(pc, menu or inScene)
             holdForScreen(menu)
@@ -1529,6 +1567,10 @@ return function(api)
             local gone = pad ~= nil and pads[pad] == 0 and (n == 1 or not paused) and valid(pawn)
             if gone and not waiting[n] and not game.isDead(pawn) then
                 waiting[n] = game.getHealth(pawn)
+                if n == 1 then
+                    local ok, floor = pcall(function() return pawn.AttributeSetBase.Health_Min.CurrentValue end)
+                    V.preWaitFloor1 = ok and type(floor) == "number" and floor or 0
+                end
                 tip(string.format("player %d's controller is disconnected. Reconnect it, or hold a button on another.", n))
             elseif waiting[n] and not gone then
                 stopWaiting(n, p1)
