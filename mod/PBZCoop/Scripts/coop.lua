@@ -1771,6 +1771,7 @@ return function(api)
             for name in pairs(net.deadSent) do
                 sendTo(from, "K", name)
             end
+            net.tellBosses(from)
             net.fightToldAt = 0
             sendEvent("J", from)
         elseif isHost() then
@@ -1778,6 +1779,7 @@ return function(api)
             for name in pairs(net.deadSent) do
                 sendEvent("K", name)
             end
+            net.tellBosses(nil)
             net.fightToldAt = 0
         else
             net.hostKilled = {}
@@ -2260,6 +2262,21 @@ return function(api)
         return own
     end
 
+    -- The host's fights going on, told again: B goes once, as a fight starts, and a guest who started sync again or came
+    -- back from a gap (their fights ended then) saw no bar and no walls for the rest of it. slot: one guest of a party.
+    function net.tellBosses(slot)
+        if not isHost() then
+            return
+        end
+        for _, actor in ipairs(net.ownBosses()) do
+            if slot then
+                sendTo(slot, "B", enemyName(actor))
+            else
+                sendEvent("B", enemyName(actor))
+            end
+        end
+    end
+
     handlers.R = function(kind, from)
         peerOf(from).fights = false     -- (that player's fight is over, and a bar left up there can't say so yet)
         countFights()
@@ -2666,6 +2683,9 @@ return function(api)
         -- (The host's word only. Another guest's fight, passed on by the relay, isn't the host's: taken for it, it stayed
         -- the host's fight here for good, and came back as walls and a bar after this player's next death.)
         local fromHost = net.role == "client" and from == nil
+        if fromHost and net.hostBosses[name] and net.partnerBosses[name] then
+            return                          -- (told again, and shown here already)
+        end
         if fromHost then
             -- The host has it alive and is fighting it, whatever this session last heard (their world loaded again, say): a copy
             -- brought back for the fight would be killed on sight as the host's old kill.
@@ -3320,6 +3340,7 @@ return function(api)
                         sendEvent("K", name)
                     end
                 end
+                net.tellBosses(slot)
                 net.fightToldAt = 0
             end
         end

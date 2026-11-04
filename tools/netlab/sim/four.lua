@@ -3577,6 +3577,19 @@ local function syncRaces()
     check(next(net(cg).pendingBosses) == nil and not cg.env.PBZ.game.bossFightActive(),
         "a boss fight the host never joined doesn't come back at the guest's death")
     allErrors(c)
+
+    local r, _, rg = pair()
+    bossStart(r)
+    r:run(2)
+    check(next(net(rg).partnerBosses) ~= nil, "(the guest is shown the host's fight)")
+    Session.command(rg, "netoff")
+    r:run(1)
+    check(next(net(rg).partnerBosses) == nil, "(and leaves: shown no more)")
+    Session.command(rg, "neton client")
+    r:run(6)
+    check(next(net(rg).partnerBosses) ~= nil or next(net(rg).pendingBosses) ~= nil,
+        "a guest who starts sync again in the middle of the host's fight is shown it again")
+    allErrors(r)
 end
 
 return function(print_, scripts)
