@@ -3433,6 +3433,23 @@ local function sixPlayers()
     check(size(old) > 0 and left == 0, "the host dies and respawns: every old twin goes, on every PC")
     m:run(12)
     check(size(twinsOn(mh)) == size(old), "and the enemies get new ones")
+    -- A guest rests at a bell: the host's world refreshes for it, and the other guests' copies of the old twins go now,
+    -- not 20 s later beside the new ones.
+    m:run(8)
+    local before = twinsOn(m.pcs[3])
+    Session.bell(m.pcs[2])
+    m:run(2)
+    local stale = 0
+    for id in pairs(twinsOn(m.pcs[3])) do
+        stale = stale + (before[id] and 1 or 0)
+    end
+    check(size(before) > 0 and stale == 0, "a guest rests at a bell: the other guests' copies of the old twins go at once")
+    -- Two leave, four are left: after a while the twins go, everywhere.
+    m:run(8)
+    Session.command(m.pcs[5], "netoff")
+    Session.command(m.pcs[6], "netoff")
+    m:run(30)
+    check(size(twinsOn(mh)) == 0 and size(twinsOn(m.pcs[2])) == 0, "down to four players: the twins go, on every PC")
     allErrors(m)
 end
 

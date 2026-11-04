@@ -18,6 +18,7 @@ return function(api)
 
     local twins = {
         from = 5,                   -- GhostTwins: players connected it takes; nil = off
+        noClass = {},               -- guest: enemy classes that couldn't be had here
     }
 
     local BODY = "/PBZVFXPack/VFX/A_Materials/Template/MT_PhantomChar_001.MT_PhantomChar_001"
@@ -32,6 +33,8 @@ return function(api)
     local RETRY_S = 30              -- host: a twin that couldn't be made is tried again after this long
     local SETTLE_S = 2              -- host: an enemy is seen this long before it gets its twin
     local ZOMBIE_S = 2.0            -- a twin at 0 health the game doesn't take for dead goes after this long
+    local SCAN_EVERY_S = 0.25       -- the enemies and twins looked over this often
+    local FEWER_S = 15              -- host: this long with fewer players than it takes, the twins go
 
     local firstSeen = {}            -- host: enemy address -> os.clock() it was first in the list
     local nextPrune = 0
@@ -155,8 +158,10 @@ return function(api)
     local function dress(actor)
         local addr = actor:GetAddress()
         local look = { actor = actor, meshes = meshesOf(actor), eyeMids = {} }
+        if not looks[addr] then
+            lookOrder[#lookOrder + 1] = addr    -- (once: dressed again, it was in the turn twice for good)
+        end
         looks[addr] = look
-        lookOrder[#lookOrder + 1] = addr
         paint(look)
     end
 
@@ -227,16 +232,22 @@ return function(api)
             Translation = { X = at.X, Y = at.Y, Z = at.Z + 30 },
             Scale3D = { X = 1.0, Y = 1.0, Z = 1.0 },
         }
-        local actor
+        local actor, begun
         local ok = pcall(function()
             actor = gs:BeginDeferredActorSpawnFromClass(pc, cls, t, 2, nil, 1)
             if valid(actor) then
+                begun = actor
                 -- (Marked before it's finished: its BeginPlay may put up a boss bar, and that mustn't start a fight here.)
                 game.markTwin(actor:GetAddress(), id, actor:GetFName():ToString())
                 actor = gs:FinishSpawningActor(actor, t, 1)
             end
         end)
         if not (ok and valid(actor)) then
+            -- (Not finished: its mark goes, and what was begun of it.)
+            if valid(begun) then
+                game.forgetTwin(begun:GetAddress())
+                pcall(function() begun:K2_DestroyActor() end)
+            end
             return nil
         end
         game.markTwin(actor:GetAddress(), id, actor:GetFName():ToString())
@@ -281,6 +292,24 @@ return function(api)
     end
 
     local function hostTick()
+        -- (A few times a second, not each frame: with six players, every enemy and twin read through UE4SS each frame cost
+        -- a hundred calls and more.)
+        local now = os.clock()
+        if now < (twins.scanAt or 0) then
+            return
+        end
+        twins.scanAt = now + SCAN_EVERY_S
+        -- Fewer players than it takes, for a while (one's gap flickers the count): the twins go, everywhere.
+        if active() then
+            twins.fewerSince = nil
+        elseif next(hostTwins) then
+            twins.fewerSince = twins.fewerSince or now
+            if now - twins.fewerSince >= FEWER_S then
+                twins.fewerSince = nil
+                twins.clearEverywhere("fewer players")
+                return
+            end
+        end
         -- The twins there are: a boss's goes with it, and one whose original went (out of reach) goes too.
         for key, h in pairs(hostTwins) do
             local origOk = valid(h.orig) and h.orig:GetAddress() == h.origAddr
@@ -304,7 +333,6 @@ return function(api)
             return
         end
         local list, addrs = game.enemiesSoFar()
-        local now = os.clock()
         -- (Only the enemies of the moment are remembered: kept, it grew all session, and an address the game gave a new
         -- enemy skipped the moment it waits.)
         if now >= (nextPrune or 0) then
@@ -328,9 +356,12 @@ return function(api)
                 -- made is tried again after a while: the place may not have been loaded yet.)
                 local again = had == nil or (had.origDied and not game.isDead(e))
                     or (had.twin == nil and os.clock() - (had.at or 0) > RETRY_S)
-                -- (Not one the game keeps hidden, as an ambush waits: its twin would stand there in plain sight.)
+                -- (Not one the game keeps hidden, as an ambush waits: its twin would stand there in plain sight. Read only
+                -- for one that would get a twin.)
                 local hidden = false
-                pcall(function() hidden = e.bHidden == true end)
+                if again then
+                    pcall(function() hidden = e.bHidden == true end)
+                end
                 if again and not hidden and not game.isDead(e) then
                     local ok, l, rot = pcall(function() return e:K2_GetActorLocation(), e:K2_GetActorRotation() end)
                     if ok and l and playersNear(l) then
@@ -356,6 +387,8 @@ return function(api)
                             end)
                         end
                         -- (Tried once for each original: one that won't spawn isn't tried every turn.)
+                        -- (One before still standing, its original gone and this one new at its address: a rest still
+                        -- takes it, by its look, see clearAll.)
                         hostTwins[addr] = { id = id, twin = twin, twinAddr = twin and twin:GetAddress(), orig = e, origAddr = addr,
                             boss = boss, at = os.clock() }
                         if twin then
@@ -395,6 +428,10 @@ return function(api)
 
     local function guestTick()
         local now = os.clock()
+        if now < (twins.scanAt or 0) then
+            return
+        end
+        twins.scanAt = now + SCAN_EVERY_S
         for id, g in pairs(guestTwins) do
             if g.twin == nil then
                 if now - g.seenAt > GONE_S then
@@ -415,10 +452,25 @@ return function(api)
         if now < nextSpawn or not (t and t.Map and t.Map == net.localMap) then
             return
         end
+        local _, pawn = api.getPlayer1()
+        local ok, here = false, nil
+        if valid(pawn) then
+            ok, here = pcall(function() return pawn:K2_GetActorLocation() end)
+        end
+        if not (ok and here) then
+            return
+        end
         for id, r in pairs(net.remoteEnemies) do
-            if id:match("^tw%d+:") and guestTwins[id] == nil and not cleared[id] and (r.Hp or 0) > 0 and not net.hostKilled[id] and r.Class then
+            -- (Near this player only: one by another player, far off, was made where this world hadn't loaded the floor.
+            -- And not a class that couldn't be had: each try was a blocking load.)
+            if id:match("^tw%d+:") and guestTwins[id] == nil and not cleared[id] and (r.Hp or 0) > 0 and not net.hostKilled[id]
+                and r.Class and not twins.noClass[r.Class] and r.X and r.Y
+                and (r.X - here.X) ^ 2 + (r.Y - here.Y) ^ 2 <= (2 * NEAR_CM) ^ 2 then
                 nextSpawn = now + SPAWN_EVERY_S
                 local cls = classFor(r.Class)
+                if not cls then
+                    twins.noClass[r.Class] = true
+                end
                 local twin = cls and spawnTwin(cls, r, r.Yaw or 0, id)
                 guestTwins[id] = { twin = twin, twinAddr = twin and twin:GetAddress(), seenAt = now }
                 if twin then
@@ -446,6 +498,24 @@ return function(api)
                 n = n + 1
             end
         end
+        -- Every twin made here, by its look: one whose original's address went to a new enemy was in no list, and outlived
+        -- the rest as a plain enemy, scaled again.
+        for addr, look in pairs(looks) do
+            if valid(look.actor) and look.actor:GetAddress() == addr then
+                pcall(function() look.actor:K2_DestroyActor() end)
+                n = n + 1
+            end
+            game.forgetTwin(addr)
+        end
+        hostTwins, guestTwins, looks, lookOrder, lookAt, firstSeen = {}, {}, {}, {}, 1, {}
+        -- (None made just after: the world's old enemies are still listed until they're collected, and got twins.)
+        nextSpawn = os.clock() + 3
+        -- (Ids the host no longer lists can't come back: kept, they grew all session.)
+        for id in pairs(cleared) do
+            if not (net.remoteEnemies and net.remoteEnemies[id]) then
+                cleared[id] = nil
+            end
+        end
         if not coop.isHost() then
             for id in pairs(net.remoteEnemies or {}) do
                 if id:match("^tw%d+:") then
@@ -453,10 +523,6 @@ return function(api)
                 end
             end
         end
-        for addr in pairs(looks) do
-            game.forgetTwin(addr)
-        end
-        hostTwins, guestTwins, looks, lookOrder, lookAt, firstSeen = {}, {}, {}, {}, 1, {}
         if n > 0 then
             log(string.format("Ghost twins: %d gone (%s).", n, why))
         end
@@ -478,10 +544,26 @@ return function(api)
     -- twins go, everywhere, and come again with them. Not at a sit (the game brings nobody back), nor for a player who
     -- left, nor a guest's own death (only its world refreshed: the host's enemies and their twins go on, and a copy
     -- taken away there could never come back under its id). coop.lua sets net.restRefreshes before telling.
+    -- Host: gone here, and told, so each guest's copies go too. A guest who rests at a bell sends R; the host's world
+    -- refreshes for it, but the R that reaches the other guests is a guest's, and their copies of the old twins stood on
+    -- for 20 s by the host's new ones.
+    function twins.clearEverywhere(why)
+        clearAll(why)
+        if coop.isHost() then
+            coop.sendEvent("TWC")
+        end
+    end
+
+    coop.handlers.TWC = function(_, from)
+        if from == nil and not coop.isHost() then
+            clearAll("the host's went")
+        end
+    end
+
     if coop.restListeners then
         coop.restListeners.twins = function(kind)
             if (kind == "death" or kind == "bell") and net.restRefreshes then
-                clearAll("a rest")
+                twins.clearEverywhere("a rest")
             end
         end
     end
