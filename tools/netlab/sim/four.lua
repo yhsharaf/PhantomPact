@@ -3272,6 +3272,8 @@ local function sixPlayers()
         far = far or tid:find("toofar", 1, true) ~= nil
     end
     check(not far, "none for enemies far from everyone")
+    check(size(ht) == #near and count(h.logs, "Ghost twin for %S+_actor") == 0,
+        "exactly one twin each, under the spawner's id (not one more under the actor's name before it's read)")
     check(everyone(s, function(pc, i) return i == 1 or size(twinsOn(pc)) == size(ht) end), "each guest has a copy of every twin, under the host's id")
     local bossTwin
     for tid, e in pairs(ht) do
@@ -3347,6 +3349,46 @@ local function sixPlayers()
     o:run(12)
     check(size(twinsOn(o.pcs[1])) == 0, "six with GhostTwins = Off: none")
     allErrors(o)
+
+    -- A sixth player who joins late: twins start as the fifth comes, and the one who came last gets a copy of each.
+    local late = Session.new(SIM_SCRIPTS, SIX, 6, ENEMIES)
+    local lh = late.pcs[1]
+    late.pcs[5].joinAt = lh.now + 6
+    late.pcs[6].joinAt = lh.now + 14
+    for i = 2, 6 do
+        Session.moveTo(late.pcs[i], 200 * i, 0)
+    end
+    late:run(5)
+    check(size(twinsOn(lh)) == 0, "four connected: no twins yet")
+    late:run(8)
+    check(size(twinsOn(lh)) >= 4, "the fifth comes: twins")
+    late:run(10)
+    check(size(twinsOn(late.pcs[6])) == size(twinsOn(lh)), "the sixth, late, has a copy of every one")
+    -- A hidden enemy (an ambush waiting) gets none until it shows.
+    allErrors(late)
+
+    -- A guest on another map makes no twins there; the host's death clears them everywhere.
+    local m = Session.new(SIM_SCRIPTS, SIX, 6, ENEMIES)
+    for i = 2, 6 do
+        Session.moveTo(m.pcs[i], 200 * i, 0)
+    end
+    m.pcs[6].map = "Map_Other"
+    m:run(14)
+    check(size(twinsOn(m.pcs[6])) == 0 and size(twinsOn(m.pcs[2])) > 0, "a guest on another map makes no twins there, the others do")
+    local mh = m.pcs[1]
+    local old = twinsOn(mh)
+    Session.respawned(mh)
+    m:run(1)
+    local left = 0
+    for _, pc in ipairs({ mh, m.pcs[2], m.pcs[3] }) do
+        for id in pairs(twinsOn(pc)) do
+            left = left + (old[id] and 1 or 0)
+        end
+    end
+    check(size(old) > 0 and left == 0, "the host dies and respawns: every old twin goes, on every PC")
+    m:run(12)
+    check(size(twinsOn(mh)) == size(old), "and the enemies get new ones")
+    allErrors(m)
 end
 
 local function backToTwo()

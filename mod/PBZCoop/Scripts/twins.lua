@@ -29,8 +29,12 @@ return function(api)
     local SPAWN_EVERY_S = 0.3       -- at most one new twin this often: a spawn costs a frame
     local LOOK_EVERY_S = 0.05       -- one twin's look checked this often, in turn (the game puts its own materials back)
     local GONE_S = 20               -- guest: a twin the host hasn't mentioned for this long goes
+    local RETRY_S = 30              -- host: a twin that couldn't be made is tried again after this long
+    local SETTLE_S = 2              -- host: an enemy is seen this long before it gets its twin
 
-    local hostTwins = {}            -- host: original id -> { twin, twinAddr, orig, origAddr, boss, origDied }
+    local firstSeen = {}            -- host: enemy address -> os.clock() it was first in the list
+    local hostTwins = {}            -- host: original's address -> { id, twin, twinAddr, orig, origAddr, boss, origDied, at }
+    local cleared = {}              -- guest: twin ids a rest took away; the host's last lines of them mustn't bring them back
     local guestTwins = {}           -- guest: twin id -> { twin, twinAddr, seenAt }
     local looks = {}                -- twin address -> { actor, meshes = { {comp, eyes = {slot = true}} }, eyeMids = {} }
     local lookOrder, lookAt = {}, 1
@@ -260,35 +264,46 @@ return function(api)
 
     local function hostTick()
         -- The twins there are: a boss's goes with it, and one whose original went (out of reach) goes too.
-        for id, h in pairs(hostTwins) do
+        for key, h in pairs(hostTwins) do
             local origOk = valid(h.orig) and h.orig:GetAddress() == h.origAddr
             local twinOk = valid(h.twin) and h.twin:GetAddress() == h.twinAddr
             if origOk and not h.origDied and game.isDead(h.orig) then
                 h.origDied = true
                 if h.boss and twinOk and not game.isDead(h.twin) then
                     game.dissolveKill(h.twin)
-                    log("Ghost twin of " .. id .. " fades with it.")
+                    log("Ghost twin of " .. h.id .. " fades with it.")
                 end
             end
             if not origOk and not h.origDied then
                 destroy(h.twin)
-                hostTwins[id] = nil
+                hostTwins[key] = nil
             elseif not twinOk and not origOk then
                 undress(h.twinAddr)
-                hostTwins[id] = nil
+                hostTwins[key] = nil
             end
         end
         if not active() or os.clock() < nextSpawn then
             return
         end
         local list, addrs = game.enemiesSoFar()
+        local now = os.clock()
         for i, e in ipairs(list) do
             local addr = addrs[i]
-            if valid(e) and not game.twinId(addr) then
+            -- (Seen for a moment first: its spawner's id is read by then, and one just spawned has finished coming in.)
+            firstSeen[addr] = firstSeen[addr] or now
+            if valid(e) and not game.twinId(addr) and now - firstSeen[addr] >= SETTLE_S then
                 local id = game.enemyId(e, addr)
-                local had = hostTwins[id]
-                -- (A new enemy under a dead one's id, as a spawner brings it back: a twin of its own.)
-                if (had == nil or (had.origDied and had.origAddr ~= addr)) and not game.isDead(e) then
+                -- (Kept by the original's address, not its id: an enemy goes by its actor's name until its spawner is read,
+                -- then by the spawner's id, and by id each enemy got two twins.)
+                local had = hostTwins[addr]
+                -- (A new enemy where a dead one was, as a spawner brings it back: a twin of its own. One that couldn't be
+                -- made is tried again after a while: the place may not have been loaded yet.)
+                local again = had == nil or (had.origDied and not game.isDead(e))
+                    or (had.twin == nil and os.clock() - (had.at or 0) > RETRY_S)
+                -- (Not one the game keeps hidden, as an ambush waits: its twin would stand there in plain sight.)
+                local hidden = false
+                pcall(function() hidden = e.bHidden == true end)
+                if again and not hidden and not game.isDead(e) then
                     local ok, l, rot = pcall(function() return e:K2_GetActorLocation(), e:K2_GetActorRotation() end)
                     if ok and l and playersNear(l) then
                         nextSpawn = os.clock() + SPAWN_EVERY_S
@@ -299,7 +314,8 @@ return function(api)
                         serial = serial + 1
                         local twin = spawnTwin(e:GetClass(), at, yaw, "tw" .. serial .. ":" .. id)
                         -- (Tried once for each original: one that won't spawn isn't tried every turn.)
-                        hostTwins[id] = { twin = twin, twinAddr = twin and twin:GetAddress(), orig = e, origAddr = addr, boss = boss }
+                        hostTwins[addr] = { id = id, twin = twin, twinAddr = twin and twin:GetAddress(), orig = e, origAddr = addr,
+                            boss = boss, at = os.clock() }
                         if twin then
                             log("Ghost twin for " .. id .. (boss and " (boss)." or "."))
                         end
@@ -352,11 +368,13 @@ return function(api)
                 guestTwins[id] = nil
             end
         end
-        if now < nextSpawn then
+        -- (Only with the host on this map: its lines' places are in its world, and on another map they'd be anywhere here.)
+        local t = net.target
+        if now < nextSpawn or not (t and t.Map and t.Map == net.localMap) then
             return
         end
         for id, r in pairs(net.remoteEnemies) do
-            if id:match("^tw%d+:") and guestTwins[id] == nil and (r.Hp or 0) > 0 and not net.hostKilled[id] and r.Class then
+            if id:match("^tw%d+:") and guestTwins[id] == nil and not cleared[id] and (r.Hp or 0) > 0 and not net.hostKilled[id] and r.Class then
                 nextSpawn = now + SPAWN_EVERY_S
                 local cls = classFor(r.Class)
                 local twin = cls and spawnTwin(cls, r, r.Yaw or 0, id)
@@ -379,16 +397,24 @@ return function(api)
                 n = n + 1
             end
         end
-        for _, g in pairs(guestTwins) do
+        for id, g in pairs(guestTwins) do
+            cleared[id] = true
             if g.twin then
                 destroy(g.twin)
                 n = n + 1
             end
         end
+        if not coop.isHost() then
+            for id in pairs(net.remoteEnemies or {}) do
+                if id:match("^tw%d+:") then
+                    cleared[id] = true          -- (heard of, not made yet: gone with the rest all the same)
+                end
+            end
+        end
         for addr in pairs(looks) do
             game.forgetTwin(addr)
         end
-        hostTwins, guestTwins, looks, lookOrder, lookAt = {}, {}, {}, {}, 1
+        hostTwins, guestTwins, looks, lookOrder, lookAt, firstSeen = {}, {}, {}, {}, 1, {}
         if n > 0 then
             log(string.format("Ghost twins: %d gone (%s).", n, why))
         end
@@ -431,8 +457,8 @@ return function(api)
         if args == "clear" then
             clearAll("asked")
         elseif args == "list" then
-            for id, h in pairs(hostTwins) do
-                log("  host twin " .. id .. (valid(h.twin) and (game.isDead(h.twin) and " dead" or " alive") or " gone"))
+            for _, h in pairs(hostTwins) do
+                log("  host twin " .. h.id .. (valid(h.twin) and (game.isDead(h.twin) and " dead" or " alive") or " gone"))
             end
             for id, g in pairs(guestTwins) do
                 log("  guest twin " .. id .. (valid(g.twin) and (game.isDead(g.twin) and " dead" or " alive") or " gone"))
