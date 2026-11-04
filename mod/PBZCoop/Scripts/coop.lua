@@ -1733,6 +1733,7 @@ return function(api)
     -- The partner has just (re)started sync: it knows nothing yet. It hears again what enemies are, and what's dead.
     handlers.S = function(_, from)
         log("The other player started sync.")
+        peerOf(from).syncAt = os.clock()    -- (told all of it now: a retelling after their gap would only say it again)
         handover.reset()                    -- (what either game ran for the other, the other knows nothing of now)
         net.announced = {}
         net.enemyNames = {}
@@ -2160,6 +2161,8 @@ return function(api)
     end
 
     local function onLocalRest(kind)
+        -- (A guest's own death refreshes only its own world: the host's enemies, and their twins, go on.)
+        net.restRefreshes = isHost()
         restEvent(kind)
         if kind == "death" and net.role == "client" then
             log("You died and respawned: your world refreshed, the host's goes on. Enemies the host already killed stay dead.")
@@ -2214,18 +2217,21 @@ return function(api)
     handlers.R = function(kind, from)
         peerOf(from).fights = false     -- (that player's fight is over, and a bar left up there can't say so yet)
         countFights()
+        -- From another map it says nothing about the enemies here, or the fight this player may be in.
+        local elsewhere = not sameMap(peerOf(from).target)
+        -- Nor, at a bell, about a boss fight of this player's own (not a copy of one of theirs): a partner resting isn't in it.
+        -- Its bar came down and every monster came back mid-fight. (A host's death is everyone's: that one ends it.)
+        local ownFight = kind ~= "death" and not elsewhere and #net.ownBosses() > 0
+        elsewhere = elsewhere or ownFight
+        -- (Said before the listeners hear it: whether this world's enemies come back, which is what the twins go by.)
+        net.restRefreshes = not elsewhere
         restEvent(kind)
         if kind == "death" then
             log("The host died and respawned: enemies respawn here too.")
         else
             log("The other player rested at a bell: respawning enemies here too.")
         end
-        -- From another map it says nothing about the enemies here, or the fight this player may be in.
-        local elsewhere = not sameMap(peerOf(from).target)
-        -- Nor, at a bell, about a boss fight of this player's own (not a copy of one of theirs): a partner resting isn't in it.
-        -- Its bar came down and every monster came back mid-fight. (A host's death is everyone's: that one ends it.)
-        if kind ~= "death" and not elsewhere and #net.ownBosses() > 0 then
-            elsewhere = true
+        if ownFight then
             log("A boss fight of your own is on: it goes on, and enemies here come back at the next rest.")
         end
         forgetDeaths(kind, elsewhere, net.party and from or nil)
@@ -3212,6 +3218,25 @@ return function(api)
             p.partnerGone = false
             log("The other player is back.")
             updateGhostVisibility(p)
+            -- Back from a gap: what died here meanwhile is told again in a moment, unless they start sync again by then
+            -- (S tells them all of it). One never told left that enemy standing in their world.
+            if isHost() then
+                p.retellAt = os.clock() + 2.0     -- (a player back from a gap: 2 s for their S to come first)
+            end
+        end
+        if p.retellAt and os.clock() >= p.retellAt then
+            p.retellAt = nil
+            if not p.partnerGone and not (p.syncAt and p.syncAt >= os.clock() - 3.0) then
+                local slot = net.party and p.number or nil
+                for name in pairs(net.deadSent) do
+                    if slot then
+                        sendTo(slot, "K", name)
+                    else
+                        sendEvent("K", name)
+                    end
+                end
+                net.fightToldAt = 0
+            end
         end
     end
 

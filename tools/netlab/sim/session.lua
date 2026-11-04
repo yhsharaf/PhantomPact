@@ -169,6 +169,7 @@ end
 
 -- The game's refresh, as after resting at a bell or a death.
 function Session.bell(pc)
+    Fake.refreshMonsters(pc)
     for _, fn in ipairs(pc.hooks["/Game/PBZContent/Blueprint/BP_GameMode_Build.BP_GameMode_Build_C:Refresh Monster"]) do
         fn()
     end

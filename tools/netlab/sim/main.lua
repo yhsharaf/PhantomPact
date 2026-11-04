@@ -13,8 +13,12 @@ if SIM_MODE == "two" then
 elseif SIM_MODE == "four" then
     out("four players:")
     passed = dofile(SIM_DIR .. "/four.lua")(out, SIM_OLD ~= "" and SIM_OLD or scripts)
+elseif SIM_MODE == "chaos" then
+    -- luasim.py chaos [seeds]: random parties of 3, 4 and 6, 40 steps each.
+    out("chaos, parties of 3, 4 and 6:")
+    passed = dofile(SIM_DIR .. "/chaos.lua")(out, scripts, tonumber(SIM_OLD) or 6, 40)
 else
-    error("two <old Scripts> or four")
+    error("two <old Scripts>, four or chaos [seeds]")
 end
 out(passed and "all passed" or "FAILED")
 return passed and "pass" or "fail"

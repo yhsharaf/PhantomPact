@@ -432,11 +432,13 @@ return function(api)
         keepLooks()
     end
 
-    -- A rest, here or a partner's, brings every enemy back as new ones: their twins come with them. (Not "gone": a player
-    -- who left changes nothing here.)
+    -- When the host's world refreshes (its death, or a refresh it runs for a partner's), its enemies are new ones: the
+    -- twins go, everywhere, and come again with them. Not at a sit (the game brings nobody back), nor for a player who
+    -- left, nor a guest's own death (only its world refreshed: the host's enemies and their twins go on, and a copy
+    -- taken away there could never come back under its id). coop.lua sets net.restRefreshes before telling.
     if coop.restListeners then
         coop.restListeners.twins = function(kind)
-            if kind ~= "gone" then
+            if (kind == "death" or kind == "bell") and net.restRefreshes then
                 clearAll("a rest")
             end
         end

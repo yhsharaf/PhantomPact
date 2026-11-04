@@ -436,6 +436,24 @@ local function pick(pc, e)
     end
 end
 
+-- A rest, as the game does it: every dead enemy whose spawner still spawns is back at full health (a beaten boss's spawner
+-- doesn't). Only with pc.reviveOnRest (chaos.lua): the older tests were written for a world where the dead stay dead.
+function Fake.refreshMonsters(pc)
+    if not pc.reviveOnRest then
+        return
+    end
+    for i, spawner in ipairs(pc.spawners) do
+        local e = pc.enemies[i]
+        local sf = rawget(spawner, "__fields")
+        if e and rawget(e, "__fields").dead and sf.record ~= false then
+            Fake.put(e, "dead", false)
+            Fake.put(e, "killedBy", nil)
+            local set = rawget(rawget(e, "__fields").AttributeSetBase, "__fields")
+            Fake.setHealth(e, set.Health_Max.CurrentValue)
+        end
+    end
+end
+
 function Fake.enemy(pc, id, class, x, y, z, hp, posture, boss)
     local e = Fake.character(pc, class, x, y, z, hp, posture)
     rawset(e, "__name", id .. "_actor")
@@ -1077,6 +1095,7 @@ function Fake.new(id, scripts, ini, link)
     local mode = object(pc, "GameMode")
     put(mode, "Refresh Monster", function()
         record(pc, "GameMode", "Refresh Monster")
+        Fake.refreshMonsters(pc)
         for _, fn in ipairs(pc.hooks["/Game/PBZContent/Blueprint/BP_GameMode_Build.BP_GameMode_Build_C:Refresh Monster"] or {}) do
             fn()
         end

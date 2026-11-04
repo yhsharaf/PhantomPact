@@ -3327,17 +3327,37 @@ local function sixPlayers()
     check(rawget(bossTwin, "__fields").dead == true, "the boss dies, and its twin goes with it")
     check(count(h.logs, "fades with it") == 1, "said once")
 
-    -- A rest at a bell (a guest's): every twin goes, on every PC, and the enemies near a player get new ones.
-    local oldTwin = ht[thugTwinId]
-    Session.bell(s.pcs[2])
-    s:run(1)
-    check(not oldTwin:IsValid() and everyone(s, function(pc) return twinsOn(pc)[thugTwinId] == nil end), "a rest takes the twins away, on every PC")
-    s:run(12)
-    local fresh = 0
-    for tid in pairs(twinsOn(h)) do
-        fresh = fresh + ((tid ~= thugTwinId and tid:match(":sp:thug1$")) and 1 or 0)
+    -- A sit at a bell brings no enemy back, and a guest's own death refreshes only that guest's world: the twins stay.
+    local liveIds = {}
+    for tid, e in pairs(twinsOn(h)) do
+        if not rawget(e, "__fields").dead then
+            liveIds[#liveIds + 1] = tid
+        end
     end
-    check(fresh == 1, "and a new one comes for an enemy near a player, under a new id")
+    Session.sit(s.pcs[2])
+    s:run(2)
+    check(#liveIds > 0 and everyone(s, function(pc)
+        for _, tid in ipairs(liveIds) do
+            if twinsOn(pc)[tid] == nil then
+                return false
+            end
+        end
+        return true
+    end), "a sit at a bell leaves every twin where it is, on every PC")
+    local g4 = s.pcs[4]
+    Session.die(g4)
+    s:run(2)
+    Session.respawned(g4)
+    Session.revive(g4)
+    s:run(3)
+    check(everyone(s, function(pc)
+        for _, tid in ipairs(liveIds) do
+            if twinsOn(pc)[tid] == nil then
+                return false
+            end
+        end
+        return true
+    end), "a guest dies and respawns: the host's twins go on, and that guest still has them")
     allErrors(s)
 
     -- Four players: no twins. Six with GhostTwins = Off: none either.
