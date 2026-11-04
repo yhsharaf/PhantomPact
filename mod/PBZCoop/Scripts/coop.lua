@@ -980,7 +980,9 @@ return function(api)
         end
         for _, id in ipairs(ids) do
             local r = net.remoteEnemies[id]
-            if matched[id] == nil and r.Class then
+            -- (Never a ghost twin's id: this PC makes its own copy of it (twins.lua), and until then the nearest of the
+            -- class was one of this world's own enemies, steered as the twin and killed with it.)
+            if matched[id] == nil and r.Class and not id:match("^tw%d+:") then
                 local best, bestD = nil, ENEMY_MATCH_CM
                 for _, e in pairs(locals) do
                     if not used[e.addr] then
@@ -2112,7 +2114,10 @@ return function(api)
     -- whose: in a party, the guest whose rest it was. Only their fights end: one another player is in goes on, its bar and
     -- walls with it (a third player's bell rest took them down, and its B, told once, never put them back).
     local function forgetDeaths(kind, elsewhere, whose)
-        if kind ~= "death" then
+        -- (Only when this world's enemies came back. A rest elsewhere, or one during this player's own boss fight, left
+        -- them dead here: wiped, the host never told them again (their bodies were marked told), not to anyone joining
+        -- either, and a guest met them alive.)
+        if kind ~= "death" and not elsewhere then
             net.deadSent = {}
             net.guestKilled = {}
             net.guestKillSent = {}
@@ -2605,7 +2610,10 @@ return function(api)
             return
         end
         log("The other player started a boss fight with " .. name .. ".")
-        if net.role == "client" then
+        -- (The host's word only. Another guest's fight, passed on by the relay, isn't the host's: taken for it, it stayed
+        -- the host's fight here for good, and came back as walls and a bar after this player's next death.)
+        local fromHost = net.role == "client" and from == nil
+        if fromHost then
             -- The host has it alive and is fighting it, whatever this session last heard (their world loaded again, say): a copy
             -- brought back for the fight would be killed on sight as the host's old kill.
             net.hostKilled[name] = nil
@@ -2616,7 +2624,7 @@ return function(api)
             net.fightOf[name] = from or 1
         end
         joinBossFight(name, peerOf(from))
-        if net.role == "client" then
+        if fromHost then
             net.hostBosses[name] = true
         end
         local actor = enemyByName[name]

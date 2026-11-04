@@ -39,7 +39,9 @@ return function(api)
     local looks = {}                -- twin address -> { actor, meshes = { {comp, eyes = {slot = true}} }, eyeMids = {} }
     local lookOrder, lookAt = {}, 1
     local nextSpawn, nextLook = 0, 0
-    local serial = 0                -- host: each twin's own number in its id, so one twin's death says nothing of the next
+    -- host: each twin's own number in its id, so one twin's death says nothing of the next. It starts somewhere new each run:
+    -- a host that restarted counted from 1 again, and a guest that had seen tw1 go at a rest never made the new tw1.
+    local serial = (os.time() % 100000) * 1000
 
     ------------------------------------------------------------------ the look
 
@@ -214,14 +216,14 @@ return function(api)
             actor = gs:BeginDeferredActorSpawnFromClass(pc, cls, t, 2, nil, 1)
             if valid(actor) then
                 -- (Marked before it's finished: its BeginPlay may put up a boss bar, and that mustn't start a fight here.)
-                game.markTwin(actor:GetAddress(), id)
+                game.markTwin(actor:GetAddress(), id, actor:GetFName():ToString())
                 actor = gs:FinishSpawningActor(actor, t, 1)
             end
         end)
         if not (ok and valid(actor)) then
             return nil
         end
-        game.markTwin(actor:GetAddress(), id)
+        game.markTwin(actor:GetAddress(), id, actor:GetFName():ToString())
         pcall(function() actor:SpawnDefaultController() end)
         dress(actor)
         return actor
@@ -291,7 +293,7 @@ return function(api)
             local addr = addrs[i]
             -- (Seen for a moment first: its spawner's id is read by then, and one just spawned has finished coming in.)
             firstSeen[addr] = firstSeen[addr] or now
-            if valid(e) and not game.twinId(addr) and now - firstSeen[addr] >= SETTLE_S then
+            if valid(e) and not game.twinId(addr, e) and now - firstSeen[addr] >= SETTLE_S then
                 local id = game.enemyId(e, addr)
                 -- (Kept by the original's address, not its id: an enemy goes by its actor's name until its spawner is read,
                 -- then by the spawner's id, and by id each enemy got two twins.)
@@ -443,6 +445,15 @@ return function(api)
             end
         end
     end
+
+    -- Sync off (netoff, Leave): coop.lua stops calling extraTicks, and twins left standing were plain enemies of this world
+    -- from then on, a guest's own copies too. They go, from a loop of their own.
+    LoopInGameThreadWithDelay(1000, function()
+        if not net.enabled and (next(hostTwins) or next(guestTwins)) then
+            clearAll("sync off")
+        end
+        return false
+    end)
 
     function twins.setFrom(v)
         v = tostring(v or ""):lower()

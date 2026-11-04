@@ -3470,6 +3470,28 @@ local function gaps()
     check(field(Session.enemyOn(a, "thug2"), "dead") == true, "the host restarts sync while they're away: still told")
     check(field(Session.enemyOn(s.pcs[3], "thug2"), "dead") == true, "and the one who was there all along has it dead too")
     allErrors(s)
+
+    -- (Found by an agent's review.) A guest's rest on another map refreshes nothing here: the host keeps what it told dead.
+    local q = party(nil, nil, { "Host", "Guest", "Guest" })
+    local qh, q3 = q.pcs[1], q.pcs[3]
+    Session.moveTo(q.pcs[2], 400, 0)
+    q:run(3)
+    Session.enemyOn(qh, "near"):Kill(1)
+    q:run(3)
+    q3.map = "Map_Other"
+    q:run(2)
+    Session.bell(q3)
+    q:run(2)
+    check(net(qh).deadSent["sp:near"] == true, "a guest's rest on another map: the host still knows what it told dead")
+
+    -- Another guest's boss fight isn't the host's on the other guests.
+    q3.map = qh.map
+    Session.moveTo(q3, 2800, 3000)
+    q:run(3)
+    q3.hudLayout:RegisterBossHPBar(Session.enemyOn(q3, "boss"))
+    q:run(3)
+    check(net(q.pcs[2]).hostBosses["sp:boss"] == nil, "a guest's boss fight, passed on to another guest, isn't taken for the host's")
+    allErrors(q)
 end
 
 local function backToTwo()

@@ -327,21 +327,35 @@ return function(api)
 
     -- Ghost twins (twins.lua): an id both PCs give their copy, "tw<n>:" and the original's id. A twin is never the boss of a
     -- fight to the mod: its death ends no fight and marks nothing beaten, and the story goes by the original's alone.
-    local twinIds = {}              -- actor address -> twin id
-    function game.markTwin(addr, id)
-        twinIds[addr] = id
+    -- ids: actor address -> twin id. names: address -> the twin actor's name: an address the game gives a new enemy
+    -- after the twin is gone isn't the twin's (it was taken for it: no twin, no fight).
+    local twin = { ids = {}, names = {} }
+    function game.markTwin(addr, id, name)
+        twin.ids[addr], twin.names[addr] = id, name
     end
     function game.forgetTwin(addr)
-        twinIds[addr] = nil
+        twin.ids[addr], twin.names[addr] = nil, nil
     end
-    function game.twinId(addr)
-        return twinIds[addr]
+    -- actor: the one at that address now, when the caller has it, to tell a new actor there from the twin.
+    function twin.at(addr, actor)
+        local id = twin.ids[addr]
+        if id and actor and twin.names[addr] then
+            local ok, name = pcall(function() return actor:GetFName():ToString() end)
+            if ok and name ~= twin.names[addr] then
+                twin.ids[addr], twin.names[addr] = nil, nil
+                return nil
+            end
+        end
+        return id
+    end
+    function game.twinId(addr, actor)
+        return twin.at(addr, actor)
     end
 
     -- addr: the actor's address, when the caller has it.
     function game.enemyId(actor, addr)
         addr = addr or actor:GetAddress()
-        local id = twinIds[addr] or spawnerIds[addr]
+        local id = twin.at(addr, actor) or spawnerIds[addr]
         if id then
             return id
         end
@@ -766,6 +780,11 @@ return function(api)
 
     function game.kill(actor)
         local boss = game.isBoss and game.isBoss(actor)
+        -- (A boss's ghost twin is no boss to the mod, but it's a boss to the game: it shrugs off the game-logic reason
+        -- as the boss does, and stood on at 0 health, unseen once the dissolve hid it.)
+        if not boss and twin.at(actor:GetAddress(), actor) then
+            boss = game.isBossClass(className(actor))
+        end
         forgetBoss(actor)
         game.setMinHealth(actor, 0)
         stopSwing(actor)
@@ -1070,7 +1089,7 @@ return function(api)
 
     function game.isBoss(actor, addr)
         addr = addr or actor:GetAddress()
-        if twinIds[addr] then
+        if twin.at(addr, actor) then
             return false
         end
         if bosses[addr] then
@@ -1104,7 +1123,7 @@ return function(api)
     pcall(function()
         RegisterHook("/Script/ProjectPBZ.PBZHUDLayout:RegisterBossHPBar", function(_, bossParam)
             local boss = bossParam:get()
-            if valid(boss) and not bosses[boss:GetAddress()] and not twinIds[boss:GetAddress()] then
+            if valid(boss) and not bosses[boss:GetAddress()] and not twin.at(boss:GetAddress(), boss) then
                 bosses[boss:GetAddress()] = true
                 bossActors[boss:GetAddress()] = boss
                 log("Boss fight: " .. boss:GetFName():ToString())
