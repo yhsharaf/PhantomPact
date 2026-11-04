@@ -232,5 +232,15 @@ return function(api)
             t.Cine and ", in a cutscene" or ""))
     end
 
+    -- A slot that changed hands (the relay says "@<slot> S"): the one before's down, map and the rest aren't the new one's.
+    -- Kept, everyone saw "player 3 is back" for someone who had only just come.
+    local syncStarted = coop.handlers.S
+    coop.handlers.S = function(rest, from, ...)
+        if from then
+            players[from] = nil
+        end
+        return syncStarted(rest, from, ...)
+    end
+
     return partner
 end

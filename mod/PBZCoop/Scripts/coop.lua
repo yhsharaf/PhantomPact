@@ -719,11 +719,16 @@ return function(api)
         net.foggedBosses = {}
     end
 
-    -- Host: a kill's items for the client, one pickup event each. paid collects what to say in the log.
-    local function sendItems(name, items, paid)
+    -- Host: a kill's items for the client, one pickup event each. paid collects what to say in the log. to: in a party,
+    -- the one guest whose kill it was (sent to all, every guest was paid for every other guest's kills).
+    local function sendItems(name, items, paid, to)
         for _, item in ipairs(items) do
             for _ = 1, item.count do
-                sendEvent("I", "loot:" .. name, item.id, item.kind or "-")
+                if to and net.party then
+                    sendTo(to, "I", "loot:" .. name, item.id, item.kind or "-")
+                else
+                    sendEvent("I", "loot:" .. name, item.id, item.kind or "-")
+                end
             end
             paid[#paid + 1] = item.id .. " x" .. item.count
         end
@@ -732,7 +737,7 @@ return function(api)
     -- Host: the client's hit killed this enemy. The game's own loot roll didn't run (see game.rollLoot), so it's
     -- rolled here, once. Dust goes to the host like any kill's and reaches the client as shared dust ("C"); items go to
     -- both, unless the client's game already paid its player (theirsPaid: the death ran there first).
-    local function payKillLoot(name, actor, theirsPaid)
+    local function payKillLoot(name, actor, theirsPaid, to)
         local dust, items, level = game.rollLoot(actor)
         local _, pawn = getPlayer1()
         local paid = {}
@@ -748,7 +753,7 @@ return function(api)
             end
         end
         if not theirsPaid then
-            sendItems(name, items, paid)
+            sendItems(name, items, paid, to)
         end
         if #paid > 0 then
             log(string.format("Your partner's kill (%s, level %d): %s.", name, level, table.concat(paid, ", ")))
@@ -1920,7 +1925,7 @@ return function(api)
                             log("Boss items for your partner too: " .. table.concat(paid, ", ") .. ".")
                         end
                     elseif not real and game.rollLoot then
-                        payKillLoot(name, actor)
+                        payKillLoot(name, actor, nil, from)
                     end
                     -- At once, not at the enemy's next turn: the partner is looking at a copy held at 1 health.
                     net.deadSent[name] = true
@@ -2770,8 +2775,9 @@ return function(api)
         -- (The host's word only. Another guest's fight, passed on by the relay, isn't the host's: taken for it, it stayed
         -- the host's fight here for good, and came back as walls and a bar after this player's next death.)
         local fromHost = net.role == "client" and from == nil
-        if fromHost and net.hostBosses[name] and net.partnerBosses[name] then
-            return                          -- (told again, and shown here already)
+        -- (Told again, by the same player, and shown here already: a newcomer's J has every fighter tell their fight.)
+        if net.partnerBosses[name] and (not net.party or net.fightOf[name] == (from or 1)) then
+            return
         end
         if fromHost then
             -- The host has it alive and is fighting it, whatever this session last heard (their world loaded again, say): a copy
@@ -3457,6 +3463,19 @@ return function(api)
     handlers.J = function()
         net.fightToldAt = 0
         net.lookSent = nil      -- (and what this player wears: it waited up to 30 s for the next telling)
+        -- (A guest's own fight too: B goes once, as it starts, and one who joined after never saw it, bar or walls.
+        -- The host tells its own in its S handling.)
+        if isClient() then
+            for _, actor in ipairs(net.ownBosses()) do
+                local name, addr = enemyName(actor), actor:GetAddress()
+                for id, e in pairs(enemyByName) do
+                    if valid(e) and e:GetAddress() == addr then
+                        name = id
+                    end
+                end
+                sendEvent("B", name)
+            end
+        end
     end
 
     handlers.F = function(on, from)

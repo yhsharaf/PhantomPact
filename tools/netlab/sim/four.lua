@@ -548,6 +548,38 @@ local function rests()
     check(jg.env.PBZ.net.joinedBoss == nil, "a guest who joined a fight and died isn't still marked as in it")
     allErrors(j)
 
+    -- A guest's kill in a party: its items go to that guest, not to every guest.
+    local l = party()
+    spread(l)
+    l:run(3)
+    local lh, la = l.pcs[1], l.pcs[2]
+    lh.env.PBZ.game.rollLoot = function() return 0, { { id = "R_7", count = 1, kind = "-" } }, 1 end
+    lh.env.PBZ.game.applyDamage = function(actor) Fake.setHealth(actor, 0) Fake.put(actor, "dead", true) return false end
+    local onA = Session.enemyOn(la, "near")
+    swing(la, onA, select(1, Fake.health(onA)) - 50)
+    l:run(1)
+    swing(la, onA, 1)
+    l:run(2)
+    check(count(lh.sent, "^T2 I loot:sp:near R_7") == 1 and count(lh.sent, "^E I loot:") == 0,
+        "a guest's kill in a party: its items go to that guest alone")
+    allErrors(l)
+
+    -- A guest's boss fight is on; another guest starts sync again: it's shown that fight.
+    local n = party()
+    spread(n)
+    n:run(2)
+    local na, nc = n.pcs[2], n.pcs[4]
+    na.hudLayout:RegisterBossHPBar(Session.enemyOn(na, "boss"))
+    n:run(4)
+    Session.command(nc, "netoff")
+    n:run(1)
+    check(next(net(nc).partnerBosses) == nil, "(gone: shown no more)")
+    Session.command(nc, "neton client")
+    n:run(8)
+    check(next(net(nc).partnerBosses) ~= nil or next(net(nc).pendingBosses) ~= nil,
+        "a guest's fight that's on is shown to another guest who starts sync again")
+    allErrors(n)
+
     -- Two players: the host in a boss fight of its own, the guest far off on the same map rests at a bell.
     local w = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES)
     local wh, wg = w.pcs[1], w.pcs[2]
