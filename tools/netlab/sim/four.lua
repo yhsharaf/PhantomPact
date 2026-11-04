@@ -517,6 +517,15 @@ local function rests()
     w:run(2)
     check(wh.env.PBZ.game.bossFightActive() and refreshes(wh) == before,
         "two players: the guest's bell rest leaves the host's own boss fight be, bar and enemies")
+    -- The guest sits at a bell during it: the host is rested, and so is the boss (the user's rule).
+    local wboss = Session.enemyOn(wh, "boss")
+    local _, bossMax = Fake.health(wboss)
+    Fake.setHealth(wboss, bossMax * 0.3)
+    Fake.setHealth(wh.pawn, 100)
+    Session.sit(wg)
+    w:run(2)
+    check(Fake.health(wh.pawn) == 1000 and Fake.health(wboss) == bossMax,
+        "the guest sits during the host's boss fight: the host is rested, and the boss is back to full")
     allErrors(w)
 
     local t = party()
@@ -1530,6 +1539,42 @@ local function fightsAndWhoIsLeft()
     check(stayed.X < 2000 and math.abs(stayed.Z - 100) < 50, "no floor past it: E leaves them where they stood")
     check(count(vh.logs, "No floor past the fog wall") == 1, "and says why")
     allErrors(v)
+
+    -- A drop just behind the wall, the fight's floor further in: E takes them across to beside the one inside.
+    local d, dh, dg = pair()
+    Fake.fogWall(dh, 2000, 0, 2000, 6000, 100)
+    Fake.fogWall(dg, 2000, 0, 2000, 6000, 100)
+    dh.noFloor = function(l) return l.X > 2000 and l.X < 2700 end
+    Session.moveTo(dg, 3000, 2900)
+    Session.moveTo(dh, 1500, 3000)
+    d:run(1)
+    dg.hudLayout:RegisterBossHPBar(Session.enemyOn(dg, "boss"))
+    d:run(3)
+    dh.keys.E = true
+    d:run(0.2)
+    dh.keys.E = false
+    d:run(2)
+    local landed = at(dh.pawn)
+    check(landed.X > 2700 and math.abs(landed.Z - 100) < 50 and math.abs(landed.X - 3000) < 400,
+        "a drop just past the wall: E takes them across to beside the other player, on the fight's floor")
+    check(count(dh.logs, "beside the other player") == 1, "and says so")
+    allErrors(d)
+
+    -- A wall whose line lies 8 m under the floor (Lei Dang's): E at it still takes them through.
+    local u, uh, ug = pair()
+    Fake.fogWall(uh, 2000, 0, 2000, 6000, -700)
+    Fake.fogWall(ug, 2000, 0, 2000, 6000, -700)
+    Session.moveTo(ug, 3000, 2900)
+    Session.moveTo(uh, 1500, 3000)
+    u:run(1)
+    ug.hudLayout:RegisterBossHPBar(Session.enemyOn(ug, "boss"))
+    u:run(3)
+    uh.keys.E = true
+    u:run(0.2)
+    uh.keys.E = false
+    u:run(2)
+    check(at(uh.pawn).X > 2000, "a wall whose line lies 8 m under the floor: E takes them through all the same")
+    allErrors(u)
 
     local e, eh, eg = pair()
     Session.respawned(eh)

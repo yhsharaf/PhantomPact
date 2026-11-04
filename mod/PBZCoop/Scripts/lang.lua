@@ -30,8 +30,10 @@ return function()
         ["your partner is watching a cutscene."] = "队友正在观看过场动画。",
         ["your partner rested at a bell: you'll join them."] = "队友在钟旁休息了:你会前往队友身边。",
         ["your partner rested at a bell: you're rested too."] = "队友在钟旁休息了:你也恢复了。",
+        ["your partner rested at a bell: you're rested, and so is the boss."] = "队友在钟旁休息了:你恢复了,首领也恢复了。",
         ["your partner needs PvP on too, or their moves won't show here."] = "队友也要开启 PvP,否则这里看不到对方的动作。",
         ["partner disconnected."] = "队友已断开连接。",
+        ["your partner turned co-op sync off."] = "队友关闭了联机同步。",
         ["PvP is off with more than two players."] = "超过两名玩家时 PvP 关闭。",
         ["Local co-op starts the next time you start the game."] = "下次启动游戏时开始本地分屏。",
         ["Multiplayer starts the next time you start the game."] = "下次启动游戏时恢复多人联机。",
@@ -118,7 +120,9 @@ return function()
             { " left%. (%d) players now%.$", " 离开了。现在有 %1 名玩家。" }, { " is down%.$", " 倒下了。" }, { " is back%.$", " 回来了。" },
             { " is watching a cutscene%.$", " 正在观看过场动画。" }, { " is on another map%.$", " 在另一张地图上。" },
             { " is (%d+) m away%.$", " 在 %1 米外。" }, { " rested at a bell: you'll join them%.$", " 在钟旁休息了:你会前往对方身边。" },
-            { " rested at a bell: you're rested too%.$", " 在钟旁休息了:你也恢复了。" } }) do
+            { " rested at a bell: you're rested too%.$", " 在钟旁休息了:你也恢复了。" },
+            { " rested at a bell: you're rested, and so is the boss%.$", " 在钟旁休息了:你恢复了,首领也恢复了。" },
+            { " turned co%-op sync off%.$", " 关闭了联机同步。" } }) do
             PARTS[#PARTS + 1] = { "^" .. who[1] .. line[1], who[2] .. line[2] }
         end
         PARTS[#PARTS + 1] = { " You're " .. who[1] .. "%.$", " 你是" .. who[2] .. "。" }

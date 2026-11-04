@@ -967,7 +967,12 @@ return function(api)
         for _, id in ipairs(ids) do
             local e = byAddr[net.matchSticky[id]]
             if matched[id] == nil and e and not used[e.addr] and not (game.isDead and game.isDead(e.actor)) then
-                take(id, e)
+                -- (Still the same kind: another enemy can be at a gone one's address, and was steered as the host's.)
+                local want = net.remoteEnemies[id] and net.remoteEnemies[id].Class
+                e.class = e.class or (want and enemyClass(e.actor))
+                if not want or e.class == want then
+                    take(id, e)
+                end
             end
         end
         for _, id in ipairs(ids) do
@@ -1064,7 +1069,11 @@ return function(api)
                     sendEvent("HAS", name)
                 end
             elseif near then
-                local a = net.aside[e.addr] or { actor = e.actor, name = name, since = now, askedAt = -1e9 }
+                -- (A new enemy at a gone one's address isn't that one: it took its record, stopped and never woke.)
+                local a = net.aside[e.addr]
+                if not a or a.name ~= name then
+                    a = { actor = e.actor, name = name, since = now, askedAt = -1e9 }
+                end
                 kept[e.addr] = a
                 if a.hidden then
                     a.brain = game.stopAI(e.actor, a.brain)     -- (the game starts a stopped AI again by itself)
@@ -1171,7 +1180,9 @@ return function(api)
             if r then
                 -- One of the host's enemies: it dies when the host says so ("K"), never on its own here, so a
                 -- killing blow is never played twice and a copy that's a hit ahead doesn't die before the host's.
-                if not net.heldAlive[addr] and game.setMinHealth then
+                -- (Every turn, not once by address: a copy gone and a new one at its address was taken for held already, and
+                -- died here on a hit, the host's alive.)
+                if game.setMinHealth then
                     game.setMinHealth(actor, HELD_HP)
                 end
                 held[addr] = actor
@@ -1319,8 +1330,8 @@ return function(api)
         if r == nil then
             return true             -- (the guest's first line is on its way)
         end
-        if not net.heldAlive[addr] and game.setMinHealth then
-            net.heldAlive[addr] = actor
+        if game.setMinHealth then
+            net.heldAlive[addr] = actor     -- (each turn: the actor at an address can be a new one, see syncEnemy)
             game.setMinHealth(actor, HELD_HP)
         end
         -- A drop since the last turn is weighed as a guest weighs one on its copies of the host's (syncEnemy).
@@ -2175,6 +2186,21 @@ return function(api)
         sendEvent("R", kind)
     end
 
+    -- The bosses of a fight of this player's own, alive: not copies of another player's fight.
+    function net.ownBosses()
+        local own = {}
+        for _, actor in ipairs(game.bossActors and game.bossActors() or {}) do
+            local mirrored = false
+            for name in pairs(net.partnerBosses) do
+                mirrored = mirrored or enemyByName[name] == actor
+            end
+            if not mirrored and valid(actor) and not game.isDead(actor) then
+                own[#own + 1] = actor
+            end
+        end
+        return own
+    end
+
     handlers.R = function(kind, from)
         peerOf(from).fights = false     -- (that player's fight is over, and a bar left up there can't say so yet)
         countFights()
@@ -2188,18 +2214,9 @@ return function(api)
         local elsewhere = not sameMap(peerOf(from).target)
         -- Nor, at a bell, about a boss fight of this player's own (not a copy of one of theirs): a partner resting isn't in it.
         -- Its bar came down and every monster came back mid-fight. (A host's death is everyone's: that one ends it.)
-        if kind ~= "death" and not elsewhere then
-            for _, actor in ipairs(game.bossActors and game.bossActors() or {}) do
-                local mirrored = false
-                for name in pairs(net.partnerBosses) do
-                    mirrored = mirrored or enemyByName[name] == actor
-                end
-                if not mirrored then
-                    elsewhere = true
-                    log("A boss fight of your own is on: it goes on, and enemies here come back at the next rest.")
-                    break
-                end
-            end
+        if kind ~= "death" and not elsewhere and #net.ownBosses() > 0 then
+            elsewhere = true
+            log("A boss fight of your own is on: it goes on, and enemies here come back at the next rest.")
         end
         forgetDeaths(kind, elsewhere, net.party and from or nil)
         seen = {}
@@ -2238,7 +2255,21 @@ return function(api)
             end
         else
             game.restHere(pawn)
-            api.status.notify("rest", who .. " rested at a bell: you're rested too.")
+            -- In a boss fight of one's own, the boss is rested too, back to full health (the user's rule): the rest is no free
+            -- heal in the middle of a fight, with the partner sitting down for it on purpose.
+            local bosses = net.ownBosses()
+            for _, boss in ipairs(bosses) do
+                local _, maxhp = game.getHealth(boss)
+                if maxhp and maxhp > 0 and game.setHealth then
+                    game.setHealth(boss, maxhp)
+                end
+            end
+            if #bosses > 0 then
+                log("The other player sat at a bell during your boss fight: you're rested, and so is the boss.")
+                api.status.notify("rest", who .. " rested at a bell: you're rested, and so is the boss.")
+            else
+                api.status.notify("rest", who .. " rested at a bell: you're rested too.")
+            end
         end
         log("The other player sat at a bell.")
     end
@@ -3020,8 +3051,13 @@ return function(api)
 
     -- Sync turned off on the other PC: they're gone now, not after 12 s of a figure standing frozen and enemies held for them.
     handlers.BYE = function(_, from)
-        peerOf(from).byeAt = os.clock()
+        local p = peerOf(from)
+        p.byeAt = os.clock()
         log("The other player turned sync off.")
+        -- (Their relay stays linked, so nothing else on screen says it: their figure only went.)
+        if api.status and api.status.notify then
+            api.status.notify("conn", (net.party and PLAYERS[p.number or 1].name or "your partner") .. " turned co-op sync off.")
+        end
     end
 
     local function stop()

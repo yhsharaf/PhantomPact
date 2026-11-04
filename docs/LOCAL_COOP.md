@@ -100,8 +100,8 @@ down, the game's death card plays in their half alone, and they get back up off 
   their half for the fight.
   The boss gets the same combat wake-up for player 2 as any enemy. Fog walls (the black walls) close around whoever
   started the fight, and nobody is brought in: one player can fight alone. Whoever is left outside walks up to the wall
-  and presses E or Circle to go through it, a few metres in, onto floor found first (none there: they stay put, with a
-  tip). Never out of a fight: only from the side away from the other player. A boss's opening scene doesn't bring
+  and presses E or Circle to go through it, a few metres in, onto floor found first (none just past the wall: beside
+  the other player instead, on the fight's floor; none there either: they stay put, with a tip). Never out of a fight: only from the side away from the other player. A boss's opening scene doesn't bring
   player 2 along either, unless the fight is over 150 m off (an arena apart from the map). Checked with Peng Meng, the
   Axemaster, on Xigu: intro scene, bar on both halves, the boss turning on player 2.
 - **The game's screens** (tutorial and information pages, chapter titles, dialogues, videos, confirmations,

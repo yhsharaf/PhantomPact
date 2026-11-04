@@ -1073,6 +1073,16 @@ return function(api)
         return known
     end
 
+    -- Whether a class (its name, "_C" or not) is a boss in the codex: for what a spawner will make, with nothing spawned.
+    function game.isBossClass(cn)
+        cn = tostring(cn):gsub("_C$", "")
+        if codexBoss[cn] == nil then
+            local row = codexRow(cn)
+            codexBoss[cn] = row ~= nil and row.bIsBoss == true
+        end
+        return codexBoss[cn]
+    end
+
     -- The HUD registers a boss health bar when a boss fight starts: the surest way to know who the boss is.
     local showingRemoteBoss = false
     pcall(function()
@@ -1188,7 +1198,10 @@ return function(api)
                 return s:FindLocationClosestToWorldLocation(spot, 1), s:FindRightVectorClosestToWorldLocation(spot, 1)
             end)
             local gap = ok and at.X and math.sqrt((at.X - spot.X) ^ 2 + (at.Y - spot.Y) ^ 2)
-            if gap and gap <= bestGap and math.abs(at.Z - spot.Z) < 600 and FOG.closed(door) then
+            -- (Its line can lie well under the floor, the wall rising from it: Lei Dang's, 8 m under it on both sides, was
+            -- never found at 6 m, and E did nothing there. Up to 15 m under the player, 6 m over.)
+            local dz = gap and (at.Z - spot.Z)
+            if gap and gap <= bestGap and dz < 600 and dz > -1500 and FOG.closed(door) then
                 local len = math.sqrt(right.X ^ 2 + right.Y ^ 2)
                 if len > 0.1 then
                     best, bestGap = { at = { X = at.X, Y = at.Y, Z = at.Z }, normal = { X = right.X / len, Y = right.Y / len } }, gap
@@ -1209,6 +1222,7 @@ return function(api)
     -- before the watch below put them back.
     FOG.PROBE_CM = 450
     FOG.TRY_CM = { 300, 200, 450, 600, 120 }
+    FOG.BESIDE = { { 250, 0 }, { -250, 0 }, { 0, 250 }, { 0, -250 }, { 150, 150 }, { -150, -150 }, { 0, 0 } }
     function FOG.floorAt(pawn, spot)
         pawn:K2_SetActorLocation(spot, false, {}, true)
         pawn:K2_SetActorLocation({ X = spot.X, Y = spot.Y, Z = spot.Z - FOG.PROBE_CM }, true, {}, false)
@@ -1236,6 +1250,17 @@ return function(api)
             }
             if FOG.floorAt(pawn, try) then
                 spot = pawn:K2_GetActorLocation()
+                break
+            end
+        end
+        -- None past the wall (a ledge, stairs, a drop behind the doorway): beside the one inside instead, who stands on the
+        -- floor of the fight, a few metres off them. (The user's worry: one wall without floor past it and the other player
+        -- could never get in.)
+        for _, off in ipairs(spot and {} or FOG.BESIDE) do
+            local try = { X = toward.X + off[1], Y = toward.Y + off[2], Z = toward.Z + 150 }
+            if FOG.floorAt(pawn, try) then
+                spot = pawn:K2_GetActorLocation()
+                log("No floor just past the fog wall: across it to beside the other player.")
                 break
             end
         end
