@@ -339,8 +339,10 @@ return function(api)
         end
     end
 
-    coop.handlers.STRIKE = function()
-        if not down then
+    -- (In a party there's no reviving: one sent before the host's hello said party, passed on to every guest, tinted
+    -- the wrong player and had any guest's swing at the host's ghost revive someone else. A party's events carry a slot.)
+    coop.handlers.STRIKE = function(_, from)
+        if from or not down then
             return
         end
         local now = os.clock()
@@ -354,7 +356,10 @@ return function(api)
         end
     end
 
-    coop.handlers.DOWN = function()
+    coop.handlers.DOWN = function(_, from)
+        if from then
+            return
+        end
         net.partnerDowned = true
         tip("Your partner is down: strike them to bring them back.")
         if down then
@@ -365,7 +370,10 @@ return function(api)
         end
     end
 
-    coop.handlers.G = function(rest)
+    coop.handlers.G = function(rest, from)
+        if from then
+            return
+        end
         local p, t, s = rest:match("^(%S+) (%S+) (%S+)$")
         p, t, s = tonumber(p), tonumber(t), tonumber(s)
         if net.partnerDowned and p and t and s and t > 0 then

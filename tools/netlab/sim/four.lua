@@ -505,6 +505,49 @@ local function rests()
         "nor the host's own")
     allErrors(f)
 
+    -- The same, one guest further: the host's world didn't refresh for that rest (its own fight), so neither does the
+    -- other guests' world, and what the host killed stays killed there.
+    local fh, fc = f.pcs[1], f.pcs[4]
+    fc.env.PBZ.net.hostKilled["sp:killedthere"] = true
+    local fcBefore = refreshes(fc)
+    Session.bell(f.pcs[3])
+    f:run(2)
+    check(fc.env.PBZ.net.hostKilled["sp:killedthere"] == true and refreshes(fc) == fcBefore,
+        "a guest's rest the host's world didn't refresh for: the other guests keep the host's kills, and don't refresh")
+    -- A guest's own bell rest during the host's fight: that fight is still shown after it.
+    Session.bell(fa)
+    f:run(2)
+    check(next(fa.env.PBZ.net.partnerBosses) ~= nil or next(fa.env.PBZ.net.pendingBosses) ~= nil,
+        "a guest who rests at a bell during the host's fight still has it after")
+    allErrors(f)
+
+    -- A guest fights a boss of its own; a third player rests at a bell. The host's world isn't refreshed under that fight.
+    local q = party()
+    spread(q)
+    q:run(2)
+    local qa = q.pcs[2]
+    qa.hudLayout:RegisterBossHPBar(Session.enemyOn(qa, "boss"))
+    q:run(5)
+    local qBefore = refreshes(q.pcs[1])
+    Session.bell(q.pcs[3])
+    q:run(2)
+    check(refreshes(q.pcs[1]) == qBefore and qa.env.PBZ.game.bossFightActive(),
+        "a third player's bell rest doesn't refresh the host's world under a guest's boss fight")
+    allErrors(q)
+
+    -- A guest who walked into the host's fight and died can walk in again.
+    local j = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES)
+    j:run(4)
+    local jg = j.pcs[2]
+    jg.env.PBZ.net.joinedBoss = "sp:boss"
+    Session.die(jg)
+    j:run(1)
+    Session.respawned(jg)
+    Session.revive(jg)
+    j:run(1)
+    check(jg.env.PBZ.net.joinedBoss == nil, "a guest who joined a fight and died isn't still marked as in it")
+    allErrors(j)
+
     -- Two players: the host in a boss fight of its own, the guest far off on the same map rests at a bell.
     local w = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES)
     local wh, wg = w.pcs[1], w.pcs[2]

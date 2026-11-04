@@ -2643,6 +2643,9 @@ return function(api)
             return false
         end
         local follow = valid(target) and target or nil
+        if spectating and not valid(spectating) then
+            spectating = nil        -- (gone, a ghost destroyed as the party shrank: never asked anything again)
+        end
         if (follow and spectating and follow:GetAddress() == spectating:GetAddress()) or (not follow and not spectating) then
             return true
         end

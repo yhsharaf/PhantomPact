@@ -2226,13 +2226,14 @@ return function(api)
                 net.pendingDeaths[name] = true
                 again = again + 1
             end
-            -- (Only while the host's fight is on: one the host never joined, or walked out of, came back as a bar and shut
-            -- walls with nobody's fight behind them.)
-            if (net.party and peerOf(nil).fights) or (not net.party and net.partnerFighting) then
-                for name in pairs(net.hostBosses) do
-                    net.pendingBosses[name] = true
-                end
+            -- (Only fights still on: one the host never joined, or walked out of, came back as a bar and shut walls with
+            -- nobody's fight behind them. Another guest's that's on comes back too: its walls went with the rest.)
+            for _, name in ipairs(net.stillFought()) do
+                net.pendingBosses[name] = true
             end
+            -- (A fight this player had walked into is theirs to walk into again: still marked joined, E at the wall did
+            -- nothing until the boss died, and an arena apart took them back to the partner after it.)
+            net.joinedBoss, net.joinedWith, net.joinedFar, net.bossOverAt = nil, nil, nil, nil
             reopenFog()
             if game.resetBosses then
                 game.resetBosses()
@@ -2254,8 +2255,42 @@ return function(api)
         else
             log("Rested at a bell (enemies respawned): telling the other player.")
         end
+        -- (A guest's: the host's fight, or another guest's, goes on. Wiped with the rest, it was gone from this screen for
+        -- good, as B is told once.)
+        local still = {}
+        if isClient() then
+            for _, name in ipairs(net.stillFought()) do
+                still[name] = { p = net.partnerBosses[name], h = net.hostBosses[name], f = net.fightOf[name] }
+            end
+        end
         forgetDeaths(kind)
+        for name, s in pairs(still) do
+            net.partnerBosses[name], net.hostBosses[name], net.fightOf[name] = s.p, s.h, s.f
+            net.pendingBosses[name] = true
+        end
         sendEvent("R", kind)
+    end
+
+    -- The fights of others this player is shown that are still on (their player's bar is up): names.
+    function net.stillFought()
+        local out, seenName = {}, {}
+        for _, list in ipairs({ net.partnerBosses, net.hostBosses }) do
+            for name in pairs(list) do
+                if not seenName[name] then
+                    seenName[name] = true
+                    local on
+                    if net.party then
+                        on = peerOf(net.fightOf[name] or 1).fights
+                    else
+                        on = net.partnerFighting
+                    end
+                    if on then
+                        out[#out + 1] = name
+                    end
+                end
+            end
+        end
+        return out
     end
 
     -- The bosses of a fight of this player's own, alive: not copies of another player's fight.
@@ -2291,11 +2326,31 @@ return function(api)
     handlers.R = function(kind, from)
         peerOf(from).fights = false     -- (that player's fight is over, and a bar left up there can't say so yet)
         countFights()
+        -- A guest hearing another guest's rest, passed on: whether the host's world refreshed for it is the host's to say
+        -- (RH). Taken as so, the host's kills were forgotten and this world refreshed when the host's hadn't, its enemies
+        -- back here for good. Only that player's fights end.
+        if isClient() and from then
+            net.restRefreshes = false
+            restEvent(kind)
+            endFights(from)
+            game.forgetFocus()
+            game.forgetMoves()
+            handover.reset()
+            return
+        end
         -- From another map it says nothing about the enemies here, or the fight this player may be in.
         local elsewhere = not sameMap(peerOf(from).target)
         -- Nor, at a bell, about a boss fight of this player's own (not a copy of one of theirs): a partner resting isn't in it.
         -- Its bar came down and every monster came back mid-fight. (A host's death is everyone's: that one ends it.)
         local ownFight = kind ~= "death" and not elsewhere and #net.ownBosses() > 0
+        -- (Nor during another player's fight here, in a party: a third player's rest refreshed the boss under them.)
+        if kind ~= "death" and not elsewhere and net.party then
+            for _, name in ipairs(net.stillFought()) do
+                if net.fightOf[name] ~= from then
+                    ownFight = true
+                end
+            end
+        end
         elsewhere = elsewhere or ownFight
         -- (Said before the listeners hear it: whether this world's enemies come back, which is what the twins go by.)
         -- (On a guest, the host's own word only: another guest's rest, passed on, says nothing of whether the host's world
@@ -2311,6 +2366,27 @@ return function(api)
             log("A boss fight of your own is on: it goes on, and enemies here come back at the next rest.")
         end
         forgetDeaths(kind, elsewhere, net.party and from or nil)
+        seen = {}
+        if game.refreshEnemies and not elsewhere then
+            game.refreshEnemies()
+        end
+        if isHost() and net.party and from and not elsewhere then
+            sendEvent("RH", kind, from)     -- (the host's world refreshed for that guest's rest: the other guests' do too)
+        end
+    end
+
+    -- Host: its world refreshed for a guest's rest (slot). The other guests' worlds follow, as for the host's own.
+    handlers.RH = function(rest, from)
+        local kind, slot = (rest or ""):match("^(%a+) (%d+)$")
+        slot = tonumber(slot)
+        if from ~= nil or not isClient() or not kind or slot == net.slot then
+            return
+        end
+        local elsewhere = not sameMap(peerOf(nil).target) or #net.ownBosses() > 0
+        net.restRefreshes = not elsewhere
+        restEvent(kind)
+        log("Player " .. slot .. " rested at a bell: the host's world refreshed, enemies respawn here too.")
+        forgetDeaths(kind, elsewhere, slot)
         seen = {}
         if game.refreshEnemies and not elsewhere then
             game.refreshEnemies()
