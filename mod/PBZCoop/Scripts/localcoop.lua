@@ -1589,11 +1589,10 @@ return function(api)
         if not waiting[1] and V.waitFloor1 and valid(p1) then
             local ok, floor = pcall(function() return p1.AttributeSetBase.Health_Min.CurrentValue end)
             if ok and type(floor) == "number" and math.abs(floor - V.waitFloor1) < 0.5 and floor > 0.5 then
-                game.setMinHealth(p1, 0)
+                game.setMinHealth(p1, V.preWaitFloor1 or 0)
                 log(string.format("Player 1's health floor was left at %.0f: cleared.", floor))
-            end
-            if ok and type(floor) == "number" and floor <= 0.5 then
-                V.waitFloor1 = nil
+            elseif ok and type(floor) == "number" then
+                V.waitFloor1 = nil      -- (any other floor: ours is gone, and the game's own is left alone)
             end
         end
         for i = 1, 2 do                 -- (pad_route.hpp moves one of two joysticks: a third would claim a player and reach nobody)

@@ -31,8 +31,10 @@ return function(api)
     local GONE_S = 20               -- guest: a twin the host hasn't mentioned for this long goes
     local RETRY_S = 30              -- host: a twin that couldn't be made is tried again after this long
     local SETTLE_S = 2              -- host: an enemy is seen this long before it gets its twin
+    local ZOMBIE_S = 2.0            -- a twin at 0 health the game doesn't take for dead goes after this long
 
     local firstSeen = {}            -- host: enemy address -> os.clock() it was first in the list
+    local nextPrune = 0
     local hostTwins = {}            -- host: original's address -> { id, twin, twinAddr, orig, origAddr, boss, origDied, at }
     local cleared = {}              -- guest: twin ids a rest took away; the host's last lines of them mustn't bring them back
     local guestTwins = {}           -- guest: twin id -> { twin, twinAddr, seenAt }
@@ -193,6 +195,20 @@ return function(api)
             undress(addr)
             return
         end
+        -- A twin at 0 health the game doesn't take for dead: a boss's twin shrugs off the death a player's blow gives it,
+        -- and stood on unseen once the dissolve hid it. A twin leaves no body to keep: after a moment it goes.
+        local hp = game.getHealth(look.actor)
+        if hp ~= nil and hp <= 0 then
+            local ok, dead = pcall(function() return look.actor:IsDead() end)
+            if ok and dead == false then
+                look.zeroAt = look.zeroAt or os.clock()
+                if os.clock() - look.zeroAt >= ZOMBIE_S then
+                    pcall(function() look.actor:K2_DestroyActor() end)
+                    undress(addr)
+                    return
+                end
+            end
+        end
         if not lookHolds(look) then
             paint(look)
         end
@@ -289,6 +305,16 @@ return function(api)
         end
         local list, addrs = game.enemiesSoFar()
         local now = os.clock()
+        -- (Only the enemies of the moment are remembered: kept, it grew all session, and an address the game gave a new
+        -- enemy skipped the moment it waits.)
+        if now >= (nextPrune or 0) then
+            nextPrune = now + 10
+            local keep = {}
+            for _, a in ipairs(addrs) do
+                keep[a] = firstSeen[a]
+            end
+            firstSeen = keep
+        end
         for i, e in ipairs(list) do
             local addr = addrs[i]
             -- (Seen for a moment first: its spawner's id is read by then, and one just spawned has finished coming in.)
@@ -315,6 +341,20 @@ return function(api)
                         local boss = game.isBoss(e, addr)
                         serial = serial + 1
                         local twin = spawnTwin(e:GetClass(), at, yaw, "tw" .. serial .. ":" .. id)
+                        -- Its original's own numbers: a boss in its arena has its spawner's (Peng Meng 18720 health), and
+                        -- the class alone gave its twin 8000. Already scaled with the original's, so scaling.lua leaves it.
+                        if twin then
+                            pcall(function()
+                                local from, to = e.AttributeSetBase, twin.AttributeSetBase
+                                for _, pair in ipairs({ { "Health", "Health_Max" }, { "Shachi", "Shachi_Max" } }) do
+                                    local mx = from[pair[2]].CurrentValue
+                                    if type(mx) == "number" and mx > 0 then
+                                        to[pair[2]].BaseValue, to[pair[2]].CurrentValue = mx, mx
+                                        to[pair[1]].BaseValue, to[pair[1]].CurrentValue = mx, mx
+                                    end
+                                end
+                            end)
+                        end
                         -- (Tried once for each original: one that won't spawn isn't tried every turn.)
                         hostTwins[addr] = { id = id, twin = twin, twinAddr = twin and twin:GetAddress(), orig = e, origAddr = addr,
                             boss = boss, at = os.clock() }

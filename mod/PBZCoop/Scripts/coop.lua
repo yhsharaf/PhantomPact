@@ -1891,6 +1891,9 @@ return function(api)
                     end
                     -- At once, not at the enemy's next turn: the partner is looking at a copy held at 1 health.
                     net.deadSent[name] = true
+                    net.deadBodies[actor:GetAddress()] = true   -- (by the body too, as shareEnemy marks it: else a new enemy
+                                                                -- under the id cleared the name, the old body told it again,
+                                                                -- and a boss's items went out twice)
                     sendEvent("K", name)
                     if game.markBeaten then
                         -- (Its turn below won't see this death: deadSent is up already. A boss the guest finished came
@@ -2117,9 +2120,13 @@ return function(api)
         -- (Only when this world's enemies came back. A rest elsewhere, or one during this player's own boss fight, left
         -- them dead here: wiped, the host never told them again (their bodies were marked told), not to anyone joining
         -- either, and a guest met them alive.)
-        if kind ~= "death" and not elsewhere then
-            net.deadSent = {}
-            net.guestKilled = {}
+        -- (The host's records only. A guest forgets the host's kills at any rest it hears of, as before: the host's world
+        -- refreshed even when this guest is elsewhere, and kept, they killed its own copies as they loaded.)
+        if kind ~= "death" and (not elsewhere or not isHost()) then
+            if not elsewhere then
+                net.deadSent = {}
+                net.guestKilled = {}
+            end
             net.guestKillSent = {}
             net.hostKilled = {}
         end
@@ -2229,7 +2236,9 @@ return function(api)
         local ownFight = kind ~= "death" and not elsewhere and #net.ownBosses() > 0
         elsewhere = elsewhere or ownFight
         -- (Said before the listeners hear it: whether this world's enemies come back, which is what the twins go by.)
-        net.restRefreshes = not elsewhere
+        -- (On a guest, the host's own word only: another guest's rest, passed on, says nothing of whether the host's world
+        -- refreshed, and twins taken away then could never come back here.)
+        net.restRefreshes = not elsewhere and (isHost() or from == nil)
         restEvent(kind)
         if kind == "death" then
             log("The host died and respawned: enemies respawn here too.")
@@ -2945,6 +2954,11 @@ return function(api)
     local function destroyGhost(p)
         if valid(p.ghost) then
             p.ghost:K2_DestroyActor()
+        end
+        -- (Its address is free now: left marked as a ghost's, an enemy given it later was never shared nor synced.)
+        if p.ghostAddr then
+            net.ghostSlots[p.ghostAddr] = nil
+            p.ghostAddr = nil
         end
         p.ghost = nil
         p.ghostCmc = nil

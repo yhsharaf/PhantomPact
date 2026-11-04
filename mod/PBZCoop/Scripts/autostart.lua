@@ -226,6 +226,7 @@ return function(api)
             api.coop.commands.netoff()
         end
         api.status.last = {}
+        api.status.here = nil     -- (who was in the party: the next session's first look told them all "left")
         os.remove(modDir() .. "net_start.txt")
         if api.link then
             api.link.stop()

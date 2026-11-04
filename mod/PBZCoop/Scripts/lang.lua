@@ -115,7 +115,8 @@ return function()
 
     -- What's said of a player by name, one row for each: they start with the name, so they can't reach any other line.
     for _, who in ipairs({ { "the host %(purple%)", "房主(紫)" }, { "player 2 %(green%)", "玩家 2(绿)" },
-        { "player 3 %(gold%)", "玩家 3(金)" }, { "player 4 %(blue%)", "玩家 4(蓝)" } }) do
+        { "player 3 %(gold%)", "玩家 3(金)" }, { "player 4 %(blue%)", "玩家 4(蓝)" },
+        { "player 5 %(orange%)", "玩家 5(橙)" }, { "player 6 %(pink%)", "玩家 6(粉)" } }) do
         for _, line in ipairs({ { " joined%. (%d) players now%.$", " 加入了。现在有 %1 名玩家。" },
             { " left%. (%d) players now%.$", " 离开了。现在有 %1 名玩家。" }, { " is down%.$", " 倒下了。" }, { " is back%.$", " 回来了。" },
             { " is watching a cutscene%.$", " 正在观看过场动画。" }, { " is on another map%.$", " 在另一张地图上。" },

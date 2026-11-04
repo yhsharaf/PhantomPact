@@ -173,6 +173,7 @@ return function(api)
     -- Sync on as a guest: this player goes to the host as soon as they're linked, on whatever map. (As a host, not.)
     function partner.goOnLink(joining)
         partner.joining, partner.goUntil, partner.goTo = joining, nil, nil
+        players = {}            -- (each player's down/back/map from the last session: a "player 3 is back" for nobody)
     end
 
     -- A partner sat at a bell and this player can't use it: dead or watching, they go to p as soon as they're up.

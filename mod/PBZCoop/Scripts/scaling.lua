@@ -166,7 +166,8 @@ return function(api)
                 return
             end
             at = at + 1
-            local name = valid(e) and not inSoloFight(addr) and e:GetFName():ToString()
+            -- (Not a ghost twin: it took its original's numbers, already scaled, as it came (twins.lua).)
+            local name = valid(e) and not inSoloFight(addr) and not (game.twinId and game.twinId(addr, e)) and e:GetFName():ToString()
             if name and net.party then
                 if scaleForParty(e, addr, name, players) then
                     n = n + 1
