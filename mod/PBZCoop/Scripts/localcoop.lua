@@ -1393,7 +1393,9 @@ return function(api)
                     pcall(function() a:SetActorHiddenInGame(false) end)
                 end
             end
-            if valid(pc2) and not V.screenHeld then
+            -- (Not in a close-up of player 2's: a screen or a scene that ended during one gave them their pad back
+            -- mid-opening, and they walked off out of it.)
+            if valid(pc2) and not V.screenHeld and not V.closeUp then
                 pcall(function() pc2:ResetIgnoreInputFlags() end)
             end
         end
@@ -1413,7 +1415,7 @@ return function(api)
             end
         elseif V.screenHeld then
             V.screenHeld = nil
-            if valid(pc2) and not V.sceneHeld then
+            if valid(pc2) and not V.sceneHeld and not V.closeUp then
                 pcall(function() pc2:ResetIgnoreInputFlags() end)
             end
         end
@@ -2132,6 +2134,14 @@ return function(api)
         local pc2, soul = state.p2Controller, state.p2Pawn
         if not o or p2DownSince or not (valid(o.thing) and valid(o.ic) and valid(p1) and valid(pc2) and valid(soul)) then
             V.opening = nil
+            -- (Ended some other way, the input mode the use put player 2 in is still theirs to leave: they stood with a
+            -- dead pad. And the walk there stops.)
+            if o and valid(o.thing) then
+                pcall(function() o.thing:CancelMoveTo() end)
+            end
+            if o then
+                V.endUse()
+            end
             return
         end
         local sequence = o.thing.LevelSequenceActor
@@ -2149,6 +2159,7 @@ return function(api)
                 game.after(V.WATCH_STEP_S, function() pcall(V.watchOpening) end)
             else
                 V.opening = nil
+                pcall(function() o.thing:CancelMoveTo() end)     -- (given up: the walk there too)
                 V.endUse()
             end
             return
