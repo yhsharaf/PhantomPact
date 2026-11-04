@@ -1341,9 +1341,8 @@ return function(api)
             handover.give(name, actor, addr, false)
             return false
         end
-        if r == nil then
-            return true             -- (the guest's first line is on its way)
-        end
+        -- (Held, and its hits weighed, from the handover on, not from the guest's first line: in that round trip the host's
+        -- hits on it went untold, and the guest's health took them back.)
         if game.setMinHealth then
             net.heldAlive[addr] = actor     -- (each turn: the actor at an address can be a new one, see syncEnemy)
             game.setMinHealth(actor, HELD_HP)
@@ -1365,6 +1364,10 @@ return function(api)
                     end
                 end
             end
+        end
+        if r == nil then
+            handover.seen[name] = { hp = hp, posture = posture, addr = addr }
+            return true             -- (the guest's first line is on its way)
         end
         if api.puppets then
             api.puppets.follow(name, actor, r)

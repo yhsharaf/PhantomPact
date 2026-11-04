@@ -3590,6 +3590,30 @@ local function syncRaces()
     check(next(net(rg).partnerBosses) ~= nil or next(net(rg).pendingBosses) ~= nil,
         "a guest who starts sync again in the middle of the host's fight is shown it again")
     allErrors(r)
+
+    -- The host's hit in the round trip after it hands an enemy over, before the guest's first line: told to the guest's game.
+    local q = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, list)
+    local qh, qg = q.pcs[1], q.pcs[2]
+    q:run(4)
+    local qrun = qg.env.PBZ.coop.handlers.RUN
+    qg.env.PBZ.coop.handlers.RUN = function() end      -- (its first line as good as never comes)
+    Session.moveTo(qh, 10800, 0)
+    Session.moveTo(qg, 11000, 0)
+    q:run(1)
+    Session.moveTo(qh, 0, 0)
+    q:run(1, function()
+        if not q.given and count(qh.sent, "^E RUN sp:byguest 1$") == 1 then
+            q.given = true
+        end
+    end)
+    check(q.given == true, "(apart: the host hands it over)")
+    Session.moveTo(qh, 11300, 2500)
+    local qonH = Session.enemyOn(qh, "byguest")
+    swing(qh, qonH, select(1, Fake.health(qonH)) - 40)
+    q:run(0.5)
+    qg.env.PBZ.coop.handlers.RUN = qrun
+    check(count(qh.sent, "^E D sp:byguest ") == 1, "a host's hit before the guest's first line on an enemy handed over is told")
+    allErrors(q)
 end
 
 return function(print_, scripts)
