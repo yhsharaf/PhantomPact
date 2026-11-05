@@ -544,6 +544,7 @@ PBZ = {
     story = api.story,
     freetravel = api.freetravel,
     rules = api.rules,
+    moves = api.moves,
     partner = api.partner,
     hud = api.hud,
     mapicon = api.mapicon,

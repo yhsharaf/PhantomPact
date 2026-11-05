@@ -93,10 +93,18 @@ return function(api)
         end
         if now >= stance.at and game.inStance then
             stance.at = now + stance.CHECK_S
-            local on = game.inStance(pawn)
-            if on ~= stance.sent then
-                stance.sent = on
-                coop.sendEvent("ST", on and "1" or "0")
+            -- (game.inStance goes through every ability the player has, a couple of hundred: that was most of this tick's
+            -- cost on the bench host. A stance starts with its enter montage, so it's asked only after one, while in it,
+            -- and once to begin with.)
+            if stance.sent == nil or stance.sent or stance.maybe then
+                local on = game.inStance(pawn)
+                if not on and stance.maybe and now >= stance.maybe then
+                    stance.maybe = nil
+                end
+                if on ~= stance.sent then
+                    stance.sent = on
+                    coop.sendEvent("ST", on and "1" or "0")
+                end
             end
             -- And how they move: the ghost walks, jogs and sprints with them (game.setGhostGait), where it only jogged.
             local gait = game.gait and game.gait(pawn) or "j"
@@ -117,6 +125,9 @@ return function(api)
         local pos = ai:Montage_GetPosition(m) or 0
         if addr ~= last or pos < lastPos - RESTART_S then
             local path = pathOf(m)
+            if path and path:find("StanceEnter", 1, true) then
+                stance.maybe, stance.at = now + 1.0, 0    -- (asked from now, for a second at least: the ability can lag)
+            end
             if game.noteLocalMove then
                 game.noteLocalMove()
             end
@@ -690,8 +701,13 @@ return function(api)
         end
     end
 
+    -- The tick's parts, called through this table so tools/netlab/perf.lua's profile can time each one.
+    local parts = { watch = watch, watchGear = watchGear, dressGhost = dressGhost, watchProps = watchProps,
+        ageProps = ageProps }
+    moves.parts = parts
+
     coop.extraTicks.moves = function()
-        local ok, err = pcall(watch)
+        local ok, err = pcall(parts.watch)
         if not ok then
             last = nil
             if err ~= moves.lastError then        -- once per kind of error, not every tick
@@ -702,12 +718,12 @@ return function(api)
         local now = os.clock()
         -- (Each on its own: one error in this player's own gear, a load say, left every partner's figure empty-handed.)
         local errs = {}
-        ok, err = pcall(watchGear, now)
+        ok, err = pcall(parts.watchGear, now)
         if not ok then
             errs[#errs + 1] = err
         end
         for _, p in ipairs(coop.partners()) do
-            local dressed, why = pcall(dressGhost, p, now)
+            local dressed, why = pcall(parts.dressGhost, p, now)
             if not dressed then
                 errs[#errs + 1] = why
             end
@@ -716,9 +732,9 @@ return function(api)
             gear.lastError = errs[1]
             log("moves (gear): " .. tostring(errs[1]))
         end
-        ok, err = pcall(watchProps, now)
+        ok, err = pcall(parts.watchProps, now)
         if ok then
-            ok, err = pcall(ageProps, now)
+            ok, err = pcall(parts.ageProps, now)
         end
         if not ok and err ~= props.lastError then
             props.lastError = err

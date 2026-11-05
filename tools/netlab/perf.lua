@@ -146,6 +146,11 @@ function PERF.profile(seconds)
     for name in pairs(PBZ.coop.frameTicks) do
         wrap(PBZ.coop.frameTicks, name, "frame." .. name)
     end
+    if PBZ.moves and PBZ.moves.parts then
+        for name in pairs(PBZ.moves.parts) do
+            wrap(PBZ.moves.parts, name, "moves." .. name)
+        end
+    end
     wrap(PBZ.link, "state", "link.state")
     wrap(PBZ.link, "partner", "link.partner")
     wrap(PBZ.link, "enemy", "link.enemy")
