@@ -1,8 +1,8 @@
 -- The host's rules count for everyone (the user: "the host should be in control for everything"): Free Bell Travel,
--- TP > Partner and PvP. What only changes a player's own screen, their IP or their own PC (the compass, the map mark,
--- Steam Direct, Mode) stays each player's own; Players was already the host's.
+-- TP > Partner, PvP, and the Partner Compass and Partner On The Map too ("for pvp maybe people want to surprise the
+-- others"). Steam Direct (a player's own IP) and Mode (their own PC) stay each player's own; Players was the host's.
 --
--- The host says its rules as "RULES ft=<0|1> tp=<0|1> pvp=<0|1>" now and then and at once when one changes. A guest
+-- The host says its rules as "RULES ft=<0|1> tp=<0|1> pvp=<0|1> cp=<0|1> mi=<0|1>" now and then and at once when one changes. A guest
 -- follows them while it's linked to that host, keeps its own choices aside meanwhile, and goes back to them when the
 -- link ends or it hosts itself. The MORE page shows a guest the host's choice and won't change it there.
 
@@ -20,6 +20,8 @@ return function(api)
             freetravel = not (api.freetravel and api.freetravel.on == false),
             teleport = api.partner and api.partner.teleport == true or false,
             pvp = api.pvp and api.pvp.on == true or false,
+            compass = not (api.hud and api.hud.on == false),
+            mapicon = not (api.mapicon and api.mapicon.on == false),
         }
     end
 
@@ -32,6 +34,12 @@ return function(api)
         end
         if api.pvp and api.pvp.on ~= r.pvp and not (r.pvp and net.party) then
             api.pvp.set(r.pvp)
+        end
+        if api.hud and api.hud.set then
+            api.hud.set(r.compass)
+        end
+        if api.mapicon then
+            api.mapicon.on = r.mapicon
         end
     end
 
@@ -52,15 +60,17 @@ return function(api)
         for key, value in rest:gmatch("(%a+)=([01])") do
             r[key] = value == "1"
         end
-        if r.ft == nil or r.tp == nil or r.pvp == nil then
+        if r.ft == nil or r.tp == nil or r.pvp == nil or r.cp == nil or r.mi == nil then
             return
         end
-        local got = { freetravel = r.ft, teleport = r.tp, pvp = r.pvp }
+        local got = { freetravel = r.ft, teleport = r.tp, pvp = r.pvp, compass = r.cp, mapicon = r.mi }
         own = own or current()
         local h = rules.host
-        if not h or h.freetravel ~= got.freetravel or h.teleport ~= got.teleport or h.pvp ~= got.pvp then
-            log(string.format("The host's rules: Free Bell Travel %s, TP > Partner %s, PvP %s.", onOff(got.freetravel),
-                onOff(got.teleport), onOff(got.pvp)))
+        if not h or h.freetravel ~= got.freetravel or h.teleport ~= got.teleport or h.pvp ~= got.pvp
+            or h.compass ~= got.compass or h.mapicon ~= got.mapicon then
+            log(string.format("The host's rules: Free Bell Travel %s, TP > Partner %s, PvP %s, Partner Compass %s, "
+                .. "Partner On The Map %s.", onOff(got.freetravel), onOff(got.teleport), onOff(got.pvp),
+                onOff(got.compass), onOff(got.mapicon)))
         end
         rules.host = got
         apply(got)
@@ -88,7 +98,11 @@ return function(api)
                 return
             end
             local c = current()
-            local text = string.format("ft=%d tp=%d pvp=%d", c.freetravel and 1 or 0, c.teleport and 1 or 0, c.pvp and 1 or 0)
+            local function bit(v)
+                return v and 1 or 0
+            end
+            local text = string.format("ft=%d tp=%d pvp=%d cp=%d mi=%d", bit(c.freetravel), bit(c.teleport), bit(c.pvp),
+                bit(c.compass), bit(c.mapicon))
             if text ~= sentText or os.clock() - sentAt >= SEND_S then
                 sentText, sentAt = text, os.clock()
                 coop.sendEvent("RULES", text)

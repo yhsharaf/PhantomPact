@@ -545,6 +545,8 @@ PBZ = {
     freetravel = api.freetravel,
     rules = api.rules,
     partner = api.partner,
+    hud = api.hud,
+    mapicon = api.mapicon,
 }
 
 -- Command file: lets a developer drive tests from outside the game. Write one command per line

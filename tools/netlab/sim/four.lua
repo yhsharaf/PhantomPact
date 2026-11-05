@@ -2332,8 +2332,11 @@ local function offAndBack()
     Session.command(rh, "onlinepanel press 700 500")
     Session.command(rh, "onlinepanel press 199 330")        -- the host: Free Bell Travel off
     Session.command(rh, "onlinepanel press 116 163")        -- and TP > Partner on
+    Session.command(rh, "onlinepanel press 617 163")        -- Partner Compass off (a PvP surprise)
+    Session.command(rh, "onlinepanel press 784 163")        -- and Partner On The Map off
     r:run(1)
     check(rg.env.PBZ.freetravel.on == false and rg.env.PBZ.partner.teleport == true, "the host's change reaches the guest at once")
+    check(rg.env.PBZ.hud.on == false and rg.env.PBZ.mapicon.on == false, "the compass and the map mark too")
     check(rh.env.PBZ.rules.following() == false, "the host follows nobody")
     Session.command(rg, "onlinepanel press 700 500")
     rg.logs = {}
@@ -2344,8 +2347,8 @@ local function offAndBack()
     check(count(rg.logs, "row freetravel") == 0, "(no slip)")
     Session.command(rg, "netoff")
     r:run(1)
-    check(rg.env.PBZ.rules.following() == false and rg.env.PBZ.freetravel.on == true and rg.env.PBZ.partner.teleport == false,
-        "sync off: the guest's own rules come back")
+    check(rg.env.PBZ.rules.following() == false and rg.env.PBZ.freetravel.on == true and rg.env.PBZ.partner.teleport == false
+        and rg.env.PBZ.hud.on == true and rg.env.PBZ.mapicon.on == true, "sync off: the guest's own rules come back")
     allErrors(r)
 
     local lang = dofile(SIM_SCRIPTS .. "/lang.lua")()

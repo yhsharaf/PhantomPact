@@ -99,10 +99,12 @@ return function(api)
             options.freetravel = host.freetravel and "on" or "off"
             options.teleport = host.teleport and "on" or "off"
             options.pvp = host.pvp and "on" or "off"
+            options.compass = host.compass and "on" or "off"
+            options.mapicon = host.mapicon and "on" or "off"
         end
     end
 
-    local HOSTS_RULE = { freetravel = true, teleport = true, pvp = true }
+    local HOSTS_RULE = { freetravel = true, teleport = true, pvp = true, compass = true, mapicon = true }
 
     -- Kept in PhantomPact.ini, and in force at once. (Steam Direct and the players from the next connection: the relay reads
     -- them as it starts. The players are the host's choice: a guest follows what the host's relay says. Mode from the next start
