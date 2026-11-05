@@ -895,7 +895,18 @@ return function(api)
         end)
     end
 
+    -- Its health bar, off: a copy killed here went (or lay there) with its bar still floating over the spot.
+    function game.hideHealthBar(actor)
+        pcall(function()
+            local bar = actor.hpbar
+            if valid(bar) then
+                bar:SetVisibility(false, true)
+            end
+        end)
+    end
+
     function game.kill(actor)
+        game.hideHealthBar(actor)
         local boss = game.isBoss and game.isBoss(actor)
         -- (A boss's ghost twin is no boss to the mod, but it's a boss to the game: it shrugs off the game-logic reason
         -- as the boss does, and stood on at 0 health, unseen once the dissolve hid it.)
@@ -1035,6 +1046,7 @@ return function(api)
     -- after the fight first. Its loot is rolled at level 0, which pays nothing: the partner's death paid already, and that
     -- dust reaches this player from there. Falls back to the quiet kill if the effect doesn't take.
     function game.killForReal(actor)
+        game.hideHealthBar(actor)
         pcall(function()
             local level = actor.AttributeSetBase.Level
             level.BaseValue = 0

@@ -278,6 +278,17 @@ Fake.ITEMS = {
     { "I_KEY_9", "NarrativeItem" },
 }
 
+-- A blocker (iron chains a Phantom Edge breaks), named alike on every PC. Its success step breaks it.
+function Fake.blocker(pc, id, x, y, z)
+    local b = object(pc, "BP_GameplayBlocker_Base_C", { bBroken = false })
+    rawset(b, "__name", id)
+    defs(pc, b, { K2_GetActorLocation = function() return { X = x, Y = y, Z = z } end,
+        SuccessInteraction = function(self) put(self, "bBroken", true) end,
+        Break = function(self) put(self, "bBroken", true) end, RefreshVisual = function() end })
+    pc.blockers[#pc.blockers + 1] = b
+    return b
+end
+
 -- Things lying in the world, named alike on every PC.
 function Fake.pickup(pc, id, item, x, y, z)
     local p = object(pc, "PBZPickupActor", { ItemId = name(item), bIsPickable = true })
@@ -465,6 +476,9 @@ end
 function Fake.enemy(pc, id, class, x, y, z, hp, posture, boss)
     local e = Fake.character(pc, class, x, y, z, hp, posture)
     rawset(e, "__name", id .. "_actor")
+    local bar = object(pc, "WidgetComponent", { shown = true })
+    defs(pc, bar, { SetVisibility = function(self, on) put(self, "shown", on) end, GetUserWidgetObject = function() return nil end })
+    put(e, "hpbar", bar)
     local f = rawget(e, "__fields")
     put(e, "BIsMonster", true)
     put(e, "boss", boss == true)
@@ -932,7 +946,7 @@ end
 
 function Fake.new(id, scripts, ini, link)
     local pc = { id = id, scripts = scripts, now = 100.0, trace = {}, logs = {}, errors = {}, missing = {}, files = {}, loops = {}, hooks = {},
-        nextAddress = 0x100000, calls = 0, keys = {}, enemies = {}, spawners = {}, spawned = {}, hitComps = {}, factions = {}, pickups = {}, chests = {}, link = link, map = "Map_Xigu",
+        nextAddress = 0x100000, calls = 0, keys = {}, enemies = {}, spawners = {}, spawned = {}, hitComps = {}, factions = {}, pickups = {}, chests = {}, blockers = {}, link = link, map = "Map_Xigu",
         paused = false }
     pc.meta = makeMeta(pc)
     pc.files["PhantomPact.ini"] = ini
@@ -1527,6 +1541,8 @@ function Fake.new(id, scripts, ini, link)
             return pc.hitComps
         elseif class == "FactionComponent" then
             return pc.factions
+        elseif class == "BP_GameplayBlocker_Base_C" then
+            return pc.blockers
         elseif class == "PBZPickupActor" then
             local alive = {}
             for _, p in ipairs(pc.pickups) do

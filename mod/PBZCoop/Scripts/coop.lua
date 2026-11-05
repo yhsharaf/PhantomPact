@@ -2130,6 +2130,13 @@ return function(api)
             net.bagDue = nil
         end
         local waiting = net.bagWaiting
+        -- (Story sync off (FollowHostStory = Off): this player's game is its own, the things it hasn't found too. The bag
+        -- still filled up from the host's on joining.)
+        if waiting and api.story and api.story.follow == false then
+            net.bagWaiting = nil
+            log("Story sync is off: nothing taken from the host's bag.")
+            waiting = nil
+        end
         local _, pawn = getPlayer1()
         if waiting and valid(pawn) and not game.isDead(pawn) and not (game.inCutscene and game.inCutscene()) and game.mergeBag then
             net.bagWaiting = nil
