@@ -37,7 +37,7 @@ def main():
     state = lua.luaL_newstate()
     lua.luaL_openlibs(state)
     repo = os.path.normpath(os.path.join(HERE, "..", ".."))
-    values = {"SIM_DIR": os.path.join(HERE, "sim"), "SIM_REPO": repo, "SIM_MODE": sys.argv[1], "SIM_OLD": sys.argv[2] if len(sys.argv) > 2 else ""}
+    values = {"SIM_DIR": os.path.join(HERE, "sim"), "SIM_REPO": repo, "SIM_MODE": sys.argv[1], "SIM_OLD": sys.argv[2] if len(sys.argv) > 2 else "", "SIM_STEPS": sys.argv[3] if len(sys.argv) > 3 else ""}
     for name, value in values.items():
         lua.lua_pushstring(state, value.replace("\\", "/").encode("utf-8"))
         lua.lua_setglobal(state, name.encode())

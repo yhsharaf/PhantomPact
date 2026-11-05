@@ -78,8 +78,10 @@ function Session.moveTo(pc, x, y, z)
 end
 
 function Session.enemyOn(pc, id)
-    return pc.enemies[Session.indexOf(pc, id)]
+    local i = Session.indexOf(pc, id)
+    return i and rawget(pc.spawners[i], "__fields").SpawnedAI or nil
 end
+Session.ini = ini
 
 function Session.indexOf(pc, id)
     for i, spawner in ipairs(pc.spawners) do

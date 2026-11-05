@@ -667,6 +667,11 @@ return function(api)
     local function mirrorBossFight(name, actor)
         if game.showBossBar then
             game.showBossBar(actor)
+            -- (The copy the bar went on, by address and name: its pairing can be lost before the fight ends, and the bar
+            -- stayed up on it for good.)
+            net.mirrorOn = net.mirrorOn or {}
+            net.mirrorOn[name] = { actor = actor, addr = actor:GetAddress(),
+                fname = select(2, pcall(function() return actor:GetFName():ToString() end)) }
         end
         if game.setBossFog then
             local at = actor:K2_GetActorLocation()
@@ -687,6 +692,15 @@ return function(api)
             if net.joinedFar then
                 net.bossOverAt = os.clock() + BOSS_RETURN_S     -- (an arena apart from the map has no way back)
             end
+        end
+        local shown = net.mirrorOn and net.mirrorOn[name]
+        if net.mirrorOn then
+            net.mirrorOn[name] = nil
+        end
+        if shown and valid(shown.actor) and shown.actor:GetAddress() == shown.addr
+            and select(2, pcall(function() return shown.actor:GetFName():ToString() end)) == shown.fname
+            and not (valid(actor) and actor:GetAddress() == shown.addr) and game.hideBossBar then
+            game.hideBossBar(shown.actor)       -- (the copy it went on, no longer the one the id points to)
         end
         if valid(actor) then
             at = at or actor:K2_GetActorLocation()
@@ -874,7 +888,11 @@ return function(api)
                     game.markBeaten(name)
                 end
                 local boss = net.partnerBosses[name] or net.pendingBosses[name] or (game.isBoss and game.isBoss(actor))
-                if boss and not paidThere and game.rollLoot then
+                -- (Once for each body: a restart or a map change forgets which bodies were told, and a boss's body still
+                -- lying there was told again, its items paid again.)
+                net.bossPaid = net.bossPaid or {}
+                if boss and not paidThere and game.rollLoot and net.bossPaid[addr] ~= body then
+                    net.bossPaid[addr] = body
                     -- The game paid the host. A boss's items are the client's too.
                     local _, items = game.rollLoot(actor)
                     local paid = {}
@@ -898,6 +916,9 @@ return function(api)
             -- Alive (again, after a bell respawn): its next death must be announced too.
             net.deadSent[name] = nil
             net.deadBodies[addr] = nil
+            if net.bossPaid then
+                net.bossPaid[addr] = nil
+            end
             if handover.guestRuns(name, actor, addr, x, y, z) and handover.follow(name, actor, addr, hp, posture) then
                 return              -- (the guest's game runs it: what it does comes from there)
             end
@@ -1962,7 +1983,9 @@ return function(api)
                     -- At once, not at the enemy's next turn: the partner is looking at a copy held at 1 health.
                     net.deadSent[name] = true
                     net.deadBodies[actor:GetAddress()] = tostring(select(2, pcall(function()
-                        return actor:GetFName():ToString() end)))   -- (by the body too, as shareEnemy marks it: else a new enemy
+                        return actor:GetFName():ToString() end)))
+                    net.bossPaid = net.bossPaid or {}
+                    net.bossPaid[actor:GetAddress()] = net.deadBodies[actor:GetAddress()]     -- (its items: paid here)   -- (by the body too, as shareEnemy marks it: else a new enemy
                                                                 -- under the id cleared the name, the old body told it again,
                                                                 -- and a boss's items went out twice)
                     sendEvent("K", name)
@@ -2270,8 +2293,13 @@ return function(api)
             -- (Only fights still on: one the host never joined, or walked out of, came back as a bar and shut walls with
             -- nobody's fight behind them. Another guest's that's on comes back too: its walls went with the rest.)
             for _, name in ipairs(net.stillFought()) do
-                net.pendingBosses[name] = true
+                -- (Not this player's own fight, announced to the host: the host mirrors it, and it came back here as the
+                -- host's, its bar up again over nobody's fight.)
+                if not (net.ownAnnounced or {})[name] then
+                    net.pendingBosses[name] = true
+                end
             end
+            net.ownAnnounced = {}
             -- (A fight this player had walked into is theirs to walk into again: still marked joined, E at the wall did
             -- nothing until the boss died, and an arena apart took them back to the partner after it.)
             net.joinedBoss, net.joinedWith, net.joinedFar, net.bossOverAt = nil, nil, nil, nil
@@ -2405,6 +2433,17 @@ return function(api)
         end
         if ownFight then
             log("A boss fight of your own is on: it goes on, and enemies here come back at the next rest.")
+            if isHost() and kind ~= "death" then
+                -- (The resting guest's world refreshed all the same, and it forgot the host's kills: they're told again,
+                -- or what the host had killed stood alive there.)
+                for name in pairs(net.deadSent) do
+                    if from then
+                        sendTo(from, "K", name)
+                    else
+                        sendEvent("K", name)
+                    end
+                end
+            end
         end
         forgetDeaths(kind, elsewhere, net.party and from or nil)
         seen = {}
@@ -2876,6 +2915,8 @@ return function(api)
             sendEvent("B", name)
             if isClient() then
                 net.hostBosses[name] = true    -- the host fights it too from now on
+                net.ownAnnounced = net.ownAnnounced or {}
+                net.ownAnnounced[name] = true
             end
         end
     end

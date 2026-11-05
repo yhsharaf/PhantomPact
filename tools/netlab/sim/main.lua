@@ -16,7 +16,10 @@ elseif SIM_MODE == "four" then
 elseif SIM_MODE == "chaos" then
     -- luasim.py chaos [seeds]: random parties of 3, 4 and 6, 40 steps each.
     out("chaos, parties of 3, 4 and 6:")
-    passed = dofile(SIM_DIR .. "/chaos.lua")(out, scripts, tonumber(SIM_OLD) or 6, 40)
+    local a, b = SIM_OLD:match("^(%d+)%-(%d+)$")
+    passed = dofile(SIM_DIR .. "/chaos.lua")(out, scripts, a and { tonumber(a), tonumber(b) } or (tonumber(SIM_OLD) or 6), tonumber(SIM_STEPS) or 40)
+elseif SIM_MODE == "scen" then
+    passed = dofile(SIM_OLD)(out, scripts)
 else
     error("two <old Scripts>, four or chaos [seeds]")
 end

@@ -443,8 +443,8 @@ function Fake.refreshMonsters(pc)
         return
     end
     for i, spawner in ipairs(pc.spawners) do
-        local e = pc.enemies[i]
         local sf = rawget(spawner, "__fields")
+        local e = sf.SpawnedAI      -- (by the spawner's own enemy, not the list's index, which a removed enemy shifts)
         if e and rawget(e, "__fields").dead and sf.record ~= false then
             Fake.put(e, "dead", false)
             Fake.put(e, "killedBy", nil)
@@ -1439,6 +1439,8 @@ function Fake.new(id, scripts, ini, link)
     env.print = function(text)
         local line = tostring(text):gsub("\n$", "")
         pc.logs[#pc.logs + 1] = line
+        pc.logTimes = pc.logTimes or {}
+        pc.logTimes[#pc.logs] = pc.now
         if line:find("net error", 1, true) or line:find(" error: ", 1, true) or line:find("Timer error", 1, true) then
             pc.errors[#pc.errors + 1] = line
         end

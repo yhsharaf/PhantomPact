@@ -6,6 +6,7 @@ local Relay = {}
 Relay.__index = Relay
 
 local LATENCY = 0.02
+local LOSSY = os.getenv("FUZZ_LOSSY") ~= nil
 
 function Relay.new(party)
     -- party: false (two players), true (4) or how many at most (6)
@@ -29,7 +30,15 @@ function Relay:linkFor(pc)
         s.at = pc.now
         relay:post(pc, "sample", s)
     end
+    local function tx(line)
+        if os.getenv("FUZZ_RX") then
+            pc.logs[#pc.logs + 1] = "tx " .. line
+            pc.logTimes = pc.logTimes or {}
+            pc.logTimes[#pc.logs] = pc.now
+        end
+    end
     function link.event(line)
+        tx("E " .. line)
         pc.sent[#pc.sent + 1] = "E " .. line
         relay:post(pc, "sure", line)
     end
@@ -89,6 +98,7 @@ function Relay:linkFor(pc)
         end
         function link.send_to(slot, line)
             pc.sent[#pc.sent + 1] = "T" .. slot .. " " .. line
+            tx("T" .. slot .. " " .. line)
             relay:toGuest(slot, "sure", line)
         end
     end
@@ -119,7 +129,7 @@ function Relay:status(pc)
     if players then
         line = line .. " players=" .. players .. " slot=" .. slot
         if pc.slot == 1 then
-            for n = 2, 4 do
+            for n = 2, self.size do
                 if self.slots[n] then
                     line = line .. " map" .. n .. "=" .. self.slots[n].map
                 end
@@ -156,18 +166,24 @@ end
 
 -- What a player's relay sends, to whoever it reaches.
 function Relay:post(pc, kind, value)
+    if pc.slot and pc.cut and kind == "sure" and not LOSSY then
+        -- (fuzz copy: as native's sure lane, an event made in a gap waits in its queue and goes once the link is back)
+        pc.held = pc.held or {}
+        pc.held[#pc.held + 1] = value
+        return
+    end
     if not pc.slot or pc.cut then
         return
     end
     if not self.party then
         for _, other in ipairs(self.pcs) do
-            if other ~= pc and other.slot and not other.cut then
+            if other ~= pc and other.slot and (not other.cut or (kind == "sure" and not LOSSY)) then
                 self:later(other, kind, value, pc)
             end
         end
     elseif pc.slot == 1 then
         for slot = 2, self.size do
-            if self.slots[slot] and not self.slots[slot].cut then
+            if self.slots[slot] and (not self.slots[slot].cut or (kind == "sure" and not LOSSY)) then
                 self:later(self.slots[slot], kind, value, pc)
             end
         end
@@ -176,7 +192,7 @@ function Relay:post(pc, kind, value)
         local hostAlone = kind == "sure" and value:find("^D ")
         local tagged = (kind == "sure" or kind == "quick") and (tag .. value) or nil
         local host = self:host()
-        if not host or host.cut then
+        if not host or (host.cut and not (kind == "sure" and not LOSSY)) then
             return                  -- (a star: nothing passes between guests but through the host)
         end
         self:later(host, kind == "sample" and "sampleOf" or kind, kind == "sample" and { slot = pc.slot, s = value } or tagged, pc)
@@ -185,7 +201,7 @@ function Relay:post(pc, kind, value)
         end
         for slot = 2, self.size do
             local other = self.slots[slot]
-            if other and other ~= pc and not other.cut then
+            if other and other ~= pc and (not other.cut or (kind == "sure" and not LOSSY)) then
                 self:later(other, kind == "sample" and "sampleOf" or kind, kind == "sample" and { slot = pc.slot, s = value } or tagged, host or pc)
             end
         end
@@ -202,6 +218,11 @@ function Relay:deliver(item)
         pc.heard[value.slot] = value.s
     elseif kind == "sure" or kind == "quick" then
         pc.inbox[#pc.inbox + 1] = value
+        if os.getenv("FUZZ_RX") and kind == "sure" then
+            pc.logs[#pc.logs + 1] = "rx " .. tostring(value)
+            pc.logTimes = pc.logTimes or {}
+            pc.logTimes[#pc.logs] = pc.now
+        end
     elseif kind == "enemy" then
         pc.enemyLines[#pc.enemyLines + 1] = value
     end
@@ -217,6 +238,10 @@ function Relay:connect(pc)
     if pc.relay == "host" then
         pc.slot = 1
         self.slots[1] = pc
+    elseif pc.lastSlot and self.slots[pc.lastSlot] == nil then
+        -- (fuzz copy: as native slot_for, a guest the host was already talking to gets its own slot back)
+        pc.slot = pc.lastSlot
+        self.slots[pc.slot] = pc
     else
         for slot = 2, self.size do
             if self.slots[slot] == nil and (self.party or slot == 2) then
@@ -226,6 +251,7 @@ function Relay:connect(pc)
             end
         end
     end
+    pc.lastSlot = pc.slot or pc.lastSlot
     local host = self.slots[1]
     if pc.relay ~= "host" and host and pc.slot then
         pc.inbox[#pc.inbox + 1] = "S"
@@ -235,6 +261,7 @@ function Relay:connect(pc)
 end
 
 function Relay:reset(pc)
+    pc.held = nil
     pc.inbox = {}
     pc.heard = {}
     if pc.slot == nil then
@@ -283,6 +310,19 @@ function Relay:step(now)
             self:connect(pc)
         end
     end
+    for _, pc in ipairs(self.pcs) do
+        if pc.held and not pc.cut and pc.slot then
+            local held = pc.held
+            pc.held = nil
+            for _, v in ipairs(held) do
+                self:post(pc, "sure", v)
+            end
+        end
+    end
+    local member = {}
+    for _, pc in ipairs(self.pcs) do
+        member[pc] = true
+    end
     local keep = {}
     table.sort(self.queue, function(a, b)
         if a.at ~= b.at then
@@ -294,6 +334,8 @@ function Relay:step(now)
         if item.at <= now then
             if not item.to.cut then
                 self:deliver(item)
+            elseif item.kind == "sure" and not LOSSY and member[item.to] and item.to.slot then
+                keep[#keep + 1] = item      -- (fuzz copy: a sure event waits for a partner in a gap)
             end
         else
             keep[#keep + 1] = item
