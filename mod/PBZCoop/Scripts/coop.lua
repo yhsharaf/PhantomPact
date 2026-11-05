@@ -2248,6 +2248,7 @@ return function(api)
             handover.reset()
             return
         end
+        endFights(nil)      -- (their mirrored bars go too: with elsewhere no resetBosses ran, and a bar stayed up for good)
         net.pendingBosses = {}
         net.partnerBosses = {}
         net.hostBosses = {}
@@ -2327,7 +2328,7 @@ return function(api)
         -- (A guest's: the host's fight, or another guest's, goes on. Wiped with the rest, it was gone from this screen for
         -- good, as B is told once.)
         local still = {}
-        if isClient() then
+        if isClient() or net.party then     -- (a party host's rest leaves a guest's fight going too)
             for _, name in ipairs(net.stillFought()) do
                 still[name] = { p = net.partnerBosses[name], h = net.hostBosses[name], f = net.fightOf[name] }
             end
@@ -2415,7 +2416,7 @@ return function(api)
         -- (Nor during another player's fight here, in a party: a third player's rest refreshed the boss under them.)
         if kind ~= "death" and not elsewhere and net.party then
             for _, name in ipairs(net.stillFought()) do
-                if net.fightOf[name] ~= from then
+                if net.fightOf[name] ~= (from or 1) then  -- (the host's own fight is fightOf 1, its events from nil)
                     ownFight = true
                 end
             end
@@ -2445,7 +2446,19 @@ return function(api)
                 end
             end
         end
+        local still = {}
+        if net.party and from == nil then   -- (the host's rest ends the host's fights only, not another guest's here)
+            for _, name in ipairs(net.stillFought()) do
+                if (net.fightOf[name] or 1) ~= 1 then
+                    still[name] = { p = net.partnerBosses[name], h = net.hostBosses[name], f = net.fightOf[name] }
+                end
+            end
+        end
         forgetDeaths(kind, elsewhere, net.party and from or nil)
+        for name, st in pairs(still) do
+            net.partnerBosses[name], net.hostBosses[name], net.fightOf[name] = st.p, st.h, st.f
+            net.pendingBosses[name] = true
+        end
         seen = {}
         if game.refreshEnemies and not elsewhere then
             game.refreshEnemies()

@@ -535,6 +535,30 @@ local function rests()
         "a third player's bell rest doesn't refresh the host's world under a guest's boss fight")
     allErrors(q)
 
+    -- The host rests at a bell while a guest fights a boss of its own: that fight stays shown everywhere, and its bar and
+    -- walls go once it's over (wiped with the host's own, the third player's bar stayed up for good).
+    local hr = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest" }, 3, ENEMIES)
+    local hh, h2, h3 = hr.pcs[1], hr.pcs[2], hr.pcs[3]
+    for _, pc in ipairs(hr.pcs) do
+        pc.reviveOnRest = true
+    end
+    Session.moveTo(h2, 400, 0)
+    Session.moveTo(h3, 600, 0)
+    hr:run(8)
+    local hboss = Session.enemyOn(h2, "boss")
+    Session.moveTo(h2, 2800, 3000)
+    h2.hudLayout:RegisterBossHPBar(hboss)
+    hr:run(5)
+    Session.bell(hh)
+    hr:run(5)
+    check(h3.env.PBZ.game.bossFightActive() and hh.env.PBZ.game.bossFightActive(),
+        "the host rests during a guest's boss fight: that fight is still shown on the others")
+    h2.hudLayout:UnRegisterBossHPBar(hboss)
+    hr:run(15)
+    check(not h3.env.PBZ.game.bossFightActive() and not hh.env.PBZ.game.bossFightActive()
+        and next(h3.env.PBZ.net.foggedBosses or {}) == nil, "and once it's over, no bar or walls are left anywhere")
+    allErrors(hr)
+
     -- A guest who walked into the host's fight and died can walk in again.
     local j = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES)
     j:run(4)
