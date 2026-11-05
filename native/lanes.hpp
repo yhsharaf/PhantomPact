@@ -1,10 +1,12 @@
 // What gets across and how, apart from the position. Two lanes:
 //   Sure   every event arrives, once, in order (a death, a hit, loot). Several travel at a time, and a lost one is sent
-//          again as soon as the partner's acknowledgement shows the gap, so a loss costs about one round trip.
+//          again once the partner's acknowledgement shows the gap and a round trip has gone by since it was sent, so a loss
+//          costs about one round trip. With nothing sent after it to show the gap, it goes again after retry_s.
 //   Quick  moves and hit reactions: each goes out in the next few packets, is played once, and is dropped once it's too
 //          late to matter. An attack shown two seconds late is worse than none, and old ones must never hold up a death.
 // Plain logic with no Windows calls, so relay_cli can test it against simulated connections.
 #pragma once
+#include <algorithm>
 #include <cstdint>
 #include <deque>
 #include <map>
@@ -26,6 +28,7 @@ public:
         double sent_at = -1e9;
         int sends = 0;
         bool acked = false;
+        bool passed = false;    // an acknowledgement confirmed something sent after this, and not this (see on_ack)
     };
 
     void push(std::string text) {
@@ -39,22 +42,33 @@ public:
         }
     }
 
-    // Everything due now, oldest first: new events, and sent ones that have gone unconfirmed for retry_s.
+    // Everything due now, oldest first: new events, and sent ones that have gone unconfirmed for retry_s. One passed over
+    // by an acknowledgement is lost, not late: it's due again once lost_after_s has gone by since it was sent (about one
+    // round trip), not retry_s (half as much again, and 15 ms). Negative lost_after_s: retry_s for both.
     template <typename Fn>
-    void for_each_due(double now, double retry_s, Fn&& take) {
+    void for_each_due(double now, double retry_s, Fn&& take, double lost_after_s = -1) {
         for (Item& item : pending_) {
-            if (item.acked || now - item.sent_at < retry_s) continue;
+            if (item.acked) continue;
+            const double wait = item.passed && lost_after_s >= 0 ? std::min(lost_after_s, retry_s) : retry_s;
+            if (now - item.sent_at < wait) continue;
             if (!take(static_cast<const Item&>(item))) return;
             if (item.sends) resent++;
+            if (item.sends && item.passed && now - item.sent_at < retry_s) resent_early++;
             item.sent_at = now;
             item.sends++;
+            item.passed = false;    // (sent again: only a confirmation of something sent after this counts now)
         }
     }
 
     // next: everything before it arrived. bits: bit n set = next + 1 + n arrived too.
+    // What was sent before something confirmed now, and isn't confirmed itself, is marked passed: the partner's confirmation
+    // of it would have come with that one's, unless a packet overtook it on the way, which lost_after_s allows for. (The
+    // events go in a packet together, or the later ones in later packets: a send time only shows which went first.)
     void on_ack(uint32_t next, uint32_t bits) {
         if (static_cast<int32_t>(next - next_id_) > 0) return;      // past anything sent: not about these events
+        double confirmed = -1e9;    // the last send of anything this confirms
         while (!pending_.empty() && static_cast<int32_t>(pending_.front().id - next) < 0) {
+            confirmed = std::max(confirmed, pending_.front().sent_at);
             pending_.pop_front();
             acked++;
         }
@@ -62,6 +76,10 @@ public:
             const int32_t past = static_cast<int32_t>(item.id - next) - 1;
             if (past >= 32) break;
             if (past >= 0 && (bits >> past) & 1) item.acked = true;
+            if (item.acked) confirmed = std::max(confirmed, item.sent_at);
+        }
+        for (Item& item : pending_) {
+            if (!item.acked && item.sends && item.sent_at < confirmed) item.passed = true;
         }
     }
 
@@ -74,7 +92,7 @@ public:
     }
 
     size_t pending() const { return pending_.size(); }
-    long long acked = 0, resent = 0;
+    long long acked = 0, resent = 0, resent_early = 0;     // resent_early: sent again before retry_s, for being passed
     bool overflowed = false;
 
 private:

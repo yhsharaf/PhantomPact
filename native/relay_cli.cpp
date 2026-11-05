@@ -311,6 +311,45 @@ void test_lanes() {
     ack.push("a");
     ack.on_ack(500, 0);
     check(ack.pending() == 1, "sure: an acknowledgement of something never sent confirms nothing");
+
+    // Lost on the way, and something sent after it confirmed: it goes again once a round trip has gone by since it was sent,
+    // not at retry_s. Here the round trip calls for 170 ms and retry_s is 240.
+    relay::SureSender gap;
+    std::vector<std::string> wire_gap;
+    const auto send_gap = [&](relay::SureSender& s, double now) {
+        s.for_each_due(now, 0.24, [&](const relay::SureSender::Item& item) { wire_gap.push_back(item.text); return true; }, 0.17);
+    };
+    gap.push("one");
+    send_gap(gap, 0.0);                     // lost
+    gap.push("two");
+    send_gap(gap, 0.02);                    // arrives
+    gap.on_ack(1, 1u);                      // two confirmed, one not: one is passed over
+    send_gap(gap, 0.10);
+    const bool waited = wire_gap.size() == 2;
+    send_gap(gap, 0.17);
+    check(waited && wire_gap.size() == 3 && wire_gap[2] == "one" && gap.resent_early == 1,
+          "sure: one an acknowledgement passed over goes again a round trip after it was sent (170 ms), not at retry_s (240)");
+    // Only overtaken on the way: its own confirmation comes a moment after the later one's, and it isn't sent twice.
+    relay::SureSender overtaken;
+    wire_gap.clear();
+    overtaken.push("three");
+    send_gap(overtaken, 0.0);
+    overtaken.push("four");
+    send_gap(overtaken, 0.02);
+    overtaken.on_ack(1, 1u);                // four first
+    overtaken.on_ack(3, 0);                 // then three
+    send_gap(overtaken, 0.3);
+    check(wire_gap.size() == 2 && overtaken.pending() == 0, "sure: one only overtaken on the way isn't sent again");
+    // With nothing sent after it, nothing shows the gap: retry_s, as before.
+    relay::SureSender last;
+    wire_gap.clear();
+    last.push("five");
+    send_gap(last, 0.0);
+    last.on_ack(1, 0);
+    send_gap(last, 0.2);
+    const bool held_back = wire_gap.size() == 1;
+    send_gap(last, 0.24);
+    check(held_back && wire_gap.size() == 2, "sure: the last one lost, with nothing after it, goes again at retry_s");
 }
 
 void test_packets() {

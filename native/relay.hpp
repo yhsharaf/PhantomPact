@@ -1106,9 +1106,9 @@ public:
         lost_mark_ = lost_;
         double jitter = 0, delay = 0;
         box_.link_numbers(jitter, delay);
-        char quality[96];
-        std::snprintf(quality, sizeof quality, " jitter_ms=%.1f delay_ms=%.1f loss_pct=%.1f resent=%lld pending=%zu", jitter,
-                      delay, loss, sure_out_.resent, sure_out_.pending());
+        char quality[128];
+        std::snprintf(quality, sizeof quality, " jitter_ms=%.1f delay_ms=%.1f loss_pct=%.1f resent=%lld resent_early=%lld pending=%zu",
+                      jitter, delay, loss, sure_out_.resent, sure_out_.resent_early, sure_out_.pending());
         const Link::Route route = peer_ ? link_->route(*peer_) : Link::Route{};
         const std::string problem = link_->problem();
         // time= (wall clock) lets the mod tell a running relay from a stale status file before starting another.
@@ -1198,6 +1198,12 @@ private:
         return rtt_ms_ < 0 ? 0.2 : std::clamp(rtt_ms_ * 0.0015 + 0.015, RETRY_MIN, RETRY_MAX);
     }
 
+    // A sure event the partner's acknowledgement passed over goes again this long after it was sent (SureSender): by then
+    // its own confirmation would have come, even with a packet overtaken on the way by an eighth of a round trip.
+    double lost_after_s() const {
+        return rtt_ms_ < 0 ? retry_s() : std::clamp(std::max(rtt_ms_ * 1.125, rtt_ms_ + 10) / 1000, RETRY_MIN, RETRY_MAX);
+    }
+
     std::string hello_text() const {
         std::string text = version_ + "\n" + map_name_.substr(0, 64) + "\n";
         for (const auto& [key, value] : settings_) text += key + "=" + value + "\n";
@@ -1274,7 +1280,7 @@ private:
                 w.put<uint32_t>(item.id);
                 w.text(item.text);
                 return true;
-            });
+            }, lost_after_s());
         }
         if (partner_here) quick_out_.for_each(now, QUICK_GAP, [&](const QuickSender::Item& item, double age) {
             if (!room(1 + 4 + 2 + 2 + item.text.size())) return false;

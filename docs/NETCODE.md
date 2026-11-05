@@ -51,12 +51,16 @@ for people and tools to read.
 
 Little-endian, at most 1100 bytes before signing (`MAX_PACKET`), so a signed packet stays under Tailscale's 1280.
 
-Header: marker 0xA3, protocol 3, flags (1 = from the host), session, the partner's session as we know it, sequence, sender's
+Header: marker 0xA3, protocol 4, flags (1 = from the host), session, the partner's session as we know it, sequence, sender's
 time in ms, the partner's time echoed back, how long we held it, sure-lane acknowledgement (next id expected, plus a bitmap
 of the 32 after it). Round trip comes from the echo, so no ping packets are needed.
 
 Sections follow: state (40 bytes), sure event, quick event, enemy line, hello (version, map, shared settings), and with more than
 two players another player (a slot and 40 bytes).
+
+The state's flags, set by the mod: 1 walking, 2 in a scene, 4 falling, 8 flying (ladders, wall runs); 0x10 and 0x20 how they move
+(1 walk, 2 jog, 3 sprint; none from an older version), 0x40 in the guard stance, 0x80 in a move. The relay's own: 0x4000 this
+sample teleported, 0x8000 nothing new for longer than it guesses ahead.
 
 A session is the sender's clock in ms, always moving on, new per `link.reset()`, so a late packet of an older session can be
 told from a new start. A packet's sure and quick sections count only if its "partner's session" is ours.
@@ -64,7 +68,7 @@ Seeing a new session from the partner restarts both lanes and hands the mod an `
 
 ## Events
 
-`coop.lua`'s header lists them. `sendEvent` picks the lane: U, M, A and H are quick; the rest are sure.
+`coop.lua`'s header lists them. `sendEvent` picks the lane: U, M, A, H, Z, SHOT and NQ are quick; the rest are sure.
 
 Enemy lines don't carry names: an `N` event gives each enemy a number first.
 
@@ -203,8 +207,8 @@ took all three. Through netem, losing 5% of the time in bursts, 50 moves a secon
 | 200 ms (a stall, really) | 27 lost (6.4%) | 14-15 | 17 |
 
 The same three copies, so no more bytes. A move that only gets through on a later copy starts that much further in, so it's still
-in step. The sure lane lost nothing in these runs (it resends after 1.5 round trips plus 15 ms: 194 ms at the 95th percentile
-here), so it stays as it is.
+in step. The sure lane lost nothing in these runs (it resent after 1.5 round trips plus 15 ms: 194 ms at the 95th percentile
+here); for its resends since, see the next part.
 
 **Bandwidth, enemies 30 times a second.** The host's upload (`party-bench.ps1`, bots, 12 s): 3 guests with 8 enemies 61 KB/s at
 20 a second, 68 at 30; with 30 enemies 112 and 139. Six players (5 guests) at 30 a second: 153 KB/s with 8 enemies, 265 with 30,
@@ -226,6 +230,76 @@ decide one, so nothing changed; a dying pose held till `K` comes is for the real
 
 **Steam's route.** When Steam relays the connection, the player is told once a game that it adds delay and that SteamDirect = On
 on both PCs gives a direct one where routers allow (`status.lua`). Relay against direct ping needs two real accounts.
+
+## What goes with the place, and what the lanes carry (1.6.5)
+
+Measured in the Lua sim (`luasim four` checks, each one failing on the code before) and, for the sure lane, through real sockets
+and netem. Frames are 60 FPS frames.
+
+**The place goes first in a frame.** `sendPlayer` runs before the partner's events and enemies are handled: a costly event (a
+montage loaded, a search) no longer holds this frame's place back and stamps it late.
+
+**Health, gait, guard stance and "in a move" ride on every place.** Health comes from the same read as the place (`game.read`
+returned it all along), not from ten slow reads a second: a guest knows the host's hit 4.0 frames after it in the sim, every
+time, where it was 7.3 on average and 10 at worst (the 4 are the sim relay's own 20 ms). Gait and the guard stance went as sure
+events (`GAIT`, `ST`), ahead of the steps they belong to or, after a loss, well behind them, and in the queue ahead of deaths;
+now they are bits of the state's flags, played in step with the place, and a lost packet is made good by the next. A stance
+heard after its enter's own hold was due (it comes with the place, played behind) is held from where the enter is. Bit 0x80
+says the player is in a move: should all three copies of a move's end (`U - 0`) be lost in a burst, a move that began before
+it ends once that bit has been off for 0.3 s (longer than the place is played behind, so a move whose `U` came first isn't
+cut). No new event: an older version's places say none of this and change nothing, and its `GAIT`/`ST` are still taken.
+
+**Moves and staggers go in the frame they start.** The move watch ran every other frame and the hit state ten times a second;
+both run every frame now (whose hit component it is is still checked ten times a second). From start to send, 60 tries each:
+
+| | before: mean / worst | now |
+|---|---|---|
+| a move (`U`) | 0.42 / 1 frame | 0 / 0 |
+| a stagger (`H`) | 2.70 / 5 frames | 0 / 0 |
+| health on the partner's PC | 7.32 / 10 frames | 4.00 / 4 |
+
+A move's position already said how far in it was, so this is a move's start skipped less, up to a frame. `H` now uses its age:
+the ghost's copy of a stagger is held for what's left of the partner's 0.9 s, and one already over isn't played. The cost: two
+game calls more a frame (a party of 2: host 94.2 -> 96.2, guest 134.3 -> 136.3).
+
+**Told when it changes.** The host's rules (`RULES`, every 5 s) and what each player wears (`LOOK`, every 30 s) went again on a
+timer the sure lane made pointless; they go when they change and to whoever starts sync or joins (an `S` reaches the host). A
+guest joining a party followed the host's rules 1.62 s after joining (the next of those tellings), 0.05 s now, and in 31 s with
+nothing changed nothing goes again (9 tellings before). Kept on purpose: `F` in a boss fight every 5 s (the host's own re-tell
+after a gap is the host's alone, and a guest's fight after a one-way outage the host counted as gone has only this), `HAS` (a
+question whose answer changes), `STORYPT`/`GSTORY` (the receiver acts only on a point heard in the last 150 s).
+
+**Shots.** A shot's end goes by the sure lane, the shot by the quick one: with its first copies lost, the end could come first,
+find nothing, and the copy then looped for 30 s. An end that finds nothing is kept 2 s and its shot isn't fired. A look's ends
+go as one `SHOTEND id id ...` (eight ending together: one event, was eight); a weapon of flowers put up to 40 a second on the
+sure lane, now at most 10. An older version reads only a single id, and its copies of the rest end after 30 s.
+
+**A lost sure event goes again about a round trip after it was sent.** It waited for `retry_s` (1.5 round trips and 15 ms),
+however soon the partner's acknowledgement showed the gap; `lanes.hpp`'s header already said it didn't. Now an event the
+acknowledgement passes over (something sent after it confirmed, it not) goes again once `lost_after_s` has gone by since it was
+sent: 1.125 round trips, and at least the round trip and 10 ms, so a packet merely overtaken on the way by up to an eighth of a
+round trip isn't sent twice. With nothing sent after it to show the gap, it still waits for `retry_s`. The status line has
+`resent_early=`. Through netem, events 40 a second, 60 s a run, the old and new relay taking turns (`bench.ps1`, two rounds
+each; the quick lane is the control and didn't move), sure event lateness p95 / p99:
+
+| | before | now |
+|---|---|---|
+| RTT 150, 10 ms jitter, 2% loss | 279-288 / 350 ms | 224-227 / 287-290 ms |
+| RTT 80, 10 ms jitter, 5% loss | 198-210 / 275-294 ms | 167 / 198 ms |
+| RTT 150, 100 ms bursts 2% of the time | 107-272 / 347-367 ms | 141-185 / 276-319 ms |
+| RTT 30, 3 ms jitter, 2% loss | 46 / 106-107 ms | 46 / 106 ms |
+
+At RTT 30 the next event's acknowledgement comes about when `retry_s` does anyway, so nothing changes there. Resends: 418 in
+the eight minutes of the old relay's runs, 497 in the new one's, some of them copies of an event only overtaken under 10 ms of
+jitter: a few bytes a second.
+
+**No lane of its own for values only the newest of which counts.** The idea was to take `G`, `GAIT`, `ST`, `LOOK`, `F` and
+`RULES` off the ordered lane, so that a lost one holds up no death. After the changes above there is next to nothing left to
+take: in the Lua sim, four players fighting by a dozen enemies for 40 s sent 12 of these in 141 sure events (8.5%; `RULES` was 8
+of the host's own 21) before, and 0 in 129 now. `GAIT` and `ST` are bits of the place, `RULES` and `LOOK` go when they change.
+`F` must stay in order with `B` and `K`: an `F 0` overtaking a held-up `B` leaves a boss bar up for good (`handlers.F` tells of
+that very case). `G` only goes with `Revive = On` while a player is down, and then that player has few other events of their
+own to hold up. A lane for it would have meant protocol 5, a path through the party's hub and another call from Lua.
 
 ## Testing
 
