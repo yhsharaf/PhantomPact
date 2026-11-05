@@ -265,6 +265,19 @@ local function sharing()
     check(field(h.blockers[1], "bBroken") == true and field(a.blockers[1], "bBroken") == true
         and field(c.blockers[1], "bBroken") == true and count(b.sent, "^E BLK BP_GameplayBlocker_Chain_C_UAID_1$") == 1,
         "chains one player breaks are broken in every world")
+    -- A lever (a gate) one player opens is open in the others' worlds too; a chest isn't touched by it.
+    local levers = {}
+    for _, pc in ipairs({ h, a, b, c }) do
+        local lv = Fake.switch(pc, "ABP_Switch_C", 330.0, 0.0, 100.0)
+        Fake.put(lv, "SwitchWithoutPlaySequence", function(self) Fake.put(self, "CurSwitchState", true) end)
+        levers[pc] = lv
+    end
+    s:run(1.5)
+    Fake.put(levers[b], "CurSwitchState", true)
+    s:run(1.5)
+    check(field(levers[h], "CurSwitchState") == true and field(levers[a], "CurSwitchState") == true
+        and field(levers[c], "CurSwitchState") == true and count(b.sent, "^E SWO ABP_Switch_C$") == 1,
+        "a lever one player pulls opens in every world")
 
     -- Story sync off: nothing comes from the host's bag on joining either.
     local so = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES, "FollowHostStory = Off\n")
