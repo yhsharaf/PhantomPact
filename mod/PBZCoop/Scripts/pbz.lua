@@ -3952,7 +3952,25 @@ return function(api)
         return nil
     end
 
+    -- A scene playing: the game's sequence manager says one is, and it has the camera. A sequence with the camera still on
+    -- the player is no scene to the player: seen in Bai Chilian's arena, where one ran on for a minute of fighting, and a
+    -- guest taken for "in a scene" had their figure hidden on the host and off every enemy's list, so the boss stood still.
     function game.inCutscene()
+        if not game.sequenceOn() then
+            return false
+        end
+        local onPlayer = false
+        pcall(function()
+            local pc, pawn = api.getPlayer1()
+            if valid(pc) and valid(pawn) then
+                local vt = pc:GetViewTarget()
+                onPlayer = valid(vt) and vt:GetAddress() == pawn:GetAddress()
+            end
+        end)
+        return not onPlayer
+    end
+
+    function game.sequenceOn()
         if not valid(seqManager) then
             local now = os.clock()
             if now - seqLookupAt < 2.0 then

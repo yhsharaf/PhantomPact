@@ -155,6 +155,11 @@ end
 function Session.scene(pc, on, name)
     pc.scene = pc.scene or Fake.sceneManager(pc)
     Fake.put(pc.scene, "playing", on)
+    -- (A scene takes the camera, as the game's camera cuts do: a sequence with the camera still on the player is no scene.)
+    if pc.controller then
+        pc.sceneCamera = pc.sceneCamera or { IsValid = function() return true end, GetAddress = function() return -77 end }
+        Fake.put(pc.controller, "viewTarget", on and pc.sceneCamera or nil)
+    end
     Fake.put(pc.scene, "sequence", on and name and { GetFName = function() return { ToString = function() return name end } end,
         IsValid = function() return true end } or nil)
 end

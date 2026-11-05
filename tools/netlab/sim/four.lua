@@ -1846,6 +1846,24 @@ local function playerReports()
         allErrors(s)
     end
     do
+        -- Bai Chilian's arena on the bench: a sequence ran on through a minute of fighting, the camera on the player. The guest
+        -- was taken for "in a scene": hidden on the host and off the boss's list, which then stood still on the guest's screen.
+        local s, h, g = pair()
+        Session.moveTo(h, 3000, 2800)
+        Session.moveTo(g, 3000, 2700)
+        s:run(3)
+        Session.scene(g, true, "Seq_Arena")
+        Fake.put(g.controller, "viewTarget", nil)       -- (the camera still on the player)
+        s:run(6)
+        check(net(h).ghostHidden ~= true, "a sequence running with the camera on the guest doesn't hide them on the host")
+        Fake.put(g.controller, "viewTarget", g.sceneCamera)
+        s:run(6)
+        check(net(h).ghostHidden == true, "a real scene (the camera taken) still does")
+        Session.scene(g, false)
+        s:run(3)
+        allErrors(s)
+    end
+    do
         -- The forest's last boss on the bench: a boss spawned for the partner's fight, then the same boss from this world's
         -- own fight scene. Two stood there: the guest killed the one not paired with the host's, and the host's stayed at full
         -- health for the host to fight all over again.
