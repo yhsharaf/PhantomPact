@@ -605,6 +605,14 @@ return function(api)
                 local at = s:K2_GetActorLocation()
                 local alive = false
                 pcall(function() alive = valid(s.SpawnedAI) and not game.isDead(s.SpawnedAI) end)
+                -- (Or alive by another way in: a story boss comes from its fight's scene, not as this spawner's own enemy.
+                -- Spawned again here, two stood in the arena: one paired with the partner's, one on its own, and the kill of
+                -- the wrong one reached nobody, the partner's left at full health.)
+                local other = not alive and game.liveBossesWithId(enemyId)[1]
+                if other then
+                    local l = other:K2_GetActorLocation()
+                    return { X = l.X, Y = l.Y, Z = l.Z }, false
+                end
                 local beaten = not alive and game.isBeaten(enemyId)
                 if beaten and revive == false then
                     return { X = at.X, Y = at.Y, Z = at.Z }
@@ -619,16 +627,63 @@ return function(api)
                     end)
                     log("Beaten here but not in the other player's world: " .. enemyId .. " is back for their fight.")
                 end
+                local spawned = nil         -- the one spawned here: { addr, fname, class }, read at once (no object kept)
                 if not alive then
                     local ok, err = pcall(function() s:ClaimSeqSpawn(false, true, true) end)
                     if not ok then
                         log("Couldn't spawn " .. id .. ": " .. tostring(err))
                     end
+                    pcall(function()
+                        local a = s.SpawnedAI
+                        if ok and valid(a) then
+                            spawned = { addr = a:GetAddress(), fname = a:GetFName():ToString(),
+                                class = a:GetClass():GetFName():ToString() }
+                        end
+                    end)
                 end
-                return { X = at.X, Y = at.Y, Z = at.Z }, beaten
+                return { X = at.X, Y = at.Y, Z = at.Z }, beaten, spawned
             end
         end
         return nil
+    end
+
+    -- The live bosses in this world that go by this id (a story boss's scene can bring one in that isn't its spawner's own).
+    function game.liveBossesWithId(enemyId)
+        local out = {}
+        for _, a in pairs(game.listEnemies(true) or {}) do
+            if valid(a) and not game.isDead(a) and game.enemyId(a) == enemyId and game.isBoss(a) then
+                out[#out + 1] = a
+            end
+        end
+        return out
+    end
+
+    -- A boss spawned here for the partner's fight (spawnBoss's { addr, fname, class }) and then another of its kind from
+    -- this world's own fight scene: the one spawned for the partner goes, with no death (a death would run its story), and
+    -- the scene's is the one paired. True if it went; false while it's the only one; nil once it's gone or dead anyway.
+    function game.dropExtraBoss(mine)
+        local ours, other = nil, false
+        for _, a in pairs(game.listEnemies(true) or {}) do
+            if valid(a) and not game.isDead(a) then
+                local ok, cls = pcall(function() return a:GetClass():GetFName():ToString() end)
+                if ok and cls == mine.class then
+                    if a:GetAddress() == mine.addr and a:GetFName():ToString() == mine.fname then
+                        ours = a
+                    else
+                        other = true
+                    end
+                end
+            end
+        end
+        if not ours then
+            return nil
+        end
+        if not other then
+            return false
+        end
+        pcall(game.hideBossBar, ours)
+        pcall(function() ours:K2_DestroyActor() end)
+        return true
     end
 
     -- The host's enemy, in this world too: kills last for good in a save, so a guest who has played further has the early

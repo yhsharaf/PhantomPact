@@ -1846,6 +1846,30 @@ local function playerReports()
         allErrors(s)
     end
     do
+        -- The forest's last boss on the bench: a boss spawned for the partner's fight, then the same boss from this world's
+        -- own fight scene. Two stood there: the guest killed the one not paired with the host's, and the host's stayed at full
+        -- health for the host to fight all over again.
+        local s, h, g = pair()
+        s:run(1)
+        local spawned = Session.enemyOn(g, "boss")
+        -- (One class for both, as in the game: the fake gives each enemy a class of its own name.)
+        local bossClass = { GetFName = function() return { ToString = function() return "BP_Monster_ChiLian_C" end } end,
+            IsValid = function() return true end }
+        rawset(spawned, "__classObject", bossClass)
+        local mine = { addr = spawned:GetAddress(), fname = spawned:GetFName():ToString(),
+            class = spawned:GetClass():GetFName():ToString(), untilAt = g.now + 120 }
+        net(g).extraBossWatch = { ["sp:boss"] = mine }
+        s:run(2)
+        check(rawget(spawned, "__alive") ~= false, "a boss spawned for the partner's fight stays while it's the only one")
+        local scene = Fake.enemy(g, "boss_scene", "BP_Monster_Boss_C", 3050.0, 3000.0, 100.0, 5000, 400, true)
+        rawset(scene, "__classObject", bossClass)
+        s:run(2)
+        check(rawget(spawned, "__alive") == false and rawget(scene, "__alive") ~= false,
+            "the same boss from this world's own fight scene: the one spawned for the partner goes, the scene's stays")
+        check(field(spawned, "realDeath") ~= true and field(spawned, "dead") ~= true, "and it goes with no death (its story isn't run)")
+        allErrors(s)
+    end
+    do
         -- The forest's last boss on the bench: the guest's copy read 0 health before the host's K came, and the K took it
         -- for dead already: no death of the game's ran, so no scene, and the guest's story stayed while the host's went on.
         local s, h, g = pair()

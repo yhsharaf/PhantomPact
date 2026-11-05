@@ -2744,8 +2744,16 @@ return function(api)
         -- one the host then killed wasn't the one its story waited for. A first phase, or a boss of one, is spawned as ever:
         -- most story bosses come from a sequence spawner, "_Seq" in their name.)
         local phase = not isClient() and game.isLaterPhase and game.isLaterPhase(name)
+        local spawned = nil
         if game.spawnBoss and not phase then
-            at, turned = game.spawnBoss(name, not (isClient() and p ~= net))
+            at, turned, spawned = game.spawnBoss(name, not (isClient() and p ~= net))
+        end
+        if type(spawned) == "table" then
+            -- (Watched a while: this world's own fight scene can bring the same boss in after, and the one spawned here for
+            -- the partner's fight then goes: see extraTicksEarly.extraBosses.)
+            spawned.untilAt = os.clock() + 120
+            net.extraBossWatch = net.extraBossWatch or {}
+            net.extraBossWatch[name] = spawned
         end
         if turned and isClient() then
             -- (Written alive in this save for the host's fight: dead again when the session ends, unless the host's kill
@@ -3835,6 +3843,31 @@ return function(api)
     -- A joiner watching a fight is let go after WATCH_MAX_S whatever the fight does: "in a fight" can go on with no end (a
     -- boss left standing with its bar up, a scene, the partner's state gone quiet, which also stops partner.check), and the
     -- player stood there with no control, keys and pad dead, until they quit. Then they're free, with F3 or E to go in.
+    -- A boss spawned for the partner's fight, and the same boss come in from this world's own fight scene: one goes.
+    extraTicksEarly.extraBosses = function()
+        local watch = net.extraBossWatch
+        if not watch or next(watch) == nil or not game.dropExtraBoss then
+            return
+        end
+        local now = os.clock()
+        if now < (net.extraBossAt or 0) then
+            return                  -- (once a second: each look searches the map's enemies)
+        end
+        net.extraBossAt = now + 1
+        for name, mine in pairs(watch) do
+            local dropped = now <= mine.untilAt and game.dropExtraBoss(mine)
+            if dropped ~= true and (now > mine.untilAt or dropped == nil) then
+                watch[name] = nil           -- (over, or the one spawned here is gone or dead anyway)
+            elseif dropped then
+                watch[name] = nil
+                log("Two of " .. name .. " here: the one spawned for the other player's fight went; this world's own is the one.")
+                if game.refreshEnemyIds then
+                    game.refreshEnemyIds(true)
+                end
+            end
+        end
+    end
+
     net.WATCH_MAX_S = 180
     extraTicksEarly.watchCap = function()
         if net.watchHeld and os.clock() - (net.watchHeldAt or os.clock()) > net.WATCH_MAX_S then
