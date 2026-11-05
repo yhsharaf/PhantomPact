@@ -2396,6 +2396,21 @@ return function(api)
         focused, hitByPartner, hitBySlot = {}, {}, {}
     end
 
+    -- One enemy no longer focused: its own cooldown back first (dropped without, the next entry read the focus value as its
+    -- own, and that was what came back).
+    function game.unfocus(addr)
+        local f = focused[addr]
+        focused[addr] = nil
+        if f then
+            pcall(function()
+                if f.orig and valid(f.actor) and f.actor:GetAddress() == addr and f.actor:GetFName():ToString() == f.fname
+                    and valid(f.picker) then
+                    f.picker.SwitchTargetCooldown = f.orig
+                end
+            end)
+        end
+    end
+
     -- A focus entry for this enemy now: the one kept if it's still this enemy's (address and name), else a new one.
     function game.focusEntry(actor, addr, fields)
         local f = focused[addr]
@@ -2424,7 +2439,7 @@ return function(api)
         end
         local target = currentTarget(actor)
         if target == nil then
-            focused[addr] = nil
+            game.unfocus(addr)
             return
         end
         local onGuest = target:GetAddress() == ghost:GetAddress()
@@ -2475,7 +2490,7 @@ return function(api)
         end
         local target = currentTarget(actor)
         if target == nil then
-            focused[addr] = nil
+            game.unfocus(addr)
             return
         end
         local targetAddr = target:GetAddress()

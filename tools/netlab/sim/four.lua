@@ -833,6 +833,9 @@ local function aiming()
     check(s.pcs[2].lastAim == ghostOf(s.pcs[2], 3) and s.pcs[4].lastAim == ghostOf(s.pcs[4], 3), "the others aim theirs at that guest's ghost")
     check(aimedAt(1), "aimed at the host, it says 1")
     check(s.pcs[2].lastAim == ghostOf(s.pcs[2], 1) and s.pcs[3].lastAim == ghostOf(s.pcs[3], 1), "and every guest aims at the host's ghost")
+    -- (Nobody on its list either: with its own cooldown given back, it picks again from the list within moments, as the
+    -- game's does.)
+    rawget(rawget(e, "__fields").BP_PBZHatredManagerComponent, "__fields").HatredList.items = {}
     Fake.put(e, "target", nil)
     Session.enemyMove(h, "ring", nil)
     s:run(0.2)

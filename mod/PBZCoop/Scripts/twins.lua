@@ -474,6 +474,14 @@ return function(api)
                 local twin = cls and spawnTwin(cls, r, r.Yaw or 0, id)
                 guestTwins[id] = { twin = twin, twinAddr = twin and twin:GetAddress(), seenAt = now }
                 if twin then
+                    -- (The host's numbers from the start: by its class alone, a boss's copy came in at 8000 of 20000 and
+                    -- jumped up a few seconds later.)
+                    if game.setMaxHealth and r.MaxHp and r.MaxHp > 0 then
+                        pcall(game.setMaxHealth, twin, r.MaxHp)
+                    end
+                    if game.setHealth and r.Hp and r.Hp > 0 then
+                        pcall(game.setHealth, twin, r.Hp)
+                    end
                     log("Ghost twin " .. id .. " here too.")
                 end
                 return

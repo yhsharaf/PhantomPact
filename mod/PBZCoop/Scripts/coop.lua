@@ -861,9 +861,10 @@ return function(api)
             -- (And by the body: a rest forgets the names, and a spawner's new enemy under the same id clears its name each
             -- turn, so the old body's turn told its death again, every round: boss items paid twice, and the guest's live
             -- copy killed.)
-            -- (The body by its address, id and actor name: by address alone, a later enemy that got a collected body's
-            -- address was taken for it, and its death never told.)
-            local body = name .. "|" .. tostring(select(2, pcall(function() return actor:GetFName():ToString() end)))
+            -- (The body by its address and actor name: by address alone, a later enemy that got a collected body's
+            -- address was taken for it, and its death never told. Not by id: a body's id can change once it's dead (its
+            -- spawner no longer linked), and told again under the new one, a boss's items went out twice.)
+            local body = tostring(select(2, pcall(function() return actor:GetFName():ToString() end)))
             if not net.deadSent[name] and net.deadBodies[addr] ~= body then
                 net.deadSent[name] = true
                 net.deadBodies[addr] = body
@@ -1582,7 +1583,21 @@ return function(api)
     if type(LoopInGameThreadWithDelay) == "function" then
         LoopInGameThreadWithDelay(5000, function()
             if game.owed and next(game.owed.ids) then
-                pcall(game.owed.retry, net.broughtBack)
+                -- (Not one this session has here or is bringing: alive in both worlds for this session, it was written
+                -- dead under the host's living enemy.)
+                local keep = {}
+                for id in pairs(net.broughtBack) do
+                    keep[id] = true
+                end
+                if net.enabled then
+                    for id in pairs(net.bringing or {}) do
+                        keep[id] = true
+                    end
+                    for id in pairs(enemyByName) do
+                        keep[id] = true
+                    end
+                end
+                pcall(game.owed.retry, keep)
             end
             return false
         end)
@@ -1946,7 +1961,7 @@ return function(api)
                     end
                     -- At once, not at the enemy's next turn: the partner is looking at a copy held at 1 health.
                     net.deadSent[name] = true
-                    net.deadBodies[actor:GetAddress()] = name .. "|" .. tostring(select(2, pcall(function()
+                    net.deadBodies[actor:GetAddress()] = tostring(select(2, pcall(function()
                         return actor:GetFName():ToString() end)))   -- (by the body too, as shareEnemy marks it: else a new enemy
                                                                 -- under the id cleared the name, the old body told it again,
                                                                 -- and a boss's items went out twice)
@@ -2801,14 +2816,14 @@ return function(api)
             tellBeaten(name, nil)       -- (to everyone: the relay gave the other guests this fight too)
             return
         end
-        log("The other player started a boss fight with " .. name .. ".")
-        -- (The host's word only. Another guest's fight, passed on by the relay, isn't the host's: taken for it, it stayed
-        -- the host's fight here for good, and came back as walls and a bar after this player's next death.)
-        local fromHost = net.role == "client" and from == nil
         -- (Told again, by the same player, and shown here already: a newcomer's J has every fighter tell their fight.)
         if net.partnerBosses[name] and (not net.party or net.fightOf[name] == (from or 1)) then
             return
         end
+        log("The other player started a boss fight with " .. name .. ".")
+        -- (The host's word only. Another guest's fight, passed on by the relay, isn't the host's: taken for it, it stayed
+        -- the host's fight here for good, and came back as walls and a bar after this player's next death.)
+        local fromHost = net.role == "client" and from == nil
         if fromHost then
             -- The host has it alive and is fighting it, whatever this session last heard (their world loaded again, say): a copy
             -- brought back for the fight would be killed on sight as the host's old kill.
@@ -3267,6 +3282,10 @@ return function(api)
                 return
             end
             hostWorld = os.time()
+            -- (Put-backs still owed were that world's: in another save, or a new game, they'd kill an enemy it has alive.)
+            if game.owed then
+                game.owed.ids = {}
+            end
             if isHost() then
                 sendEvent("Y", hostWorld)
             end

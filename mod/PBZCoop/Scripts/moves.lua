@@ -21,7 +21,8 @@ return function(api)
     -- partner could have this game load any asset under /Game/, a map too. The traversal moves' own plugin is new here.
     local ALLOWED_ROOTS = { "^/PBZCombatAsset/ActorData/", "^/HuaShira/Characters/", "^/HuaShira/Animation/",
         "^/HuaShira/SceneProp/", "^/Game/RenewalContent/Actors/", "^/Game/PBZContent/Blueprint/Item/",
-        "^/Game/PBZContent/Characters/", "^/AdvancedSpecialMove/Montage/" }
+        "^/Game/PBZContent/Characters/", "^/Game/RenewalContent/Prototypes/", "^/AdvancedSpecialMove/Montage/" }
+    local refusedRoots = {}         -- a folder refused, said once (a real one missing here shows in the log)
     local MAX_NEW_LOADS_PER_MIN = 30
     local RESTART_S = 0.05          -- the same montage at an earlier position = played again
     local STOP_BLEND_S = 0.25       -- the ghost leaves a montage the partner has left over this long
@@ -49,6 +50,11 @@ return function(api)
             if path:match(root) then
                 return true
             end
+        end
+        local folder = path:match("^(/[^/]+/[^/]+/[^/]+/)") or path:match("^(/[^/]+/[^/]+/)") or "?"
+        if not refusedRoots[folder] and (refusedRoots.n or 0) < 20 then
+            refusedRoots[folder], refusedRoots.n = true, (refusedRoots.n or 0) + 1
+            log("Moves: a path outside the move folders refused: " .. folder)
         end
         return false
     end
