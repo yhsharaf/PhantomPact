@@ -1447,7 +1447,7 @@ function Fake.new(id, scripts, ini, link)
         if found[path] then
             return found[path]
         end
-        if path:find("^/Game/Move") then
+        if path:find("^/PBZCombatAsset/ActorData/Move/") then
             local m = pc.montages[path]
             if m == nil then
                 m = object(pc, "AnimMontage", { BlendOutTriggerTime = -1.0, BlendOut = { BlendTime = 0.25 } })
@@ -1472,7 +1472,7 @@ function Fake.new(id, scripts, ini, link)
             end
             return d
         end
-        if path:find("^/Game/Weapon") then
+        if path:find("^/PBZCombatAsset/ActorData/Weapon/") then
             local c = pc.weaponConfigs[path]
             if c == nil then
                 c = object(pc, "WeaponConfig")

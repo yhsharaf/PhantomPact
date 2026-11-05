@@ -148,7 +148,7 @@ local function movesAndGear()
     local s = party()
     spread(s)
     s:run(2)
-    Session.startMove(s.pcs[3], "/Game/Move/A1.A1")
+    Session.startMove(s.pcs[3], "/PBZCombatAsset/ActorData/Move/A1.A1")
     s:run(0.5)
     local function played(pc, slot)
         return field(field(ghostOf(pc, slot), "anim"), "played") or 0
@@ -159,19 +159,19 @@ local function movesAndGear()
     s:run(0.3)
     check(field(field(ghostOf(s.pcs[1], 3), "anim"), "montage") == nil, "and stops when they stop")
     local g = s.pcs[1].env.PBZ.game
-    Session.startMove(s.pcs[2], "/Game/Move/A2.A2")
+    Session.startMove(s.pcs[2], "/PBZCombatAsset/ActorData/Move/A2.A2")
     s:run(0.1)
     check(g.ghostBusy(ghostOf(s.pcs[1], 2)) and not g.ghostBusy(ghostOf(s.pcs[1], 3)), "one ghost's move doesn't stop the others being steered")
     Session.endMove(s.pcs[2])
-    Session.hold(s.pcs[2], "/Game/Weapon/Spear.Spear", true)
-    Session.hold(s.pcs[3], "/Game/Weapon/Sword.Sword", true)
+    Session.hold(s.pcs[2], "/PBZCombatAsset/ActorData/Weapon/Spear.Spear", true)
+    Session.hold(s.pcs[3], "/PBZCombatAsset/ActorData/Weapon/Sword.Sword", true)
     s:run(1.5)
     local function holds(pc, slot)
         local c = field(field(ghostOf(pc, slot), "Character Weapons Component"), "config")
         return c and rawget(c, "__path")
     end
-    check(holds(s.pcs[1], 2) == "/Game/Weapon/Spear.Spear" and holds(s.pcs[1], 3) == "/Game/Weapon/Sword.Sword", "each ghost holds its own player's weapon")
-    check(holds(s.pcs[4], 2) == "/Game/Weapon/Spear.Spear" and holds(s.pcs[4], 3) == "/Game/Weapon/Sword.Sword", "on a guest's PC too")
+    check(holds(s.pcs[1], 2) == "/PBZCombatAsset/ActorData/Weapon/Spear.Spear" and holds(s.pcs[1], 3) == "/PBZCombatAsset/ActorData/Weapon/Sword.Sword", "each ghost holds its own player's weapon")
+    check(holds(s.pcs[4], 2) == "/PBZCombatAsset/ActorData/Weapon/Spear.Spear" and holds(s.pcs[4], 3) == "/PBZCombatAsset/ActorData/Weapon/Sword.Sword", "on a guest's PC too")
     check(holds(s.pcs[1], 4) == nil, "and the one who changed nothing keeps theirs")
     Session.stagger(s.pcs[4], "CharacterState.Hitreact.State.Normal.Heavy")
     s:run(0.5)
@@ -824,7 +824,7 @@ local function aiming()
         for _, pc in ipairs(s.pcs) do
             pc.lastAim = nil
         end
-        Session.enemyMove(h, "ring", "/Game/Move/E" .. slot .. ".E" .. slot)
+        Session.enemyMove(h, "ring", "/PBZCombatAsset/ActorData/Move/E" .. slot .. ".E" .. slot)
         s:run(0.3)
         return count(h.sent, " " .. slot .. "$") >= 1
     end
@@ -837,7 +837,7 @@ local function aiming()
     Session.enemyMove(h, "ring", nil)
     s:run(0.2)
     h.sent = {}
-    Session.enemyMove(h, "ring", "/Game/Move/E9.E9")
+    Session.enemyMove(h, "ring", "/PBZCombatAsset/ActorData/Move/E9.E9")
     s:run(0.3)
     check(count(h.sent, " %-$") >= 1, "with nobody, it says -")
     allErrors(s)
@@ -1115,7 +1115,7 @@ end
 local function hitReactions()
     part("an enemy's reaction to a hit")
     local s, h, g = pair()
-    local REACT, HIT = "CharacterState.Hitreact.State.Normal", "/Game/Move/Hit1.Hit1"
+    local REACT, HIT = "CharacterState.Hitreact.State.Normal", "/PBZCombatAsset/ActorData/Move/Hit1.Hit1"
     local copy, theirs = Session.enemyOn(g, "near"), Session.enemyOn(h, "near")
     local function stateOf(e)
         return field(field(e, "hit"), "state")
@@ -1129,21 +1129,21 @@ local function hitReactions()
     local mark = #h.sent
     swing(g, copy, select(1, Fake.health(copy)) - 50)
     s:run(0.5)
-    check(count(g.sent, "^E D sp:near 50%.0 0%.0 %- /Game/Move/Hit1%.Hit1 0%.25 CharacterState%.Hitreact%.State%.Normal$") == 1,
+    check(count(g.sent, "^E D sp:near 50%.0 0%.0 %- /PBZCombatAsset/ActorData/Move/Hit1%.Hit1 0%.25 CharacterState%.Hitreact%.State%.Normal$") == 1,
         "a guest's hit goes with the reaction it made on their copy")
     check(playing(theirs) == HIT and stateOf(theirs) == REACT, "and the host's enemy plays that reaction, in that hit state")
     local echo = 0
     for i = mark + 1, #h.sent do
-        echo = echo + (h.sent[i]:find("^E A sp:near %- /Game/Move/Hit1%.Hit1") and 1 or 0)
+        echo = echo + (h.sent[i]:find("^E A sp:near %- /PBZCombatAsset/ActorData/Move/Hit1%.Hit1") and 1 or 0)
     end
     check(echo == 0, "not sent back to the guest as a move of its own")
-    Session.enemyMove(h, "near", "/Game/Move/E1.E1")
+    Session.enemyMove(h, "near", "/PBZCombatAsset/ActorData/Move/E1.E1")
     s:run(0.5)
     check(playing(copy) == HIT, "the host's next move doesn't cut the copy's own reaction short")
     Fake.put(field(copy, "hit"), "state", "None")
-    Session.enemyMove(h, "near", "/Game/Move/E2.E2")
+    Session.enemyMove(h, "near", "/PBZCombatAsset/ActorData/Move/E2.E2")
     s:run(0.5)
-    check(playing(copy) == "/Game/Move/E2.E2", "and plays once it's over")
+    check(playing(copy) == "/PBZCombatAsset/ActorData/Move/E2.E2", "and plays once it's over")
     s:run(1.5)
     check(stateOf(theirs) == "None", "the hit state set on the host's enemy by hand is let go")
     allErrors(s)
@@ -1893,7 +1893,7 @@ end
 -- The guard stance (right button held): no montage plays between its enter and exit, and the figure held nothing.
 local function guardStance()
     part("the guard stance")
-    local ENTER, EXIT = "/Game/Move/AM_Hun_Tang_StanceEnter.AM_Hun_Tang_StanceEnter", "/Game/Move/AM_Hun_Tang_StanceExit.AM_Hun_Tang_StanceExit"
+    local ENTER, EXIT = "/PBZCombatAsset/ActorData/Move/AM_Hun_Tang_StanceEnter.AM_Hun_Tang_StanceEnter", "/PBZCombatAsset/ActorData/Move/AM_Hun_Tang_StanceExit.AM_Hun_Tang_StanceExit"
     local s, h, g = pair()
     local anim = field(net(h).ghost, "anim")
     local function playing()
@@ -1951,7 +1951,7 @@ end
 -- A trip: the world goes, and with it the ghost, which the next tick makes again.
 local function afterATrip()
     part("arriving on a map")
-    local spear = "/Game/Weapon/Spear.Spear"
+    local spear = "/PBZCombatAsset/ActorData/Weapon/Spear.Spear"
     local s, h, g = pair()
     s:run(3)
     Session.hold(g, spear, true)
@@ -1982,7 +1982,7 @@ end
 
 local function phantomEdge()
     part("a Phantom Edge weapon")
-    local cannon = "/Game/Weapon/Cannon.Cannon"
+    local cannon = "/PBZCombatAsset/ActorData/Weapon/Cannon.Cannon"
     local s, h, g = pair()
     s:run(3)
     Session.holdEdge(h, cannon, false)
@@ -1992,7 +1992,7 @@ local function phantomEdge()
     check(rawget(field(weapons, "edgeConfig") or {}, "__path") == cannon, "the partner's ghost gets the weapon they've equipped")
     check(field(weapons, "edgeArmed") == false, "put away")
     Session.holdEdge(h, cannon, true)
-    Session.edgeMove(h, "/Game/Move/Show.Show")
+    Session.edgeMove(h, "/PBZCombatAsset/ActorData/Move/Show.Show")
     s:run(0.5)
     check(field(weapons, "edgeArmed") == true, "drawn for the skill")
     check(field(field(ghost, "edgeAnim"), "played") == 1, "and its mesh plays what the partner's plays: a cannon opens by a montage")

@@ -7,7 +7,7 @@
 -- Montages show what replaying abilities (M events) couldn't: a ghost often can't activate an ability (guard
 -- stance, executions, some weapon skills). PvP keeps abilities: there the ghost's swings must land real hits.
 --
--- Checked here (review of PR #5): only montage folders are accepted, the loaded object must really be an
+-- Checked here (review of PR #5): only the game's move and weapon folders are accepted, the loaded object must really be an
 -- AnimMontage, and new loads are capped per minute, so a partner can't make this game load any asset; the ghost
 -- isn't steered while a montage plays (game.noteGhostMove), as for ability replays.
 
@@ -17,7 +17,11 @@ return function(api)
     local net = coop.net
 
     local PATH = "^/[%w_/%-]+%.[%w_%-]+$"
-    local ALLOWED_ROOTS = { "^/PBZCombatAsset/", "^/Game/", "^/HuaShira/" }
+    -- The folders the game keeps moves and weapons in (read from a running game, 11-05). Whole content trees before: a
+    -- partner could have this game load any asset under /Game/, a map too. The traversal moves' own plugin is new here.
+    local ALLOWED_ROOTS = { "^/PBZCombatAsset/ActorData/", "^/HuaShira/Characters/", "^/HuaShira/Animation/",
+        "^/HuaShira/SceneProp/", "^/Game/RenewalContent/Actors/", "^/Game/PBZContent/Blueprint/Item/",
+        "^/Game/PBZContent/Characters/", "^/AdvancedSpecialMove/Montage/" }
     local MAX_NEW_LOADS_PER_MIN = 30
     local RESTART_S = 0.05          -- the same montage at an earlier position = played again
     local STOP_BLEND_S = 0.25       -- the ghost leaves a montage the partner has left over this long
