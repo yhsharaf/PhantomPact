@@ -3107,6 +3107,9 @@ return function(api)
         if api.mapicon and api.mapicon.hide then
             pcall(api.mapicon.hide)         -- (its ticks end with sync: the partner's marker stayed on the map)
         end
+        if api.moves and api.moves.dropAllProps then
+            pcall(api.moves.dropAllProps)   -- (what a ghost held for a skill: a jar left in the air)
+        end
         if api.bullets and api.bullets.endAll then
             pcall(api.bullets.endAll)       -- (and copies of their effects that loop, with nothing left to end them)
         end
