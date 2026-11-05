@@ -179,6 +179,11 @@ of how far off):
 | RTT 250, 10 ms jitter, 2% loss | 6 / 20 / 22 ms | 1.3 / 2.4 / 2.7 ms |
 | RTT 250, 30 ms jitter, 5% loss | 10 / 27 / 40 ms | 2.0 / 2.7 / 3.1 ms |
 
+In the real game (two bench copies through netem: RTT 220 ms, 20 ms jitter, 2% loss; `badnet.ps1` with the montages recorded,
+`move_report.py`), seven attacks each way: the ghost's montage was 2.7 and 1.4 ms behind the real player's on average, 7.8 ms
+at worst. The same moves started at half the round trip would have been 11.6 and 13.1 ms behind, 27.5 at worst: each came 116-135
+ms old, against the 110 that half the round trip said. `processEvents` costs 1.0 ms of game thread a second, 0.017 ms a call.
+
 A route slower one way than the other stays a guess for both: no echo can tell which way the time went (a model with one way
 taking 70% of the round trip: 30-50 ms off at RTT 150-250, either way). A party's host passes a guest's move on with the age it
 has, and the next hop counts on from there.

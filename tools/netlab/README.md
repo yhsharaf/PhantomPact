@@ -101,7 +101,8 @@ With the host running as a second Windows user, tools must sit where that user c
 `C:/PBZDev/netlab` and run from there with `TEMP=C:/PBZDev`.
 
 `perf.lua` and `pair.lua` are loaded into a running copy with `eval dofile("<path>")`, and provide `PERF.*` and `PAIR.*`.
-`pair_report.py` compares two recordings.
+`pair_report.py` compares two recordings; `move_report.py` says how far out of step each side's moves showed on the other's
+ghost (it needs the montage rows `PAIR.record` writes, and `badnet.ps1` runs it).
 
 Run the game with `Role = Host`/`Guest` and `ThisPcOnly = On` (dev-start sets it), which binds to loopback.
 

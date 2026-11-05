@@ -31,5 +31,6 @@ Start-Sleep -Seconds 1
 Send-Dev $h 'moves'; Send-Dev $c 'moves'
 Start-Sleep -Seconds 1
 python -I "$lab/pair_report.py" "$work/bad-host.txt" "$work/bad-guest.txt"
+python -I "$lab/move_report.py" "$work/bad-host.txt" "$work/bad-guest.txt"
 Get-DevLog $h $t 'Relay:|Moves:|net error|event .* error|rror:|No packet|Ghost|Lost|Status' | Where-Object { $_ -notmatch '\] > ' } | ForEach-Object { $_ -replace '^\[\d{4}-\d\d-\d\d (\S+)\] \[Lua\] ', '$1 ' } | ForEach-Object { if ($_.Length -gt 300) { $_.Substring(0, 300) } else { $_ } } | Select-Object -Last 24
 'DONE'

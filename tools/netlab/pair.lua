@@ -8,8 +8,33 @@ local log, valid = PBZ.log, PBZ.valid
 local game, coop, link = PBZ.game, PBZ.coop, PBZ.link
 PAIR = PAIR or {}
 
+-- Each move as it comes, with the age it came with and the round trip the mod used to guess from: "UA <time> <age> <rtt> <move>".
+if coop.handlers.U and not PAIR.wrappedU then
+    PAIR.wrappedU = true
+    local play = coop.handlers.U
+    coop.handlers.U = function(rest, from)
+        if PAIR.rows then
+            PAIR.rows[#PAIR.rows + 1] = string.format("UA %.4f %s %s %s", link.wall(), tostring(PBZ.net.eventAgeMs), tostring(PBZ.net.rttMs), rest)
+        end
+        return play(rest, from)
+    end
+end
+
+-- The montage a body plays and how far into it, "<tag> <time> <position> <montage>": the ghost's against its player's, at the
+-- same moment, is how far out of step a move shows.
+local function montageRow(rows, tag, now, body)
+    pcall(function()
+        local ai = body.Mesh:GetAnimInstance()
+        local m = ai and ai:GetCurrentActiveMontage()
+        if valid(m) then
+            rows[#rows + 1] = string.format("%s %.4f %.4f %s", tag, now, ai:Montage_GetPosition(m), m:GetFName():ToString())
+        end
+    end)
+end
+
 function PAIR.record(seconds, path)
     local rows, done = {}, false
+    PAIR.rows = rows
     local stop = link.wall() + seconds
     local nextEnemies = 0
     LoopInGameThreadWithDelay(1, function()
@@ -19,11 +44,13 @@ function PAIR.record(seconds, path)
         if valid(pawn) then
             local p = pawn:K2_GetActorLocation()
             rows[#rows + 1] = string.format("P %.4f %.1f %.1f %.1f %.1f", now, p.X, p.Y, p.Z, pawn:K2_GetActorRotation().Yaw)
+            montageRow(rows, "MP", now, pawn)
         end
         local ghost = PBZ.net.ghost
         if valid(ghost) then
             local g = ghost:K2_GetActorLocation()
             rows[#rows + 1] = string.format("G %.4f %.1f %.1f %.1f %.1f", now, g.X, g.Y, g.Z, ghost:K2_GetActorRotation().Yaw)
+            montageRow(rows, "MG", now, ghost)
         end
         local t = PBZ.net.target
         if t then
@@ -41,6 +68,9 @@ function PAIR.record(seconds, path)
         end
         if now >= stop then
             done = true
+            if PAIR.rows == rows then
+                PAIR.rows = nil
+            end
             local f = io.open(path, "w")
             if f then
                 f:write(table.concat(rows, "\n"), "\n")
