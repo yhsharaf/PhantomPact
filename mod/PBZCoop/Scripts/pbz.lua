@@ -75,6 +75,13 @@ return function(api)
         if cn:find(PLAYER_CLASS_PREFIX, 1, true) then
             return false
         end
+        -- Not the NPCs who fight beside the players (the Fierce Axe swordsmen at the Dragon Pillar: held as the host's enemies
+        -- on the guest, they couldn't be talked to and their fight never ended there), nor an enemy the game brings back
+        -- again and again for a puzzle (the Bomber that opens the way to the Red House: killed for good on the guest, the
+        -- way stayed shut). Each world has its own, as alone.
+        if cn:lower():find("npchelper", 1, true) or cn:find("Respawn_C$") then     -- (spelt NpcHelper and NPChelper)
+            return false
+        end
         local ok, monster = pcall(function() return actor.BIsMonster end)
         return (ok and monster == true) or cn:find("^BP_Monster") ~= nil
     end
@@ -489,6 +496,27 @@ return function(api)
     -- stays so.
     function game.spawnBoss(enemyId, revive)
         local id = enemyId:match("^sp:(.+)$")
+        -- (A boss of phases, a spawner each (HookManP1_Seq022, HookManP2_Seq023): another phase alive here is that fight
+        -- already. Spawned beside it, both phases stood there, two bars up.)
+        local group = id and id:match("^(.-)P%d+_Seq%d+$")
+        if group then
+            for _, s in ipairs(FindAllOf("AISpawner") or {}) do
+                local sid = nil
+                pcall(function() sid = s.SpawnerID:ToString() end)
+                if sid and sid ~= id and sid:match("^(.-)P%d+_Seq%d+$") == group then
+                    local live = nil
+                    pcall(function()
+                        if valid(s.SpawnedAI) and not game.isDead(s.SpawnedAI) then
+                            live = s.SpawnedAI:K2_GetActorLocation()
+                        end
+                    end)
+                    if live then
+                        log("Boss " .. enemyId .. ": another phase of it (" .. sid .. ") is here already, not spawned.")
+                        return { X = live.X, Y = live.Y, Z = live.Z }, false
+                    end
+                end
+            end
+        end
         for _, s in ipairs(id and FindAllOf("AISpawner") or {}) do
             local sid = nil
             pcall(function() sid = s.SpawnerID:ToString() end)
@@ -3013,7 +3041,9 @@ return function(api)
             local now = present[name]
             if now == nil or distance(now.loc, info.loc) > PICKUP_JUMP_CM then
                 takenHere[name] = true
-                report(name, info.itemId)
+                if not game.isNarrative(info.itemId) then
+                    report(name, info.itemId)
+                end
                 present[name] = nil
             end
         end
@@ -3110,7 +3140,7 @@ return function(api)
     local giftsHooked = false
 
     local function given(id, count, kind, send)
-        if game.granting or os.clock() < ownUntil or id == "None" or count < 1 then
+        if game.granting or os.clock() < ownUntil or id == "None" or count < 1 or game.isNarrative(id) then
             return
         end
         givenHere[id .. "x" .. count] = os.clock()
@@ -3200,6 +3230,9 @@ return function(api)
 
     -- from: who it came from, with more than two players: two partners given the same thing in a moment are one thing too.
     function game.receiveGift(pawn, id, count, kind, from)
+        if game.isNarrative(id) then
+            return          -- (a quest item: each player picks up their own, see game.isNarrative)
+        end
         local key = id .. "x" .. count
         local here = givenHere[key]
         if here and os.clock() - here < SAME_GIFT_S then
@@ -3241,12 +3274,77 @@ return function(api)
         pcall(function()
             bp.Inventories:ForEach(function(k, v)
                 local n = v:get().CurrentAmount
-                if type(n) == "number" and n > 0 then
-                    out[#out + 1] = "p:" .. k:get():ToString() .. ":" .. math.floor(n)
+                local id = k:get():ToString()
+                if type(n) == "number" and n > 0 and not game.isNarrative(id) then
+                    out[#out + 1] = "p:" .. id .. ":" .. math.floor(n)
                 end
             end)
         end)
         return out
+    end
+
+    -- A quest item ("NarrativeItem" in the game's item table: keys, the Flesh Flower, letters): never shared. Each player picks
+    -- up their own, through the game, so its card shows and the quest moves on. Shared, the other player got it quietly in
+    -- the bag, their copy of the pickup gone: the quest never knew (the tower key), or they handed in what they never found
+    -- (Yuer's flower). Read once from the table.
+    game.narrative = nil
+    function game.isNarrative(id)
+        if type(id) ~= "string" or id == "?" or id == "None" then
+            return false
+        end
+        if game.narrative == nil then
+            local set = {}
+            pcall(function()
+                local path = "/Game/PBZContent/DataTable/Item/DT_InventoryData.DT_InventoryData"
+                local t = StaticFindObject(path)
+                if not valid(t) and type(LoadAsset) == "function" then
+                    LoadAsset(path)
+                    t = StaticFindObject(path)
+                end
+                local lib = StaticFindObject("/Script/Engine.Default__DataTableFunctionLibrary")
+                if not (valid(t) and valid(lib)) then
+                    return
+                end
+                local function col(name)
+                    local out, v = {}, lib:GetDataTableColumnAsString(t, FName(name))
+                    for i = 1, #v do
+                        local s = v[i]
+                        pcall(function() s = s:get() end)
+                        pcall(function() s = s:ToString() end)
+                        out[i] = tostring(s)
+                    end
+                    return out
+                end
+                local ids, kinds = col("ItemId"), col("ItemDetailType")
+                for i = 1, #ids do
+                    if (kinds[i] or ""):find("Narrative", 1, true) then
+                        set[ids[i]] = true
+                    end
+                end
+                game.narrative = set
+                log("Quest items in the game's table: " .. tostring(#ids) .. " items read.")
+            end)
+            if game.narrative == nil then
+                return false        -- (asked again next time: the table may not be loaded yet)
+            end
+        end
+        return game.narrative[id] == true
+    end
+
+    -- A dialogue is open: a talk with an NPC (a hand-in too). Story steps, and a partner's scene skip, wait for it.
+    function game.inDialogue()
+        local open = false
+        pcall(function()
+            for _, d in ipairs(FindAllOf("WBP_FlowDialog_C") or {}) do
+                if valid(d) and d:IsInViewport() and d:IsVisible() then
+                    open = true
+                end
+            end
+        end)
+        if open then
+            game.dialogueAt = os.clock()
+        end
+        return open or os.clock() - (game.dialogueAt or -1e9) < 5
     end
 
     -- What the partner's bag has and this one lacks. Returns how many things came. counts false: things that are counted

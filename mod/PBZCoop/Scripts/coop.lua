@@ -137,6 +137,7 @@ return function(api)
         lead = nil,               -- party: who net stands for: a guest's host, or the host's first guest who's here
         ghostSlots = {},          -- party: ghost address -> slot
         hitHere = {},             -- client: enemy id -> this player hit it
+        postureTicks = {},        -- client: enemy id -> turns its posture has been above this copy's
         guestRuns = {},           -- host: enemy id -> true while the guest's game runs it (see handover)
         guestLines = {},          -- host: enemy id -> the guest's latest record of one its game runs
         mine = {},                -- client: host enemy id -> true while this game runs it (see handover)
@@ -856,9 +857,10 @@ return function(api)
                     end
                 end
             end
-            -- (Not left standing frozen till it goes: it dies as a death looks here, as a guest's copies do.)
-            if game.dissolveKill and not (game.isBoss and game.isBoss(actor, addr)) then
-                game.dissolveKill(actor)
+            -- (Not left standing frozen till it goes: the game's own death, at level 0, as a guest's copies die: what
+            -- listens for deaths here (a quest's encounter) hears of it.)
+            if game.killForReal and not (game.isBoss and game.isBoss(actor, addr)) then
+                game.killForReal(actor)
             else
                 game.kill(actor)
             end
@@ -1258,6 +1260,18 @@ return function(api)
                 if game.setPosture and r.Posture ~= nil and posture ~= nil and r.Posture < posture - 0.5 then
                     game.setPosture(actor, r.Posture)
                     posture = r.Posture
+                    net.postureTicks[name] = nil
+                elseif game.setPosture and r.Posture ~= nil and posture ~= nil and r.Posture > posture + 0.5 then
+                    -- (And back up, a few turns on: after the boss's break the bar refills on the host, and here it stayed
+                    -- empty for good, as the break never happened here.)
+                    net.postureTicks[name] = (net.postureTicks[name] or 0) + 1
+                    if net.postureTicks[name] >= 4 then
+                        game.setPosture(actor, r.Posture)
+                        posture = r.Posture
+                        net.postureTicks[name] = nil
+                    end
+                else
+                    net.postureTicks[name] = nil
                 end
                 net.stats.applied = net.stats.applied + 1
             end
@@ -1885,8 +1899,11 @@ return function(api)
                     -- host's, its scene after the fight first (a quiet kill skipped it, and the next phase came unseen).
                     game.killForReal(actor)
                     log("Host says " .. name .. " died; its death runs here too.")
-                elseif not wasBoss and not quiet and game.dissolveKill then
-                    game.dissolveKill(actor)            -- (it dissolves as a death does, paying nothing here)
+                elseif not wasBoss and not quiet and game.killForReal then
+                    -- The game's own death, at level 0 so it pays nothing here: the quiet kill skipped what listens for
+                    -- deaths, and a quest waiting for the monsters to be dealt with (Fierce Axe) never moved, not even after
+                    -- a reload.
+                    game.killForReal(actor)
                     log("Host says " .. name .. " died; it dies here too.")
                 elseif game.kill then
                     game.kill(actor)
@@ -3386,6 +3403,9 @@ return function(api)
         destroyGhosts()
         if api.mapicon and api.mapicon.hide then
             pcall(api.mapicon.hide)         -- (its ticks end with sync: the partner's marker stayed on the map)
+        end
+        if api.moves and api.moves.dropAllProps then
+            pcall(api.moves.dropAllProps)   -- (what a ghost held for a skill: a jar left in the air)
         end
         if api.bullets and api.bullets.endAll then
             pcall(api.bullets.endAll)       -- (and copies of their effects that loop, with nothing left to end them)

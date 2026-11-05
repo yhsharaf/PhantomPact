@@ -553,6 +553,143 @@ return function(api)
         end
     end
 
+    ------------------------------------------------------------------ props
+
+    -- What a skill puts in a player's hand for a moment, shown on their ghost too. Madman's Broken Sword's drink (right
+    -- button + F): the game attaches a wine jar (BP_JiuTan_C) to the left hand for about a second, and the ghost drank from
+    -- nothing. Only props on this list: the message names one, and its mesh comes from here, never from the wire. The jar's
+    -- own class is a bullet blueprint, so the ghost gets a plain mesh actor with its mesh, not the class.
+    local PROPS = {
+        BP_JiuTan_C = { mesh = "/HuaShira/Animation/Hero/Hun/SH_Sources/ChiZheCanJian/Hun_JiuTan_002.Hun_JiuTan_002",
+            socket = "weapon_l" },
+    }
+    local PROP_LOOK_S = 0.15        -- this player's hands looked at this often
+    local PROP_MAX_S = 4            -- a ghost's prop goes after this long, its end message or not
+    local props = { lookAt = 0, mine = {} }
+
+    -- This player: which listed props are attached to the body now; each one that comes or goes is told.
+    local function watchProps(now)
+        if now < props.lookAt then
+            return
+        end
+        props.lookAt = now + PROP_LOOK_S
+        local pawn = coop.localPawn()
+        if not valid(pawn) then
+            return
+        end
+        local here = {}
+        local l = {}
+        pcall(function() pawn:GetAttachedActors(l, true, true) end)
+        for i = 1, #l do
+            local a = l[i]
+            pcall(function() a = a:get() end)
+            if valid(a) then
+                local okc, cn = pcall(function() return a:GetClass():GetFName():ToString() end)
+                if okc and PROPS[cn] then
+                    here[cn] = true
+                end
+            end
+        end
+        for cn in pairs(here) do
+            if not props.mine[cn] then
+                coop.sendEvent("PROP", "+", cn)
+            end
+        end
+        for cn in pairs(props.mine) do
+            if not here[cn] then
+                coop.sendEvent("PROP", "-", cn)
+            end
+        end
+        props.mine = here
+    end
+
+    local function dropProp(p, cn)
+        local held = p.props and p.props[cn]
+        if held then
+            p.props[cn] = nil
+            if valid(held.actor) and held.actor:GetAddress() == held.addr then
+                pcall(function() held.actor:K2_DestroyActor() end)
+            end
+        end
+    end
+
+    local function showProp(p, cn)
+        local def = PROPS[cn]
+        local ghost = p.ghost
+        if not (def and valid(ghost)) or p.ghostHidden then
+            return
+        end
+        dropProp(p, cn)
+        local mesh = StaticFindObject(def.mesh)
+        if not valid(mesh) and type(LoadAsset) == "function" then
+            pcall(LoadAsset, def.mesh)
+            mesh = StaticFindObject(def.mesh)
+        end
+        local cls = StaticFindObject("/Script/Engine.StaticMeshActor")
+        local gs, pc = api.gs(), api.getPlayer1()
+        local body = ghost.Mesh
+        if not (valid(mesh) and valid(cls) and valid(gs) and valid(pc) and valid(body)) then
+            return
+        end
+        local at = ghost:K2_GetActorLocation()
+        local tf = { Rotation = { X = 0.0, Y = 0.0, Z = 0.0, W = 1.0 }, Translation = { X = at.X, Y = at.Y, Z = at.Z },
+            Scale3D = { X = 1.0, Y = 1.0, Z = 1.0 } }
+        local actor = nil
+        local ok = pcall(function()
+            local a = gs:BeginDeferredActorSpawnFromClass(pc, cls, tf, 2, nil, 1)
+            if valid(a) then
+                actor = gs:FinishSpawningActor(a, tf, 1)
+            end
+        end)
+        if not (ok and valid(actor)) then
+            return
+        end
+        pcall(function()
+            local c = actor.StaticMeshComponent
+            if valid(c) then
+                c:SetMobility(2)
+                c:SetCollisionEnabled(0)
+                c:SetStaticMesh(mesh)
+            end
+            -- Snapped to the hand's socket, as the game's own jar sits (no offset, scale 1).
+            actor:K2_AttachToComponent(body, FName(def.socket), 2, 2, 2, false)
+        end)
+        p.props = p.props or {}
+        p.props[cn] = { actor = actor, addr = actor:GetAddress(), at = os.clock() }
+    end
+
+    coop.handlers.PROP = function(rest, from)
+        local sign, cn = (rest or ""):match("^([%+%-]) (%S+)$")
+        if not (sign and PROPS[cn]) then
+            return
+        end
+        local p = coop.peerOf(from)
+        if sign == "+" then
+            showProp(p, cn)
+        else
+            dropProp(p, cn)
+        end
+    end
+
+    -- A ghost's props go once their time is up, or with the ghost (hidden, gone, sync off).
+    local function ageProps(now)
+        for _, p in ipairs(coop.partners()) do
+            for cn, held in pairs(p.props or {}) do
+                if os.clock() - held.at > PROP_MAX_S or not valid(p.ghost) or p.ghostHidden or not net.enabled then
+                    dropProp(p, cn)
+                end
+            end
+        end
+    end
+
+    function moves.dropAllProps()
+        for _, p in ipairs(coop.partners()) do
+            for cn in pairs(p.props or {}) do
+                dropProp(p, cn)
+            end
+        end
+    end
+
     coop.extraTicks.moves = function()
         local ok, err = pcall(watch)
         if not ok then
@@ -578,6 +715,14 @@ return function(api)
         if errs[1] and errs[1] ~= gear.lastError then
             gear.lastError = errs[1]
             log("moves (gear): " .. tostring(errs[1]))
+        end
+        ok, err = pcall(watchProps, now)
+        if ok then
+            ok, err = pcall(ageProps, now)
+        end
+        if not ok and err ~= props.lastError then
+            props.lastError = err
+            log("moves (props): " .. tostring(err))
         end
     end
 

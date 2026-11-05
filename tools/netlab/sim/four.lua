@@ -242,6 +242,36 @@ local function sharing()
         gone = gone and not rawget(pc.pickups[1], "__alive")
     end
     check(gone, "a pickup one guest takes goes from every world")
+    -- A quest item (a key): each picks up their own, through the game, so the quest moves on for each.
+    for _, pc in ipairs({ h, a, b, c }) do
+        Fake.pickup(pc, "keyspot", "I_KEY_9", 310.0, 0.0, 100.0)
+    end
+    s:run(1.5)
+    b.pickups[#b.pickups]:K2_DestroyActor()
+    s:run(1.5)
+    local kept = true
+    for _, pc in ipairs({ h, a, c }) do
+        kept = kept and rawget(pc.pickups[#pc.pickups], "__alive") ~= false
+    end
+    check(kept and count(b.sent, "^E I keyspot") == 0, "a quest item one player takes stays in the others' worlds, for them to take")
+
+    -- The NPCs who fight beside the players (NpcHelper) aren't enemies: each world keeps its own, free to talk to.
+    local hlist = { { "ally", "BP_Monster_SpearMan_Spear_NpcHelper_XiGu_01_C", 600.0, 0.0, 100.0, 600, 100 },
+        { "foe", THUG, 700.0, 0.0, 100.0, 600, 100 } }
+    local hs = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, hlist)
+    for _, pc in ipairs(hs.pcs) do
+        local cls = Fake.object(pc, "Class")
+        rawset(cls, "__name", "BP_Monster_SpearMan_Spear_NpcHelper_XiGu_01_C")
+        rawset(Session.enemyOn(pc, "ally"), "__classObject", cls)
+    end
+    hs:run(4)
+    Session.moveTo(hs.pcs[1], 0, 0)
+    Session.moveTo(hs.pcs[2], 300, 0)
+    hs:run(3)
+    local ae = Session.enemyOn(hs.pcs[1], "ally")
+    check(net(hs.pcs[2]).remoteEnemies["sp:foe"] ~= nil and net(hs.pcs[2]).remoteEnemies["sp:ally"] == nil,
+        "the NPCs fighting beside the players aren't shared as enemies")
+    allErrors(hs)
     local opened = Fake.chest(b, "BP_Chest_C_2", 300.0, 200.0, 100.0)
     s:run(1.5)
     Fake.put(opened, "CurSwitchState", true)
@@ -285,11 +315,7 @@ local function enemiesAndHits()
     check(field(Session.enemyOn(a, "near"), "dead") == true and field(Session.enemyOn(c, "near"), "dead") == true, "and on every guest's copy")
     check(count(h.sent, "^E K sp:near$") == 1, "once")
     local copy = Session.enemyOn(a, "near")
-    local dissolving = false
-    for _, e in ipairs(a.effectsOn) do
-        dissolving = dissolving or (e.path:find("NS_DeathDissolve_001", 1, true) ~= nil and e.on == field(copy, "Mesh"))
-    end
-    check(dissolving, "a guest's copy of it dies as a death looks here: the game's dissolve on its body")
+    check(field(copy, "realDeath") == true, "a guest's copy of it dies by the game's own death (what a quest waits for hears it)")
     Fake.put(Session.enemyOn(h, "thug1"), "dustLoot", 300)
     swing(c, Session.enemyOn(c, "thug1"), 1)
     s:run(2.5)
@@ -304,7 +330,7 @@ local function enemiesAndHits()
     check(select(1, Fake.health(Session.enemyOn(h, "thug2"))) == left - 50, "a hit counts from where its sender stands, however far off the first guest is")
     Session.moveTo(a, 500, 0)
     s:run(1)
-    check(field(field(copy, "Mesh"), "shown") == false, "and goes as the dissolve takes it (no standing there frozen)")
+    check(field(copy, "dead") == true, "and stays dead (no standing there frozen)")
     -- A guest restarts its sync: it's told of the deaths alone.
     local before = count(a.logs, "Host says .* died; ")
     Session.command(b, "netoff")
@@ -430,12 +456,8 @@ local function guestRunsWhatsNearIt()
     Fake.put(onG, "dead", true)
     s:run(2)
     check(count(g.sent, "^E GK sp:byguest$") == 1, "the guest's game kills it, and says so")
-    check(field(onH, "dead") == true and field(onH, "realDeath") ~= true, "the host's copy dies, quietly")
-    local dissolving = false
-    for _, e in ipairs(h.effectsOn) do
-        dissolving = dissolving or (e.path:find("NS_DeathDissolve_001", 1, true) ~= nil and e.on == field(onH, "Mesh"))
-    end
-    check(dissolving and Session.dust(h) == dust, "as a death looks, and pays nobody twice")
+    check(field(onH, "dead") == true and field(onH, "realDeath") == true, "the host's copy dies by the game's own death")
+    check(Session.dust(h) == dust, "and pays nobody twice")
     -- One fighting the host stays the host's, however near the guest.
     local chasing = Session.enemyOn(h, "chasing")
     Fake.put(field(chasing, "picker"), "SwitchTargetCooldown", 1e9)
