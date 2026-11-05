@@ -451,14 +451,22 @@ return function(api)
     -- stays so.
     function game.spawnBoss(enemyId, revive)
         local id = enemyId:match("^sp:(.+)$")
-        -- (A boss of phases, a spawner each (HookManP1_Seq022, HookManP2_Seq023): another phase alive here is that fight
-        -- already. Spawned beside it, both phases stood there, two bars up.)
-        local group = id and id:match("^(.-)P%d+_Seq%d+$")
-        if group then
+        -- (A boss of phases, a spawner each: HookManP1_Seq022 / HookManP2_Seq023, but also ChangHong_Seq106 /
+        -- ChangHongP2_Seq107, MuXiaoKui_Seq045 / MuXiaoKuiP2_Seq046new, LeiDang_Seq123-3 / LeiDangP2: one boss by its name
+        -- without the phase and the sequence. Another phase alive here is that fight already: spawned beside it, both
+        -- phases stood there, two bars up.)
+        local function phaseGroup(sid)
+            if type(sid) ~= "string" or not sid:find("_Seq", 1, true) and not sid:find("P%d+$") then
+                return nil
+            end
+            return (sid:gsub("_Seq.*$", ""):gsub("P%d+$", ""))
+        end
+        local group = phaseGroup(id)
+        if group and group ~= "" then
             for _, s in ipairs(FindAllOf("AISpawner") or {}) do
                 local sid = nil
                 pcall(function() sid = s.SpawnerID:ToString() end)
-                if sid and sid ~= id and sid:match("^(.-)P%d+_Seq%d+$") == group then
+                if sid and sid ~= id and phaseGroup(sid) == group then
                     local live = nil
                     pcall(function()
                         if valid(s.SpawnedAI) and not game.isDead(s.SpawnedAI) then
