@@ -1846,6 +1846,30 @@ local function playerReports()
         allErrors(s)
     end
     do
+        -- Reports 7 and 8: the host broke the chains (its flow raised a flag), the scene after the boss ran a flow step and
+        -- woke a bell; the guest, who was in neither, could neither start the boss nor rest at its bell, even after a reconnect.
+        local s, h, g = pair()
+        s:run(4)
+        h.env.PBZ.game.storyFlags = nil
+        table.insert(h.globalTags, "zddy.chain.broken")
+        h.eventPipeline.ExecuteNodeGuid:Add("ABCDEF0123456789ABCDEF0123456789")
+        table.insert(h.bellIds, "Bell_YXZR_005")
+        table.insert(h.globalTags, "GameMode.NewGamePlus")       -- (never sent)
+        s:run(6)
+        check(g.storyMarks["zddy.chain.broken"] and g.storyGuids["ABCDEF0123456789ABCDEF0123456789"]
+            and g.storyMarks["Bell_YXZR_005"], "what the host's flow did while linked (a flag, a flow step, a bell) is done on the guest too")
+        check(not g.storyMarks["GameMode.NewGamePlus"], "but never the game's mode")
+        check(not h.storyMarks["zddy.chain.broken"], "and nothing goes the other way")
+        allErrors(s)
+
+        local o, oh, og = pair("FollowHostStory = Off\n")
+        o:run(4)
+        table.insert(oh.globalTags, "zddy.chain.broken")
+        o:run(6)
+        check(not og.storyMarks["zddy.chain.broken"], "FollowHostStory = Off: the guest's flow stays its own")
+        allErrors(o)
+    end
+    do
         -- Report 3: "small enemies go invisible; teleporting to the player or sitting at a bell sets it off".
         local s = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES)
         local h, g = s.pcs[1], s.pcs[2]

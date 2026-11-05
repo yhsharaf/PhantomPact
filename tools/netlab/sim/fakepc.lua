@@ -673,14 +673,45 @@ function Fake.story(pc)
             did("finish")
         end,
     })
+    -- The world's flags, run flow nodes and woken bells, as flowsync.lua reads them (lists with ForEach).
     local guids = object(pc, "Map")
-    pc.storyGuids = {}
-    defs(pc, guids, { Add = function(_, k) pc.storyGuids[k] = true end })
-    pc.eventPipeline = object(pc, "EventPipelineManager", { ExecuteNodeGuid = guids })
-    defs(pc, pc.eventPipeline, { AddTagsByString = function(_, tag) pc.storyMarks[tag] = true did("tag") end })
-    pc.bellManager = object(pc, "BellManager")
+    pc.storyGuids, pc.globalTags, pc.bellIds = {}, {}, {}
+    local function each(list, wrap)
+        return { ForEach = function(_, fn)
+            for i, v in ipairs(list) do
+                fn(i, { get = function() return wrap(v) end })
+            end
+        end }
+    end
+    defs(pc, guids, {
+        Add = function(_, k)
+            if not pc.storyGuids[k] then
+                pc.storyGuids[k] = true
+                pc.storyGuids[#pc.storyGuids + 1] = k
+            end
+        end,
+        ForEach = function(_, fn)
+            for _, k in ipairs(pc.storyGuids) do
+                fn({ get = function() return k end }, { get = function() return true end })
+            end
+        end,
+    })
+    pc.eventPipeline = object(pc, "EventPipelineManager", { ExecuteNodeGuid = guids,
+        GlobalTags = { GameplayTags = each(pc.globalTags, function(s) return { TagName = name(s) } end) } })
+    defs(pc, pc.eventPipeline, {
+        AddTagsByString = function(_, tag)
+            pc.storyMarks[tag] = true
+            pc.globalTags[#pc.globalTags + 1] = tag
+            did("tag")
+        end,
+    })
+    pc.bellManager = object(pc, "BellManager", { ActivateBellIDs = each(pc.bellIds, function(s) return name(s) end) })
     defs(pc, pc.bellManager, {
-        ActivateBellByID = function(_, id) pc.storyMarks[id:ToString()] = true did("bell") end,
+        ActivateBellByID = function(_, id)
+            pc.storyMarks[id:ToString()] = true
+            pc.bellIds[#pc.bellIds + 1] = id:ToString()
+            did("bell")
+        end,
         ActivateAllBellsByMaps = function(_, maps)
             for _, m in ipairs(maps) do
                 pc.storyMarks[m] = true

@@ -518,6 +518,7 @@ if type(api.storyData) ~= "table" then
     api.storyData = nil
 end
 api.story = dofile(SCRIPT_DIR .. "story.lua")(api)
+api.flowsync = dofile(SCRIPT_DIR .. "flowsync.lua")(api)
 api.units = dofile(SCRIPT_DIR .. "units.lua")(api)
 api.localcoop = dofile(SCRIPT_DIR .. "localcoop.lua")(api)
 api.panel = dofile(SCRIPT_DIR .. "panel.lua")(api)
