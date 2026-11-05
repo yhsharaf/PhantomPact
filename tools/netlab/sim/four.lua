@@ -3707,6 +3707,40 @@ end
 -- still has those enemies dead once back.
 local function gaps()
     part("deaths missed in a gap")
+    -- The host's re-tell after a short gap: deaths the guest has handled already cost it no map search (each one was a
+    -- FindAllOf of the spawners, and 40 held one frame for 100-160 ms); a death it missed in the gap still comes through.
+    do
+        local r, rh, rg = pair()
+        Session.enemyOn(rh, "thug1"):Kill(1)
+        Session.enemyOn(rh, "thug2"):Kill(1)
+        r:run(3)
+        check(count(rh.sent, "^E N ") > 0 and count(rh.sent, "^E N ") == count(rh.sent, "^Q NQ "),
+            "each enemy's number goes on the quick lane too")
+        local searches, find = 0, rg.env.FindAllOf
+        rg.env.FindAllOf = function(class)
+            if class == "AISpawner" then
+                searches = searches + 1
+            end
+            return find(class)
+        end
+        searches = 0
+        r:run(6)
+        local quiet = searches              -- (the game's own refresh of its spawner list, now and then)
+        local toldBefore = count(rh.sent, "^E K ")
+        rg.cut = true
+        Session.enemyOn(rh, "near"):Kill(1)
+        r:run(5)
+        rg.cut = false
+        rg.logs = {}
+        searches = 0
+        r:run(6)
+        check(count(rh.sent, "^E K ") > toldBefore + 1, "(the host told them all again)")
+        check(field(Session.enemyOn(rg, "near"), "dead") == true, "the death missed in the gap comes through")
+        check(count(rg.logs, "Host says %S*thug%d died") == 0, "the ones handled already aren't done again")
+        check(searches <= quiet + 1, string.format("and the whole re-tell costs at most one map search more than none (%d, %d quiet)",
+            searches, quiet))
+        allErrors(r)
+    end
     local s = party(nil, nil, { "Host", "Guest", "Guest" })
     local h, a = s.pcs[1], s.pcs[2]
     Session.moveTo(a, 400, 0)

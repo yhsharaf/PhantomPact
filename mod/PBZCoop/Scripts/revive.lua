@@ -246,9 +246,17 @@ return function(api)
             end
         end
         revive.gauge = { points = points, total = total, bars = downs, seconds = timed and timeLeft or nil }
+        -- Sent when it shows something new (a step of 3% of the gauge, the timer's next whole second, a strike just taken),
+        -- and at least once a second: it went five times a second whatever it said, each one on the sure lane.
         if now >= nextGauge then
             nextGauge = now + GAUGE_EVERY_S
-            coop.sendEvent("G", string.format("%.1f", points), total, timed and string.format("%.1f", timeLeft) or -1)
+            local g = revive.gaugeSent
+            local second = timed and math.ceil(timeLeft) or -1
+            if not g or g.total ~= total or math.abs(g.points - points) >= total * 0.03 or g.second ~= second
+                or g.strike ~= lastStrike or now - g.at >= 1.0 then
+                revive.gaugeSent = { points = points, total = total, second = second, strike = lastStrike, at = now }
+                coop.sendEvent("G", string.format("%.1f", points), total, timed and string.format("%.1f", timeLeft) or -1)
+            end
         end
         if not fresh() then
             die(pc, pawn, "your partner is gone.")
@@ -335,18 +343,27 @@ return function(api)
             log(string.format("Revive: %s %.0f cm, %.0f degrees off: %s", name, reach, off, counts and "strike" or "miss"))
         end
         if counts then
-            coop.sendEvent("STRIKE")
+            -- (With the time since this player's last strike: two that come over together counted as one, the second
+            -- worth nothing, as the downed side timed them by when they arrived.)
+            local now = os.clock()
+            local gap = math.min(now - (revive.struckAt or -1e9), MAX_HIT / POINTS_PER_S)
+            revive.struckAt = now
+            coop.sendEvent("STRIKE", string.format("%.2f", gap))
         end
     end
 
     -- (In a party there's no reviving: one sent before the host's hello said party, passed on to every guest, tinted
     -- the wrong player and had any guest's swing at the host's ghost revive someone else. A party's events carry a slot.)
-    coop.handlers.STRIKE = function(_, from)
+    coop.handlers.STRIKE = function(rest, from)
         if from or not down then
             return
         end
         local now = os.clock()
-        points = points - math.min((now - lastStrike) * POINTS_PER_S, MAX_HIT)
+        -- The striker's own time since their last strike, when they say it (an older version doesn't): by arrival, two
+        -- sent apart but delivered together were one.
+        local gap = tonumber(type(rest) == "string" and rest:match("^(%d+%.?%d*)$"))
+        gap = gap and math.min(gap, MAX_HIT / POINTS_PER_S) or (now - lastStrike)
+        points = points - math.min(gap * POINTS_PER_S, MAX_HIT)
         lastStrike, lastHit = now, now
         if points <= 0 then
             local pc, pawn = api.getPlayer1()

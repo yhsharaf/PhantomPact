@@ -443,8 +443,36 @@ return function(api)
     -- The game starts that from a mark on the dying body, and a copy killed for the partner's kill dies without it: the boss
     -- was beaten in one save only, and after a load one player had it back and fought it alone.
     local SPAWNER_BP = "/SGameAI/Tools/Spawner/BP_AISpawner.BP_AISpawner_C"
+    -- Inside one batch of events (coop.lua's processEvents, one frame): the map's spawners searched once, by id, and let
+    -- go at its end. Nothing's kept past the frame. (A field, not a local: this function is at Lua's 200 locals.)
+    function game.beginBatch()
+        game.batch = {}
+    end
+    function game.endBatch()
+        game.batch = nil
+    end
+
     local function spawnerOf(enemyId)
         local id = enemyId and enemyId:match("^sp:(.+)$")
+        local batch = game.batch
+        if id and batch then
+            if not batch.spawners then
+                batch.spawners = {}
+                for _, s in ipairs(FindAllOf("AISpawner") or {}) do
+                    local sid = nil
+                    pcall(function() sid = s.SpawnerID:ToString() end)
+                    local key = sid
+                    if sid == "None" then
+                        pcall(function() key = s:GetFName():ToString() end)
+                    end
+                    if key and batch.spawners[key] == nil then
+                        batch.spawners[key] = s         -- (the first, as the search below takes)
+                    end
+                end
+            end
+            local s = batch.spawners[id]
+            return valid(s) and s or nil
+        end
         for _, s in ipairs(id and FindAllOf("AISpawner") or {}) do
             local sid = nil
             pcall(function() sid = s.SpawnerID:ToString() end)

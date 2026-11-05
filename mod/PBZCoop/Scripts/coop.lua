@@ -225,7 +225,9 @@ return function(api)
     ------------------------------------------------------------------ events
 
     -- These are only worth showing now: a move two seconds late is worse than none, and must never hold up a death.
-    local QUICK = { U = true, M = true, A = true, H = true, Z = true, SHOT = true }
+    -- (NQ: an enemy's number again, as N, on this lane too. Its lines count only once its name is known, and with the sure
+    -- N held up by one lost packet the copy waited about 1.5 round trips without following.)
+    local QUICK = { U = true, M = true, A = true, H = true, Z = true, SHOT = true, NQ = true }
 
     local hostWorld = os.time()   -- host: stands for the world as loaded, new with each start and load from the title (see handlers.Y)
 
@@ -261,6 +263,12 @@ return function(api)
         if text == nil then
             return
         end
+        -- (One batch, one frame: what the handlers look up across a whole map, the spawners, is looked up once for all of
+        -- it, and let go at the end. A re-tell after a gap brought 40 deaths at once, each one a search: 100-160 ms in one
+        -- frame on the guest.)
+        if game.beginBatch then
+            game.beginBatch()
+        end
         for line in text:gmatch("[^\n]+") do
             -- A move comes with how long ago the partner's game read it, in ms (native/relay.hpp), for its montage to start
             -- that far in: net.eventAgeMs while its handler runs (see moveAge), nil for the rest.
@@ -283,6 +291,9 @@ return function(api)
             end
         end
         net.eventAgeMs = nil
+        if game.endBatch then
+            game.endBatch()
+        end
     end
 
     -- Seconds since the partner's game was where the event says: the move's own age, or for one with none (the sure lane,
@@ -675,7 +686,9 @@ return function(api)
         end
         if not net.announced[n] then
             net.announced[n] = true
-            sendEvent("N", n, name, enemyClass(actor))
+            local class = enemyClass(actor)
+            sendEvent("N", n, name, class)
+            sendEvent("NQ", n, name, class)
         end
         return n
     end
@@ -1837,6 +1850,7 @@ return function(api)
             net.enemyNames[tonumber(n)] = { name = name, class = class }
         end
     end
+    handlers.NQ = handlers.N        -- (the same, by the quick lane: whichever comes first)
 
     -- The local enemy last paired with this host id, for a death that arrives after the host stopped listing it.
     local function stickyEnemy(name)
@@ -1914,6 +1928,13 @@ return function(api)
     handlers.K = function(name, _, quiet)
         local actor = enemyByName[name]
         if isClient() then
+            -- (Told again, the host's re-tell after a gap: one already handled here, not standing alive, costs nothing. Each
+            -- went through the searches below, and 40 at once held the guest's frame for 100-160 ms. One not heard before,
+            -- or back alive since, or in a fight again, goes the whole way.)
+            if net.hostKilled[name] and not net.hostBosses[name] and not net.broughtBack[name]
+                and not (valid(actor) and not (game.isDead and game.isDead(actor))) then
+                return
+            end
             net.hostKilled[name] = true
             net.remoteEnemies[name] = nil
             net.mine[name] = nil
