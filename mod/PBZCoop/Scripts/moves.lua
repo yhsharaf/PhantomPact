@@ -510,6 +510,16 @@ return function(api)
         local slot = mainSlot()
         cwc:SetWeaponAndScabbardForceHide(slot, math.max(cwc:GetCurrentWeaponIndex(slot, false) or 0, 0), hide)
         cwc:SetWeaponForceHide(edgeSlot(), 0, hide)
+        if not hide then
+            -- (Shown again, the edge slot too: a partner with no Phantom Edge then showed this player's own, as the
+            -- record said it was hidden already. Dressing hides it again.)
+            local addr = ghost:GetAddress()
+            for _, p in ipairs(coop.partners()) do
+                if valid(p.ghost) and p.ghost:GetAddress() == addr then
+                    gearOf(p).edgeHiddenOn = nil
+                end
+            end
+        end
     end
 
     -- The partner has just (re)started sync: it knows nothing yet.
