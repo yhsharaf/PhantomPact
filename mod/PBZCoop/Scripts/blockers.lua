@@ -12,7 +12,10 @@ return function(api)
     local coop = api.coop
     local net = coop.net
 
-    local LOOK_S = 0.5              -- the blockers near this player looked at this often
+    -- The blockers near this player looked at this often, and the switches as often, half way between: each look is a
+    -- FindAllOf of a whole map (about 2 ms on the bench). At 0.5 s each this was the mod's dearest job on the host (about
+    -- 9 ms of game thread a second, plus the searches). A chain or a lever a second late in the partner's world is fine.
+    local LOOK_S = 1.5
     local NEAR_CM = 3000            -- one this close that breaks was this player's doing (one far off broke from a load)
     local MAX_NAME = 160
 
@@ -164,9 +167,28 @@ return function(api)
         end
     end
 
+    -- Nobody else on this map: nobody to tell, so no look at all. (What was seen is kept: one this player broke meanwhile,
+    -- still near them, goes out at the first look once a partner is here.)
+    local function partnerHere()
+        for _, p in ipairs(coop.partners()) do
+            local t = p.target
+            if t and t.Map and t.Map == net.localMap and not p.partnerGone then
+                return true
+            end
+        end
+        return false
+    end
+
     coop.extraTicks.blockers = function()
+        local okP, here = pcall(partnerHere)
+        if okP and not here then
+            return
+        end
         local okS, errS = pcall(function()
-            if os.clock() >= (blockers.switchAt or 0) then
+            if blockers.switchAt == nil then
+                blockers.switchAt = os.clock() + LOOK_S / 2     -- (half way between the blockers' looks)
+            end
+            if os.clock() >= blockers.switchAt then
                 blockers.switchAt = os.clock() + LOOK_S
                 local pawn = coop.localPawn()
                 if valid(pawn) then
