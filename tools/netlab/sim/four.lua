@@ -1846,6 +1846,40 @@ local function playerReports()
         allErrors(s)
     end
     do
+        -- Report 1: "the guest empties a small enemy's bar and it can still be hit, now and then it never dies".
+        local s, h, g = pair()
+        Session.moveTo(g, 400, 300)
+        s:run(3)
+        local hostThug, copy = Session.enemyOn(h, "near"), Session.enemyOn(g, "near")
+        Fake.setHealth(hostThug, 1.3)
+        s:run(1)
+        swing(g, copy, 1)                           -- (1.3 to its floor: a drop under half a point)
+        s:run(2)
+        check(field(hostThug, "dead") == true, "a copy hit onto its floor by a hair is still the killing blow")
+        allErrors(s)
+
+        local r, rh, rg = pair()
+        Session.moveTo(rg, 400, 300)
+        r:run(3)
+        local thug2, copy2 = Session.enemyOn(rh, "thug1"), Session.enemyOn(rg, "thug1")
+        Session.moveTo(rg, 1400, 300)
+        r:run(2)
+        local handlers = rh.env.PBZ.coop.handlers
+        local realD, dropped = handlers.D, 0
+        handlers.D = function(rest, from)
+            if rest:find(" L ") and dropped == 0 then
+                dropped = 1                         -- (the first killing blow lost on the way)
+                return
+            end
+            return realD(rest, from)
+        end
+        swing(rg, copy2, 1)
+        r:run(3)
+        check(dropped == 1 and field(thug2, "dead") == true, "a killing blow lost on the way is told again, and the enemy dies")
+        handlers.D = realD
+        allErrors(r)
+    end
+    do
         -- Bai Chilian's arena on the bench: a sequence ran on through a minute of fighting, the camera on the player. The guest
         -- was taken for "in a scene": hidden on the host and off the boss's list, which then stood still on the guest's screen.
         local s, h, g = pair()

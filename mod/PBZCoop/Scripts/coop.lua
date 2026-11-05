@@ -131,6 +131,7 @@ return function(api)
         hostKilled = {},          -- client: host id -> true for each death the host announced since the last shared rest
         hostBosses = {},          -- client: host id -> true while the host's fight with that boss goes on
         heldAlive = {},           -- client: actor address -> actor held at Health_Min 1 (only the host kills it)
+        lethalPending = {},       -- client: host id -> { at, tries }: a killing blow told, its K not heard yet
         healTicks = {},           -- client: host id -> since when the host's health has been clearly above ours
         hostSeen = {},            -- host, PvP: name -> { hp, posture } last tick, to undo the ghost's own hits
         deadSince = nil,          -- os.clock() when the local player died (spectating starts a little later)
@@ -1231,6 +1232,7 @@ return function(api)
     -- before the host had heard them and a boss's break never came on the guest's side.)
     local HEAL_TICKS = 1.0
     local HELD_HP = 1             -- the floor the client's copies of host enemies are held at
+    net.LETHAL_AGAIN_S, net.LETHAL_TRIES = 0.8, 4   -- a killing blow with no K back is told again this often, this many times
 
     -- keep: address -> actor still held this tick (nil releases every held copy).
     local function releaseHeld(keep)
@@ -1282,7 +1284,10 @@ return function(api)
             if prev and hp and prev.hp then
                 local dHp = prev.hp - hp
                 local dPosture = (prev.posture and posture) and (prev.posture - posture) or 0
-                if dHp > 0.5 or dPosture > 0.5 then
+                -- (Onto its floor by any amount: a copy the host's line left at 1.3 fell to 1 with no report at all, and every
+                -- hit after read as nothing, the enemy taking hits for good.)
+                local onFloor = net.heldAlive[addr] ~= nil and hp <= HELD_HP + 0.01 and prev.hp > hp + 0.01
+                if dHp > 0.5 or dPosture > 0.5 or onFloor then
                     if ghostsHit() and (net.pvp or dHp <= 0.5) then
                         -- The host's swing, replayed here: the host's own world already took it.
                         undoHit(actor, prev.hp, prev.posture)
@@ -1293,12 +1298,24 @@ return function(api)
                         undoHit(actor, prev.hp, prev.posture)
                         hp, posture = prev.hp, prev.posture
                     else
-                        local lethal = net.heldAlive[addr] ~= nil and dHp > 0.5 and hp <= HELD_HP + 0.01
+                        local lethal = net.heldAlive[addr] ~= nil and (dHp > 0.5 or onFloor) and hp <= HELD_HP + 0.01
                         reportHit(name, actor, math.max(0, dHp), math.max(0, dPosture), lethal)
                         if lethal then
+                            net.lethalPending[name] = { at = os.clock(), tries = 1 }
                             log("Killing blow on " .. name .. "; telling the host.")
                         end
                     end
+                end
+            end
+            -- A killing blow told with no K back: told again (a lost or refused one left the copy at 1 health, hit after hit
+            -- reading as nothing). The host answers K, or LR with what it has left.
+            local pending = net.lethalPending[name]
+            if pending and os.clock() - pending.at >= net.LETHAL_AGAIN_S and net.heldAlive[addr] ~= nil then
+                if pending.tries >= net.LETHAL_TRIES then
+                    net.lethalPending[name] = nil
+                else
+                    pending.at, pending.tries = os.clock(), pending.tries + 1
+                    reportHit(name, actor, 0, 0, true)
                 end
             end
             local r = net.remoteEnemies[name]
@@ -1962,6 +1979,7 @@ return function(api)
     -- quiet: a death from before (BEATEN), not the end of a fight going on.
     handlers.K = function(name, _, quiet)
         local actor = enemyByName[name]
+        net.lethalPending[name] = nil
         if isClient() then
             -- (Told again, the host's re-tell after a gap: one already handled here, not standing alive, costs nothing. Each
             -- went through the searches below, and 40 at once held the guest's frame for 100-160 ms. One not heard before,
@@ -2073,9 +2091,20 @@ return function(api)
         -- (One the guest's game runs takes no hits here: its lines say what it has left.)
         if isHost() and name and not net.guestRuns[name] then
             local actor = enemyByName[name]
+            -- (A killing blow is looked for further: one on an enemy just past this round's list, or a little further off than
+            -- a hit, was dropped without a word, and the guest's copy stood at 1 health for good, still taking hits.)
+            if not valid(actor) and lethal == "L" and game.listEnemies then
+                for _, a in pairs(game.listEnemies() or {}) do
+                    if valid(a) and enemyName(a, a:GetAddress()) == name then
+                        actor = a
+                        break
+                    end
+                end
+            end
             local hitter = peerOf(from).target
+            local killed = false
             if valid(actor) and game.applyDamage and hitter
-                and gap3d(actor:K2_GetActorLocation(), hitter) <= OWN_HIT_CM then
+                and gap3d(actor:K2_GetActorLocation(), hitter) <= (lethal == "L" and OWN_HIT_CM * 2 or OWN_HIT_CM) then
                 local wasAlive = not (game.isDead and game.isDead(actor))
                 local boss = net.partnerBosses[name] or (game.isBoss and game.isBoss(actor))
                 local real = game.applyDamage(actor, amount, posture, true)
@@ -2103,6 +2132,7 @@ return function(api)
                                                                 -- under the id cleared the name, the old body told it again,
                                                                 -- and a boss's items went out twice)
                     sendEvent("K", name)
+                    killed = true
                     if game.markBeaten then
                         -- (Its turn below won't see this death: deadSent is up already. A boss the guest finished came
                         -- back on the host's next load.)
@@ -2124,6 +2154,37 @@ return function(api)
                         addr = actor:GetAddress() }
                 end
             end
+            -- A killing blow not taken here: said so (LR), with what it has left, so the guest's copy isn't held at 1 for good.
+            -- Dead here already (its K came before, or was lost): told again.
+            if lethal == "L" and not killed then
+                if net.deadSent[name] or (valid(actor) and game.isDead and game.isDead(actor)) then
+                    sendEvent("K", name)
+                elseif valid(actor) then
+                    local hp = game.getHealth(actor)
+                    if hp then
+                        sendEvent("LR", name, string.format("%.1f", hp))
+                    end
+                end
+            end
+        end
+    end
+
+    -- Guest: the host didn't take this killing blow (LR <name> <health there>): the copy takes the host's health, and is
+    -- reported again if hit to its floor once more.
+    handlers.LR = function(rest, from)
+        local name, hp = (rest or ""):match("^(%S+) (%S+)$")
+        hp = num(hp)
+        if from ~= nil or isHost() or not name or not hp then
+            return
+        end
+        net.lethalPending[name] = nil
+        local actor = enemyByName[name]
+        if valid(actor) and game.setHealth and not (game.isDead and game.isDead(actor)) then
+            game.setHealth(actor, math.max(HELD_HP + 1, hp))
+            if seen[name] then
+                seen[name].hp = math.max(HELD_HP + 1, hp)
+            end
+            log("The host didn't take the killing blow on " .. name .. ": it has " .. string.format("%.0f", hp) .. " left there.")
         end
     end
 
@@ -3356,6 +3417,7 @@ return function(api)
         net.bossAsk = {}
         net.joinedBoss, net.joinedWith, net.farFight, net.bossOverAt = nil, nil, nil, nil
         net.healTicks = {}
+        net.lethalPending = {}
         net.hostSeen = {}
         net.partnerDowned = false
         enemyByName = {}

@@ -1252,7 +1252,9 @@ return function(api)
         -- trip on to Lu Family Village never opened, in the host's save for good. Left just above it, the next blow here
         -- (this player's own, through the game) crosses it, and the game does the rest.
         local floor = game.healthFloor(actor)
-        if floor >= 1 and left <= floor then
+        -- (A boss's only: an enemy held at a floor of the mod's own (a host's copy of one the guest's game ran) stood at 2 for
+        -- good, the guest's copy at 1.)
+        if floor >= 1 and left <= floor and game.isBoss and game.isBoss(actor) then
             game.setHealth(actor, math.min(hp, floor + 1))
             return false
         end
