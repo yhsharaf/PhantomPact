@@ -4386,7 +4386,12 @@ local function backToTwo()
     s.relay.party = false
     s:run(3)
     check(net(guest).party == nil and net(guest).slot == nil, "a host with two players again: the guest hears it")
-    check(net(guest).peerList == nil and rawget(guest.spawned[2], "__alive") == false, "the other guest's ghost goes")
+    -- (Gone, or as a clone put away hidden till the next load: a clone isn't destroyed mid-world, see destroyGhost.)
+    local other = guest.spawned[2]
+    check(net(guest).peerList == nil and (rawget(other, "__alive") == false or field(other, "hidden") == true),
+        "the other guest's ghost goes")
+    check(rawget(other, "__alive") == false or (field(other, "hidden") == true and field(other, "collision") ~= true),
+        "a clone put away is hidden, with no collision")
     check(rawget(guest.spawned[1], "__alive") == true and net(guest).ghost == guest.spawned[1], "the host's stays")
     allErrors(s)
 end

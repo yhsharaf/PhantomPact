@@ -3472,7 +3472,29 @@ return function(api)
 
     local function destroyGhost(p)
         if valid(p.ghost) then
-            p.ghost:K2_DestroyActor()
+            -- A clone (this player's own class) isn't destroyed mid-world: put away, hidden, frozen far up and off every list,
+            -- and gone with the next load, as the world takes everything then. Players reported locked slots their talent tree
+            -- had opened, every time someone left, fixed only by resetting the tree: the clone's end of life (its unbinding
+            -- from the world's skill and backpack systems, which it shares with this player) is the one thing a leave does.
+            local ok, clone = pcall(function()
+                local _, pawn = getPlayer1()
+                return valid(pawn) and p.ghost:GetClass():GetAddress() == pawn:GetClass():GetAddress()
+            end)
+            if ok and clone then
+                pcall(function()
+                    if game.ghostInFight then
+                        game.ghostInFight(p.ghost, false, game.listEnemies() or {})     -- (off every enemy's list)
+                    end
+                    p.ghost:SetActorHiddenInGame(true)
+                    p.ghost:SetActorEnableCollision(false)
+                    p.ghost.CharacterMovement:SetMovementMode(MOVE_NONE, 0)
+                    local l = p.ghost:K2_GetActorLocation()
+                    p.ghost:K2_SetActorLocation({ X = l.X, Y = l.Y, Z = l.Z + 200000 }, false, {}, true)
+                    p.ghost:SetActorTickEnabled(false)
+                end)
+            else
+                p.ghost:K2_DestroyActor()
+            end
         end
         -- (Its address is free now: left marked as a ghost's, an enemy given it later was never shared nor synced.)
         if p.ghostAddr then
