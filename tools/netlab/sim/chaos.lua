@@ -303,7 +303,7 @@ return function(out, scripts, seeds, steps)
             -- No boss bar or fog wall anywhere while nobody's in a fight.
             if now - st.lastFightAt > 20 then
                 for i, pc in ipairs(s.pcs) do
-                    if pc.env.PBZ.game.bossFightActive() then
+                    if pc.env.PBZ.game.bossFightActive() and now - (pc.backAt or -1e9) > 8 then
                         bad[#bad + 1] = "pc" .. i .. " shows a boss fight, nobody's been in one for " .. math.floor(now - st.lastFightAt) .. " s"
                     end
                     if next(pc.env.PBZ.net.foggedBosses or {}) then
@@ -350,6 +350,9 @@ return function(out, scripts, seeds, steps)
             function()
                 local pc = pick(2)
                 pc.cut = not pc.cut
+                if not pc.cut then
+                    pc.backAt = h.now       -- (what it missed comes all at once: a few seconds to settle)
+                end
                 return (pc.cut and "cut " or "back ") .. name(pc)
             end,
             function()

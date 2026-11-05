@@ -3583,7 +3583,16 @@ return function(api)
         -- alive or not, as when they died in it, walked out or restarted sync. Its mirror here goes too, for one who walked
         -- in as well: what they fight is a copy of that boss, which does nothing once its own player's fight is over, and
         -- they stood shut in by the walls with it. (The bar came back every second, and the walls stayed shut for nobody.)
-        if was and on ~= "1" then
+        -- (Or no F 1 heard at all, with a fight of theirs shown here: a B held up while this player was cut off came after
+        -- the fight was over, and with nothing to end it its bar stayed up for good.)
+        local theirs = false
+        if on ~= "1" and not was then
+            local whose = net.party and (from or 1) or nil
+            for name in pairs(net.partnerBosses) do
+                theirs = theirs or whose == nil or net.fightOf[name] == whose
+            end
+        end
+        if (was or theirs) and on ~= "1" then
             if from == nil and isClient() then
                 -- (The host's fights are all over: none comes back at this player's death. Only those the host told of:
                 -- this player's own, announced to the host, stay theirs, and its kill still runs the boss's real death.)
@@ -3607,7 +3616,9 @@ return function(api)
             net.fightHereAt = now
         end
         local fighting = now - (net.fightHereAt or -FIGHT_GAP_S) < FIGHT_GAP_S
-        if fighting ~= net.toldFighting or (fighting and now >= (net.fightToldAt or 0)) then
+        -- (Told again after a gap, a join or a sync start (fightToldAt 0), "no fight" too, once: only a change was ever
+        -- said, and a fight's end missed in a gap was never heard.)
+        if fighting ~= net.toldFighting or (fighting and now >= (net.fightToldAt or 0)) or net.fightToldAt == 0 then
             net.toldFighting, net.fightToldAt = fighting, now + FIGHT_TOLD_S
             sendEvent("F", fighting and 1 or 0)
         end
