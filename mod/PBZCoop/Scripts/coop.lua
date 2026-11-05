@@ -1317,9 +1317,13 @@ return function(api)
                 if game.setMaxHealth and r.MaxHp and maxhp and math.abs(r.MaxHp - maxhp) > 1 then
                     game.setMaxHealth(actor, r.MaxHp)
                 end
-                if game.setHealth and r.Hp ~= nil and hp ~= nil and r.Hp < hp - 0.5 then
-                    game.setHealth(actor, r.Hp)
-                    hp = r.Hp
+                -- (Never below the floor it's held at: the host's line can say 0 before its K comes, and a copy written to 0
+                -- reads as dead here without the game's death ever running. The forest's last boss then died in the guest's
+                -- world with no scene after it, and the guest's story stayed in the forest while the host's went on.)
+                local want = r.Hp ~= nil and math.max(r.Hp, HELD_HP) or nil
+                if game.setHealth and want ~= nil and hp ~= nil and want < hp - 0.5 then
+                    game.setHealth(actor, want)
+                    hp = want
                 end
                 if game.setHealth and r.Hp ~= nil and hp ~= nil and r.MaxHp
                     and r.Hp > hp + math.max(1, r.MaxHp * 0.05) then
@@ -1982,7 +1986,9 @@ return function(api)
                 if api.puppets then
                     api.puppets.drop(actor)
                 end
-                if game.isDead and game.isDead(actor) then
+                -- (Dead by the game's own word, not only at 0 health: a copy written to 0 never had its death run.)
+                local gameDead = select(2, pcall(function() return actor:IsDead() end)) == true
+                if game.isDead and game.isDead(actor) and not (fought and not quiet and not gameDead and game.killForReal) then
                     -- (Dead here first, by its own death: one this game ran (handover), whose death cut short looked wrong.)
                     log("Host says " .. name .. " died; it's dead here already.")
                 elseif fought and not quiet and game.killForReal then

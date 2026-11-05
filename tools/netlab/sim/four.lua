@@ -1846,6 +1846,25 @@ local function playerReports()
         allErrors(s)
     end
     do
+        -- The forest's last boss on the bench: the guest's copy read 0 health before the host's K came, and the K took it
+        -- for dead already: no death of the game's ran, so no scene, and the guest's story stayed while the host's went on.
+        local s, h, g = pair()
+        Session.moveTo(h, 3000, 2800)
+        Session.moveTo(g, 3000, 2700)
+        s:run(3)
+        bossStart(s)
+        s:run(4)
+        local copy = Session.enemyOn(g, "boss")
+        Fake.setHealth(copy, 0)                     -- (at 0, but the game's death never ran on it)
+        local hostBoss = Session.enemyOn(h, "boss")
+        Fake.setHealth(hostBoss, 0)
+        Fake.put(hostBoss, "dead", true)
+        s:run(3)
+        check(field(copy, "realDeath") == true,
+            "a copy only at 0 health still dies the game's whole way at the host's K (the forest's last: its scene, its story)")
+        allErrors(s)
+    end
+    do
         local s, h, g = pair()
         Session.moveTo(h, 3000, 2800)
         Session.moveTo(g, 3000, 2700)
