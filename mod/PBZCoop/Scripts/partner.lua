@@ -100,8 +100,12 @@ return function(api)
             partner.goUntil = os.clock() + LINK_WAIT_S
             coop.watchParty()               -- (the host's hello comes with its first position: this frame can't have seen it)
             partner.goFrom = os.clock() + TOLD_WAIT_S
+            net.watchGaveUp = nil
         end
-        if partner.goUntil and net.partnerFighting then
+        if partner.goUntil and net.watchGaveUp then
+            -- (Watched for coop.lua's WATCH_MAX_S and let go: no trip and no second hold for this link.)
+            partner.goUntil, partner.goTo = nil, nil
+        elseif partner.goUntil and net.partnerFighting then
             -- Not into the middle of a boss fight: it's watched, and the trip made when it's over, whoever won.
             partner.goUntil = os.clock() + LINK_WAIT_S
             coop.watchFight(true)

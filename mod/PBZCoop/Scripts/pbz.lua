@@ -411,11 +411,33 @@ return function(api)
         end)
     end
 
-    -- Out of the way on this PC, and back: coop.lua, for an enemy the host's world doesn't have.
-    function game.stepAside(actor, on)
+    -- Out of the way on this PC, and back: coop.lua, for an enemy the host's world doesn't have. home: where it stands, given
+    -- with on and again with off. Hidden isn't enough: a live enemy within some 10-30 m keeps a bell from being rung, hidden or
+    -- not, collision or not (tried on a real bell, 11-05), and a guest whose save is behind the host's had the host's long-dead
+    -- enemies standing at bells, out of sight: "why can't I ring the bell in my friend's game?". So it waits 500 m up, held
+    -- there, and comes back to the same spot.
+    game.ASIDE_UP_CM = 50000
+    function game.stepAside(actor, on, home)
         pcall(function()
             actor:SetActorHiddenInGame(on)
             actor:SetActorEnableCollision(not on)
+        end)
+        if not home then
+            return
+        end
+        pcall(function()
+            local cmc = actor.CharacterMovement
+            if on then
+                if valid(cmc) then
+                    cmc:SetMovementMode(0, 0)       -- (MOVE_None: no falling from up there)
+                end
+                actor:K2_SetActorLocation({ X = home.X, Y = home.Y, Z = home.Z + game.ASIDE_UP_CM }, false, {}, true)
+            else
+                actor:K2_SetActorLocation({ X = home.X, Y = home.Y, Z = home.Z }, false, {}, true)
+                if valid(cmc) then
+                    cmc:SetMovementMode(1, 0)       -- (MOVE_Walking)
+                end
+            end
         end)
     end
 
@@ -529,18 +551,26 @@ return function(api)
     -- its spawner's location, or nil for an enemy that doesn't come from a named spawner, and true if it was beaten in this
     -- save and turned back for the fight (the caller puts it back: see bringBack). revive false: one this save has beaten
     -- stays so.
+    -- A boss of phases, a spawner each, by its name without the phase and the sequence: nil for one that isn't. (Also
+    -- "_P<n>..." and "_Seqs...": the forest's YuCong is YuCong_P1, YuCong_Seqs028, YuCong_P3_1/2/3, YuCong_P3_Yuu.)
+    function game.phaseGroup(sid)
+        if type(sid) ~= "string" then
+            return nil
+        end
+        sid = sid:gsub("^sp:", "")
+        if not (sid:find("_Seq", 1, true) or sid:find("P%d+$") or sid:find("_P%d")) then
+            return nil
+        end
+        return (sid:gsub("_Seq.*$", ""):gsub("_P%d.*$", ""):gsub("P%d+$", ""))
+    end
+
     function game.spawnBoss(enemyId, revive)
         local id = enemyId:match("^sp:(.+)$")
         -- (A boss of phases, a spawner each: HookManP1_Seq022 / HookManP2_Seq023, but also ChangHong_Seq106 /
         -- ChangHongP2_Seq107, MuXiaoKui_Seq045 / MuXiaoKuiP2_Seq046new, LeiDang_Seq123-3 / LeiDangP2: one boss by its name
         -- without the phase and the sequence. Another phase alive here is that fight already: spawned beside it, both
         -- phases stood there, two bars up.)
-        local function phaseGroup(sid)
-            if type(sid) ~= "string" or not sid:find("_Seq", 1, true) and not sid:find("P%d+$") then
-                return nil
-            end
-            return (sid:gsub("_Seq.*$", ""):gsub("P%d+$", ""))
-        end
+        local phaseGroup = game.phaseGroup
         local group = phaseGroup(id)
         if group and group ~= "" then
             for _, s in ipairs(FindAllOf("AISpawner") or {}) do
@@ -914,6 +944,12 @@ return function(api)
 
     -- Health_Min: the floor native damage can't push health below. The client holds its copies of the host's
     -- enemies at 1 so only the host decides when one dies (coop.lua); 0 is the game's normal.
+    -- The floor native damage can't push its health below (0 if none, or unread).
+    function game.healthFloor(actor)
+        local ok, v = pcall(function() return actor.AttributeSetBase.Health_Min.CurrentValue end)
+        return (ok and type(v) == "number") and v or 0
+    end
+
     function game.setMinHealth(actor, value)
         pcall(function()
             local m = actor.AttributeSetBase.Health_Min
@@ -1089,6 +1125,7 @@ return function(api)
     -- after the fight first. Its loot is rolled at level 0, which pays nothing: the partner's death paid already, and that
     -- dust reaches this player from there. Falls back to the quiet kill if the effect doesn't take.
     function game.killForReal(actor)
+        local boss = game.isBoss and game.isBoss(actor)
         game.hideHealthBar(actor)
         pcall(function()
             local level = actor.AttributeSetBase.Level
@@ -1104,6 +1141,9 @@ return function(api)
         local hp = game.getHealth(actor)
         if ok and hp ~= nil and hp <= 0 then
             return true
+        end
+        if boss then
+            return false        -- (a boss the game won't let die now isn't forced: see applyDamage)
         end
         game.kill(actor)
         return false
@@ -1145,6 +1185,15 @@ return function(api)
             game.setPosture(actor, math.max(0, posture - postureDamage))
         end
         local left = math.max(0, hp - amount)
+        -- A floor the game set on its own (a boss whose phase ends in a scene: the forest's last boss, YuCong): not crossed by
+        -- a partner's blow. Zeroed and killed, the boss died outside its script: no scene after it, the body stayed, and the
+        -- trip on to Lu Family Village never opened, in the host's save for good. Left just above it, the next blow here
+        -- (this player's own, through the game) crosses it, and the game does the rest.
+        local floor = game.healthFloor(actor)
+        if floor >= 1 and left <= floor then
+            game.setHealth(actor, math.min(hp, floor + 1))
+            return false
+        end
         if left <= 0 and real then
             forgetBoss(actor)
             stopSwing(actor)
@@ -1155,6 +1204,13 @@ return function(api)
             local after = game.getHealth(actor)
             if ok and after ~= nil and after <= 0 then
                 return true
+            end
+            if game.isBoss and game.isBoss(actor) then
+                -- The game wouldn't let its boss die now (between phases, its health locked for a scene to come): not forced
+                -- through with the quiet kill below. Forced, the forest's last boss died outside its script, its body stayed,
+                -- no scene came, and the trip on to Lu Family Village never opened in the host's save. Left at 1, for the game.
+                game.setHealth(actor, math.max(1, math.min(hp, after or 1)))
+                return false
             end
         end
         game.setHealth(actor, left)

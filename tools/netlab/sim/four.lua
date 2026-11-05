@@ -1240,11 +1240,13 @@ local function twoSaves()
     check(field(copy, "hidden") == true, "then it steps aside")
     check(field(brain, "running") == false, "its AI stops")
     check(field(copy, "dead") ~= true and select(1, Fake.health(copy)) > 0, "and it isn't killed")
+    check(at(copy).Z >= 100.0 + 40000, "and it waits high up, too far for a bell to count it (one kept the guest from ringing)")
     local boss = Session.enemyOn(g, "boss")
     check(field(boss, "hidden") ~= true, "a boss stays")
     Session.moveTo(h, 30000, 0)
     s:run(2)
     check(field(copy, "hidden") == false and field(brain, "running") == true, "the host moves on, and it's back")
+    check(gap(at(copy), { X = 1500.0, Y = 300.0 }) < 50 and math.abs(at(copy).Z - 100.0) < 50, "where it stood")
     Session.moveTo(h, 1000, 300)
     s:run(5)
     check(field(copy, "hidden") == true, "the host comes back, and it's out of the way again")
@@ -1762,6 +1764,119 @@ local function hostsEnemiesHere()
     check(field(kh.spawners[Session.indexOf(kh, "boss")], "record") == false, "and the host's world has it beaten")
     check(Session.dust(kh) == 700 and Session.dust(kg) == 700, "the host is paid once, by the game, and the guest gets the same")
     allErrors(k)
+end
+
+-- Player reports on 1.6.3 (11-05): the forest's last boss killed outside its script, a phase spawned on the host by a guest's
+-- fight, a boss copy left standing on the guest after the host's fight, a joiner held watching a fight with no end.
+local function playerReports()
+    part("player reports on 1.6.3")
+    do
+        local k, kh, kg = pair()
+        Session.moveTo(kh, 3000, 2800)
+        Session.moveTo(kg, 3000, 2700)
+        k:run(4)
+        local hostBoss = Session.enemyOn(kh, "boss")
+        local floor = field(field(hostBoss, "AttributeSetBase"), "Health_Min")
+        Fake.put(floor, "BaseValue", 1000)
+        Fake.put(floor, "CurrentValue", 1000)
+        swing(kg, Session.enemyOn(kg, "boss"), 1)
+        k:run(3)
+        check(field(hostBoss, "dead") ~= true, "a guest's killing blow on a boss its game holds at a floor (a phase's end) doesn't kill it")
+        check(select(1, Fake.health(hostBoss)) == 1001, "it's left just above the floor, for the host's next blow to cross")
+        check(field(kh.spawners[Session.indexOf(kh, "boss")], "record") ~= false, "and it isn't written beaten")
+        allErrors(k)
+    end
+    do
+        local k, kh, kg = pair()
+        Session.moveTo(kh, 3000, 2800)
+        Session.moveTo(kg, 3000, 2700)
+        k:run(4)
+        local hostBoss = Session.enemyOn(kh, "boss")
+        Fake.put(hostBoss, "locked", true)      -- (between phases: the game won't let it die now)
+        swing(kg, Session.enemyOn(kg, "boss"), 1)
+        k:run(3)
+        check(field(hostBoss, "dead") ~= true and select(1, Fake.health(hostBoss)) >= 1,
+            "a guest's killing blow on a boss the game won't let die now isn't forced through")
+        check(field(kh.spawners[Session.indexOf(kh, "boss")], "record") ~= false, "nor written beaten")
+        Fake.put(hostBoss, "locked", nil)
+        allErrors(k)
+    end
+    do
+        local list = {}
+        for _, e in ipairs(ENEMIES) do
+            list[#list + 1] = e
+        end
+        list[#list + 1] = { "YuCong_P3_1", "BP_Monster_Boss_C", 3000.0, 3400.0, 100.0, 5000, 400, true }
+        local s = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, list)
+        local sh, sg = s.pcs[1], s.pcs[2]
+        local hi = Session.indexOf(sh, "YuCong_P3_1")
+        local hsp = sh.spawners[hi]
+        Fake.put(hsp, "SpawnedAI", nil)         -- (the host is still in its scene between phases: no phase 3 yet)
+        table.remove(sh.enemies, hi)
+        s:run(4)
+        Session.moveTo(sh, 3000, 3000)
+        Session.moveTo(sg, 3000, 3200)
+        s:run(2)
+        sg.hudLayout:RegisterBossHPBar(Session.enemyOn(sg, "YuCong_P3_1"))
+        s:run(3)
+        check(count(sg.sent, "^E B .*YuCong_P3_1") >= 1, "(a guest's fight with a boss's later phase is told)")
+        check((field(hsp, "claimed") or 0) == 0, "the host doesn't spawn that phase for it: its own fight script does")
+        allErrors(s)
+    end
+    do
+        local s, h, g = pair()
+        Session.moveTo(h, 3000, 2800)
+        Session.moveTo(g, 3000, 2700)
+        s:run(3)
+        bossStart(s)
+        s:run(4)
+        local copy = Session.enemyOn(g, "boss")
+        check(net(g).partnerBosses["sp:boss"] == true, "(the guest is shown the host's fight)")
+        net(g).broughtBack["sp:boss"] = true        -- (its save had it beaten: brought back for the host's fight)
+        h.hudLayout:UnRegisterBossHPBar(Session.enemyOn(h, "boss"))     -- (the host walks out of it)
+        s:run(8)
+        check(field(copy, "dead") == true, "the host's fight over: a copy brought back for it isn't left standing on the guest")
+        allErrors(s)
+    end
+    do
+        local list = {
+            { "byguest", THUG, 11500.0, 0.0, 100.0, 600, 100 },
+            { "hostboss", "BP_Monster_Boss_C", 300.0, 300.0, 100.0, 5000, 400, true },
+        }
+        local s = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, list)
+        local h = s.pcs[1]
+        s:run(4)
+        Session.moveTo(h, 0, 0)
+        Session.moveTo(s.pcs[2], 500, 0)
+        s:run(2)
+        h.hudLayout:RegisterBossHPBar(Session.enemyOn(h, "hostboss"))
+        s:run(3)
+        Session.moveTo(s.pcs[2], 11000, 0)
+        s:run(4)
+        check(count(h.sent, "^E RUN sp:byguest 1$") == 0, "in a boss fight nothing is handed to the guest's game (the gold-masked man's arena)")
+        h.hudLayout:UnRegisterBossHPBar(Session.enemyOn(h, "hostboss"))
+        s:run(12)
+        check(count(h.sent, "^E RUN sp:byguest 1$") == 1, "and once it's over, it is again")
+        allErrors(s)
+    end
+    do
+        local w = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, true, ENEMIES)
+        w.pcs[2].joinAt = w.pcs[1].now + 8
+        w:run(3)
+        Session.moveTo(w.pcs[1], 0, 0)
+        w:run(2)
+        bossStart(w)
+        w:run(6)
+        local late = w.pcs[2]
+        check(net(late).watchingFight == true, "(a guest who joins in a fight watches it)")
+        w:run(185)
+        local cmc = field(late.pawn, "CharacterMovement")
+        check(net(late).watchingFight ~= true and field(cmc, "MovementMode") ~= 0,
+            "a fight that never ends: after 3 minutes they're let go, free to move")
+        w:run(10)
+        check(net(late).watchingFight ~= true, "and not held again by it")
+        allErrors(w)
+    end
 end
 
 -- A boss both fight: its death runs the whole way in both worlds, so the guest's game plays the scene after it and brings on
@@ -4255,6 +4370,7 @@ return function(print_, scripts)
     kickStones()
     hostsEnemiesHere()
     bossScenes()
+    playerReports()
     afterATrip()
     phantomEdge()
     shots()

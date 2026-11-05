@@ -131,7 +131,7 @@ return function(api)
         hostKilled = {},          -- client: host id -> true for each death the host announced since the last shared rest
         hostBosses = {},          -- client: host id -> true while the host's fight with that boss goes on
         heldAlive = {},           -- client: actor address -> actor held at Health_Min 1 (only the host kills it)
-        healTicks = {},           -- client: host id -> rounds in a row the host's health was clearly above ours
+        healTicks = {},           -- client: host id -> since when the host's health has been clearly above ours
         hostSeen = {},            -- host, PvP: name -> { hp, posture } last tick, to undo the ghost's own hits
         deadSince = nil,          -- os.clock() when the local player died (spectating starts a little later)
         party = nil,              -- with more than two players: how many at most (the host's PartySize); nil with two
@@ -141,7 +141,7 @@ return function(api)
         lead = nil,               -- party: who net stands for: a guest's host, or the host's first guest who's here
         ghostSlots = {},          -- party: ghost address -> slot
         hitHere = {},             -- client: enemy id -> this player hit it
-        postureTicks = {},        -- client: enemy id -> turns its posture has been above this copy's
+        postureTicks = {},        -- client: enemy id -> since when its posture has been above this copy's
         guestRuns = {},           -- host: enemy id -> true while the guest's game runs it (see handover)
         guestLines = {},          -- host: enemy id -> the guest's latest record of one its game runs
         mine = {},                -- client: host enemy id -> true while this game runs it (see handover)
@@ -888,6 +888,14 @@ return function(api)
             dead = game.isDead(actor)
         end
         local paidThere = false
+        if not dead and net.guestKilled[name] and game.healthFloor and game.healthFloor(actor) >= 1
+            and game.isBoss and game.isBoss(actor, addr) then
+            -- A boss held up by its own floor (its phase ends in a scene) isn't the guest's kill to make: killed from here it
+            -- died outside its script, with no scene after, its body left, and the story stuck in the host's save. It's
+            -- fought here.
+            net.guestKilled[name] = nil
+            log("The other player's kill of " .. name .. " isn't taken: its fight goes on here, in the game's own way.")
+        end
         if not dead and net.guestKilled[name] and game.kill then
             net.guestKilled[name] = nil
             if net.guestRuns[name] then
@@ -907,12 +915,16 @@ return function(api)
             end
             -- (Not left standing frozen till it goes: the game's own death, at level 0, as a guest's copies die: what
             -- listens for deaths here (a quest's encounter) hears of it.)
-            if game.killForReal and not (game.isBoss and game.isBoss(actor, addr)) then
-                game.killForReal(actor)
+            -- (A boss too: the quiet kill skipped its scene after and its story, and left its body. One the game won't let die
+            -- now is left to its fight here: killForReal doesn't force a boss.)
+            local boss = game.isBoss and game.isBoss(actor, addr)
+            local real = false
+            if game.killForReal then
+                real = game.killForReal(actor)
             else
                 game.kill(actor)
             end
-            dead = true
+            dead = real or not boss or not game.killForReal
             paidThere = true        -- the guest's game ran that death itself, loot and all
         end
         if dead then
@@ -1128,7 +1140,7 @@ return function(api)
     local function showAside(keep)
         for addr, a in pairs(net.aside) do
             if not (keep and keep[addr]) and a.hidden and valid(a.actor) then
-                game.stepAside(a.actor, false)
+                game.stepAside(a.actor, false, a.home)
                 game.startAI(a.actor)
             end
         end
@@ -1158,7 +1170,10 @@ return function(api)
         local kept, gone, bosses = {}, 0, {}
         for _, e in ipairs(own) do
             local name = enemyName(e.actor, e.addr)
-            local near = here and name:sub(1, 3) == "sp:" and inReach(e.loc.X, e.loc.Y, e.loc.Z, t) and not game.isDead(e.actor)
+            -- (One out of the way waits up high (game.stepAside): where it stood is where it is, for this.)
+            local was = net.aside[e.addr]
+            local loc = was and was.hidden and was.name == name and was.home or e.loc
+            local near = here and name:sub(1, 3) == "sp:" and inReach(loc.X, loc.Y, loc.Z, t) and not game.isDead(e.actor)
             if near and game.isBoss(e.actor, e.addr) then
                 local a = net.bossAsk[name] or { since = now, askedAt = -1e9 }
                 bosses[name] = a
@@ -1177,13 +1192,23 @@ return function(api)
                     a.brain = game.stopAI(e.actor, a.brain)     -- (the game starts a stopped AI again by itself)
                 elseif net.notOnHost[name] then
                     a.hidden = true
-                    game.stepAside(e.actor, true)
+                    a.home = { X = e.loc.X, Y = e.loc.Y, Z = e.loc.Z }
+                    game.stepAside(e.actor, true, a.home)
                     a.brain = game.stopAI(e.actor)
                     gone = gone + 1
                 elseif now - a.since >= ASIDE_AFTER_S and now - a.askedAt >= ASK_AGAIN_S then
                     a.askedAt = now
                     sendEvent("HAS", name)
                 end
+            end
+        end
+        -- (Waiting up high it's out of the list of what's around this player: still out of the way while where it stood is near
+        -- the host, or it came straight back down.)
+        for addr, a in pairs(net.aside) do
+            if not kept[addr] and a.hidden and a.home and here and valid(a.actor) and not game.isDead(a.actor)
+                and inReach(a.home.X, a.home.Y, a.home.Z, t) then
+                kept[addr] = a
+                a.brain = game.stopAI(a.actor, a.brain)
             end
         end
         showAside(kept)
@@ -1201,8 +1226,10 @@ return function(api)
 
     -- The host's health this many snapshots in a row clearly above ours is a heal (a boss phase that restores
     -- health): taken over. Our copy dips below the host's for a round trip after each of our own hits, which
-    -- this must not mistake for a heal, so it waits a full second.
-    local HEAL_TICKS = 20
+    -- this must not mistake for a heal, so it waits a full second. (In seconds, not rounds: at 30 rounds a second, 20 rounds
+    -- were 0.67 s, and posture's 4 were 0.13 s, less than a round trip, so the guest's own posture hits were put back
+    -- before the host had heard them and a boss's break never came on the guest's side.)
+    local HEAL_TICKS = 1.0
     local HELD_HP = 1             -- the floor the client's copies of host enemies are held at
 
     -- keep: address -> actor still held this tick (nil releases every held copy).
@@ -1296,8 +1323,8 @@ return function(api)
                 end
                 if game.setHealth and r.Hp ~= nil and hp ~= nil and r.MaxHp
                     and r.Hp > hp + math.max(1, r.MaxHp * 0.05) then
-                    net.healTicks[name] = (net.healTicks[name] or 0) + 1
-                    if net.healTicks[name] >= HEAL_TICKS then
+                    net.healTicks[name] = net.healTicks[name] or os.clock()
+                    if os.clock() - net.healTicks[name] >= HEAL_TICKS then
                         log(string.format("%s healed on the host (%.0f -> %.0f): following.", name, hp, r.Hp))
                         game.setHealth(actor, r.Hp)
                         hp = r.Hp
@@ -1313,8 +1340,8 @@ return function(api)
                 elseif game.setPosture and r.Posture ~= nil and posture ~= nil and r.Posture > posture + 0.5 then
                     -- (And back up, a few turns on: after the boss's break the bar refills on the host, and here it stayed
                     -- empty for good, as the break never happened here.)
-                    net.postureTicks[name] = (net.postureTicks[name] or 0) + 1
-                    if net.postureTicks[name] >= 4 then
+                    net.postureTicks[name] = net.postureTicks[name] or os.clock()
+                    if os.clock() - net.postureTicks[name] >= HEAL_TICKS then
                         game.setPosture(actor, r.Posture)
                         posture = r.Posture
                         net.postureTicks[name] = nil
@@ -1360,7 +1387,11 @@ return function(api)
             return runs
         end
         local want = false
-        if handover.on and name:sub(1, 3) == "sp:" and not (game.isBoss and game.isBoss(actor, addr)) then
+        -- (Nothing new handed over while either player's boss bar is up: an arena's other fighters and a boss the codex
+        -- doesn't call one, the gold-masked man of the first map, went to the guest's game mid-fight, and the host's own
+        -- copy stood held at 1 health with its AI off.)
+        if handover.on and name:sub(1, 3) == "sp:" and not (game.isBoss and game.isBoss(actor, addr))
+            and (runs or not (net.toldFighting or net.partnerFighting)) then
             local dh, dg = handover.dist(x, y, z, net.localLoc), handover.dist(x, y, z, net.target)
             if runs then
                 want = dh + handover.NEARER_CM >= dg
@@ -1476,8 +1507,8 @@ return function(api)
             game.setHealth(actor, r.Hp)
             hp = r.Hp
         elseif hp and r.Hp > hp + math.max(1, r.MaxHp * 0.05) then
-            net.healTicks[name] = (net.healTicks[name] or 0) + 1
-            if net.healTicks[name] >= HEAL_TICKS then
+            net.healTicks[name] = net.healTicks[name] or os.clock()
+            if os.clock() - net.healTicks[name] >= HEAL_TICKS then
                 game.setHealth(actor, r.Hp)
                 hp = r.Hp
                 net.healTicks[name] = nil
@@ -2702,7 +2733,11 @@ return function(api)
         -- (Another guest's fight, on a guest: only the host's world can say the boss lives, so one this save has beaten
         -- isn't brought back for it. The host tells everyone if it's beaten there.)
         local at, turned = nil, false
-        if game.spawnBoss then
+        -- (On the host, never a phase of a boss of phases: those are its own fight script's to spawn, after its scene. A guest
+        -- through a phase change first had the host's next phase spawned in the middle of the host's own scene, and the one
+        -- the host then killed wasn't the one its story waited for.)
+        local phase = not isClient() and game.phaseGroup and game.phaseGroup(name) ~= nil
+        if game.spawnBoss and not phase then
             at, turned = game.spawnBoss(name, not (isClient() and p ~= net))
         end
         if turned and isClient() then
@@ -2723,8 +2758,10 @@ return function(api)
             net.farFight = { name = name, p = p, at = { X = at.X, Y = at.Y, Z = at.Z } }
             api.status.notify("join", "your partner is in a boss fight: F3 takes you there, if you want to join.")
         else
-            net.farFight = nil
-            api.status.notify("join", "your partner is in a boss fight: press E at the black wall to join.")
+            -- (F3 too: an arena some players reach by a trip of the game's, with no wall to press E at, shut a guest out who
+            -- had beaten that boss in their own save: "he teleported into the arena, but I couldn't enter".)
+            net.farFight = { name = name, p = p, at = { X = at.X, Y = at.Y, Z = at.Z } }
+            api.status.notify("join", "your partner is in a boss fight: press E at the black wall, or F3, to join.")
         end
     end
 
@@ -3733,14 +3770,47 @@ return function(api)
                 end
             end
             local whose = net.party and (from or 1) or nil
+            local over = {}
             for name in pairs(net.partnerBosses) do
                 if whose == nil or net.fightOf[name] == whose then
                     log("The other player's fight with " .. name .. " is over there: over here too.")
                     endBossFight(name, enemyByName[name])
                     net.fightOf[name] = nil
+                    over[name] = true
                 end
             end
+            if from == nil and isClient() then
+                net.putDownLeftBosses(over)
+            end
         end
+    end
+
+    -- Guest, the host's fight over: a copy of that boss still standing here is put down if the host killed it or this save had
+    -- it beaten (brought back for the fight). Left, it stood with its own AI for good: this player was "in combat" at every
+    -- bell near it and shut out of the next boss's arena. Its K could miss it: a phase not paired with the host's id, or one
+    -- not loaded then. By its name, or another phase of it (game.phaseGroup).
+    function net.putDownLeftBosses(over)
+        local groups = {}
+        for name in pairs(over) do
+            if net.hostKilled[name] or net.broughtBack[name] then
+                groups[(game.phaseGroup and game.phaseGroup(name)) or name] = name
+            end
+        end
+        if next(groups) == nil or not game.listEnemies then
+            return
+        end
+        game.after(1.0, function()
+            for _, actor in pairs(game.listEnemies(true) or {}) do
+                if valid(actor) and not game.isDead(actor) and game.isBoss and game.isBoss(actor) then
+                    local own = enemyName(actor, actor:GetAddress())
+                    local why = groups[own] or groups[(game.phaseGroup and game.phaseGroup(own)) or own]
+                    if why then
+                        log("Boss " .. own .. " still standing here after the host's fight with " .. why .. ": put down.")
+                        game.kill(actor)
+                    end
+                end
+            end
+        end)
     end
 
     local function tellFight(now)
@@ -3753,6 +3823,19 @@ return function(api)
         if fighting ~= net.toldFighting or (fighting and now >= (net.fightToldAt or 0)) or net.fightToldAt == 0 then
             net.toldFighting, net.fightToldAt = fighting, now + FIGHT_TOLD_S
             sendEvent("F", fighting and 1 or 0)
+        end
+    end
+    -- A joiner watching a fight is let go after WATCH_MAX_S whatever the fight does: "in a fight" can go on with no end (a
+    -- boss left standing with its bar up, a scene, the partner's state gone quiet, which also stops partner.check), and the
+    -- player stood there with no control, keys and pad dead, until they quit. Then they're free, with F3 or E to go in.
+    net.WATCH_MAX_S = 180
+    extraTicksEarly.watchCap = function()
+        if net.watchHeld and os.clock() - (net.watchHeldAt or os.clock()) > net.WATCH_MAX_S then
+            net.watchGaveUp = true
+            watchFight(false)
+            if api.status then
+                api.status.notify("join", "the fight is taking long: you're free to move. F3 takes you to your partner.")
+            end
         end
     end
     extraTicksEarly.tellFight = function()
@@ -3800,7 +3883,7 @@ return function(api)
                 pawn.CharacterMovement:SetMovementMode(MOVE_NONE, 0)
                 game.setMinHealth(pawn, 1)
                 game.spectate(p.ghost)
-                net.watchHeld = true
+                net.watchHeld, net.watchHeldAt = true, os.clock()
             end
         elseif net.watchHeld then
             net.watchHeld = false

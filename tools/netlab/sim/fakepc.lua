@@ -1359,6 +1359,9 @@ function Fake.new(id, scripts, ini, link)
                 -- player as for their own blow.
                 put(asc, "BP_ApplyGameplayEffectToSelf", function()
                     record(pc, "ASC", "BP_ApplyGameplayEffectToSelf")
+                    if rawget(actor, "__fields").locked then
+                        return      -- (a boss between phases: the game won't let it die now)
+                    end
                     Fake.setHealth(actor, 0)
                     put(actor, "dead", true)
                     put(actor, "realDeath", true)
