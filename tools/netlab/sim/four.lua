@@ -3133,6 +3133,65 @@ local function toldOnChange()
     allErrors(s)
 end
 
+-- Reviving (Revive = On, two players): what the downed player's PC tells the partner while down, and what a strike counts for.
+local function reviving()
+    part("reviving")
+    local r, rh, rg = pair()
+    Session.moveTo(rh, 0, 0)
+    Session.moveTo(rg, 300, 0)
+    Session.command(rh, "revive on")
+    Session.command(rg, "revive on")
+    r:run(1)
+    local gauges, event = {}, rg.env.PBZ.link.event
+    rg.env.PBZ.link.event = function(line)
+        local seconds = line:match("^G %S+ %S+ (%S+)$")
+        if seconds then
+            gauges[#gauges + 1] = { at = rg.now, seconds = tonumber(seconds) }
+        end
+        return event(line)
+    end
+    Fake.setHealth(rg.pawn, 1)
+    r:run(6)
+    rg.env.PBZ.link.event = event
+    -- The partner's ring shows the timer from these: a step at a time, as the downed player's own goes, not one or two
+    -- at once, once a second.
+    local jump, wait = 0, 0
+    for i = 2, #gauges do
+        local a, b = gauges[i - 1], gauges[i]
+        jump = math.max(jump, math.floor(a.seconds / 15 * 24 + 0.5) - math.floor(b.seconds / 15 * 24 + 0.5))
+        wait = math.max(wait, b.at - a.at)
+    end
+    check(#gauges >= 6 and jump <= 1 and wait <= 1.05,
+        string.format("down, the partner's timer ring goes a step at a time (%d G, %d steps at most, %.2f s apart at most)", #gauges,
+            jump, wait))
+    -- A strike counts for the time since the striker's one before (two delivered together are both whole), but not this
+    -- down's first: theirs was at the down before, and a moment before made it a fraction of a hit.
+    local function points()
+        rg.logs = {}
+        Session.command(rg, "revive")
+        r:run(0.6)                  -- (cmd.txt is read every half second)
+        for _, l in ipairs(rg.logs) do
+            local p = l:match("points (%d+)/40")
+            if p then
+                return tonumber(p)
+            end
+        end
+    end
+    local before = points()
+    rg.inbox[#rg.inbox + 1] = "STRIKE 0.30"
+    r:run(0.1)
+    local first = points()
+    rg.inbox[#rg.inbox + 1] = "STRIKE 0.30"
+    r:run(0.1)
+    local second = points()
+    check(before == 40 and first == 20 and second == 14,
+        string.format("this down's first strike counts whole (%s -> %s), the next by its gap (-> %s)", tostring(before),
+            tostring(first), tostring(second)))
+    rg.inbox[#rg.inbox + 1] = "STRIKE 0.95"
+    r:run(0.5)
+    allErrors(r)
+end
+
 local function scaling()
     part("enemy health")
     local function max(pc, id)
@@ -3930,6 +3989,59 @@ local function gaps()
         check(count(rg.logs, "Host says %S*thug%d died") == 0, "the ones handled already aren't done again")
         check(searches <= quiet + 1, string.format("and the whole re-tell costs at most one map search more than none (%d, %d quiet)",
             searches, quiet))
+        -- (Review of the above.) One batch's map of the spawners: the first live one of an id, as the search before it took.
+        -- One still listed as its level goes, ahead of the live one, hid it for the whole batch.
+        local gone = Fake.enemy(rg, "thug2", THUG, -9000.0, 0.0, 100.0, 600, 100)
+        local goneSpawner = table.remove(rg.spawners)
+        rawset(goneSpawner, "__alive", false)
+        rawset(gone, "__alive", false)
+        table.insert(rg.spawners, 1, goneSpawner)
+        local g2 = rg.env.PBZ.game
+        g2.beginBatch()
+        local inBatch = g2.isBeaten("sp:thug2")
+        g2.endBatch()
+        table.remove(rg.spawners, 1)
+        check(inBatch ~= nil, "a batch finds the live spawner of an id, not one that's going ahead of it in the list")
+        -- A load from the title screen: a copy the host killed can come back with it, a new body, where this save didn't
+        -- have that death. Out of this world's reach as the host tells its deaths again after the load's silence, the re-tell
+        -- passed it over as handled, and nothing put it down once they came by: it stood there, alive, for good.
+        local i = Session.indexOf(rg, "thug1")
+        local old = Session.enemyOn(rg, "thug1")
+        local at = field(old, "loc")
+        Session.moveTo(rh, -9000, 0)
+        Session.moveTo(rg, -9000, 500)
+        r:run(2)
+        rawset(rg.pawn, "__alive", false)              -- (no body in the world: a load from the title, not a trip)
+        Session.loadMap(rg)
+        rawset(rg.pawn, "__alive", true)
+        rawset(old, "__alive", false)
+        local back = Fake.enemy(rg, "thug1-back", THUG, at.X, at.Y, at.Z, 600, 100)
+        table.remove(rg.spawners)                      -- (its own spawner goes: thug1's made it)
+        Fake.put(rg.spawners[i], "SpawnedAI", back)
+        rg.cut = true
+        r:run(5)
+        rg.cut = false
+        r:run(6)
+        Session.moveTo(rh, 0, 0)
+        Session.moveTo(rg, 500, 0)
+        r:run(8)
+        check(field(back, "dead") == true, "a copy the host killed, back alive with a load from the title, is put down when they come by")
+        -- And a batch never ended (an error between its ends) is let go, not used by the next turn that asks: a second
+        -- later, with no frame between to end it, a spawner made since is found.
+        g2.beginBatch()
+        g2.isBeaten("sp:thug2")
+        local live = rg.spawners[Session.indexOf(rg, "thug2")]
+        rawset(live, "__alive", false)
+        local again = Fake.enemy(rg, "thug2", THUG, -1800.0, 200.0, 100.0, 600, 100)
+        for _, pc in ipairs(r.pcs) do
+            pc.now = pc.now + 1
+        end
+        local later = g2.isBeaten("sp:thug2")
+        g2.endBatch()
+        rawset(live, "__alive", true)
+        rawset(again, "__alive", false)
+        rawset(table.remove(rg.spawners), "__alive", false)
+        check(later ~= nil, "a batch left open doesn't outlive its frame: a spawner since is found")
         allErrors(r)
     end
     local s = party(nil, nil, { "Host", "Guest", "Guest" })
@@ -4161,6 +4273,7 @@ return function(print_, scripts)
     lateJoiner()
     lateJoinerGuestFight()
     toldOnChange()
+    reviving()
     scaling()
     sixPlayers()
     gaps()

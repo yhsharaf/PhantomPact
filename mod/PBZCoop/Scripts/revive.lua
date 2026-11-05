@@ -60,6 +60,15 @@ return function(api)
         return points_total >= TOTALS[3] and 3 or points_total >= TOTALS[2] and 2 or 1
     end
 
+    -- The ring's picture for a gauge: its step of the bars (STEPS_PER_BAR a bar), the bars, and its step of the timer (nil
+    -- with no timer). The partner's ring changes only with these, so G goes when they do.
+    local function ringSteps(p, t, seconds)
+        local bars = barsFor(t)
+        local step = math.max(p > 0 and 1 or 0, math.min(STEPS_PER_BAR * bars, math.floor(p / t * STEPS_PER_BAR * bars + 0.5)))
+        local timer = seconds and math.max(0, math.min(TIMER_STEPS, math.floor(seconds / TIMER_S * TIMER_STEPS + 0.5)))
+        return step, bars, timer
+    end
+
     local function drawRing(pc, pawn)
         local g = revive.gauge or revive.partnerGauge
         local body = revive.gauge and pawn or net.ghost
@@ -90,9 +99,7 @@ return function(api)
         if not (ringWidget and timerWidget) then
             return
         end
-        local bars = barsFor(g.total)
-        local step = math.max(g.points > 0 and 1 or 0,
-            math.min(STEPS_PER_BAR * bars, math.floor(g.points / g.total * STEPS_PER_BAR * bars + 0.5)))
+        local step, bars, timer = ringSteps(g.points, g.total, g.seconds)
         local frame = "g" .. bars .. "_" .. step
         if frame ~= ringShown then
             ringShown = frame
@@ -101,8 +108,8 @@ return function(api)
         ringWidget:SetPositionInViewport({ X = at.X, Y = at.Y }, true)
         api.hud.fit(ringWidget, RING_SIZE, RING_SIZE)
         api.hud.show(ringWidget, true)
-        if g.seconds then
-            local t = "t" .. math.max(0, math.min(TIMER_STEPS, math.floor(g.seconds / TIMER_S * TIMER_STEPS + 0.5)))
+        if timer then
+            local t = "t" .. timer
             if t ~= timerShown then
                 timerShown = t
                 setFrame(timerWidget, t)
@@ -246,16 +253,18 @@ return function(api)
             end
         end
         revive.gauge = { points = points, total = total, bars = downs, seconds = timed and timeLeft or nil }
-        -- Sent when it shows something new (a step of 3% of the gauge, the timer's next whole second, a strike just taken),
-        -- and at least once a second: it went five times a second whatever it said, each one on the sure lane.
+        -- Sent when the partner's ring would show something new (a step of the bars or of the timer: the picture this
+        -- one's ring has, ringSteps), a strike just taken, and at least once a second: it went five times a second
+        -- whatever it said, each one on the sure lane. (By whole seconds and 3% of the gauge, the timer's ring there
+        -- jumped one step or two, once a second, where this one went a step every 0.625 s.)
         if now >= nextGauge then
             nextGauge = now + GAUGE_EVERY_S
             local g = revive.gaugeSent
-            local second = timed and math.ceil(timeLeft) or -1
-            if not g or g.total ~= total or math.abs(g.points - points) >= total * 0.03 or g.second ~= second
-                or g.strike ~= lastStrike or now - g.at >= 1.0 then
-                revive.gaugeSent = { points = points, total = total, second = second, strike = lastStrike, at = now }
-                coop.sendEvent("G", string.format("%.1f", points), total, timed and string.format("%.1f", timeLeft) or -1)
+            local step, _, timer = ringSteps(points, total, timed and timeLeft or nil)
+            if not g or g.total ~= total or g.step ~= step or g.timer ~= timer or g.strike ~= lastStrike or now - g.at >= 1.0 then
+                revive.gaugeSent = { total = total, step = step, timer = timer, strike = lastStrike, at = now }
+                -- (To a hundredth: at a tenth, a step just taken here read as the one before it there, 12.17 s as 12.2.)
+                coop.sendEvent("G", string.format("%.2f", points), total, timed and string.format("%.2f", timeLeft) or -1)
             end
         end
         if not fresh() then
@@ -360,8 +369,9 @@ return function(api)
         end
         local now = os.clock()
         -- The striker's own time since their last strike, when they say it (an older version doesn't): by arrival, two
-        -- sent apart but delivered together were one.
-        local gap = tonumber(type(rest) == "string" and rest:match("^(%d+%.?%d*)$"))
+        -- sent apart but delivered together were one. Not for this down's first: theirs counts from a swing at the down
+        -- before, and one a moment before made this a fraction of a hit (goDown sets lastStrike back: a full one).
+        local gap = lastStrike >= 0 and tonumber(type(rest) == "string" and rest:match("^(%d+%.?%d*)$")) or nil
         gap = gap and math.min(gap, MAX_HIT / POINTS_PER_S) or (now - lastStrike)
         points = points - math.min(gap * POINTS_PER_S, MAX_HIT)
         lastStrike, lastHit = now, now

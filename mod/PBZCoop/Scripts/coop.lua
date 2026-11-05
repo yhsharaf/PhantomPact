@@ -3445,6 +3445,14 @@ return function(api)
             if game.owed then
                 game.owed.ids = {}
             end
+            -- A guest's world loaded anew: the host's kills are still kills, and its save may not have them all. As after
+            -- this player's death, each is put down again as it loads (bring.pending): the host's re-tell after the load's
+            -- silence passes over the deaths handled here before (handlers.K), and the copies back alive went unseen.
+            if isClient() then
+                for name in pairs(net.hostKilled) do
+                    net.pendingDeaths[name] = true
+                end
+            end
             if isHost() then
                 sendEvent("Y", hostWorld)
             end

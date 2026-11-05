@@ -444,9 +444,11 @@ return function(api)
     -- was beaten in one save only, and after a load one player had it back and fought it alone.
     local SPAWNER_BP = "/SGameAI/Tools/Spawner/BP_AISpawner.BP_AISpawner_C"
     -- Inside one batch of events (coop.lua's processEvents, one frame): the map's spawners searched once, by id, and let
-    -- go at its end. Nothing's kept past the frame. (A field, not a local: this function is at Lua's 200 locals.)
+    -- go at its end. Nothing's kept past the frame: a batch never ended (an error between its ends) is let go once it's
+    -- older than a frame could be, not used again by the next turn that asks. (A field, not a local: this function is at
+    -- Lua's 200 locals.)
     function game.beginBatch()
-        game.batch = {}
+        game.batch = { at = os.clock() }
     end
     function game.endBatch()
         game.batch = nil
@@ -455,6 +457,9 @@ return function(api)
     local function spawnerOf(enemyId)
         local id = enemyId and enemyId:match("^sp:(.+)$")
         local batch = game.batch
+        if batch and os.clock() - (batch.at or -1e9) > 0.5 then
+            game.batch, batch = nil, nil
+        end
         if id and batch then
             if not batch.spawners then
                 batch.spawners = {}
@@ -465,8 +470,10 @@ return function(api)
                     if sid == "None" then
                         pcall(function() key = s:GetFName():ToString() end)
                     end
-                    if key and batch.spawners[key] == nil then
-                        batch.spawners[key] = s         -- (the first, as the search below takes)
+                    -- (The first valid one, as the search below takes: one going with its level, still listed, hid the
+                    -- live one of the same id.)
+                    if key and batch.spawners[key] == nil and valid(s) then
+                        batch.spawners[key] = s
                     end
                 end
             end

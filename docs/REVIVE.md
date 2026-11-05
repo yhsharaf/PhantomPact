@@ -23,7 +23,11 @@ Wylder's one-handed greatsword does 20 points a hit at 1.05 attacks a second (co
 points a second. This game's sword (`AM_Hun_Tang`) was measured at 1.5 attacks a second, 1.43 times faster, so a flat 20
 would make revives 30% too quick. A hit is worth 21 points for each second since the last counted hit, at most 20
 (Wylder's 0.95 s): the combo's five hits come to about 7, 13, 16, 15 and 19. Weapons nobody has measured adjust by
-themselves, and mashing can't beat it.
+themselves, and mashing can't beat it. The time is the striker's own, sent with the strike, so two strikes delivered
+together count as they were swung; a down's first strike is a whole one, whatever the striker last swung at.
+
+The downed player's PC holds the gauge and tells the partner's (`G`) when the ring there would change: a step of the bars
+or of the timer, a strike taken, and once a second at least.
 
 A swing counts when it starts within 3.5 m of the downed player, whichever way you're facing, and turns you to face them, a soft lock like the game's own on enemies: the combo lunges about 2 m
 a hit and passes through them, so without it the second or third swing runs off past them.

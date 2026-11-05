@@ -293,6 +293,25 @@ At RTT 30 the next event's acknowledgement comes about when `retry_s` does anywa
 the eight minutes of the old relay's runs, 497 in the new one's, some of them copies of an event only overtaken under 10 ms of
 jitter: a few bytes a second.
 
+**Findings 1, 3 and 9, looked at again.** What was kept and what was put right, each fix with a `luasim four` check that
+fails on the code before it:
+- 1, a re-told death handled before returns at once. Right for a copy back alive near this player (it's in `enemyByName`
+  under its own id, so it goes the whole way), and the batch's spawner map keys as the search did. Put right: a load from the
+  title screen now puts the host's kills down again as their copies load (as this player's death did), where a copy back
+  alive out of reach at the re-tell was passed over and stood for good (the old whole way had left a pending death for it);
+  the batch's map takes the first live spawner of an id, not one still listed as its level goes; and a batch never ended is
+  let go after half a second instead of being used by the next turn that asks.
+- 3, the revive gauge. `G` goes when the partner's ring would change: a step of the bars, a step of the timer, a strike, and
+  once a second at least. By whole seconds and 3% of the gauge, the partner's timer ring jumped one step or two once a second
+  (24, 22, 21, 19, 17, 16 over 5 s), where the downed player's own went a step every 0.625 s; now a step at a time, 10 `G` in
+  the first 6 s down where it was 6 (and 30 before that, five a second). The time and gauge go to a hundredth, or a step just
+  taken read as the one before it. A down's first `STRIKE` counts whole: timed by the striker from a swing at the down before,
+  0.3 s before, it counted 6 points of 20. A huge `STRIKE` time is capped at a whole hit, and an older version's bare one is
+  timed by arrival, as it was.
+- 9, `NQ`: kept as it is. A number always stands for the same enemy (`enemyNumbers` is never cleared, and an `S` only has
+  them told again), a quick copy from before a restart never gets past the relay's session check, `N` after `NQ` says the
+  same thing again, and in a party only the host numbers enemies (handover is two players only).
+
 **No lane of its own for values only the newest of which counts.** The idea was to take `G`, `GAIT`, `ST`, `LOOK`, `F` and
 `RULES` off the ordered lane, so that a lost one holds up no death. After the changes above there is next to nothing left to
 take: in the Lua sim, four players fighting by a dozen enemies for 40 s sent 12 of these in 141 sure events (8.5%; `RULES` was 8

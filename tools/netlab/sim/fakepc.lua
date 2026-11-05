@@ -1119,6 +1119,10 @@ function Fake.new(id, scripts, ini, link)
             IsMoveInputIgnored = function(self) return rawget(self, "__fields").ignored end,
             GetControlRotation = function() return { Pitch = 0.0, Yaw = 0.0, Roll = 0.0 } end,
             FlushPressedKeys = false,
+            ProjectWorldLocationToScreen = function(_, _, out)          -- (revive.lua's ring over a body)
+                local at = pc.projected or { X = 960, Y = 540 }
+                out.X, out.Y = at.X, at.Y
+            end,
         })
         return c
     end
