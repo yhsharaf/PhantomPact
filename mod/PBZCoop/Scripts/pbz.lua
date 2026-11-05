@@ -2258,10 +2258,11 @@ return function(api)
     end
 
     -- A copy let go is its own again: the target it was given may be a ghost that's gone, so it looks for one now, not in a day.
-    function game.freeCopy(addr)
+    -- forgetOnly: the copy is dead or gone, and its picker may be too (its address someone else's): only forgotten.
+    function game.freeCopy(addr, forgetOnly)
         local picker, cooldown = copyPickers[addr], copyCooldowns[addr]
         copyPickers[addr], copyCooldowns[addr] = nil, nil
-        if cooldown and valid(picker) then
+        if cooldown and valid(picker) and not forgetOnly then
             pcall(function()
                 picker.SwitchTargetCooldown = cooldown
                 picker.LastSwitchTime = 0

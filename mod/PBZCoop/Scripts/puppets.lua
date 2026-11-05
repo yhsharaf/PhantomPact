@@ -87,8 +87,16 @@ return function(api)
     function puppets.follow(name, actor, target)
         local addr = actor:GetAddress()
         local p = byAddr[addr]
+        -- (Another enemy at that address, the last one streamed out and collected: its brain, walk speed and target picker
+        -- were the old one's, so its own AI ran on against the host's lines.)
+        local fname = nil
+        pcall(function() fname = actor:GetFName():ToString() end)
+        if p and (p.name ~= name or p.fname ~= fname) then
+            game.freeCopy(addr, true)
+            p = nil
+        end
         if p == nil then
-            p = { actor = actor, name = name, busyUntil = 0, aiAt = 0 }
+            p = { actor = actor, name = name, fname = fname, busyUntil = 0, aiAt = 0 }
             pcall(function() p.walkSpeed = actor.CharacterMovement.MaxWalkSpeed end)
             byAddr[addr] = p
         end
@@ -132,12 +140,14 @@ return function(api)
     -- It died: nothing steers it through its death.
     function puppets.drop(actor)
         byAddr[actor:GetAddress()] = nil
+        game.freeCopy(actor:GetAddress(), true)     -- (its target picker too: kept, the next enemy at the address used it)
     end
 
     function puppets.release(addr)
         local p = byAddr[addr]
         if p then
             byAddr[addr] = nil
+            game.freeCopy(addr, not (valid(p.actor) and not game.isDead(p.actor)))
             if valid(p.actor) and not game.isDead(p.actor) then
                 pcall(function()
                     local cmc = p.actor.CharacterMovement
@@ -147,7 +157,6 @@ return function(api)
                     end
                 end)
                 game.startAI(p.actor)
-                game.freeCopy(addr)
             end
         end
     end
@@ -166,7 +175,11 @@ return function(api)
         end
     end
 
-    coop.handlers.A = function(rest)
+    coop.handlers.A = function(rest, from)
+        -- (In a party only the host runs enemies: another guest's, passed on, played moves on every copy here.)
+        if net.party and from ~= nil then
+            return
+        end
         local name, ability, path, pos, after = (rest or ""):match("^(%S+) (%S+) (%S+) (%S+) (%S+)$")
         pos = tonumber(pos)
         if not (name and pos and pos == pos and pos >= 0 and pos < 600) then
@@ -221,8 +234,9 @@ return function(api)
             puppets.played = puppets.played + 1
         else
             puppets.failed = puppets.failed + 1
-            if not failedOnce[ability .. path] then
+            if not failedOnce[ability .. path] and (failedOnce.n or 0) < 200 then    -- (keyed off the wire: capped)
                 failedOnce[ability .. path] = true
+                failedOnce.n = (failedOnce.n or 0) + 1
                 log("Enemy move not replayed: " .. ability .. " " .. path)
             end
         end
@@ -298,6 +312,7 @@ return function(api)
         for addr, p in pairs(byAddr) do
             if not valid(p.actor) then
                 byAddr[addr] = nil
+                game.freeCopy(addr, true)
             else
                 if now >= p.aiAt then
                     p.aiAt = now + AI_EVERY_S
@@ -317,6 +332,13 @@ return function(api)
         end
         log(string.format("Puppets: %d following %s, attacks sent %d, played %d, failed %d, no copy here %d",
             n, coop.isHost() and "the guest's game" or "the host", puppets.attacks, puppets.played, puppets.failed, puppets.noCopy))
+    end
+
+    -- Someone started sync anew: the moves under way are news to them, so the next look sends them again.
+    local syncStarted = coop.handlers.S
+    coop.handlers.S = function(...)
+        hostSeen = {}
+        return syncStarted(...)
     end
 
     return puppets
