@@ -94,7 +94,90 @@ return function(api)
         end
     end
 
+    -- Levers, gates and the like (the game's switches, PBZSwitchBase): opened by one player, open in every world on that
+    -- map, as chests and kick-stones already are (those, rubbish piles, fog doors, teleports and bells have their own
+    -- handling, or are each player's own). One way only: opened, through the switch's own step without its scene.
+    local SWITCH_OWN = { "^BP_Chest", "^BP_Rubbish", "^BP_KickStone", "^BP_FogDoor", "^BP_Teleport", "^BP_MelodiousBell" }
+    local switchSeen, switchMap = {}, nil
+
+    local function sharedSwitch(s)
+        local ok, cn = pcall(function() return s:GetClass():GetFName():ToString() end)
+        if not ok then
+            return false
+        end
+        for _, pat in ipairs(SWITCH_OWN) do
+            if cn:find(pat) then
+                return false
+            end
+        end
+        return true
+    end
+
+    local function isOpen(s)
+        local ok, v = pcall(function() return s.CurSwitchState end)
+        return ok and v == true
+    end
+
+    local function watchSwitches(here)
+        if net.localMap ~= switchMap then
+            switchSeen, switchMap = {}, net.localMap
+        end
+        for _, s in ipairs(FindAllOf("PBZSwitchBase") or {}) do
+            if valid(s) and sharedSwitch(s) then
+                local name, open = nameOf(s), isOpen(s)
+                if name then
+                    local was = switchSeen[name]
+                    switchSeen[name] = open
+                    if was == false and open then
+                        local okL, at = pcall(function() return s:K2_GetActorLocation() end)
+                        if okL and at and api.distance(at, here) <= NEAR_CM then
+                            blockers.sent = blockers.sent + 1
+                            log("Opened " .. name .. ": open for the others too.")
+                            coop.sendEvent("SWO", name)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    coop.handlers.SWO = function(rest, from)
+        local name = type(rest) == "string" and rest:match("^([%w_]+)$")
+        if not name or #name > MAX_NAME then
+            return
+        end
+        local p = coop.peerOf(from)
+        local t = p and p.target
+        if not (t and t.Map and t.Map == net.localMap) then
+            return
+        end
+        for _, s in ipairs(FindAllOf("PBZSwitchBase") or {}) do
+            if valid(s) and nameOf(s) == name and sharedSwitch(s) then
+                if not isOpen(s) then
+                    pcall(function() s:SwitchWithoutPlaySequence() end)
+                    switchSeen[name] = true
+                    blockers.broken = blockers.broken + 1
+                    log("The other player opened " .. name .. ": open here too.")
+                end
+                return
+            end
+        end
+    end
+
     coop.extraTicks.blockers = function()
+        local okS, errS = pcall(function()
+            if os.clock() >= (blockers.switchAt or 0) then
+                blockers.switchAt = os.clock() + LOOK_S
+                local pawn = coop.localPawn()
+                if valid(pawn) then
+                    watchSwitches(pawn:K2_GetActorLocation())
+                end
+            end
+        end)
+        if not okS and errS ~= blockers.lastError then
+            blockers.lastError = errS
+            log("blockers (switches): " .. tostring(errS))
+        end
         local ok, err = pcall(watch, os.clock())
         if not ok and err ~= blockers.lastError then
             blockers.lastError = err
