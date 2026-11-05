@@ -653,15 +653,80 @@ function Fake.story(pc)
             end
         end,
     })
-    return {
-        ["/Game/PBZContent/Blueprint/FlowGraph/DebugUI/FlowQuest/FlowEventTable.FlowEventTable"] = object(pc, "DataTable"),
-        ["/Game/PBZContent/Blueprint/FlowGraph/DebugUI/FlowQuest/FlowQuestBranchStateDataTable.FlowQuestBranchStateDataTable"] =
-            object(pc, "DataTable"),
-        ["/Script/Engine.Default__DataTableFunctionLibrary"] = tables,
-        ["/Script/ProjectPBZ.Default__PBZDebugFlowEventLibrary"] = lib,
-        ["/Game/PBZContent/DataTable/DT_LevelLootDataTable.DT_LevelLootDataTable"] = levelLoot,
-        ["/Game/PBZContent/DataTable/Item/DT_InventoryData.DT_InventoryData"] = itemTable,
-    }
+    -- The game's own calls story.lua applies a row with since the QA tables went (the update of 2026-11-04): quest
+    -- branches on the narrative component, tags and node marks on the event pipeline, bells, the UI. Each call is
+    -- counted in storyApplied.
+    local function did(what)
+        pc.storyApplied[#pc.storyApplied + 1] = what
+    end
+    defs(pc, nc, {
+        BeginQuestAndActiveBranch = function(_, cls, branches)
+            for _, b in ipairs(branches) do
+                pc.storyStep(rawget(cls, "__quest"), b:ToString(), 1)
+            end
+            did("begin")
+        end,
+        FinishQuestBranch = function(_, cls, branches)
+            for _, b in ipairs(branches) do
+                pc.storyStep(rawget(cls, "__quest"), b:ToString(), 2)
+            end
+            did("finish")
+        end,
+    })
+    local guids = object(pc, "Map")
+    pc.storyGuids = {}
+    defs(pc, guids, { Add = function(_, k) pc.storyGuids[k] = true end })
+    pc.eventPipeline = object(pc, "EventPipelineManager", { ExecuteNodeGuid = guids })
+    defs(pc, pc.eventPipeline, { AddTagsByString = function(_, tag) pc.storyMarks[tag] = true did("tag") end })
+    pc.bellManager = object(pc, "BellManager")
+    defs(pc, pc.bellManager, {
+        ActivateBellByID = function(_, id) pc.storyMarks[id:ToString()] = true did("bell") end,
+        ActivateAllBellsByMaps = function(_, maps)
+            for _, m in ipairs(maps) do
+                pc.storyMarks[m] = true
+            end
+            did("maps")
+        end,
+    })
+    pc.uiVisibility = object(pc, "UIVisibilityManager")
+    defs(pc, pc.uiVisibility, {
+        ActivateUIVisibilityTag = function(_, tag) pc.storyMarks[tag.TagName:ToString()] = true did("ui") end,
+    })
+    local found = {}
+    for _, r in ipairs(rows) do
+        for entry in r[2]:gsub("，", ","):gmatch("[^,]+") do
+            local quest = entry:match("^%s*(.+)_[^_]+_[^_]+%s*$")
+            if quest then
+                local cls = object(pc, "QuestBlueprintGeneratedClass")
+                rawset(cls, "__quest", quest)
+                found["/Fake/Quest/" .. quest .. "." .. quest .. "_C"] = cls
+            end
+        end
+    end
+    -- (No FlowEventTable or FlowQuestBranchStateDataTable: the game's update of 2026-11-04 took them out, as here. The QA
+    -- library itself is still in the game.)
+    found["/Script/Engine.Default__DataTableFunctionLibrary"] = tables
+    found["/Script/ProjectPBZ.Default__PBZDebugFlowEventLibrary"] = lib
+    found["/Game/PBZContent/DataTable/DT_LevelLootDataTable.DT_LevelLootDataTable"] = levelLoot
+    found["/Game/PBZContent/DataTable/Item/DT_InventoryData.DT_InventoryData"] = itemTable
+    return found
+end
+
+-- Our copy of the story table (storydata.lua), for the fake game's rows: what story.lua reads in place of the real one.
+function Fake.storyData()
+    local data = { rows = {}, paths = {} }
+    for i, r in ipairs(Fake.STORY_ROWS) do
+        local row = { q = r[2] ~= "" and r[2] or nil, o = r[3] == "True" or nil, t = r.tags, m = r.maps, u = r.ui,
+            f = r.items and true or nil }
+        data.rows[i] = row
+        for entry in r[2]:gsub("，", ","):gmatch("[^,]+") do
+            local quest = entry:match("^%s*(.+)_[^_]+_[^_]+%s*$")
+            if quest then
+                data.paths[quest] = "/Fake/Quest/" .. quest .. "." .. quest .. "_C"
+            end
+        end
+    end
+    return data
 end
 
 -- What's placed in the world, as the game's table has it: rows of { loot id, EntryDatas as its text }.
@@ -1537,6 +1602,12 @@ function Fake.new(id, scripts, ini, link)
             return pc.scene
         elseif class == "PBZNarrativeComponent" then
             return pc.narrative
+        elseif class == "EventPipelineManager" then
+            return pc.eventPipeline
+        elseif class == "BellManager" then
+            return pc.bellManager
+        elseif class == "UIVisibilityManager" then
+            return pc.uiVisibility
         end
         return nil
     end
@@ -1616,6 +1687,9 @@ function Fake.new(id, scripts, ini, link)
         return link[entry:gsub("^pp_", "")]
     end }
     env.dofile = function(path)
+        if path:find("storydata%.lua$") then
+            return Fake.storyData()         -- (the fake game's story rows, not the real game's)
+        end
         local f = assert(io.open(path, "rb"))
         local text = f:read("a")
         f:close()

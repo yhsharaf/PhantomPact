@@ -13,8 +13,9 @@ return function(api)
 
     local story = { follow = true }
 
-    local FLOW = "/Game/PBZContent/Blueprint/FlowGraph/DebugUI/FlowQuest/FlowEventTable.FlowEventTable"
-    local STATES = "/Game/PBZContent/Blueprint/FlowGraph/DebugUI/FlowQuest/FlowQuestBranchStateDataTable.FlowQuestBranchStateDataTable"
+    -- The table is our own copy (storydata.lua): the game's update of 2026-11-04 took its QA story tables out of the game,
+    -- and the catch-up that applied their rows did nothing from then on (1.6.1 to 1.6.3), saying so only in the log.
+    local DATA = api.storyData
     local FINISH = "完成任务"        -- the table's quest steps end in this (a branch completed) or 开启任务 (a branch started)
 
     local LOOK_S = 20               -- host: its point is read this often while someone is linked
@@ -31,15 +32,6 @@ return function(api)
     local RETRY_S = 60
     local rowsFailedAt = -1e9
 
-    local function text(v)
-        local s
-        pcall(function() s = v:get():ToString() end)
-        if s == nil then
-            pcall(function() s = v:ToString() end)
-        end
-        return s or ""
-    end
-
     -- "MainCh1-NiLiuErShang_1_完成任务, XueRouHua_1_开启任务": quest, branch id (the branch's ID, "1" or "S1"), step.
     local function steps(list)
         local needs = {}
@@ -54,31 +46,14 @@ return function(api)
         return #needs > 0 and needs or nil
     end
 
-    local function column(lib, t, c)
-        local out, v = {}, lib:GetDataTableColumnAsString(t, FName(c))
-        for i = 1, #v do
-            out[i] = text(v[i])
+    -- One column of our copy of the table, as text, by row.
+    local function column(key)
+        local out = {}
+        for i, r in ipairs(DATA and DATA.rows or {}) do
+            local v = r[key]
+            out[i] = v == true and "True" or v or ""
         end
         return out
-    end
-
-    -- The story table and the QA tools' branch table, found afresh for each use and never kept: they're loaded for this
-    -- alone, so the garbage collection that comes with every load frees them, and a table kept from before took the game
-    -- down at the next catch-up.
-    local function tables()
-        local t = StaticFindObject(FLOW)
-        if not valid(t) then
-            t = LoadAsset(FLOW)
-        end
-        local s = StaticFindObject(STATES)
-        if not valid(s) then
-            s = LoadAsset(STATES)
-        end
-        local lib = StaticFindObject("/Script/Engine.Default__DataTableFunctionLibrary")
-        if valid(t) and valid(s) and valid(lib) then
-            return t, s, lib
-        end
-        return nil
     end
 
     -- Which rows are followed. A row with quest steps is followed when the host's world has done all of them; the host only
@@ -88,16 +63,13 @@ return function(api)
             return rows
         end
         rows, rowsFailedAt = false, os.clock()
-        local t, _, lib = tables()
-        if not t then
-            log("Story: the game's story table isn't there: each player's story stays their own.")
+        if not (DATA and DATA.rows and #DATA.rows > 0) then
+            log("Story: no story table: each player's story stays their own.")
             return rows
         end
-        local names = {}
-        lib:GetDataTableRowNames(t, names)
-        local quests, optional = column(lib, t, "QuestList"), column(lib, t, "Optional")
-        local out = { count = #names, quests = {}, marks = nil, check = #names }
-        for i = 1, #names do
+        local quests, optional = column("q"), column("o")
+        local out = { count = #DATA.rows, quests = {}, marks = nil, check = #DATA.rows }
+        for i = 1, out.count do
             local needs = (quests[i] or "") ~= "" and steps(quests[i])
             if needs then
                 out.quests[#out.quests + 1] = { i = i, needs = needs, optional = optional[i] == "True" }
@@ -118,14 +90,8 @@ return function(api)
         if rows.marks then
             return rows.marks
         end
-        local t, _, lib = tables()
-        if not t then
-            return {}
-        end
-        local marks = { column(lib, t, "AddTags"), column(lib, t, "AddGuids"), column(lib, t, "ActiveBellMaps"),
-            column(lib, t, "ActivateUITags") }
-        local finds = { column(lib, t, "AddWeapons"), column(lib, t, "SnapSoulWeapons"), column(lib, t, "AddItems"),
-            column(lib, t, "LootItems"), column(lib, t, "ActiveBells") }
+        local marks = { column("t"), column("g"), column("m"), column("u") }
+        local finds = { column("f"), column("b") }
         local function any(cols, i)
             for _, c in ipairs(cols) do
                 if (c[i] or "") ~= "" then
@@ -271,33 +237,155 @@ return function(api)
             and not (game.inDialogue and game.inDialogue())
     end
 
-    -- Table rows applied with the game's own story step, tables and row names fresh in this frame (see tables()). False if
-    -- the game wouldn't.
+    -- "a，b, c" -> { "a", "b", "c" }
+    local function split(s)
+        local out = {}
+        for part in (s or ""):gsub("，", ","):gmatch("[^,]+") do
+            part = part:match("^%s*(.-)%s*$")
+            if part ~= "" then
+                out[#out + 1] = part
+            end
+        end
+        return out
+    end
+
+    -- A quest branch's state in this world: 0 not begun (or the quest not here), 1 under way, 2 done.
+    local function branchState(nc, quest, branch)
+        local state = 0
+        pcall(function()
+            local list = nc.QuestList
+            for i = 1, #list do
+                local q = list[i]
+                pcall(function() q = q:get() end)
+                if valid(q) and q:GetClass():GetFName():ToString() == quest .. "_C" then
+                    local bs = q.Branches
+                    for j = 1, #bs do
+                        local b = bs[j]
+                        pcall(function() b = b:get() end)
+                        if valid(b) and b.ID:ToString() == branch then
+                            state = tonumber(b:GetBranchState()) or 0
+                        end
+                    end
+                    return
+                end
+            end
+        end)
+        return state
+    end
+
+    -- A quest's class, by our table's path for it (loaded: a quest this world hasn't begun isn't in memory).
+    local classes = {}
+    local function questClass(quest)
+        local c = classes[quest]
+        if valid(c) then
+            return c
+        end
+        local path = DATA and DATA.paths and DATA.paths[quest]
+        if not path then
+            return nil
+        end
+        c = StaticFindObject(path)
+        if not valid(c) then
+            pcall(function() c = LoadAsset(path) end)
+        end
+        classes[quest] = valid(c) and c or nil
+        return classes[quest]
+    end
+
+    -- One row, by the game's own calls, as its QA tool's table did it: the quest steps (a branch begun, or finished, begun
+    -- first if it wasn't), the tags (bells woken by the story come as "bell." tags), the flow nodes marked done, the maps
+    -- whose bells all wake, the UI shown. What a row hands out (weapons, items, loot) isn't: a player's own finds, and what
+    -- the story needs comes with the host's bag. Returns how many of its parts the game took, and how many it was given.
+    local function applyRow(row, nc, ep, bells, ui)
+        local took, tried = 0, 0
+        local function try(f)
+            tried = tried + 1
+            if pcall(f) then
+                took = took + 1
+            end
+        end
+        for _, step in ipairs(row.q and steps(row.q) or {}) do
+            local cls = questClass(step.quest)
+            if cls and nc then
+                local branches = { FName(step.branch) }
+                local st = branchState(nc, step.quest, step.branch)
+                if st < 1 then
+                    try(function() nc:BeginQuestAndActiveBranch(cls, branches) end)
+                end
+                if step.finish and st < 2 then
+                    try(function() nc:FinishQuestBranch(cls, branches, true) end)
+                end
+            else
+                tried = tried + 1
+            end
+        end
+        if valid(ep) then
+            for _, tag in ipairs(split(row.t)) do
+                try(function() ep:AddTagsByString(tag) end)
+            end
+            for _, guid in ipairs(split(row.g)) do
+                try(function() ep.ExecuteNodeGuid:Add(guid, true) end)
+            end
+        end
+        if valid(bells) then
+            for _, id in ipairs(split(row.b)) do
+                try(function() bells:ActivateBellByID(FName(id)) end)
+            end
+            local maps = split(row.m)
+            if #maps > 0 then
+                try(function() bells:ActivateAllBellsByMaps(maps) end)
+            end
+        end
+        if valid(ui) then
+            for _, tag in ipairs(split(row.u)) do
+                try(function() ui:ActivateUIVisibilityTag({ TagName = FName(tag) }) end)
+            end
+        end
+        return took, tried
+    end
+
+    -- Table rows (by their number) applied with the game's own calls, in order. False if the game took none of it.
     local function applyRows(pawn, list, why)
-        local t, s, lib = tables()
-        local qa = StaticFindObject("/Script/ProjectPBZ.Default__PBZDebugFlowEventLibrary")
-        if not (t and valid(qa)) then
+        local nc = narrative()
+        local ep, bells, ui = FindFirstOf("EventPipelineManager"), FindFirstOf("BellManager"), FindFirstOf("UIVisibilityManager")
+        if not (nc and DATA and DATA.rows) then
             return false
         end
-        local all = {}
-        lib:GetDataTableRowNames(t, all)
-        if #all ~= rows.count then
-            return false
-        end
-        local names = {}
-        for n, i in ipairs(list) do
-            local name = all[i]
-            pcall(function() name = name:get() end)
-            names[n] = name
-        end
+        local took, tried = 0, 0
         -- (What the rows hand out isn't sent on as found: the partner had it when they did the step.)
         game.granting = true
-        local ok, err = pcall(function() qa:ApplyFlowEvents(pawn, t, s, names) end)
-        game.granting = false
-        if not ok then
-            log("Story: the game wouldn't take " .. why .. ": " .. tostring(err))
+        for _, i in ipairs(list) do
+            local row = DATA.rows[i]
+            if row then
+                local t, n = applyRow(row, nc, ep, bells, ui)
+                took, tried = took + t, tried + n
+            end
         end
-        return ok
+        game.granting = false
+        if tried > 0 and took < tried then
+            log(string.format("Story: the game took %d of %d parts of %s.", took, tried, why))
+        end
+        return took > 0 or tried == 0
+    end
+    story.applyRows = applyRows
+
+    -- storyjump <to> [from]: the table's rows from..to (from 1) applied here, as a catch-up would: a test save taken to a point
+    -- in the story (the game's own QA jump went with its table).
+    if game.commands then
+        game.commands.storyjump = function(args)
+            local to, from = (args or ""):match("^(%d+)%s*(%d*)$")
+            to, from = tonumber(to), tonumber(from) or 1
+            local _, pawn = api.getPlayer1()
+            if not (to and DATA and DATA.rows and valid(pawn)) then
+                log("Usage: storyjump <last row> [first row]")
+                return
+            end
+            local list = {}
+            for i = from, math.min(to, #DATA.rows) do
+                list[#list + 1] = i
+            end
+            log(string.format("Story jump: rows %d to %d: %s.", from, to, tostring(applyRows(pawn, list, "the story jump"))))
+        end
     end
 
     ------------------------------------------------------------------ host
@@ -607,23 +695,10 @@ return function(api)
             caughtUp()
             return
         end
-        -- Tables and row names fresh, in this frame: see tables().
-        local t, s, lib = tables()
-        local qa = StaticFindObject("/Script/ProjectPBZ.Default__PBZDebugFlowEventLibrary")
-        if not (t and valid(qa)) then
-            return
-        end
-        local all = {}
-        lib:GetDataTableRowNames(t, all)
-        if #all ~= rows.count then
-            return
-        end
         local names = {}
         batch = {}
         for n = 1, math.min(BATCH, #todo) do
-            local name = all[todo[n].i]
-            pcall(function() name = name:get() end)
-            names[n] = name
+            names[n] = todo[n].i
             if todo[n].mark then
                 marked[todo[n].i] = true
             else
@@ -632,11 +707,8 @@ return function(api)
             end
         end
         local took = os.clock()
-        game.granting = true        -- (the host had what these rows hand out: not sent back to it as found)
-        local ok, err = pcall(function() qa:ApplyFlowEvents(pawn, t, s, names) end)
-        game.granting = false
-        if not ok then
-            log("Story: the game wouldn't take the host's story steps: " .. tostring(err))
+        if not applyRows(pawn, names, "the host's story steps") then
+            log("Story: the game wouldn't take the host's story steps.")
             host.check, batch = false, nil
             return
         end

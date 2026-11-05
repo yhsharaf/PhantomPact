@@ -513,6 +513,10 @@ api.revive = dofile(SCRIPT_DIR .. "revive.lua")(api)
 api.pvp = dofile(SCRIPT_DIR .. "pvp.lua")(api)
 api.scaling = dofile(SCRIPT_DIR .. "scaling.lua")(api)
 api.twins = dofile(SCRIPT_DIR .. "twins.lua")(api)
+api.storyData = select(2, pcall(dofile, SCRIPT_DIR .. "storydata.lua"))     -- (our copy of the game's story table)
+if type(api.storyData) ~= "table" then
+    api.storyData = nil
+end
 api.story = dofile(SCRIPT_DIR .. "story.lua")(api)
 api.units = dofile(SCRIPT_DIR .. "units.lua")(api)
 api.localcoop = dofile(SCRIPT_DIR .. "localcoop.lua")(api)
