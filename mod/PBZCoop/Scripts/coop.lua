@@ -830,6 +830,25 @@ return function(api)
         retryAt = {},           -- host: id -> os.clock() before which it isn't handed over again
     }
 
+    -- An enemy's line goes the moment it says something new, and one that says the same as the last only every ENEMY_SAME_S,
+    -- so the other side never takes it for gone. Most enemies stand most of the time: in recordings of real fights, 88-99%
+    -- of their samples said what the one before did, and each went out 30 times a second all the same. (Fields of net, not
+    -- locals: this function is at Lua's 200 locals.)
+    net.linesSent = {}            -- enemy number -> { text, at }
+    net.enemySameS = 0.25         -- a line that says nothing new goes again this often (ENEMY_STALE_S allows for two)
+    function net.sendEnemyLine(number, text)
+        local last = net.linesSent[number]
+        if last and last.text == text and net.frameNow - last.at < net.enemySameS then
+            return
+        end
+        if last then
+            last.text, last.at = text, net.frameNow
+        else
+            net.linesSent[number] = { text = text, at = net.frameNow }
+        end
+        link.enemy(text)
+    end
+
     -- Host, one enemy's turn: announce its death (reliably), or send where it is.
     local function shareEnemy(actor, addr, aggro)
         local name = enemyName(actor, addr)
@@ -946,7 +965,8 @@ return function(api)
             if yaw == yaw and x == x and y == y and z == z then
                 local boss = game.isBoss and game.isBoss(actor, addr) and 1 or 0
                 -- "-" = unknown posture; the client leaves its own alone instead of zeroing it.
-                link.enemy(string.format("%d %.0f %.0f %.0f %.0f %.0f %.0f %.1f %.1f %d %s", enemyNumber(actor, name),
+                local number = enemyNumber(actor, name)
+                net.sendEnemyLine(number, string.format("%d %.0f %.0f %.0f %.0f %.0f %.0f %.1f %.1f %d %s", number,
                     x, y, z, yaw, vx == vx and vx or 0, vy == vy and vy or 0, hp, maxhp, boss,
                     posture ~= nil and string.format("%.1f", posture) or "-"))
             end
@@ -1465,7 +1485,8 @@ return function(api)
     function handover.share(name, actor, addr)
         local x, y, z, yaw, vx, vy, _, _, hp, maxhp, posture = game.read(actor, addr)
         if hp and maxhp and maxhp > 0 and x == x and y == y and z == z and yaw == yaw then
-            link.enemy(string.format("%d %.0f %.0f %.0f %.0f %.0f %.0f %.1f %.1f 0 %s", enemyNumber(actor, name),
+            local number = enemyNumber(actor, name)
+            net.sendEnemyLine(number, string.format("%d %.0f %.0f %.0f %.0f %.0f %.0f %.1f %.1f 0 %s", number,
                 x, y, z, yaw, vx == vx and vx or 0, vy == vy and vy or 0, hp, maxhp,
                 posture ~= nil and string.format("%.1f", posture) or "-"))
         end
@@ -1670,8 +1691,10 @@ return function(api)
             net.linkWasQuiet, net.linkBackAt = false, os.clock()
         end
         local settling = os.clock() - (net.linkBackAt or -1e9) < ENEMY_STALE_S
+        -- (An enemy that stands still has a line only every net.enemySameS: two of those on top, or one went before the link
+        -- was even called quiet.)
         for name, r in pairs((linkQuiet or settling) and {} or net.remoteEnemies) do
-            if now - r.at > ENEMY_STALE_S then
+            if now - r.at > ENEMY_STALE_S + 2 * net.enemySameS then
                 net.remoteEnemies[name] = nil
             end
         end

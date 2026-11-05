@@ -210,6 +210,15 @@ here), so it stays as it is.
 20 a second, 68 at 30; with 30 enemies 112 and 139. Six players (5 guests) at 30 a second: 153 KB/s with 8 enemies, 265 with 30,
 about 2.1 Mbit/s up. Two players with 30 enemies is about 0.5 Mbit/s.
 
+**An enemy line goes when it says something new.** In recordings of real fights 88-99% of enemy samples said what the one
+before did (most enemies stand most of the time), and each still went out 30 times a second. Now a line that says the same
+as the last goes again only every 0.25 s (`net.enemySameS`), and a changed one at once, so a moving or hit enemy is no later.
+The guest lets a copy go after `ENEMY_STALE_S` plus two of those gaps without a line, or one standing still was let go just
+before a quiet link counted as quiet. Two players standing by two enemies in the Lua sim: the host's enemy lines 52.8 a
+second, 2.1 KB/s, before; 7.2 a second, 0.3 KB/s, now. With the recordings' share of standing enemies, a party's upload in a
+fight should fall by most of its enemy part (about 150 of the 265 KB/s with 6 players and 30 enemies; the party bench's bots
+send their lines by themselves, so that is worked out, not measured).
+
 **A guest's hit.** The guest's own hit already shows at once on their copy: the game's own flinch, sparks, sound and health bar,
 and the bar isn't pulled back while the host catches up (`healTicks`). What waits a round trip is a kill: the copy is held at 1
 health till the host says `K`, about RTT + 50 ms (200 ms at RTT 150). Showing a death before the host says so would let a guest
