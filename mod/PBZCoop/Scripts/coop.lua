@@ -2300,6 +2300,11 @@ return function(api)
                     net.pendingBosses[name] = true
                 end
             end
+            -- (This player's own fights end with the death: their marks as the host's go too, or the next death queued
+            -- one again while the host fought anything, and its bar came back over nobody's fight.)
+            for name in pairs(net.ownAnnounced or {}) do
+                net.hostBosses[name] = nil
+            end
             net.ownAnnounced = {}
             -- (A fight this player had walked into is theirs to walk into again: still marked joined, E at the wall did
             -- nothing until the boss died, and an arena apart took them back to the partner after it.)
