@@ -97,9 +97,10 @@ def make_thumb(src):
     # The panel, thrown in between the two at a slight tilt, with a red/blue echo behind it (the user's pick:
     # "the slight rotate and bigger and glitchy").
     p = panel_image()
-    p = p.resize((int(p.width * 0.6), int(p.height * 0.6)), Image.LANCZOS)
+    # (Up in the trees on the left, small: lower down it hid the heroes on the left, and all six are the point.)
+    p = p.resize((int(p.width * 0.5), int(p.height * 0.5)), Image.LANCZOS)
     rot = p.rotate(-4, expand=True, resample=Image.BICUBIC)
-    px, py = 18, H - rot.height - 30
+    px, py = 16, 252
     shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     shadow.paste((0, 0, 0, 200), (px + 14, py + 18), rot.getchannel("A"))
     img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(14)))
@@ -110,9 +111,9 @@ def make_thumb(src):
         img = Image.alpha_composite(img, echo)
     img.alpha_composite(rot, (px, py))
     # A thin cut through the panel itself, and the glitch over everything.
-    img = Image.alpha_composite(img, slash((W, H), (40, 715), (470, 430), 4, (255, 60, 60, 220)))
-    # (Clear of the panel's heading and its HOST / GUEST / LEAVE row, and of the two bosses.)
-    img = glitch_bands(img, rng, 9, keep=((430, 470), (560, 610), (380, 640)))
+    img = Image.alpha_composite(img, slash((W, H), (10, 470), (360, 250), 4, (255, 60, 60, 220)))
+    # (Clear of the panel's heading and its HOST / GUEST / LEAVE row, and of the heroes and bosses below.)
+    img = glitch_bands(img, rng, 9, keep=((240, 720),))
     # A soft darkening at the top, so the lettering reads on the bright fog.
     shade = Image.new("L", (1, H))
     for y in range(H):
