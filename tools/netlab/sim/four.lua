@@ -580,6 +580,22 @@ local function rests()
         "a guest's fight that's on is shown to another guest who starts sync again")
     allErrors(n)
 
+    -- The host's word only: the same events from another guest, passed on by the relay, do nothing.
+    local o = party()
+    local og = o.pcs[3]
+    local oh = og.env.PBZ.coop.handlers
+    local beatenLogs = count(og.logs, "The host has beaten")
+    oh.OC("BP_Chest_C_1", 2)
+    oh.BEATEN("sp:boss", 2)
+    oh.NOT("sp:thug1", 2)
+    o:run(1)
+    check(net(og).chestsSoon ~= true and count(og.logs, "The host has beaten") == beatenLogs
+        and net(og).notOnHost["sp:thug1"] == nil, "host-only events from another guest are ignored")
+    oh.BEATEN("sp:boss")
+    o:run(1)
+    check(count(og.logs, "The host has beaten") == beatenLogs + 1, "and the host's own still count")
+    allErrors(o)
+
     -- Two players: the host in a boss fight of its own, the guest far off on the same map rests at a bell.
     local w = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES)
     local wh, wg = w.pcs[1], w.pcs[2]

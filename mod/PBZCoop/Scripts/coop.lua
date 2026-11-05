@@ -2099,7 +2099,10 @@ return function(api)
         sendEvent("OC", name)
     end
 
-    handlers.OC = function(name)
+    handlers.OC = function(name, from)
+        if from ~= nil then
+            return          -- (the host's word only: another guest's, passed on by the relay, is no host's)
+        end
         if isClient() and type(name) == "string" and #name <= MAX_CHEST_NAME and api.story and api.story.follow
             and game.hostOpened then
             game.hostOpened(name)
@@ -2449,7 +2452,10 @@ return function(api)
 
     -- The host's world is everyone's truth. Loaded anew (it restarted, or left to the title screen and came back) it has
     -- everything alive again, so this world refreshes too, or what died here would stay alive there and unseen here.
-    handlers.Y = function(world)
+    handlers.Y = function(world, from)
+        if from ~= nil then
+            return          -- (the host's word only: another guest's, passed on by the relay, is no host's)
+        end
         local known = net.hostWorld
         net.hostWorld = world
         if known ~= nil and known ~= world then
@@ -2489,7 +2495,10 @@ return function(api)
         end
     end
 
-    handlers.NOT = function(name)
+    handlers.NOT = function(name, from)
+        if from ~= nil then
+            return          -- (the host's word only: another guest's, passed on by the relay, is no host's)
+        end
         net.notOnHost[name] = true
     end
 
@@ -2757,7 +2766,10 @@ return function(api)
         end
     end
 
-    handlers.BEATEN = function(name)
+    handlers.BEATEN = function(name, from)
+        if from ~= nil then
+            return          -- (the host's word only: another guest's, passed on by the relay, is no host's)
+        end
         if not isClient() or type(name) ~= "string" or #name > MAX_ITEM_NAME then
             return
         end

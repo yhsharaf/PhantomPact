@@ -353,6 +353,12 @@ return function(api)
     end
 
     coop.handlers.GSTORY = function(rest, from)
+        -- A guest loaded another save: where they stand now is their new start. Kept, a guest who loaded a finished save
+        -- while linked had every row past their first one counted as done together, and the host's quests finished by it.
+        if coop.isHost() and rest == "reset" then
+            guestDone[from or 0] = nil
+            return
+        end
         if not coop.isHost() or type(rest) ~= "string" or #rest > 400 or not readTable() then
             return
         end
@@ -423,9 +429,18 @@ return function(api)
     local marked = {}               -- mark rows applied this session
     local batch = nil               -- quest rows of the last batch, checked on the next read
     local caught, warned = 0, false
+    -- The host started sync anew (another host, maybe): its old point isn't caught up to before the new one's comes.
+    local guestSyncStarted = coop.handlers.S
+    coop.handlers.S = function(rest, from)
+        guestSyncStarted(rest, from)
+        if not coop.isHost() and from == nil then
+            host, tried, marked = nil, {}, {}
+        end
+    end
 
-    coop.handlers.STORYPT = function(rest)
-        if coop.isHost() or type(rest) ~= "string" or #rest > 400 then
+    coop.handlers.STORYPT = function(rest, from)
+        -- (from: another guest's, passed on by the relay: only the host's point is caught up to, into this save for good.)
+        if from ~= nil or coop.isHost() or type(rest) ~= "string" or #rest > 400 then
             return
         end
         local n, check, point, hex = rest:match("^(%d+) (%d+) (%d+) (%x+)$")
@@ -494,6 +509,9 @@ return function(api)
             if host and body then
                 host.check = true                   -- a load: this world may be another save's
                 tried, marked = {}, {}
+            end
+            if body and coop.linked() then
+                coop.sendEvent("GSTORY", "reset")   -- (and for the host: its count of what this player did starts over)
             end
         end
         if not (story.follow and host and host.check and now - host.at < FRESH_S and coop.linked() and calm(pawn)) then
@@ -621,8 +639,8 @@ return function(api)
     local hostSkipped = {}              -- sequence name -> when the host skipped it
     local ended = nil                   -- our scene already ended for the host's
 
-    coop.handlers.SCENE = function(rest)
-        if coop.isHost() or type(rest) ~= "string" or #rest > 200 then
+    coop.handlers.SCENE = function(rest, from)
+        if from ~= nil or coop.isHost() or type(rest) ~= "string" or #rest > 200 then
             return
         end
         local name = rest:match("^skip (%S+)$")
