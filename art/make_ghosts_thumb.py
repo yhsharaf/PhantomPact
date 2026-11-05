@@ -82,11 +82,61 @@ def glitch_bands(img, rng, count, keep=()):
         out.paste(band, (dx, y))
     return out
 
+# The six players, traced by hand on the 960x540 shot (left to right). Each gets its own colour: a soft halo just
+# outside the outline and its body lifted out of the dark (the user: "the players to be more clear").
+PLAYERS = [
+    ((255, 196, 70), [(0, 410), (25, 405), (45, 400), (65, 405), (75, 418), (78, 433), (60, 440), (50, 455), (55, 480),
+                      (50, 510), (45, 540), (0, 540)]),
+    ((120, 170, 255), [(112, 455), (122, 440), (130, 422), (145, 410), (160, 410), (180, 418), (200, 430), (208, 450),
+                       (200, 470), (185, 485), (165, 492), (140, 500), (120, 505), (108, 485)]),
+    ((255, 80, 70), [(288, 370), (300, 368), (312, 378), (330, 382), (332, 392), (318, 400), (320, 420), (330, 440),
+                     (320, 460), (305, 470), (300, 490), (270, 490), (255, 470), (248, 450), (258, 420), (272, 395),
+                     (282, 380)]),
+    ((190, 120, 255), [(655, 358), (670, 356), (675, 368), (690, 372), (686, 395), (685, 420), (700, 440), (705, 455),
+                       (690, 465), (700, 490), (680, 495), (665, 470), (655, 500), (645, 500), (640, 470), (625, 465),
+                       (628, 430), (640, 410), (650, 390), (652, 370)]),
+    ((90, 230, 120), [(795, 362), (812, 364), (815, 378), (840, 390), (840, 405), (830, 420), (845, 440), (850, 470),
+                      (848, 505), (830, 505), (820, 470), (805, 470), (800, 490), (760, 495), (730, 490), (715, 470),
+                      (718, 450), (735, 435), (750, 420), (748, 400), (760, 385), (790, 380)]),
+    ((255, 150, 50), [(930, 445), (945, 436), (960, 430), (960, 505), (935, 505), (925, 480)]),
+]
+
+
+def light_players(img):
+    W, H = img.size
+    k = W / 960
+    for color, poly in PLAYERS:
+        pts = [(x * k, y * k) for x, y in poly]
+        m = Image.new("L", (W, H), 0)
+        ImageDraw.Draw(m).polygon(pts, fill=255)
+        inner = m.filter(ImageFilter.MinFilter(5)).filter(ImageFilter.GaussianBlur(6))
+        # Lift the body out of the dark (their own outfit still showing), with a faint touch of the colour.
+        rgb = img.convert("RGB")
+        lift = rgb.point(lambda v: min(255, int(18 + v * 1.7)))
+        lift = ImageChops.screen(lift, Image.new("RGB", (W, H), tuple(int(c * 0.10) for c in color))).convert("RGBA")
+        img = Image.composite(lift, img, inner)
+        # A soft aura in the player's colour, and a rim light along the real edges of their armour and cloak
+        # near the outline (the trace is by hand: a line along it would show its corners).
+        aura = m.filter(ImageFilter.MaxFilter(9)).filter(ImageFilter.GaussianBlur(22)).point(lambda v: int(v * 0.5))
+        img = Image.composite(ImageChops.screen(img.convert("RGB"), Image.new("RGB", (W, H), color)).convert("RGBA"),
+                              img, aura)
+        band = ImageChops.subtract(m.filter(ImageFilter.MaxFilter(7)), m.filter(ImageFilter.MinFilter(21)))
+        band = band.filter(ImageFilter.GaussianBlur(3))
+        edges = rgb.convert("L").filter(ImageFilter.GaussianBlur(0.8)).filter(ImageFilter.FIND_EDGES)
+        edges = edges.point(lambda v: min(255, max(0, (v - 6) * 9)))
+        rim = ImageChops.multiply(edges, band)
+        for blur, alpha in ((5, 0.8), (0.8, 1.0)):
+            g = rim.filter(ImageFilter.GaussianBlur(blur)).point(lambda v, a=alpha: min(255, int(v * a * 2.2)))
+            glow = Image.new("RGB", (W, H), tuple(min(255, c + 60) for c in color))
+            img = Image.composite(ImageChops.screen(img.convert("RGB"), glow).convert("RGBA"), img, g)
+    return img
+
 
 def make_thumb(src):
     W, H = 1280, 720
     rng = random.Random(170)
     img = src.convert("RGBA").resize((W, H), Image.LANCZOS)
+    img = light_players(img)
     # Ink and blood behind everything else.
     img = Image.alpha_composite(img, splatter((W, H), rng, 70, (20, 6, 8, 210), [(120, 600), (1180, 560)]))
     img = Image.alpha_composite(img, splatter((W, H), rng, 50, (150, 14, 20, 230), [(330, 680), (1080, 640), (980, 300)]))
@@ -100,7 +150,7 @@ def make_thumb(src):
     # (Up in the trees on the left, small: lower down it hid the heroes on the left, and all six are the point.)
     p = p.resize((int(p.width * 0.5), int(p.height * 0.5)), Image.LANCZOS)
     rot = p.rotate(-4, expand=True, resample=Image.BICUBIC)
-    px, py = 16, 252
+    px, py = 16, 300
     shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     shadow.paste((0, 0, 0, 200), (px + 14, py + 18), rot.getchannel("A"))
     img = Image.alpha_composite(img, shadow.filter(ImageFilter.GaussianBlur(14)))
@@ -115,20 +165,23 @@ def make_thumb(src):
     # (Clear of the panel's heading and its HOST / GUEST / LEAVE row, and of the heroes and bosses below.)
     img = glitch_bands(img, rng, 9, keep=((240, 720),))
     # A soft darkening at the top, so the lettering reads on the bright fog.
+    # (Not over the game's two boss bars and their five marks at the very top: the user wants those seen.)
     shade = Image.new("L", (1, H))
     for y in range(H):
-        shade.putpixel((0, y), int(150 * max(0.0, 1 - y / (H * 0.45)) ** 1.5))
+        f = 0.0 if y < 70 else min(1.0, (y - 70) / 40) * max(0.0, 1 - (y - 110) / (H * 0.42)) ** 1.3
+        shade.putpixel((0, y), int(140 * min(1.0, f)))
     dark = Image.new("RGBA", (W, H), (14, 6, 8, 255))
     dark.putalpha(shade.resize((W, H)))
     img = Image.alpha_composite(img, dark)
     cx = W / 2
     items = [
-        (cx, 26, "PHANTOM PACT  •  1.7.0", font(BOLD, 40), 3, "gold"),
-        (cx, 98, "GHOSTS UPDATE", font(BOLD, 80), 3, "hero"),
-        (cx, 192, "5-6 PLAYERS CO-OP", font(BOLD, 52), 4, "gold"),
+        # (Below the boss bars, which end about y 72.)
+        (cx, 84, "PHANTOM PACT  •  1.7.0", font(BOLD, 36), 3, "gold"),
+        (cx, 148, "GHOSTS UPDATE", font(BOLD, 80), 3, "hero"),
+        (cx, 240, "5-6 PLAYERS CO-OP", font(BOLD, 50), 4, "gold"),
     ]
     img = Image.alpha_composite(img, card_text((W, H), items))
-    img = red_rule(img, cx - 230, cx + 230, 84, 3)
+    img = red_rule(img, cx - 210, cx + 210, 136, 3)
     credit_line(img, "Fan-made mod for Phantom Blade Zero", 18, (W - 16, H - 30), align="right")
     return img.convert("RGB")
 
