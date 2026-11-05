@@ -93,12 +93,25 @@ return function(api)
             -- page opens, as Host, Guest and Leave write Role too.
             mode = (s.role or "off"):lower() == "local" and "local" or "multiplayer",
         }
+        -- A guest following the host's rules (rules.lua) sees the host's choice on those tiles.
+        local host = api.rules and api.rules.following() and api.rules.host
+        if host then
+            options.freetravel = host.freetravel and "on" or "off"
+            options.teleport = host.teleport and "on" or "off"
+            options.pvp = host.pvp and "on" or "off"
+        end
     end
+
+    local HOSTS_RULE = { freetravel = true, teleport = true, pvp = true }
 
     -- Kept in PhantomPact.ini, and in force at once. (Steam Direct and the players from the next connection: the relay reads
     -- them as it starts. The players are the host's choice: a guest follows what the host's relay says. Mode from the next start
     -- of the game: Role is read once, and local co-op can't be taken down live.)
     local function choose(row, value)
+        if HOSTS_RULE[row] and api.rules and api.rules.following() then
+            api.status.notify("rules", "Only the host's setting counts.")
+            return
+        end
         options[row] = value
         local on = value == "on"
         local word = on and "On" or "Off"

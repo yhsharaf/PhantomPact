@@ -2326,6 +2326,28 @@ local function offAndBack()
         and not ph.files["PhantomPact.ini"]:find("Revive", 1, true), "and back on; the Revive tile writes nothing")
     allErrors(p)
 
+    -- The host's rules count for everyone (rules.lua): Free Bell Travel, TP > Partner, PvP.
+    local r, rh, rg = pair()
+    check(rg.env.PBZ.rules.following() == true and rg.env.PBZ.freetravel.on == true, "a linked guest follows the host's rules")
+    Session.command(rh, "onlinepanel press 700 500")
+    Session.command(rh, "onlinepanel press 199 330")        -- the host: Free Bell Travel off
+    Session.command(rh, "onlinepanel press 116 163")        -- and TP > Partner on
+    r:run(1)
+    check(rg.env.PBZ.freetravel.on == false and rg.env.PBZ.partner.teleport == true, "the host's change reaches the guest at once")
+    check(rh.env.PBZ.rules.following() == false, "the host follows nobody")
+    Session.command(rg, "onlinepanel press 700 500")
+    rg.logs = {}
+    Session.command(rg, "onlinepanel press 199 330")        -- the guest tries to turn it back on
+    r:run(1)
+    check(rg.env.PBZ.freetravel.on == false and not (rg.files["PhantomPact.ini"] or ""):find("FreeBellTravel", 1, true)
+        and count(rg.logs, "Only the host's setting counts%.") == 1, "a guest's click changes nothing, and says why")
+    check(count(rg.logs, "row freetravel") == 0, "(no slip)")
+    Session.command(rg, "netoff")
+    r:run(1)
+    check(rg.env.PBZ.rules.following() == false and rg.env.PBZ.freetravel.on == true and rg.env.PBZ.partner.teleport == false,
+        "sync off: the guest's own rules come back")
+    allErrors(r)
+
     local lang = dofile(SIM_SCRIPTS .. "/lang.lua")()
     lang.set("Chinese")
     check(lang.say("your partner rested at a bell: you're rested too.") == "队友在钟旁休息了:你也恢复了。", "the bell's tips in Chinese")

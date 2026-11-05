@@ -37,6 +37,7 @@ return function()
         ["PvP is off with more than two players."] = "超过两名玩家时 PvP 关闭。",
         ["Local co-op starts the next time you start the game."] = "下次启动游戏时开始本地分屏。",
         ["Only the host's Players setting counts."] = "只有房主的人数设置有效。",
+        ["Only the host's setting counts."] = "只有房主的设置有效。",
         ["Players: from your next Host (Leave, then Host)."] = "人数:下次开房时生效(先离开,再开房)。",
         ["Multiplayer starts the next time you start the game."] = "下次启动游戏时恢复多人联机。",
         ["TP > PARTNER is off. Turn it on in MORE (F5)."] = "传送到队友已关闭。可在 F5 的“更多”里开启。",
