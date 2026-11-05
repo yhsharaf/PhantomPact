@@ -177,6 +177,13 @@ local function movesAndGear()
     s:run(0.5)
     check(field(field(ghostOf(s.pcs[2], 4), "hit"), "state") == "CharacterState.Hitreact.State.Normal.Heavy", "a stagger shows on the right ghost")
     check(field(field(ghostOf(s.pcs[2], 3), "hit"), "state") == "None", "and no other")
+    -- As main.dll hands a move over: with how long ago the partner's game read it in front. It starts that far in.
+    local inbox, before = s.pcs[1].inbox, played(s.pcs[1], 3)
+    inbox[#inbox + 1] = "~45 @3 U /PBZCombatAsset/ActorData/Move/A1.A1 0.25"
+    s:run(0.1)
+    local start = field(field(ghostOf(s.pcs[1], 3), "anim"), "start")
+    check(played(s.pcs[1], 3) == before + 1 and start and math.abs(start - 0.295) < 1e-6,
+        "a move that comes 45 ms old starts 45 ms further in (at " .. tostring(start) .. ")")
     allErrors(s)
 end
 

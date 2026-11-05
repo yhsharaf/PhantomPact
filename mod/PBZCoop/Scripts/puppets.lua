@@ -128,7 +128,7 @@ return function(api)
         local m = path ~= "-" and api.moves.allowedPath(path) and api.moves.montage(path)
         local ai = m and api.moves.animOf(actor)
         local hold = 0.9
-        if ai and pcall(function() ai:Montage_Play(m, 1.0, 0, pos + (net.rttMs or 0) / 2000, true) end) then
+        if ai and pcall(function() ai:Montage_Play(m, 1.0, 0, pos + net.moveAge(), true) end) then
             pcall(function() hold = math.max(0.3, math.min(REACT_S, m:GetPlayLength() - pos)) end)
             hostSeen[name] = { addr = m:GetAddress(), pos = pos }
         end
@@ -233,7 +233,7 @@ return function(api)
                 return
             end
         end
-        if ai and pcall(function() ai:Montage_Play(m, 1.0, 0, pos + (net.rttMs or 0) / 2000, true) end) then
+        if ai and pcall(function() ai:Montage_Play(m, 1.0, 0, pos + net.moveAge(), true) end) then
             puppets.played = puppets.played + 1
         else
             puppets.failed = puppets.failed + 1

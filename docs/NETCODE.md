@@ -160,6 +160,59 @@ around the host, `PERF.frames` and `PERF.profile` for 12 s at each rate, twice):
 3,500, the enemy work from about 4.5 to 6.8 ms of game thread a second, and the frames didn't move (59-60 FPS, 16-17 ms
 typical, 23-25 at the 99th percentile, none over 50 ms at 30 a second). `net.enemyRoundS` overrides the rate from a dev eval.
 
+## Moves over a long, lossy link (11-05)
+
+**A move starts as far in as it really is old.** A move (`U`, `A`, an edge weapon's `Z`) used to start at its position plus half
+the round trip from the status line: that missed the wait for the game's next tick (about 9 ms, always), each packet's jitter,
+and a repeat sent because the first copy was lost. Now the relay works out each quick event's age when it lands: how long the
+sender held it (its age on the wire), how much later this packet came than the fastest lately, and half the shortest round
+trip; the Mailbox adds its own wait and hands it over as `~<ms> <event>`, and `net.moveAge()` is what the montage starts from.
+Measured through real sockets and netem, the bots knowing the true age from the clock they share (`bench.ps1`, p50 / p95 / p99
+of how far off):
+
+| | half the round trip (before) | the move's own age (now) |
+|---|---|---|
+| RTT 150, clean | 0.9 / 15 / 16 ms | 0.5 / 1.2 / 1.3 ms |
+| RTT 150, 10 ms jitter, 2% loss | 10 / 25 / 27 ms | 0.7 / 1.7 / 1.9 ms |
+| RTT 150, 30 ms jitter, 5% loss | 11 / 30 / 32 ms | 1.7 / 4.4 / 6.0 ms |
+| RTT 200, 30 ms jitter, 5% loss | 14 / 19 / 31 ms | 2.1 / 3.0 / 8.0 ms |
+| RTT 250, 10 ms jitter, 2% loss | 6 / 20 / 22 ms | 1.3 / 2.4 / 2.7 ms |
+| RTT 250, 30 ms jitter, 5% loss | 10 / 27 / 40 ms | 2.0 / 2.7 / 3.1 ms |
+
+A route slower one way than the other stays a guess for both: no echo can tell which way the time went (a model with one way
+taking 70% of the round trip: 30-50 ms off at RTT 150-250, either way). A party's host passes a guest's move on with the age it
+has, and the next hop counts on from there.
+
+Enemy attacks don't start further in: an ability replays from its own start on the guest's copy, so the guest sees the whole
+wind-up, and a dodge, guard or parry is judged against that copy on their own PC, at any ping. Starting it by its age would cut
+up to 125 ms of the telegraph at RTT 250. Only a montage the ability doesn't play, or a later step of a chain, starts by its age.
+
+**A move's three copies go at 0, 40 and 120 ms, not a frame apart.** Wi-Fi loses packets in bursts: one longer than two frames
+took all three. Through netem, losing 5% of the time in bursts, 50 moves a second for 15 s each way, RTT 80:
+
+| bursts of about | a frame apart (before) | 40 ms apart | 0, 40, 120 ms (now) |
+|---|---|---|---|
+| 20 ms | 0 of 420 lost | | |
+| 50 ms | 6 lost (1.4%) | 0 | 0 |
+| 100 ms | 16 lost (3.8%) | 9 | 0 |
+| 200 ms (a stall, really) | 27 lost (6.4%) | 14-15 | 17 |
+
+The same three copies, so no more bytes. A move that only gets through on a later copy starts that much further in, so it's still
+in step. The sure lane lost nothing in these runs (it resends after 1.5 round trips plus 15 ms: 194 ms at the 95th percentile
+here), so it stays as it is.
+
+**Bandwidth, enemies 30 times a second.** The host's upload (`party-bench.ps1`, bots, 12 s): 3 guests with 8 enemies 61 KB/s at
+20 a second, 68 at 30; with 30 enemies 112 and 139. Six players (5 guests) at 30 a second: 153 KB/s with 8 enemies, 265 with 30,
+about 2.1 Mbit/s up. Two players with 30 enemies is about 0.5 Mbit/s.
+
+**A guest's hit.** The guest's own hit already shows at once on their copy: the game's own flinch, sparks, sound and health bar,
+and the bar isn't pulled back while the host catches up (`healTicks`). What waits a round trip is a kill: the copy is held at 1
+health till the host says `K`, about RTT + 50 ms (200 ms at RTT 150). Showing a death before the host says so would let a guest
+decide one, so nothing changed; a dying pose held till `K` comes is for the real game to try.
+
+**Steam's route.** When Steam relays the connection, the player is told once a game that it adds delay and that SteamDirect = On
+on both PCs gives a direct one where routers allow (`status.lua`). Relay against direct ping needs two real accounts.
+
 ## Testing
 
 See `tools/netlab/README.md`. `relay_cli test` is the logic, `tools/netlab/bench.ps1` is two relays through a bad connection,

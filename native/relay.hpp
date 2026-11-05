@@ -52,7 +52,8 @@ constexpr double PEER_TIMEOUT = 3.0;
 constexpr double HELLO_EVERY = 2.0;
 constexpr double PROBE_EVERY = 1.0;
 constexpr double ACK_WAIT = 0.004;         // a bare acknowledgement goes out if no packet does within this time
-constexpr double QUICK_GAP = 0.012;        // repeats of a quick event, spaced so one burst of loss doesn't take them all
+constexpr double QUICK_GAP = 0.040;        // a quick event's repeats go this long and then twice that after: at 0, 40, 120 ms.
+                                           // A burst of Wi-Fi loss over two frames took all three a frame apart.
 constexpr double RETRY_MIN = 0.03, RETRY_MAX = 0.5;
 constexpr size_t MAX_PACKET = 1100;        // with a signature, still under a VPN's 1280-byte limit
 constexpr size_t MAX_TEXT = 900;           // one event or enemy line
@@ -483,11 +484,18 @@ public:
         wake = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     }
 
+    // A quick event waiting to go, and how old it already was when posted: a guest's, passed on by a party's host.
+    struct Move {
+        std::string text;
+        double age_ms = 0;
+    };
+
     struct Outgoing {
         bool have_sample = false, reset = false, map_changed = false;
         Sample sample;
         std::string map;
-        std::vector<std::string> sure, quick, enemies;
+        std::vector<std::string> sure, enemies;
+        std::vector<Move> quick;
         std::vector<std::pair<int, std::string>> direct;    // a party: slot, a sure event for that guest alone
     };
 
@@ -503,7 +511,14 @@ public:
     }
 
     void post_sure(std::string text) { post(out_.sure, std::move(text)); }
-    void post_quick(std::string text) { post(out_.quick, std::move(text)); }
+
+    void post_quick(std::string text, double age_ms = 0) {
+        {
+            Lock hold(lock_);
+            keep(out_.quick, std::move(text), age_ms);
+        }
+        SetEvent(wake);
+    }
 
     void post_enemy(std::string text) {
         Lock hold(lock_);
@@ -544,13 +559,15 @@ public:
     }
 
     // A move that sat here through a long hitch on this PC is as stale as one that arrived late: dropped, not played in a
-    // burst when the game comes back.
+    // burst when the game comes back. The others go with how long ago the partner's game read them, in ms, in front:
+    // "~<age> <event>", for the move to start that far in (coop.lua's processEvents takes it off).
     std::string take_events(double now_ms) {
         std::string out;
         Lock hold(lock_);
         out.swap(events_);
         for (const Waiting& q : quick_) {
             if (now_ms - q.arrived_ms > QUICK_WAIT_MS) continue;
+            out += "~" + std::to_string(std::lround(q.age_ms + now_ms - q.arrived_ms)) + " ";
             out.append(q.text);
             out.push_back('\n');
         }
@@ -591,10 +608,10 @@ public:
         return true;
     }
 
-    void on_quick(std::string_view text, double arrived_ms) {
+    void on_quick(std::string_view text, double arrived_ms, double age_ms) {
         Lock hold(lock_);
         if (quick_.size() >= MAX_QUICK_WAITING) quick_.pop_front();
-        quick_.push_back({arrived_ms, std::string(text)});
+        quick_.push_back({arrived_ms, age_ms, std::string(text)});
     }
 
     void on_enemies(std::string_view text) {
@@ -694,7 +711,7 @@ public:
         }
         if (!lanes) return;
         for (const std::string& text : in.sure) keep(out_.sure, text);
-        for (const std::string& text : in.quick) keep(out_.quick, text);
+        for (const Move& move : in.quick) keep(out_.quick, move.text, move.age_ms);
         for (const std::string& text : in.enemies) keep(out_.enemies, text);
     }
 
@@ -731,8 +748,14 @@ private:
         list.push_back(std::move(text));
     }
 
+    static void keep(std::vector<Move>& list, std::string text, double age_ms) {
+        if (list.size() >= MAX_SURE_PENDING) return;
+        if (text.size() > MAX_TEXT) text.resize(MAX_TEXT);
+        list.push_back({std::move(text), age_ms});
+    }
+
     struct Waiting {
-        double arrived_ms;
+        double arrived_ms, age_ms;     // age_ms: how long ago the partner's game read it, when it arrived
         std::string text;
     };
 
@@ -841,13 +864,45 @@ inline uint32_t next_session(uint32_t last, uint64_t wall_ms) {
     return stamped ? stamped : 1;
 }
 
+// The lowest of something over the last 6 s (eight buckets of 0.75 s), as the Timeline keeps the fastest trip: a slower
+// route counts once the old lows have aged out.
+class RecentLow {
+public:
+    void clear() {
+        lows_.fill(1e18);
+        start_ = -1;
+    }
+
+    void add(double value, double now_ms) {
+        if (start_ < 0 || now_ms - start_ >= BUCKET_MS * BUCKETS) {
+            lows_.fill(1e18);
+            start_ = now_ms;
+        }
+        while (now_ms - start_ >= BUCKET_MS) {
+            start_ += BUCKET_MS;
+            std::rotate(lows_.begin(), lows_.begin() + 1, lows_.end());
+            lows_.back() = 1e18;
+        }
+        lows_.back() = std::min(lows_.back(), value);
+    }
+
+    double low() const { return *std::min_element(lows_.begin(), lows_.end()); }
+    bool known() const { return low() < 1e17; }
+
+private:
+    static constexpr int BUCKETS = 8;
+    static constexpr double BUCKET_MS = 750;
+    std::array<double, BUCKETS> lows_{1e18, 1e18, 1e18, 1e18, 1e18, 1e18, 1e18, 1e18};
+    double start_ = -1;
+};
+
 // A host with several guests runs a Relay for each (party.hpp): what a guest says goes here, not into that Relay's Mailbox.
 class Hub {
 public:
     virtual ~Hub() = default;
     virtual void on_sample(int slot, const Sample& s, double arrived_ms) = 0;
     virtual bool on_sure(int slot, const std::string& text) = 0;      // false: no room, as Mailbox::on_event
-    virtual void on_quick(int slot, std::string_view text, double arrived_ms) = 0;
+    virtual void on_quick(int slot, std::string_view text, double arrived_ms, double age_ms) = 0;
     virtual void on_restart(int slot) = 0;
 };
 
@@ -969,8 +1024,15 @@ public:
         echo_arrived_ms_ = ms;
         if (echo) {
             const double rtt = ms - static_cast<double>(echo) - static_cast<double>(hold);
-            if (rtt >= 0 && rtt < 5000) rtt_ms_ = rtt_ms_ < 0 ? rtt : rtt_ms_ + (rtt - rtt_ms_) * 0.1;
+            if (rtt >= 0 && rtt < 5000) {
+                rtt_ms_ = rtt_ms_ < 0 ? rtt : rtt_ms_ + (rtt - rtt_ms_) * 0.1;
+                shortest_rtt_.add(rtt, ms);
+            }
         }
+        // This packet's trip on the two clocks, against the fastest lately: how much later than that it came.
+        const double trip = ms - static_cast<double>(their_ms);
+        fastest_trip_.add(trip, ms);
+        const double late = trip - fastest_trip_.low();
         const bool synced = their_view == session_;      // sure and quick numbers only mean something between these two
         if (synced) sure_out_.on_ack(ack_next, ack_bits);
 
@@ -995,10 +1057,14 @@ public:
                 const auto age = r.get<uint16_t>();
                 std::string_view text = r.text();
                 if (!r.ok || text.size() > MAX_TEXT) return;
-                const double trip = rtt_ms_ < 0 ? 0 : rtt_ms_ / 2;
-                if (synced && quick_in_.fresh(id) && age + trip <= QUICK_REPLAY_MS) {
-                    if (hub_) hub_->on_quick(my_slot_, text, ms);
-                    else box_.on_quick(text, ms);
+                // How long ago the partner's game read the move: held there before this copy went (its age), this packet's
+                // lateness, and the trip itself, half the shortest round trip lately. That half is a guess on a route slower
+                // one way than the other, which no echo can tell; half the smoothed round trip guessed jitter and loss too.
+                const double one_way = shortest_rtt_.known() ? shortest_rtt_.low() / 2 : (rtt_ms_ < 0 ? 0 : rtt_ms_ / 2);
+                const double old = age + late + one_way;
+                if (synced && quick_in_.fresh(id) && old <= QUICK_REPLAY_MS) {
+                    if (hub_) hub_->on_quick(my_slot_, text, ms, old);
+                    else box_.on_quick(text, ms, old);
                 }
             } else if (section == SEC_ENEMY) {
                 std::string_view text = r.text();
@@ -1149,7 +1215,7 @@ private:
             hello_due_ = true;
         }
         for (auto& text : out.sure) sure_out_.push(std::move(text));
-        for (auto& text : out.quick) quick_out_.push(std::move(text), now);
+        for (auto& move : out.quick) quick_out_.push(std::move(move.text), now - move.age_ms / 1000);
         for (auto& text : out.enemies) enemy_out_.push_back(std::move(text));
         while (enemy_out_.size() > MAX_ENEMY_LINES) enemy_out_.pop_front();
         quick_out_.expire(now);
@@ -1256,6 +1322,8 @@ private:
         quick_in_.restart();
         sure_out_.forget();
         sequence_known_ = false;
+        fastest_trip_.clear();      // maybe another process, on a clock of its own, or another partner on another route
+        shortest_rtt_.clear();
         tell_restart();
         hello_due_ = true;
     }
@@ -1327,6 +1395,7 @@ private:
     bool sequence_known_ = false, hello_due_ = true;
     uint32_t echo_ms_ = 0;
     double echo_arrived_ms_ = 0, rtt_ms_ = -1;
+    RecentLow fastest_trip_, shortest_rtt_;     // the partner's packets, for how old a quick event is
     size_t header_bytes_ = 0;
     double last_send_ = 0, last_heard_ = 0, last_hello_ = 0, last_probe_ = -1e9, ack_wanted_at_ = -1;
     long long rejected_ = 0, received_ = 0, sent_ = 0, lost_ = 0, received_mark_ = 0, lost_mark_ = 0;

@@ -139,7 +139,7 @@ private:
     std::map<uint32_t, std::string> held_;
 };
 
-constexpr int QUICK_SENDS = 3;                // a burst of loss has to take three packets in a row to lose a move
+constexpr int QUICK_SENDS = 3;                // a burst of loss has to last from the first to the last to lose a move
 constexpr double QUICK_MAX_AGE_S = 0.6;       // not sent any more after this
 constexpr uint32_t QUICK_REPLAY_MS = 800;     // and not played if it took this long
 constexpr double QUICK_WAIT_MS = 300;         // or if it then waited this long for a busy game thread
@@ -161,11 +161,13 @@ public:
         pending_.push_back(std::move(item));
     }
 
+    // Each repeat waits twice as long as the one before it: gap_s, then twice that, so one burst of loss has to last that
+    // long to take them all. (A move that comes on a later copy starts that much further in: it comes with its age.)
     template <typename Fn>
     void for_each(double now, double gap_s, Fn&& take) {
         expire(now);
         for (Item& item : pending_) {
-            if (now - item.sent_at < gap_s) continue;
+            if (now - item.sent_at < gap_s * (item.sends > 1 ? 2 << (item.sends - 2) : 1)) continue;
             if (!take(static_cast<const Item&>(item), now - item.born)) break;
             item.sent_at = now;
             item.sends++;

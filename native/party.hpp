@@ -141,13 +141,14 @@ public:
         return true;
     }
 
-    void on_quick(int slot, std::string_view text, double arrived_ms) override {
+    // Passed on with the age it has already: on the next hop it goes on counting from there.
+    void on_quick(int slot, std::string_view text, double arrived_ms, double age_ms) override {
         if (!one_line(text)) return;
         const std::string tagged = tag(slot) + std::string(text);
         if (tagged.size() > MAX_TEXT) return;
-        box_.on_quick(tagged, arrived_ms);
+        box_.on_quick(tagged, arrived_ms, age_ms);
         for (auto& guest : guests_)
-            if (guest->slot != slot && guest->relay->has_partner()) guest->box.post_quick(tagged);
+            if (guest->slot != slot && guest->relay->has_partner()) guest->box.post_quick(tagged, age_ms);
     }
 
     // A guest started over, or a new one took the slot: the other guests hear it too, or they kept the one before's state

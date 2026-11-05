@@ -262,6 +262,11 @@ return function(api)
             return
         end
         for line in text:gmatch("[^\n]+") do
+            -- A move comes with how long ago the partner's game read it, in ms (native/relay.hpp), for its montage to start
+            -- that far in: net.eventAgeMs while its handler runs (see moveAge), nil for the rest.
+            local age, move = line:match("^~(%d+) (.*)$")
+            net.eventAgeMs = tonumber(age)
+            line = move or line
             local kind, rest = line:match("^(%S+)%s*(.*)$")
             local from = kind and kind:match("^@([2-6])$")      -- another guest, or on the host any guest (native/party.hpp)
             if from then
@@ -277,6 +282,13 @@ return function(api)
                 end
             end
         end
+        net.eventAgeMs = nil
+    end
+
+    -- Seconds since the partner's game was where the event says: the move's own age, or for one with none (the sure lane,
+    -- an older DLL) half the round trip, as it was guessed before.
+    function net.moveAge()
+        return (net.eventAgeMs or (net.rttMs or 0) / 2) / 1000
     end
 
     local extraTicksEarly = {}  -- name -> function, run EXTRA_S apart (filled below, joined into extraTicks)

@@ -22,6 +22,7 @@ using relay::monotonic;
 struct Netem {
     int listen = 0, target = 0;
     double delay = 10, jitter = 0, loss = 0, duplicate = 0, seconds = 60, stall_every = 0, stall_ms = 200;
+    double burst_loss = 0, burst_ms = 50;      // Wi-Fi's kind of loss: everything for about burst_ms, burst_loss % of the time
 };
 
 int netem(const Netem& o, const std::atomic<bool>* stop);
@@ -293,6 +294,19 @@ void test_lanes() {
     alone.for_each(65.6, 0.012, [&](const relay::QuickSender::Item&, double) { return went = true; });
     check(!went, "quick: too old to send isn't sent, even once");
 
+    relay::QuickSender spread;
+    spread.push("U x 0", 0);
+    std::vector<double> sent_at;
+    for (double now = 0; now < 0.3; now += 0.001)
+        spread.for_each(now, relay::QUICK_GAP, [&](const relay::QuickSender::Item&, double age) { sent_at.push_back(age); return true; });
+    check(sent_at.size() == 3 && std::fabs(sent_at[1] - 0.04) < 0.0015 && std::fabs(sent_at[2] - 0.12) < 0.0015,
+          "quick: a move goes three times, at 0, 40 and 120 ms: a burst of loss has to last that long to take it");
+
+    relay::Mailbox inbox;
+    inbox.on_quick("U x 0", relay::clock_ms() - 5, 40);
+    const std::string aged = inbox.take_events(relay::clock_ms());
+    check(aged == "~45 U x 0\n" || aged == "~46 U x 0\n", "quick: a move comes with its age in front, the wait here added (" + aged.substr(0, aged.find(' ')) + ")");
+
     relay::SureSender ack;
     ack.push("a");
     ack.on_ack(500, 0);
@@ -519,11 +533,14 @@ relay::Addr at(uint32_t ip) {
     return a;
 }
 
+// One event a line, with the age a quick event comes with ("~<ms> ", Mailbox::take_events) taken off, as the game does.
 void split_lines(const std::string& text, std::vector<std::string>& into) {
     for (size_t pos = 0; pos < text.size();) {
         size_t end = text.find('\n', pos);
         if (end == std::string::npos) end = text.size();
-        into.push_back(text.substr(pos, end - pos));
+        std::string line = text.substr(pos, end - pos);
+        if (line.size() > 1 && line[0] == '~' && line.find(' ') != std::string::npos) line.erase(0, line.find(' ') + 1);
+        into.push_back(std::move(line));
         pos = end + 1;
     }
 }
@@ -1979,6 +1996,7 @@ int run_bot(int argc, wchar_t** argv) {
     const double seconds = opt_number(argc, argv, L"--seconds", 20);
     const double fps = opt_number(argc, argv, L"--fps", 60);
     const int enemies = static_cast<int>(opt_number(argc, argv, L"--enemies", 0));
+    const double enemy_every = opt_number(argc, argv, L"--enemy-every", 1.0 / 30);     // coop.lua's ENEMY_ROUND_S
     const double hitch_every = opt_number(argc, argv, L"--hitch-every", 0);
     const double hitch_ms = opt_number(argc, argv, L"--hitch-ms", 300);
     const double center_x = opt_number(argc, argv, L"--cx", 0), center_y = opt_number(argc, argv, L"--cy", 0);
@@ -1992,7 +2010,8 @@ int run_bot(int argc, wchar_t** argv) {
     std::thread net([&] { relay::run(o, [](const std::string& line) { if (line.rfind("role=", 0) != 0) std::puts(line.c_str()); }); });
     timeBeginPeriod(1);
 
-    Stats ghost_late, quick_late, sure_late, step_error, enemy_late, player_late, passed_late;
+    Stats ghost_late, quick_late, sure_late, step_error, enemy_late, player_late, passed_late, age_off, age_bias, guess_off;
+    double status_rtt = -1, next_status = 0;
     long long quick_got = 0, sure_got = 0, quick_sent = 0, sure_sent = 0;
     long long sure_expected = 0, sure_wrong = 0, restarts = 0;
     std::map<int, long long> expected_from, got_from;      // a party: by slot, what came from each other player
@@ -2035,7 +2054,7 @@ int run_bot(int argc, wchar_t** argv) {
             for (; burst > 0; burst--) post_sure(now);
         }
         if (enemies && now >= next_enemy) {
-            next_enemy = now + 0.05;
+            next_enemy = now + enemy_every;
             for (int i = 0; i < enemies; i++) {
                 char text[96];
                 std::snprintf(text, sizeof text, "%d %.6f 1234 5678 90 180 800 90", i, now);
@@ -2065,11 +2084,23 @@ int run_bot(int argc, wchar_t** argv) {
             angle_seen += std::round((now * TURN_RATE - angle_seen) / (2 * PI)) * 2 * PI;
             if (silence < 500) player_late.add((now - angle_seen / TURN_RATE) * 1000);
         }
+        // What the mod guessed a move's age to be before: half the round trip on the status line, read once a second.
+        if (now >= next_status) {
+            next_status = now + 1;
+            const std::string line = relay::mail.status();
+            const size_t field = line.find(" rtt_ms=");
+            if (field != std::string::npos && line[field + 8] != '-') status_rtt = std::atof(line.c_str() + field + 8);
+        }
         std::string events = relay::mail.take_events(relay::clock_ms());
         for (size_t at = 0; at < events.size();) {
             size_t end = events.find('\n', at);
             std::string line = events.substr(at, end - at);
             at = end + 1;
+            double age = -1;     // how old the relay says a quick event is: the montage starts that far in
+            if (line.size() > 1 && line[0] == '~' && line.find(' ') != std::string::npos) {
+                age = std::atof(line.c_str() + 1);
+                line.erase(0, line.find(' ') + 1);
+            }
             if (line.size() > 3 && line[0] == '@') {
                 const int from = line[1] - '0';
                 line.erase(0, 3);
@@ -2082,7 +2113,13 @@ int run_bot(int argc, wchar_t** argv) {
                     expected_from[from] = number + 1;
                 }
             } else if (line.size() > 2 && line[0] == 'Q') {
-                quick_late.add((monotonic() - std::atof(line.c_str() + 2)) * 1000);
+                const double late = (monotonic() - std::atof(line.c_str() + 2)) * 1000;
+                quick_late.add(late);
+                if (age >= 0) {
+                    age_off.add(std::fabs(age - late));
+                    age_bias.add(age - late);
+                }
+                if (status_rtt > 0) guess_off.add(std::fabs(status_rtt / 2 - late));
                 quick_got++;
             } else if (line.size() > 2 && line[0] == 'E') {
                 char* rest = nullptr;
@@ -2120,6 +2157,9 @@ int run_bot(int argc, wchar_t** argv) {
     ghost_late.print("ghost behind real (ms)");
     step_error.print("frame step error (cm)");
     quick_late.print("quick event (ms)");
+    age_off.print("quick age off (ms)");
+    guess_off.print("half round trip off (ms)");
+    std::printf("quick age bias %.1f ms (the age said, less the true one, typically)\n", age_bias.pick(0.5));
     sure_late.print("sure event (ms)");
     if (enemies) enemy_late.print("enemy line (ms)");
     std::printf("quick arrived %lld of the partner's sent; sure %lld; this side sent %lld quick, %lld sure\n", quick_got, sure_got, quick_sent, sure_sent);
@@ -2168,6 +2208,11 @@ int netem(const Netem& o, const std::atomic<bool>* stop) {
     timeBeginPeriod(1);
     const double start = monotonic();
     double stall_until = 0, next_stall = start + stall_every;
+    // Bursts start at random, as often as it takes for them to cover burst_loss of the time, and last half to one and a half
+    // times burst_ms.
+    const double burst_s = o.burst_ms / 1000, between_s = o.burst_loss > 0 ? burst_s / (o.burst_loss / 100) - burst_s : 0;
+    std::exponential_distribution<double> wait_for_burst(between_s > 0 ? 1 / between_s : 1);
+    double burst_from = o.burst_loss > 0 ? start + wait_for_burst(rng) : 1e18, burst_until = 0;
     long long passed = 0, dropped = 0, order = 0;
     std::vector<char> buf(65536);
     while (monotonic() - start < seconds && !(stop && *stop)) {
@@ -2175,6 +2220,10 @@ int netem(const Netem& o, const std::atomic<bool>* stop) {
         if (stall_every > 0 && now >= next_stall) {
             stall_until = now + stall_ms / 1000;
             next_stall = now + stall_every;
+        }
+        if (now >= burst_from) {
+            burst_until = burst_from + burst_s * (0.5 + unit(rng));
+            burst_from = burst_until + wait_for_burst(rng);
         }
         const auto take = [&](SOCKET from, bool to_target) {
             while (true) {
@@ -2189,7 +2238,7 @@ int netem(const Netem& o, const std::atomic<bool>* stop) {
                     client = src;
                     have_client = true;
                 }
-                if (unit(rng) < loss) {
+                if (unit(rng) < loss || now < burst_until) {
                     dropped++;
                     continue;
                 }
@@ -2315,6 +2364,8 @@ int run_netem(int argc, wchar_t** argv) {
     o.seconds = opt_number(argc, argv, L"--seconds", 60);
     o.stall_every = opt_number(argc, argv, L"--stall-every", 0);
     o.stall_ms = opt_number(argc, argv, L"--stall-ms", 200);
+    o.burst_loss = opt_number(argc, argv, L"--burst-loss", 0);
+    o.burst_ms = opt_number(argc, argv, L"--burst-ms", 50);
     return netem(o, nullptr);
 }
 
@@ -2331,7 +2382,7 @@ int wmain(int argc, wchar_t** argv) {
                " [--hitch-every s --hitch-ms ms] [--cx x --cy y --cz z] [--dir folder] [--ini file]"
                " [--event-every s] [--event-bytes n] [--events-for s] [--burst n]"
                " | netem <listen port> <target port>"
-               " [--delay ms] [--jitter ms] [--loss %] [--duplicate %] [--stall-every s --stall-ms ms] [--seconds s]"
+               " [--delay ms] [--jitter ms] [--loss %] [--duplicate %] [--stall-every s --stall-ms ms] [--burst-loss % --burst-ms ms] [--seconds s]"
                " | latency [--path mix|circle|stops|zigzag | --recording pair.txt] [--seconds s] [--rtt 30,80,150]"
                " [--jitter 0,10,30] [--loss 0,2,5] [--fps 30,60,120] [--recv-fps n] [--send-rate 125|0] [--brief 1]\n", stderr);
     return 2;

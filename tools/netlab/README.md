@@ -23,6 +23,11 @@ true path, a frame's step against the true one, speed against the true speed, an
 then comes back. `--recording` plays a pair.lua recording's frames instead of the made-up motion (recordings carry no velocity,
 so the replay's speeds are as noisy as the stamps); `--send-rate 0` is the send rule before 1.6.0's.
 
+`bench.ps1 -BurstLoss 5 -BurstMs 50` loses packets the way Wi-Fi does, everything for about 50 ms at a time, 5% of the time in
+all; `-EventEvery 0.02` sends more moves, to count the ones lost (`quick arrived ... of the partner's sent`). The client's
+`quick age off` line is how far the age a move comes with is from its true age, and `half round trip off` how far the guess
+before it was. `party-bench.ps1 -Guests 5` is a party of six; `-EnemyEvery` sets the enemy lines' rate (the mod's 30 a second).
+
 ### Four players, and two players not changing
 
     .\tools\netlab\party-bench.ps1 -Delay 20 -Jitter 5 -Loss 1

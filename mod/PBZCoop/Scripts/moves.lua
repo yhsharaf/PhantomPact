@@ -2,7 +2,8 @@
 --
 -- Whatever montage your character plays (attacks, guard stance, deflects, executions, weapon and Phantom Edge
 -- skills, item use, ladders and wall runs...) is sent as "U <montage path> <position>", and the partner's ghost plays
--- the same montage from that point (plus half the ping) with its AnimInstance's own Montage_Play. "U - 0" says it ended.
+-- the same montage from that point (plus how long ago that was, net.moveAge) with its AnimInstance's own Montage_Play.
+-- "U - 0" says it ended.
 --
 -- Montages show what replaying abilities (M events) couldn't: a ghost often can't activate an ability (guard
 -- stance, executions, some weapon skills). PvP keeps abilities: there the ghost's swings must land real hits.
@@ -223,7 +224,7 @@ return function(api)
             moves.failed = moves.failed + 1
             return
         end
-        local start = pos + (net.rttMs or 0) / 2000
+        local start = pos + net.moveAge()
         local ok = pcall(function() ai:Montage_Play(m, 1.0, 0, start, true) end)
         if ok then
             moves.played = moves.played + 1
@@ -455,7 +456,7 @@ return function(api)
         end
         local m, ai = montage(path), edgeAnim(p.ghost)
         if m and ai then
-            pcall(function() ai:Montage_Play(m, 1.0, 0, pos + (net.rttMs or 0) / 2000, true) end)
+            pcall(function() ai:Montage_Play(m, 1.0, 0, pos + net.moveAge(), true) end)
         end
     end
 
