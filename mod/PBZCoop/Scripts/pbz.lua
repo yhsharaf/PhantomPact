@@ -779,7 +779,18 @@ return function(api)
         end)
     end
 
+    -- Its health bar, off: a copy killed here went (or lay there) with its bar still floating over the spot.
+    function game.hideHealthBar(actor)
+        pcall(function()
+            local bar = actor.hpbar
+            if valid(bar) then
+                bar:SetVisibility(false, true)
+            end
+        end)
+    end
+
     function game.kill(actor)
+        game.hideHealthBar(actor)
         local boss = game.isBoss and game.isBoss(actor)
         forgetBoss(actor)
         game.setMinHealth(actor, 0)
@@ -913,6 +924,7 @@ return function(api)
     -- after the fight first. Its loot is rolled at level 0, which pays nothing: the partner's death paid already, and that
     -- dust reaches this player from there. Falls back to the quiet kill if the effect doesn't take.
     function game.killForReal(actor)
+        game.hideHealthBar(actor)
         pcall(function()
             local level = actor.AttributeSetBase.Level
             level.BaseValue = 0

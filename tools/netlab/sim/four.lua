@@ -255,6 +255,25 @@ local function sharing()
     end
     check(kept and count(b.sent, "^E I keyspot") == 0, "a quest item one player takes stays in the others' worlds, for them to take")
 
+    -- Iron chains one player breaks (a Phantom Edge out of a fight) are broken in the others' worlds too.
+    for _, pc in ipairs({ h, a, b, c }) do
+        Fake.blocker(pc, "BP_GameplayBlocker_Chain_C_UAID_1", 320.0, 0.0, 100.0)
+    end
+    s:run(1.5)
+    Fake.put(b.blockers[1], "bBroken", true)
+    s:run(1.5)
+    check(field(h.blockers[1], "bBroken") == true and field(a.blockers[1], "bBroken") == true
+        and field(c.blockers[1], "bBroken") == true and count(b.sent, "^E BLK BP_GameplayBlocker_Chain_C_UAID_1$") == 1,
+        "chains one player breaks are broken in every world")
+
+    -- Story sync off: nothing comes from the host's bag on joining either.
+    local so = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES, "FollowHostStory = Off\n")
+    Session.gainItem(so.pcs[1], "R_500", 3)
+    so:run(12)
+    check(Session.items(so.pcs[2], "R_500") == 0 and count(so.pcs[2].logs, "Story sync is off: nothing taken") >= 1,
+        "story sync off: the guest takes nothing from the host's bag")
+    allErrors(so)
+
     -- The NPCs who fight beside the players (NpcHelper) aren't enemies: each world keeps its own, free to talk to.
     local hlist = { { "ally", "BP_Monster_SpearMan_Spear_NpcHelper_XiGu_01_C", 600.0, 0.0, 100.0, 600, 100 },
         { "foe", THUG, 700.0, 0.0, 100.0, 600, 100 } }
@@ -316,6 +335,7 @@ local function enemiesAndHits()
     check(count(h.sent, "^E K sp:near$") == 1, "once")
     local copy = Session.enemyOn(a, "near")
     check(field(copy, "realDeath") == true, "a guest's copy of it dies by the game's own death (what a quest waits for hears it)")
+    check(field(field(copy, "hpbar"), "shown") == false, "and its health bar goes with it (none left floating there)")
     Fake.put(Session.enemyOn(h, "thug1"), "dustLoot", 300)
     swing(c, Session.enemyOn(c, "thug1"), 1)
     s:run(2.5)
