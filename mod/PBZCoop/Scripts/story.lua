@@ -473,10 +473,28 @@ return function(api)
     end
 
     -- What a catch-up would apply now, in table order: { i (the table row), k (its place among quest rows) or mark }.
-    local function todoFor(done, point)
+    -- A step of the other side of a choice this world made: a branch "4-A" when this world took "4-B". (Only lettered
+    -- pairs are choices: the numbered and S branches are steps of one path, all of them done in a normal run.)
+    local function otherChoice(states, row)
+        for _, need in ipairs(row.needs) do
+            local stem, letter = need.branch:match("^(.+)%-(%a)$")
+            local q = stem and states and states[need.quest]
+            if q and (q[need.branch] or 0) < 1 then
+                for b, st in pairs(q) do
+                    local s2, l2 = b:match("^(.+)%-(%a)$")
+                    if s2 == stem and l2 ~= letter and st >= 1 then
+                        return true
+                    end
+                end
+            end
+        end
+        return false
+    end
+
+    local function todoFor(done, point, states)
         local todo = {}
         for k, row in ipairs(rows.quests) do
-            if host.done[k] and not done[k] and not tried[k] then
+            if host.done[k] and not done[k] and not tried[k] and not otherChoice(states, row) then
                 todo[#todo + 1] = { i = row.i, k = k }
             end
         end
@@ -566,7 +584,7 @@ return function(api)
             end
             batch = nil
         end
-        local todo = todoFor(done, point)
+        local todo = todoFor(done, point, states)
         if #todo == 0 then
             caughtUp()
             return

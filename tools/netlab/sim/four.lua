@@ -1368,6 +1368,16 @@ local function followTheHost()
     check(count(ah.logs, "a guest finished") == 0, "nothing said")
     allErrors(a)
 
+    -- A choice the guest's world made the other way (said no, 3-B, where the host said yes, 3-A): not overturned.
+    local c, ch, cg = pair()
+    ch.storyUpTo(all)
+    cg.storyUpTo(3)
+    cg.storyStep("Well-Ask", "3-B", 1)
+    c:run(40)
+    check(cg.storyState("Main-Forest", "1") == 2 and (cg.storyState("Well-Ask", "3-A") or 0) == 0,
+        "a guest catches up, but a choice it made the other way stays its own")
+    allErrors(c)
+
     -- The other way, done together: a quest both have under way that the guest finishes while linked (the bow in the
     -- tower) is finished for the host too. Not the guest's later quests: the host's world keeps its point.
     local e, eh, eg = pair(nil, function(ph, pg)

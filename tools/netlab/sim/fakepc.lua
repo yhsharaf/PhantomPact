@@ -522,6 +522,7 @@ Fake.STORY_ROWS = {
     { "forest-start", "Main-Forest_1_开启任务", "False" },
     { "forest-shop", "", "False", ui = "UI.VisibilityTag.Shop" },
     { "forest-end", "Main-Forest_1_完成任务", "False" },
+    { "well-yes", "Well-Ask_3-A_开启任务", "True" },        -- (a choice: yes is 3-A, no would be 3-B)
 }
 
 function Fake.story(pc)
