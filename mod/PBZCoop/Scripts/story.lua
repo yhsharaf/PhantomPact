@@ -264,8 +264,11 @@ return function(api)
         return n
     end
 
+    -- (Nor in a talk with an NPC: a story step applied under an open dialogue (both handing in to Yuer at once) finished
+    -- what the talk was waiting for, and the talk stayed up with no way out.)
     local function calm(pawn)
         return valid(pawn) and not game.isDead(pawn) and not game.inCutscene() and not game.bossFightActive()
+            and not (game.inDialogue and game.inDialogue())
     end
 
     -- Table rows applied with the game's own story step, tables and row names fresh in this frame (see tables()). False if
@@ -640,7 +643,7 @@ return function(api)
         local name = game.sceneName()
         if coop.isHost() then
             if name ~= mine then
-                if mine and mineLength and now - mineAt < mineLength - SKIPPED_S then
+                if mine and mineLength and now - mineAt < mineLength - SKIPPED_S and not (game.inDialogue and game.inDialogue()) then
                     coop.sendEvent("SCENE", "skip", mine)
                     log(string.format("Scene %s skipped after %.1f of %.1f s: the guest's too.", mine, now - mineAt, mineLength))
                 end
@@ -656,7 +659,7 @@ return function(api)
         end
         local t = coop.net.target
         if name ~= ended and hostSkipped[name] and now - hostSkipped[name] <= LATE_S and t and t.Map == coop.net.localMap
-            and game.skipScene() then
+            and not (game.inDialogue and game.inDialogue()) and game.skipScene() then
             ended = name                        -- (until it takes: the scene's player can be found a moment after it starts)
             log("The host skipped " .. name .. ": skipped here too.")
         end

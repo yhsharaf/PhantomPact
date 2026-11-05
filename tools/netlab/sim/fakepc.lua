@@ -270,6 +270,14 @@ function Fake.character(pc, class, x, y, z, hp, posture)
     return a
 end
 
+Fake.object = object      -- (for a test that needs an object of its own, a class say)
+
+-- The game's item table, as far as the mod reads it: { ItemId, ItemDetailType }. Quest items are "NarrativeItem".
+Fake.ITEMS = {
+    { "R_500", "Material" },
+    { "I_KEY_9", "NarrativeItem" },
+}
+
 -- Things lying in the world, named alike on every PC.
 function Fake.pickup(pc, id, item, x, y, z)
     local p = object(pc, "PBZPickupActor", { ItemId = name(item), bIsPickable = true })
@@ -568,6 +576,7 @@ function Fake.story(pc)
     local COLUMNS = { QuestList = 2, Optional = 3 }
     local OTHER = { AddTags = "tags", ActiveBellMaps = "maps", ActivateUITags = "ui", AddItems = "items" }
     local levelLoot = object(pc, "DataTable")
+    local itemTable = object(pc, "DataTable")
     defs(pc, tables, {
         GetDataTableRowNames = function(_, t, out)
             if t == levelLoot then
@@ -582,6 +591,12 @@ function Fake.story(pc)
         end,
         GetDataTableColumnAsString = function(_, t, column)
             local c, out = column:ToString(), {}
+            if t == itemTable then
+                for i, r in ipairs(Fake.ITEMS) do
+                    out[i] = { get = function() return name(c == "ItemId" and r[1] or c == "ItemDetailType" and r[2] or "") end }
+                end
+                return out
+            end
             if t == levelLoot then
                 for i, r in ipairs(Fake.LEVEL_LOOT) do
                     out[i] = { get = function() return name(c == "EntryDatas" and r[2] or "") end }
@@ -609,6 +624,7 @@ function Fake.story(pc)
         ["/Script/Engine.Default__DataTableFunctionLibrary"] = tables,
         ["/Script/ProjectPBZ.Default__PBZDebugFlowEventLibrary"] = lib,
         ["/Game/PBZContent/DataTable/DT_LevelLootDataTable.DT_LevelLootDataTable"] = levelLoot,
+        ["/Game/PBZContent/DataTable/Item/DT_InventoryData.DT_InventoryData"] = itemTable,
     }
 end
 
@@ -1286,7 +1302,7 @@ function Fake.new(id, scripts, ini, link)
                 given[#given + 1] = class
                 rawset(actor, "__given", given)
             end)
-            if rawget(actor, "__fields").dustLoot ~= nil then
+            if rawget(actor, "__class") ~= "BP_Renewal_Hun_C" then
                 -- An enemy's: the only effect ever applied to one is the game's kill, its whole death, paying this PC's
                 -- player as for their own blow.
                 put(asc, "BP_ApplyGameplayEffectToSelf", function()
