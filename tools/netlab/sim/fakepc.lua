@@ -164,6 +164,7 @@ function Fake.character(pc, class, x, y, z, hp, posture)
     defs(pc, anim, {
         GetCurrentActiveMontage = function(self) return rawget(self, "__fields").montage end,
         Montage_GetPosition = function() return 0.25 end,
+        Montage_IsPlaying = function(self, m) return m ~= nil and rawget(self, "__fields").montage == m end,
         Montage_Play = function(self, m, _, _, start) put(self, "montage", m) put(self, "paused", nil) put(self, "start", start) put(self, "played", (rawget(self, "__fields").played or 0) + 1) return 1.0 end,
         Montage_Stop = function(self) put(self, "montage", nil) put(self, "paused", nil) end,
         Montage_Pause = function(self, m) put(self, "paused", m) end,

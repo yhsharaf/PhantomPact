@@ -279,6 +279,25 @@ local function movesAndGear()
         s:run(k / 60)
     end
     check(movesNow == 5 and hitsNow == 5, "a move and a stagger go out in the frame they start (" .. movesNow .. " and " .. hitsNow .. " of 5)")
+    -- A move's end lost on the way ("U - 0", all three quick copies in a burst): it still ends on the others' screens, once
+    -- the player's place says they're in no move. (It played on: a looping one for good.)
+    local quick = api.link.quick
+    api.link.quick = function(line)
+        if not line:find("^U %- ") then
+            return quick(line)
+        end
+    end
+    s:run(0.3)
+    Session.startMove(h1, "/PBZCombatAsset/ActorData/Move/Loop1.Loop1")
+    s:run(0.5)
+    local function onGuest()
+        return field(field(ghostOf(s.pcs[2], 1), "anim"), "montage")
+    end
+    local playing = onGuest() ~= nil
+    Session.endMove(h1)
+    s:run(0.6)
+    api.link.quick = quick
+    check(playing and onGuest() == nil, "a move whose end is lost on the way still ends on the others' screens, in 0.6 s")
     allErrors(s)
 end
 
@@ -2127,6 +2146,19 @@ local function guardStance()
     Fake.running(g, g.pawn, "GA_Hun_Tang_Stance_C", false)
     s:run(0.5)
     check(field(anim, "montage") == nil, "out of the stance with no exit to play, the held pose goes")
+    -- The stance heard only after the enter's own hold came (on a slow link it comes with their place, played behind): the pose
+    -- is held all the same, from there.
+    s:run(1)
+    Session.startMove(g, ENTER)
+    s:run(0.9)
+    Fake.running(g, g.pawn, "GA_Hun_Tang_Stance_C", true)
+    s:run(0.4)
+    Session.endMove(g)
+    s:run(0.7)
+    path, held = playing()
+    check(path == ENTER and held, "a stance heard after its enter's hold was due still holds the pose")
+    Fake.running(g, g.pawn, "GA_Hun_Tang_Stance_C", false)
+    s:run(0.5)
     allErrors(s)
 end
 
@@ -2265,6 +2297,38 @@ local function shots()
         shot(flower .. " 1 2 3 0 0 0")
     end
     check(#g.fired <= 3 + 40, "and a flood stops at forty a second")
+    -- A shot's end can come before the shot (its quick copies lost but the last, the end by the sure lane): then it isn't
+    -- fired at all. (Fired, its copy found no end and played on for 30 s.)
+    s:run(1.1)
+    local fired = #g.fired
+    g.inbox[#g.inbox + 1] = "SHOTEND 424242"
+    s:run(0.05)
+    g.inbox[#g.inbox + 1] = "SHOT " .. flower .. " 10 20 100 0.0 0.0 0.0 424242"
+    s:run(0.2)
+    check(#g.fired == fired, "a shot whose end came before it isn't fired")
+    -- What ends together goes out as one end, not one each (a weapon of flowers put forty a second on the sure lane).
+    for i = #h.liveBullets, 1, -1 do
+        h.liveBullets[i] = nil
+    end
+    s:run(1.1)
+    local from, made = #h.sent, #g.fired
+    for k = 1, 8 do
+        Session.bullet(h, h.pawn, flower, 10.0 * k, 20.0, 100.0)
+    end
+    s:run(0.5)
+    for i = #h.liveBullets, 1, -1 do
+        h.liveBullets[i] = nil
+    end
+    s:run(0.5)
+    local ends, over = 0, 0
+    for k = from + 1, #h.sent do
+        ends = ends + (h.sent[k]:find("^E SHOTEND ") and 1 or 0)
+    end
+    for k = made + 1, #g.fired do
+        over = over + (g.fired[k].ended and 1 or 0)
+    end
+    check(#g.fired == made + 8 and over == 8 and ends == 1,
+        "eight shots that end together: all eight copies end, by one event (" .. ends .. " events, " .. over .. " ended)")
     allErrors(s)
 
     -- A loop that only ends when the ability that fired it says so: the copy ends with the sender's own.

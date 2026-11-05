@@ -36,6 +36,12 @@ return function(api)
     local sentIds, nextId = {}, 0   -- this player's: bullet address -> the id it went out with
     local copies = {}               -- the ghost's: "<player>:<id>" -> { at, made = what game.fireBullet made }
     local copiesAt = 0
+    -- Ends go by the sure lane, the shots by the quick one: with a shot's first copies lost, its end could come before its last
+    -- copy, find nothing to end, and that copy then looped on for COPY_MAX_S. An end that finds nothing is kept this long
+    -- (past the quick lane's last copy), and its shot isn't fired.
+    local EARLY_END_S = 2
+    local endedFirst = {}           -- "<player>:<id>" -> when its end came with nothing here to end
+    local ENDS_PER_EVENT = 40       -- a look's ends go out together, as one SHOTEND with up to this many ids
 
     local function send(b)
         local path = api.moves.pathOf(b.BulletData)
@@ -50,13 +56,18 @@ return function(api)
         bullets.sent = bullets.sent + 1
     end
 
-    -- This player's bullets that have gone since the last look: their copies end too.
+    -- This player's bullets that have gone since the last look: their copies end too. All of a look's in one event: one each
+    -- put up to forty a second on the sure lane, from a weapon of flowers.
     local function sendEnds(seen)
+        local ids = {}
         for addr, id in pairs(sentIds) do
             if not seen[addr] then
                 sentIds[addr] = nil
-                coop.sendEvent("SHOTEND", id)
+                ids[#ids + 1] = id
             end
+        end
+        for i = 1, #ids, ENDS_PER_EVENT do
+            coop.sendEvent("SHOTEND", table.concat(ids, " ", i, math.min(#ids, i + ENDS_PER_EVENT - 1)))
         end
     end
 
@@ -138,6 +149,11 @@ return function(api)
             bullets.refused = bullets.refused + 1
             return
         end
+        local key = id ~= "" and (from or 1) .. ":" .. id or nil
+        if key and endedFirst[key] then
+            endedFirst[key] = nil
+            return                  -- (its end came first: over on their side already)
+        end
         local p = coop.peerOf(from)
         if net.pvp or not valid(p.ghost) or p.ghostHidden or not api.moves.settled(p) then
             return
@@ -158,8 +174,7 @@ return function(api)
         end
         if ok then
             bullets.shown = bullets.shown + 1
-            if id ~= "" and made and #made > 0 then
-                local key = (from or 1) .. ":" .. id
+            if key and made and #made > 0 then
                 if copies[key] then
                     endCopy(key)        -- (an id used again, the sender started over: the old copy put out of the list looped on)
                 end
@@ -168,14 +183,24 @@ return function(api)
         end
     end
 
+    -- "SHOTEND <id> [<id>...]": a look's worth of ends at once (an older version sends one each).
     coop.handlers.SHOTEND = function(rest, from)
-        local id = (rest or ""):match("^(%d+)$")
-        if id then
-            endCopy((from or 1) .. ":" .. id)
+        local now, n = os.clock(), 0
+        for id in (rest or ""):gmatch("%d+") do
+            n = n + 1
+            if n > ENDS_PER_EVENT then
+                break
+            end
+            local key = (from or 1) .. ":" .. id
+            if copies[key] then
+                endCopy(key)
+            else
+                endedFirst[key] = now
+            end
         end
     end
 
-    -- Copies whose end never came (the sender left, say): over after COPY_MAX_S.
+    -- Copies whose end never came (the sender left, say): over after COPY_MAX_S. And ends kept for a shot that never came.
     local function ageCopies(now)
         if now < copiesAt then
             return
@@ -184,6 +209,11 @@ return function(api)
         for key, c in pairs(copies) do
             if now - c.at > COPY_MAX_S then
                 endCopy(key)
+            end
+        end
+        for key, at in pairs(endedFirst) do
+            if now - at > EARLY_END_S then
+                endedFirst[key] = nil
             end
         end
     end

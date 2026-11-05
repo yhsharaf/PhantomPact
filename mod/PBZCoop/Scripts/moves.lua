@@ -79,8 +79,14 @@ return function(api)
     -- they're played in step with it and a lost packet is made good by the next. As sure events ("ST 1|0", "GAIT w|j|s",
     -- still played when an older version sends them) they came before the steps they belong to, or after a resend, and
     -- held up the deaths queued behind them.
-    local stance = { CHECK_S = 0.1, at = 0, sent = nil, BIT = 0x40 }
-    local GAIT_BITS = { w = 1, j = 2, s = 3, "w", "j", "s" }     -- bits 0x10 and 0x20 of the flags; none: not said
+    local stance = { CHECK_S = 0.1, at = 0, sent = nil, bits = nil }
+    -- The flags' bits: 0x10 and 0x20 how they move (1 walking, 2 jogging, 3 sprinting; none: not said), 0x40 in the guard
+    -- stance, 0x80 in a move.
+    local BIT = { STANCE = 0x40, MOVE = 0x80, GAITS = { w = 1, j = 2, s = 3, "w", "j", "s" } }
+    -- A move played here goes on this long after their place says they're in none, then ends: it's what a lost "U - 0" left
+    -- (all three of its copies gone in a burst), a looping one playing on for good. Longer than their place is played
+    -- behind, so a move whose U came ahead of its place isn't cut.
+    local NO_MOVE_S = 0.3
 
     -- Sender, every tick: a new montage, or the same one started again, goes to the partner.
     local function watch()
@@ -111,10 +117,12 @@ return function(api)
             end
             -- And how they move: the ghost walks, jogs and sprints with them (game.setGhostGait), where it only jogged.
             stance.gait = game.gait and game.gait(pawn) or "j"
-            net.moveBits = (GAIT_BITS[stance.gait] or 2) * 0x10 + (stance.sent and stance.BIT or 0)
+            stance.bits = (BIT.GAITS[stance.gait] or 2) * 0x10 + (stance.sent and BIT.STANCE or 0)
         end
         local m = ai:GetCurrentActiveMontage()
-        if not valid(m) then
+        local inMove = valid(m)
+        net.moveBits = stance.bits and stance.bits + (inMove and BIT.MOVE or 0)
+        if not inMove then
             if last then
                 coop.sendEvent("U", "-", "0")     -- over or cut short: the ghost's copy mustn't play on (some loop)
             end
@@ -193,20 +201,27 @@ return function(api)
     moves.montage = montage
     moves.countLoad = countLoad
 
+    -- Their move is over ("U - 0", or their place says so: see heardMoveBits): the ghost's copy blends out, unless it's the
+    -- guard stance's pose, held until the stance is left.
+    function moves.endMove(p)
+        p.ghostMoveAt = nil
+        if p.stance and (p.stanceHeld or (p.ghostPath or ""):find("StanceEnter", 1, true)) then
+            return
+        end
+        if not net.pvp and valid(p.ghostMontage) and valid(p.ghost) then
+            local ai = animOf(p.ghost)
+            if ai then
+                pcall(function() ai:Montage_Stop(STOP_BLEND_S, p.ghostMontage) end)
+            end
+        end
+    end
+
     coop.handlers.U = function(rest, from)
         local p = coop.peerOf(from)
         local path, pos = (rest or ""):match("^(%S+)%s+(%S+)$")
         pos = tonumber(pos)
         if path == "-" then
-            if p.stance and (p.stanceHeld or (p.ghostPath or ""):find("StanceEnter", 1, true)) then
-                return                          -- (the stance's pose, held until it's left)
-            end
-            if not net.pvp and valid(p.ghostMontage) and valid(p.ghost) then
-                local ai = animOf(p.ghost)
-                if ai then
-                    pcall(function() ai:Montage_Stop(STOP_BLEND_S, p.ghostMontage) end)
-                end
-            end
+            moves.endMove(p)
             return
         end
         if not (allowedPath(path) and pos and pos == pos and pos >= 0 and pos < 600) then
@@ -227,7 +242,7 @@ return function(api)
         local ok = pcall(function() ai:Montage_Play(m, 1.0, 0, start, true) end)
         if ok then
             moves.played = moves.played + 1
-            p.ghostMontage, p.ghostPath, p.stanceHeld = m, path, nil
+            p.ghostMontage, p.ghostPath, p.stanceHeld, p.ghostMoveAt = m, path, nil, os.clock()
             if path:find("StanceEnter", 1, true) then
                 moves.holdStance(p, m, start)
             end
@@ -289,15 +304,37 @@ return function(api)
                 pcall(function() ai:Montage_Stop(STOP_BLEND_S, p.ghostMontage) end)
             end
             p.stanceHeld = nil
+        elseif p.stance and not p.stanceHeld and (p.ghostPath or ""):find("StanceEnter", 1, true) and valid(p.ghostMontage)
+            and valid(p.ghost) then
+            -- Said after the enter's own hold came (a slow link: the stance comes with their place, played behind): held from
+            -- where the enter is now, or at once if it's over.
+            local ai, at = animOf(p.ghost), nil
+            if ai then
+                pcall(function()
+                    at = ai:Montage_IsPlaying(p.ghostMontage) and ai:Montage_GetPosition(p.ghostMontage) or math.huge
+                end)
+                moves.holdStance(p, p.ghostMontage, tonumber(at) or math.huge)
+            end
         end
     end
 
     -- Every place heard from a player that says how they move (see stance): only what changed is done.
     function net.heardMoveBits(p, flags)
-        gaitTo(p, GAIT_BITS[(flags >> 4) & 3])
-        local on = flags & stance.BIT ~= 0
+        gaitTo(p, BIT.GAITS[(flags >> 4) & 3])
+        local on = flags & BIT.STANCE ~= 0
         if on ~= (p.stance == true) then
             stanceTo(p, on)
+        end
+        -- In no move since before the one played here began, for NO_MOVE_S: its "U - 0" was lost. (Not from a place only
+        -- guessed at, with nothing new heard: a stopped link says nothing about their moves.)
+        if flags & BIT.MOVE ~= 0 then
+            p.noMoveSince = nil
+        elseif flags & 0x8000 == 0 then
+            local now = os.clock()
+            p.noMoveSince = p.noMoveSince or now
+            if p.ghostMoveAt and p.ghostMoveAt < p.noMoveSince and now - p.noMoveSince >= NO_MOVE_S then
+                moves.endMove(p)
+            end
         end
     end
 
