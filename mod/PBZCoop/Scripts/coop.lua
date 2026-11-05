@@ -2298,7 +2298,7 @@ return function(api)
     handlers.H = function(tag, from)
         local ghost = peerOf(from).ghost
         if valid(ghost) and game.playHitReaction and tag and tag ~= "" then
-            game.playHitReaction(ghost, tag)
+            game.playHitReaction(ghost, tag, net.moveAge())     -- (sent in the frame it began: see game.watchHitState)
         end
     end
 
@@ -3042,7 +3042,7 @@ return function(api)
             slow.pawnAt = game.pawnOffset(pc, slow.pc, slow.pawn)
         end
         slow.seenAt = net.frameNow
-        local x, y, z, yaw, vx, vy, vz, mode = game.read(pawn, slow.pawn)
+        local x, y, z, yaw, vx, vy, vz, mode, hp, maxhp = game.read(pawn, slow.pawn)
         -- Occasionally a read comes back incomplete (seen in PBZ while walking); skip that frame. Same for NaN
         -- (x ~= x), which would send the ghost into nowhere.
         if x == nil or y == nil or z == nil or yaw == nil or x ~= x or y ~= y or z ~= z or yaw ~= yaw then
@@ -3051,7 +3051,7 @@ return function(api)
         if vx ~= vx then
             vx, vy, vz = 0, 0, 0
         end
-        local flags = slow.cine * 2
+        local flags = slow.cine * 2 + (net.moveBits or 0)      -- (and how they move, their guard stance: moves.lua)
         if mode == MOVE_WALKING then
             flags = flags + 1
         elseif mode == MOVE_FALLING then
@@ -3060,6 +3060,11 @@ return function(api)
             flags = flags + 8       -- ladders, wall runs and the like fly the player along their montage
         end
         net.localLoc = { X = x, Y = y, Z = z }
+        -- Health from the same read, with the place: a hit shows on the partner's screen the frame after, not on the next
+        -- of watchSlowly's ten reads a second.
+        if hp and maxhp and hp == hp and maxhp > 0 then
+            slow.hp, slow.maxhp, slow.hpAt = hp, maxhp, net.frameNow
+        end
         link.state(x, y, z, yaw, vx or 0, vy or 0, vz or 0, slow.hp, slow.maxhp, net.localMap or 0, flags)
     end
 
@@ -3072,13 +3077,21 @@ return function(api)
         return pawn
     end
 
+    -- A hit reaction of the local player's goes out in the frame it starts (see game.watchHitState).
+    frameTicks.hitState = function()
+        local pawn = game.watchHitState and localPawn()
+        if pawn then
+            game.watchHitState(pawn, sendEvent)
+        end
+    end
+
     -- Everything about the local player that doesn't need to go out every frame.
     local function watchSlowly(now)
         local pawn = localPawn()
         if pawn == nil then
             return
         end
-        if game.getHealth then
+        if game.getHealth and slow.hpAt ~= net.frameNow then       -- (only when this frame's read had none: sendPlayer)
             local hp, maxhp = game.getHealth(pawn)
             slow.hp, slow.maxhp = hp or 0, maxhp or 0
         end
@@ -3107,9 +3120,6 @@ return function(api)
         end
         if net.pvp and game.watchLocalPlayer then
             game.watchLocalPlayer(pawn, sendEvent)    -- ability replays: elsewhere montages say it all (moves.lua)
-        end
-        if game.watchHitState then
-            game.watchHitState(pawn, sendEvent)
         end
         if game.watchItemFx and now >= (slow.itemFxAt or 0) then
             slow.itemFxAt = now + SLOW_S
@@ -3150,13 +3160,14 @@ return function(api)
             slow.gearAt = now + GEAR_S
             game.watchGear(pawn, sendGift)
         end
-        -- What this player wears, to the others: when it changes, every half minute, and to someone who joins (S).
+        -- What this player wears, to the others: when it changes, and to someone who starts sync or joins (S, J). (Not every
+        -- half minute too: the sure lane brings it, and a ghost made later is dressed from what was heard, p.look.)
         if game.ownLook and now >= (slow.lookAt or 0) then
             slow.lookAt = now + 1.0
             local outfit, hidden, skin = game.ownLook(pawn)
             local line = outfit and string.format("%s %d %d", outfit, hidden and 1 or 0, skin)
-            if line and (line ~= net.lookSent or now - (net.lookSentAt or -1e9) >= 30) then
-                net.lookSent, net.lookSentAt = line, now
+            if line and line ~= net.lookSent then
+                net.lookSent = line
                 sendEvent("LOOK", line)
             end
         end
@@ -3205,6 +3216,11 @@ return function(api)
         t.Map = map ~= 0 and map or nil
         t.Grounded, t.Cine, t.Falling, t.Climbing = flags & 1 ~= 0, flags & 2 ~= 0, flags & 4 ~= 0, flags & 8 ~= 0
         p.target = t
+        -- How they move and whether they hold the guard stance, in step with this place (moves.lua). Neither said: an older
+        -- version, which tells them by events.
+        if flags & 0x30 ~= 0 and net.heardMoveBits then
+            net.heardMoveBits(p, flags)
+        end
         -- (No ghost before we have a player ourselves: menus, loading screens.)
         if not valid(p.ghost) and clock >= (p.ghostTryAt or 0) and valid(select(2, getPlayer1())) then
             p.ghostTryAt = clock + 1.0
@@ -3660,7 +3676,7 @@ return function(api)
     -- Someone new in a party: a fight that's on is news to them now, not at the next telling.
     handlers.J = function()
         net.fightToldAt = 0
-        net.lookSent = nil      -- (and what this player wears: it waited up to 30 s for the next telling)
+        net.lookSent = nil      -- (and what this player wears: told only when it changes, otherwise)
         -- (A guest's own fight too: B goes once, as it starts, and one who joined after never saw it, bar or walls.
         -- The host tells its own in its S handling.)
         if isClient() then
@@ -3898,16 +3914,18 @@ return function(api)
         frameNow, frameDt = now, lastFrame and math.min(now - lastFrame, 0.1) or 0.016
         net.frameNow = now
         lastFrame = now
-        runStage("processEvents", processEvents)
-        runStage("readPartner", readPartner)
-        runStage("readEnemies", stageReadEnemies)       -- (a host's: the ones a guest's game runs, see handover)
         -- A budget that fills with time, not a fixed gap after the last send: the tick comes at a slightly different moment
         -- in each frame, and a gap of 1/62 s skipped one frame in four at 60 FPS, so the partner was played further behind.
+        -- First of all: nothing below changes this player, and a costly event (a montage loaded, a search) ran before it
+        -- here, holding this frame's place back and stamping it that much late.
         sendBudget = math.min(1.5, sendBudget + frameDt * SEND_RATE)
         if sendBudget >= 1 then
             sendBudget = sendBudget - 1
             runStage("sendPlayer", sendPlayer)
         end
+        runStage("processEvents", processEvents)
+        runStage("readPartner", readPartner)
+        runStage("readEnemies", stageReadEnemies)       -- (a host's: the ones a guest's game runs, see handover)
         runStage("steerGhost", steerGhosts)
         runStage("enemyTurns", stageEnemyTurns)
         for name, fn in pairs(frameTicks) do

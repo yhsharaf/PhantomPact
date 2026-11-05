@@ -2,18 +2,18 @@
 -- TP > Partner, PvP, and the Partner Compass and Partner On The Map too ("for pvp maybe people want to surprise the
 -- others"). Steam Direct (a player's own IP) and Mode (their own PC) stay each player's own; Players was the host's.
 --
--- The host says its rules as "RULES ft=<0|1> tp=<0|1> pvp=<0|1> cp=<0|1> mi=<0|1>" now and then and at once when one changes. A guest
--- follows them while it's linked to that host, keeps its own choices aside meanwhile, and goes back to them when the
--- link ends or it hosts itself. The MORE page shows a guest the host's choice and won't change it there.
+-- The host says its rules as "RULES ft=<0|1> tp=<0|1> pvp=<0|1> cp=<0|1> mi=<0|1>" at once when one changes, and to anyone
+-- who (re)starts sync or comes back from a gap. A guest follows them while it's linked to that host, keeps its own choices
+-- aside meanwhile, and goes back to them when the link ends or it hosts itself. The MORE page shows a guest the host's
+-- choice and won't change it there.
 
 return function(api)
     local log, coop = api.log, api.coop
     local net = coop.net
 
-    local SEND_S = 5                -- said again this often, for a guest who's only just linked or missed it
     local rules = { host = nil }    -- the host's, while this guest follows them: { freetravel, teleport, pvp }
     local own = nil                 -- this player's own, kept aside meanwhile
-    local sentText, sentAt = nil, 0
+    local sentText = nil            -- what was said last: nil, said again at once
 
     local function current()
         return {
@@ -103,13 +103,21 @@ return function(api)
             end
             local text = string.format("ft=%d tp=%d pvp=%d cp=%d mi=%d", bit(c.freetravel), bit(c.teleport), bit(c.pvp),
                 bit(c.compass), bit(c.mapicon))
-            if text ~= sentText or os.clock() - sentAt >= SEND_S then
-                sentText, sentAt = text, os.clock()
+            if text ~= sentText then
+                sentText = text
                 coop.sendEvent("RULES", text)
             end
         elseif rules.host and not net.enabled then
             rules.release()
         end
+    end
+
+    -- Someone (re)started sync, or joined the party (their S reaches the host): they hear the rules at once. Only then: the
+    -- sure lane brings a telling to everyone linked, and the one every 5 s that this replaced told nobody anything new.
+    local syncStarted = coop.handlers.S
+    coop.handlers.S = function(rest, from)
+        sentText = nil
+        return syncStarted(rest, from)
     end
 
     coop.extraTicks.rules = function()

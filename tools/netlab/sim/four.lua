@@ -184,6 +184,101 @@ local function movesAndGear()
     local start = field(field(ghostOf(s.pcs[1], 3), "anim"), "start")
     check(played(s.pcs[1], 3) == before + 1 and start and math.abs(start - 0.295) < 1e-6,
         "a move that comes 45 ms old starts 45 ms further in (at " .. tostring(start) .. ")")
+    -- The player's own place goes out first in a frame: whatever the partner's events cost this frame comes after it.
+    local h1, order = s.pcs[1], {}
+    local api = h1.env.PBZ
+    local state, playMove = api.link.state, api.coop.handlers.U
+    api.link.state = function(...)
+        order[#order + 1] = { "state", h1.now }
+        return state(...)
+    end
+    api.coop.handlers.U = function(...)
+        order[#order + 1] = { "move", h1.now }
+        return playMove(...)
+    end
+    h1.inbox[#h1.inbox + 1] = "~10 @3 U /PBZCombatAsset/ActorData/Move/A1.A1 0.25"
+    s:run(0.05)
+    api.link.state, api.coop.handlers.U = state, playMove
+    local first = nil
+    for i, e in ipairs(order) do
+        if e[1] == "move" then
+            for j = 1, i - 1 do
+                if order[j][1] == "state" and order[j][2] == e[2] then
+                    first = true
+                end
+            end
+            first = first or false
+        end
+    end
+    check(first == true, "the player's own place goes out before the partner's events are handled, in the same frame")
+    -- A player's health goes with their place, every frame: a hit shows on the others' screens in the frames after it, not
+    -- on the next of ten slow reads a second. Five tries, each at another moment of those reads.
+    local seenBy, onTime = s.pcs[2].env.PBZ.net, true
+    for k = 1, 5 do
+        local hp = 500 - k * 37
+        Fake.setHealth(h1.pawn, hp)
+        s:run(4 / 60)
+        onTime = onTime and seenBy.target ~= nil and math.abs((seenBy.target.Hp or -1) - hp) < 0.5
+        s:run(k / 60)
+    end
+    check(onTime, "a hit on the host shows in their health on a guest's PC within four frames, every time")
+    -- How a player moves and their guard stance go in bits of that place too: in step with it, and no sure event to resend.
+    local gaitOf, inStance, sentBefore = api.game.gait, api.game.inStance, #h1.sent
+    api.game.gait = function() return "s" end
+    api.game.inStance = function() return true end
+    Session.startMove(h1, "/PBZCombatAsset/ActorData/Move/StanceEnter_A.StanceEnter_A")
+    s:run(0.3)
+    local onWay = seenBy.gait == "s" and seenBy.stance == true
+    api.game.gait = function() return "w" end
+    api.game.inStance = function() return false end
+    s:run(0.3)
+    local offWay = seenBy.gait == "w" and seenBy.stance == false
+    api.game.gait, api.game.inStance = gaitOf, inStance
+    Session.endMove(h1)
+    local told = 0
+    for k = sentBefore + 1, #h1.sent do
+        if h1.sent[k]:find("^%S+ GAIT ") or h1.sent[k]:find("^%S+ ST ") then
+            told = told + 1
+        end
+    end
+    check(onWay and offWay and told == 0, "the host's sprint and guard stance reach a guest with their place, and back, without one sure event (" .. told .. ")")
+    -- A stagger comes with how long ago it began: the ghost's copy ends when theirs does, and one over by now isn't played.
+    local function hitOnHost(pc)
+        return field(field(ghostOf(pc, 1), "hit"), "state")
+    end
+    local g2 = s.pcs[2]
+    g2.inbox[#g2.inbox + 1] = "~500 H CharacterState.Hitreact.State.Normal"
+    s:run(2 / 60)
+    local shown = hitOnHost(g2) == "CharacterState.Hitreact.State.Normal"
+    s:run(0.45)
+    local ended = hitOnHost(g2) == "None"
+    g2.inbox[#g2.inbox + 1] = "~950 H CharacterState.Hitreact.State.Normal"
+    s:run(2 / 60)
+    check(shown and ended and hitOnHost(g2) == "None",
+        "a stagger 0.5 s old is held for the 0.4 s left of it, one older than that not at all")
+    -- A move and a stagger go out in the frame they start, every time: a move went every other frame, a stagger ten times
+    -- a second, and the ghost skipped that much more of the move, or reacted that much later.
+    local function sentNow(from, pattern)
+        for i = from + 1, #h1.sent do
+            if h1.sent[i]:find(pattern) then
+                return 1
+            end
+        end
+        return 0
+    end
+    local movesNow, hitsNow = 0, 0
+    for k = 1, 5 do
+        local from = #h1.sent
+        Session.startMove(h1, "/PBZCombatAsset/ActorData/Move/B" .. k .. ".B" .. k)
+        Session.stagger(h1, k % 2 == 0 and "CharacterState.Hitreact.State.Normal" or "CharacterState.Hitreact.State.Normal.Heavy")
+        s:run(1 / 60)
+        movesNow, hitsNow = movesNow + sentNow(from, "^Q U /"), hitsNow + sentNow(from, "^Q H ")
+        s:run(0.2)
+        Session.endMove(h1)
+        Session.stagger(h1, "None")
+        s:run(k / 60)
+    end
+    check(movesNow == 5 and hitsNow == 5, "a move and a stagger go out in the frame they start (" .. movesNow .. " and " .. hitsNow .. " of 5)")
     allErrors(s)
 end
 
@@ -2942,6 +3037,38 @@ local function lateJoiner()
     allErrors(s)
 end
 
+-- The host's rules and what each player wears are told when they change and to whoever starts sync or joins, not on a timer:
+-- the sure lane brings a telling to everyone linked. (Every 5 s and every 30 s they went again, and on a lossy link each one
+-- held up the deaths queued behind it; one who joined a party heard the rules only at the next of those.)
+local function toldOnChange()
+    part("told when it changes, not on a timer")
+    local s = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest" }, true, ENEMIES)
+    local h, late = s.pcs[1], s.pcs[3]
+    late.joinAt = h.now + 9
+    local joinedAt, rulesAt = nil, nil
+    s:run(14, function()
+        joinedAt = joinedAt or (net(late).party and late.now)
+        rulesAt = rulesAt or (late.env.PBZ.rules.following() and late.now)
+    end)
+    check(joinedAt and rulesAt and rulesAt - joinedAt < 1.0,
+        "a guest who joins the party follows the host's rules within a second of joining (" .. tostring(joinedAt and rulesAt and rulesAt - joinedAt) .. " s)")
+    local from = {}
+    for i, pc in ipairs(s.pcs) do
+        from[i] = #pc.sent
+    end
+    s:run(31)
+    local again = 0
+    for i, pc in ipairs(s.pcs) do
+        for k = from[i] + 1, #pc.sent do
+            if pc.sent[k]:find("^%S+ RULES ") or pc.sent[k]:find("^%S+ LOOK ") then
+                again = again + 1
+            end
+        end
+    end
+    check(again == 0, "and in 31 s with nothing changed, no one tells their rules or clothes again (" .. again .. " times)")
+    allErrors(s)
+end
+
 local function scaling()
     part("enemy health")
     local function max(pc, id)
@@ -3969,6 +4096,7 @@ return function(print_, scripts)
     holding()
     lateJoiner()
     lateJoinerGuestFight()
+    toldOnChange()
     scaling()
     sixPlayers()
     gaps()

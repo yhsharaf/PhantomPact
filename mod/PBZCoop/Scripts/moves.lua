@@ -74,8 +74,13 @@ return function(api)
 
     -- The guard stance (the right button held) is a pose the animation blueprint holds from tags while the stance's ability
     -- runs: no montage plays between its enter and its exit, and a ghost runs neither. So the sender says whether it's in
-    -- the stance ("ST 1|0"), and the ghost holds the last frame of the stance's enter until it's left.
-    local stance = { CHECK_S = 0.1, at = 0, sent = nil }
+    -- the stance, and the ghost holds the last frame of the stance's enter until it's left.
+    -- That and how they move go in bits of the place sent every frame (net.moveBits, coop.lua's sendPlayer and heard), so
+    -- they're played in step with it and a lost packet is made good by the next. As sure events ("ST 1|0", "GAIT w|j|s",
+    -- still played when an older version sends them) they came before the steps they belong to, or after a resend, and
+    -- held up the deaths queued behind them.
+    local stance = { CHECK_S = 0.1, at = 0, sent = nil, BIT = 0x40 }
+    local GAIT_BITS = { w = 1, j = 2, s = 3, "w", "j", "s" }     -- bits 0x10 and 0x20 of the flags; none: not said
 
     -- Sender, every tick: a new montage, or the same one started again, goes to the partner.
     local function watch()
@@ -83,7 +88,7 @@ return function(api)
         if pawn == nil then
             return
         end
-        -- Asked for again now and then: it's three calls more each time, and a tick of this comes every other frame.
+        -- Asked for again now and then: it's three calls more each time, and this runs every frame.
         local now = os.clock()
         if pawn ~= watchedBody or now >= animCheckAt or not valid(watchedAi) then
             watchedBody, watchedAi, animCheckAt = pawn, animOf(pawn), now + ANIM_CHECK_S
@@ -102,17 +107,11 @@ return function(api)
                 if not on and stance.maybe and now >= stance.maybe then
                     stance.maybe = nil
                 end
-                if on ~= stance.sent then
-                    stance.sent = on
-                    coop.sendEvent("ST", on and "1" or "0")
-                end
+                stance.sent = on
             end
             -- And how they move: the ghost walks, jogs and sprints with them (game.setGhostGait), where it only jogged.
-            local gait = game.gait and game.gait(pawn) or "j"
-            if gait ~= stance.gait then
-                stance.gait = gait
-                coop.sendEvent("GAIT", gait)
-            end
+            stance.gait = game.gait and game.gait(pawn) or "j"
+            net.moveBits = (GAIT_BITS[stance.gait] or 2) * 0x10 + (stance.sent and stance.BIT or 0)
         end
         local m = ai:GetCurrentActiveMontage()
         if not valid(m) then
@@ -272,19 +271,17 @@ return function(api)
         end)
     end
 
-    coop.handlers.GAIT = function(rest, from)
-        local p = coop.peerOf(from)
-        if (rest == "w" or rest == "j" or rest == "s") and rest ~= p.gait then
-            p.gait = rest
+    local function gaitTo(p, gait)
+        if (gait == "w" or gait == "j" or gait == "s") and gait ~= p.gait then
+            p.gait = gait
             if valid(p.ghost) and game.setGhostGait then
-                game.setGhostGait(p.ghost, rest)
+                game.setGhostGait(p.ghost, gait)
             end
         end
     end
 
-    coop.handlers.ST = function(rest, from)
-        local p = coop.peerOf(from)
-        p.stance = rest == "1"
+    local function stanceTo(p, on)
+        p.stance = on
         if not p.stance and p.stanceHeld then
             -- Left with no exit of its own to play (cut short): the held pose goes.
             local ai = valid(p.ghost) and animOf(p.ghost)
@@ -293,6 +290,23 @@ return function(api)
             end
             p.stanceHeld = nil
         end
+    end
+
+    -- Every place heard from a player that says how they move (see stance): only what changed is done.
+    function net.heardMoveBits(p, flags)
+        gaitTo(p, GAIT_BITS[(flags >> 4) & 3])
+        local on = flags & stance.BIT ~= 0
+        if on ~= (p.stance == true) then
+            stanceTo(p, on)
+        end
+    end
+
+    coop.handlers.GAIT = function(rest, from)
+        gaitTo(coop.peerOf(from), rest)
+    end
+
+    coop.handlers.ST = function(rest, from)
+        stanceTo(coop.peerOf(from), rest == "1")
     end
 
     ------------------------------------------------------------------ what the partner holds
@@ -543,14 +557,14 @@ return function(api)
     -- The partner has just (re)started sync: it knows nothing yet.
     local partnerStarted = coop.handlers.S
     coop.handlers.S = function(rest, from)
-        gear.sentPath, gear.sentEdgePath, stance.sent, stance.gait = nil, nil, nil, nil
+        gear.sentPath, gear.sentEdgePath = nil, nil      -- (gait and stance go with every place: nothing to tell again)
         return partnerStarted(rest, from)
     end
 
     -- Someone new in a party: the same.
     local someoneJoined = coop.handlers.J
     coop.handlers.J = function(rest, from)
-        gear.sentPath, gear.sentEdgePath, stance.sent, stance.gait = nil, nil, nil, nil
+        gear.sentPath, gear.sentEdgePath = nil, nil
         return someoneJoined(rest, from)
     end
 
@@ -707,7 +721,9 @@ return function(api)
         ageProps = ageProps }
     moves.parts = parts
 
-    coop.extraTicks.moves = function()
+    -- A move goes out in the frame it starts. With the tick below, every other frame at 60 FPS, half went a frame later,
+    -- and the ghost skipped that much more of its start (it starts as far in as the move is old).
+    coop.frameTicks.moveStarts = function()
         local ok, err = pcall(parts.watch)
         if not ok then
             last = nil
@@ -716,10 +732,13 @@ return function(api)
                 log("moves: " .. tostring(err))
             end
         end
+    end
+
+    coop.extraTicks.moves = function()
         local now = os.clock()
         -- (Each on its own: one error in this player's own gear, a load say, left every partner's figure empty-handed.)
         local errs = {}
-        ok, err = pcall(parts.watchGear, now)
+        local ok, err = pcall(parts.watchGear, now)
         if not ok then
             errs[#errs + 1] = err
         end

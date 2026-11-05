@@ -1910,36 +1910,53 @@ return function(api)
         return nil
     end
 
-    local localHitComp, lastHitState = nil, "None"
+    -- The local player's hit state: read every frame, and whose component it is checked ten times a second (three calls).
+    local hitWatch = { comp = nil, last = "None", mineAt = 0, MINE_S = 0.1 }
 
-    -- Called every snapshot: when the local player starts reacting to a hit (stagger, knockdown...), send the
-    -- hit state's tag so the other player's ghost of us reacts the same way.
+    -- Called every frame (coop.lua): when the local player starts reacting to a hit (stagger, knockdown...), send the
+    -- hit state's tag so the other player's ghost of us reacts the same way. In the frame it starts, so the age the
+    -- event gets on its way says how long ago that was: read ten times a second, it went up to 100 ms later than its age.
     function game.watchHitState(pawn, sendEvent)
-        -- (This pawn's: after a respawn the old body's stayed valid until collected, and this player's reactions stopped
-        -- reaching anyone; after, another actor's at its address had theirs sent as this player's.)
-        local mine = valid(localHitComp) and select(2, pcall(function()
-            local o = localHitComp:GetOwner()
-            return valid(o) and o:GetAddress() == pawn:GetAddress()
-        end)) == true
-        if not mine then
-            localHitComp = hitreactComponent(pawn)
-            if not localHitComp then
-                return
+        local now = os.clock()
+        if now >= hitWatch.mineAt then
+            hitWatch.mineAt = now + hitWatch.MINE_S
+            -- (This pawn's: after a respawn the old body's stayed valid until collected, and this player's reactions stopped
+            -- reaching anyone; after, another actor's at its address had theirs sent as this player's.)
+            local comp = hitWatch.comp
+            local mine = valid(comp) and select(2, pcall(function()
+                local o = comp:GetOwner()
+                return valid(o) and o:GetAddress() == pawn:GetAddress()
+            end)) == true
+            if not mine then
+                hitWatch.comp = hitreactComponent(pawn)
             end
         end
-        local ok, tag = pcall(function() return localHitComp:GetCurrentHitState().TagName:ToString() end)
+        local comp = hitWatch.comp
+        if not valid(comp) then
+            return
+        end
+        local ok, tag = pcall(function() return comp:GetCurrentHitState().TagName:ToString() end)
         if not ok then
             return
         end
-        if tag ~= lastHitState and tag ~= "None" then
+        if tag ~= hitWatch.last and tag ~= "None" then
             sendEvent("H", tag)
         end
-        lastHitState = tag
+        hitWatch.last = tag
     end
 
+    -- A hit state set by hand has no animation to end it, and while it lasts the character can't start a move
+    -- (a PvP attacker stayed stuck after a parry). Cleared again after this long (clearHitStateLater).
+    local HIT_STATE_HOLD_S = 0.9
     local clearHitStateLater      -- defined below with staggerSelf
     local ghostHitComps = {}      -- ghost address -> its component: a search of them all, so never once per hit
-    function game.playHitReaction(ghost, tag)
+    -- ageS: how long ago the partner's own reaction began (net.moveAge). The copy ends when theirs does, and one that's
+    -- over by now isn't played.
+    function game.playHitReaction(ghost, tag, ageS)
+        local holdS = HIT_STATE_HOLD_S - (ageS or 0)
+        if holdS < 0.05 then
+            return
+        end
         local addr = ghost:GetAddress()
         local ghostHitComp = ghostHitComps[addr]
         if not valid(ghostHitComp) or ghostHitComp:GetOwner():GetAddress() ~= addr then
@@ -1956,7 +1973,7 @@ return function(api)
             if not ok then
                 log("Ghost hit reaction failed: " .. tostring(err))
             else
-                clearHitStateLater(ghostHitComp, tag)
+                clearHitStateLater(ghostHitComp, tag, holdS)
             end
             holdGhost(ghost)
         end
@@ -1995,9 +2012,7 @@ return function(api)
         end
     end
 
-    -- A hit state set by hand has no animation to end it, and while it lasts the character can't start a move
-    -- (a PvP attacker stayed stuck after a parry). Clear it again after a moment, unless something replaced it.
-    local HIT_STATE_HOLD_S = 0.9
+    -- Clear a hit state set by hand again after a moment (HIT_STATE_HOLD_S), unless something replaced it.
     clearHitStateLater = function(comp, tag, holdS)
         game.after(holdS or HIT_STATE_HOLD_S, function()
             -- (A map can load first, and a gone object's memory gets reused: pcall can't catch that crash, valid can.)
