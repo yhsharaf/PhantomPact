@@ -1824,6 +1824,28 @@ local function playerReports()
         allErrors(s)
     end
     do
+        local list = {}
+        for _, e in ipairs(ENEMIES) do
+            list[#list + 1] = e
+        end
+        list[#list + 1] = { "ChiLian_Seq034", "BP_Monster_Boss_C", 3000.0, 3400.0, 100.0, 5000, 400, true }
+        local s = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, list)
+        local sh, sg = s.pcs[1], s.pcs[2]
+        local hi = Session.indexOf(sh, "ChiLian_Seq034")
+        local hsp = sh.spawners[hi]
+        Fake.put(hsp, "SpawnedAI", nil)         -- (not met yet in the host's world)
+        table.remove(sh.enemies, hi)
+        s:run(4)
+        Session.moveTo(sh, 3000, 3000)
+        Session.moveTo(sg, 3000, 3200)
+        s:run(2)
+        sg.hudLayout:RegisterBossHPBar(Session.enemyOn(sg, "ChiLian_Seq034"))
+        s:run(3)
+        check((field(hsp, "claimed") or 0) == 1,
+            "but a guest's fight with a boss of one phase, from a sequence spawner (the forest's last), is spawned on the host")
+        allErrors(s)
+    end
+    do
         local s, h, g = pair()
         Session.moveTo(h, 3000, 2800)
         Session.moveTo(g, 3000, 2700)

@@ -564,6 +564,13 @@ return function(api)
         return (sid:gsub("_Seq.*$", ""):gsub("_P%d.*$", ""):gsub("P%d+$", ""))
     end
 
+    -- A boss's later phase (P2 on): HookManP2_Seq023, ChangHongP2_Seq107, MuXiaoKuiP2_Seq046new, LeiDangP2, YuCong_P3_1.
+    -- Not a "_Seq" alone: most story bosses spawn from a sequence (ChiLian_Seq034, the forest's last), and are one phase.
+    function game.isLaterPhase(enemyId)
+        local id = type(enemyId) == "string" and enemyId:gsub("^sp:", "") or ""
+        return id:find("P[2-9]%f[^%d]") ~= nil or id:find("_P[2-9]") ~= nil
+    end
+
     function game.spawnBoss(enemyId, revive)
         local id = enemyId:match("^sp:(.+)$")
         -- (A boss of phases, a spawner each: HookManP1_Seq022 / HookManP2_Seq023, but also ChangHong_Seq106 /

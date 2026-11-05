@@ -2733,10 +2733,11 @@ return function(api)
         -- (Another guest's fight, on a guest: only the host's world can say the boss lives, so one this save has beaten
         -- isn't brought back for it. The host tells everyone if it's beaten there.)
         local at, turned = nil, false
-        -- (On the host, never a phase of a boss of phases: those are its own fight script's to spawn, after its scene. A guest
-        -- through a phase change first had the host's next phase spawned in the middle of the host's own scene, and the one
-        -- the host then killed wasn't the one its story waited for.)
-        local phase = not isClient() and game.phaseGroup and game.phaseGroup(name) ~= nil
+        -- (On the host, never a later phase of a boss of phases: those are its own fight script's to spawn, after its scene. A
+        -- guest through a phase change first had the host's next phase spawned in the middle of the host's own scene, and the
+        -- one the host then killed wasn't the one its story waited for. A first phase, or a boss of one, is spawned as ever:
+        -- most story bosses come from a sequence spawner, "_Seq" in their name.)
+        local phase = not isClient() and game.isLaterPhase and game.isLaterPhase(name)
         if game.spawnBoss and not phase then
             at, turned = game.spawnBoss(name, not (isClient() and p ~= net))
         end
