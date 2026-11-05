@@ -356,7 +356,12 @@ return function(api)
         -- A guest loaded another save: where they stand now is their new start. Kept, a guest who loaded a finished save
         -- while linked had every row past their first one counted as done together, and the host's quests finished by it.
         if coop.isHost() and rest == "reset" then
-            guestDone[from or 0] = nil
+            -- (Rebased at their next report, keeping what they'd done while linked that the host hasn't taken yet: a
+            -- respawn or a trip right after a step loads too, and forgotten, that step never reached the host.)
+            local g = guestDone[from or 0]
+            if g then
+                g.rebase = true
+            end
             return
         end
         if not coop.isHost() or type(rest) ~= "string" or #rest > 400 or not readTable() then
@@ -373,6 +378,16 @@ return function(api)
             if not g then
                 g = { base = all, done = {} }
                 guestDone[from or 0] = g
+            end
+            if g.rebase then
+                g.rebase = nil
+                local base = {}
+                for k in pairs(all) do
+                    if not g.done[k] then
+                        base[k] = true
+                    end
+                end
+                g.base = base
             end
             g.done, g.at = {}, os.clock()
             for k in pairs(all) do

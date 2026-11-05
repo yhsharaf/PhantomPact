@@ -3507,7 +3507,11 @@ return function(api)
         -- they stood shut in by the walls with it. (The bar came back every second, and the walls stayed shut for nobody.)
         if was and on ~= "1" then
             if from == nil and isClient() then
-                net.hostBosses = {}         -- (the host's fights are all over: none comes back at this player's death)
+                -- (The host's fights are all over: none comes back at this player's death. Only those the host told of:
+                -- this player's own, announced to the host, stay theirs, and its kill still runs the boss's real death.)
+                for name in pairs(net.partnerBosses) do
+                    net.hostBosses[name] = nil
+                end
             end
             local whose = net.party and (from or 1) or nil
             for name in pairs(net.partnerBosses) do

@@ -147,7 +147,9 @@ return function(api)
         local p = byAddr[addr]
         if p then
             byAddr[addr] = nil
-            game.freeCopy(addr, not (valid(p.actor) and not game.isDead(p.actor)))
+            if not (valid(p.actor) and not game.isDead(p.actor)) then
+                game.freeCopy(addr, true)           -- (dead or gone: forgotten, its picker untouched)
+            end
             if valid(p.actor) and not game.isDead(p.actor) then
                 pcall(function()
                     local cmc = p.actor.CharacterMovement
@@ -157,6 +159,7 @@ return function(api)
                     end
                 end)
                 game.startAI(p.actor)
+                game.freeCopy(addr)
             end
         end
     end

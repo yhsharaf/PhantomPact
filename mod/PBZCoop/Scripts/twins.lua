@@ -549,7 +549,7 @@ return function(api)
     -- for 20 s by the host's new ones.
     function twins.clearEverywhere(why)
         clearAll(why)
-        if coop.isHost() then
+        if coop.isHost() and net.party then     -- (two players never have twins: nothing to tell)
             coop.sendEvent("TWC")
         end
     end
