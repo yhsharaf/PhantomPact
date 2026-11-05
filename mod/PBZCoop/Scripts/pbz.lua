@@ -370,12 +370,25 @@ return function(api)
 
     -- Guest copies of the host's enemies: their own AI stays out of it (puppets.lua). The game starts a stopped AI again
     -- by itself, so this is asked again and again: pass the brain it returned last time.
-    function game.stopAI(actor, brain)
+    -- Each link checked, every time: one not possessed yet (or any more) has no controller, and a call on nothing is a
+    -- crash pcall doesn't catch. Not kept between calls either: a brain kept by its address could be something else's.
+    function game.brainOf(actor)
+        if not valid(actor) then
+            return nil
+        end
+        local c = actor:GetController()
+        if not valid(c) then
+            return nil
+        end
+        local b = c.BrainComponent
+        return valid(b) and b or nil
+    end
+
+    function game.stopAI(actor)
+        local brain = nil
         pcall(function()
-            if not valid(brain) then
-                brain = actor:GetController().BrainComponent
-            end
-            if brain:IsRunning() then
+            brain = game.brainOf(actor)
+            if brain and brain:IsRunning() then
                 brain:StopLogic("PhantomPact")
             end
         end)
@@ -383,7 +396,12 @@ return function(api)
     end
 
     function game.startAI(actor)
-        pcall(function() actor:GetController().BrainComponent:RestartLogic() end)
+        pcall(function()
+            local brain = game.brainOf(actor)
+            if brain then
+                brain:RestartLogic()
+            end
+        end)
     end
 
     -- Out of the way on this PC, and back: coop.lua, for an enemy the host's world doesn't have.
@@ -818,7 +836,11 @@ return function(api)
     -- attack doesn't end by itself on a copy nothing steers any more.
     local function stopSwing(actor)
         pcall(function()
-            local ai = actor.Mesh:GetAnimInstance()
+            local mesh = actor.Mesh
+            local ai = valid(mesh) and mesh:GetAnimInstance() or nil
+            if not valid(ai) then
+                return      -- (a body taken off the world has none: a call on nothing is a crash, pcall or not)
+            end
             local m = ai:GetCurrentActiveMontage()
             if valid(m) then
                 ai:Montage_Stop(0.1, m)
@@ -1787,7 +1809,13 @@ return function(api)
     -- Called every snapshot: when the local player starts reacting to a hit (stagger, knockdown...), send the
     -- hit state's tag so the other player's ghost of us reacts the same way.
     function game.watchHitState(pawn, sendEvent)
-        if not valid(localHitComp) then
+        -- (This pawn's: after a respawn the old body's stayed valid until collected, and this player's reactions stopped
+        -- reaching anyone; after, another actor's at its address had theirs sent as this player's.)
+        local mine = valid(localHitComp) and select(2, pcall(function()
+            local o = localHitComp:GetOwner()
+            return valid(o) and o:GetAddress() == pawn:GetAddress()
+        end)) == true
+        if not mine then
             localHitComp = hitreactComponent(pawn)
             if not localHitComp then
                 return
@@ -2290,7 +2318,11 @@ return function(api)
                 copyPickers[addr] = picker
             end
             if picker then
-                copyCooldowns[addr] = copyCooldowns[addr] or picker.SwitchTargetCooldown
+                -- (Not the held-off value itself: read again after a forget, it was restored as the original, and the
+                -- enemy never changed targets on its own again.)
+                if not copyCooldowns[addr] and (picker.SwitchTargetCooldown or LONG_S) < LONG_S then
+                    copyCooldowns[addr] = picker.SwitchTargetCooldown
+                end
                 picker.SwitchTargetCooldown = LONG_S
                 picker.LastSwitchTime = api.gs():GetTimeSeconds(actor)
             end
@@ -2320,8 +2352,38 @@ return function(api)
         end
     end
 
+    -- (Each focused enemy's own cooldown back: kept at the focus value, every enemy ever focused took 15 s to change
+    -- targets for the rest of the session.)
     function game.forgetFocus()
+        for addr, f in pairs(focused) do
+            pcall(function()
+                if f.orig and valid(f.actor) and f.actor:GetAddress() == addr and f.actor:GetFName():ToString() == f.fname
+                    and valid(f.picker) then
+                    f.picker.SwitchTargetCooldown = f.orig
+                end
+            end)
+        end
         focused, hitByPartner, hitBySlot = {}, {}, {}
+    end
+
+    -- A focus entry for this enemy now: the one kept if it's still this enemy's (address and name), else a new one.
+    function game.focusEntry(actor, addr, fields)
+        local f = focused[addr]
+        local fname = nil
+        pcall(function() fname = actor:GetFName():ToString() end)
+        if f and valid(f.picker) and f.fname == fname then
+            return f, false
+        end
+        f = fields
+        f.picker, f.actor, f.fname = targetPicker(actor), actor, fname
+        focused[addr] = f
+        if f.picker then
+            pcall(function()
+                f.orig = f.picker.SwitchTargetCooldown
+                f.picker.SwitchTargetCooldown = FOCUS_S
+            end)
+        end
+        return f, true
     end
 
     function game.steerFocus(actor, addr, x, y, z, hp, pawn, ghost)
@@ -2339,14 +2401,10 @@ return function(api)
         if not onGuest and target:GetAddress() ~= pawn:GetAddress() then
             return
         end
-        local now, f = os.clock(), focused[addr]
-        if f == nil or not valid(f.picker) then
-            f = { picker = targetPicker(actor), onGuest = onGuest, since = now, hp = hp }
-            focused[addr] = f
-            if f.picker == nil then
-                return
-            end
-            f.picker.SwitchTargetCooldown = FOCUS_S
+        local now = os.clock()
+        local f = game.focusEntry(actor, addr, { onGuest = onGuest, since = now, hp = hp })
+        if f.picker == nil then
+            return
         end
         local dropped = f.hp and hp and hp < f.hp - 0.5
         f.hp = hp
@@ -2399,14 +2457,10 @@ return function(api)
         if on == nil then
             return
         end
-        local now, f = os.clock(), focused[addr]
-        if f == nil or not valid(f.picker) then
-            f = { picker = targetPicker(actor), slot = on.slot, since = now, hp = hp }
-            focused[addr] = f
-            if f.picker == nil then
-                return
-            end
-            f.picker.SwitchTargetCooldown = FOCUS_S
+        local now = os.clock()
+        local f = game.focusEntry(actor, addr, { slot = on.slot, since = now, hp = hp })
+        if f.picker == nil then
+            return
         end
         local dropped = f.hp and hp and hp < f.hp - 0.5
         f.hp = hp
