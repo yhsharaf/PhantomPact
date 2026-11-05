@@ -199,7 +199,7 @@ public:
     static constexpr size_t HEADER = 4 + 1 + 8 + 8 + 8;
     static constexpr size_t TAG = 32;
     static constexpr double REPLAY_WINDOW_S = 120.0;
-    static constexpr size_t SESSIONS_KEPT = 8;
+    static constexpr size_t SESSIONS_KEPT = 24;   // (2 x 6 players and then some: with 8, guests rejoining pushed a session out inside its window)
     static constexpr uint64_t COUNTERS_KEPT = 64;      // the network can reorder: a late packet isn't a replay
     long long clock_off = 0;        // packets signed right but sent at a time over the window from this PC's clock
 

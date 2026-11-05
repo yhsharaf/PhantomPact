@@ -30,7 +30,8 @@ void find_folders() {
     mod_root = dlls.substr(0, dlls.find_last_of(L'\\'));
     mod_dir = mod_root;
     wchar_t instance[16];
-    if (GetEnvironmentVariableW(L"PBZCOOP_INSTANCE", instance, 16) > 0 && _wtoi(instance) > 1)
+    const DWORD got = GetEnvironmentVariableW(L"PBZCOOP_INSTANCE", instance, 16);     // (16 or more: not written whole)
+    if (got > 0 && got < 16 && _wtoi(instance) > 1)
         mod_dir += L"\\inst" + std::wstring(instance);
 }
 

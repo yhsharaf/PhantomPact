@@ -273,6 +273,16 @@ void test_lanes() {
     check(!q.fresh(6), "quick: and only once");
     check(q.fresh(1000) && !q.fresh(5), "quick: far older is dropped");
     check(!q.fresh(1000u + 0x80000000u), "quick: an id exactly half the number space away is refused");
+    relay::QuickReceiver qf;
+    qf.fresh(1);
+    qf.fresh(0x80000000u);
+    bool lives = true;
+    for (uint32_t i = 2; i < 50; i++) lives = lives && qf.fresh(i);
+    check(lives, "quick: one id far ahead doesn't move the window there");
+    relay::QuickReceiver qj;
+    qj.fresh(10);
+    check(!qj.fresh(9000) && !qj.fresh(9001) && qj.fresh(9002) && qj.fresh(9003) && !qj.fresh(11),
+          "quick: a real jump far ahead is taken after three in a row");
 
     relay::QuickSender alone;
     alone.push("old", 0);

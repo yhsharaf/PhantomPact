@@ -97,6 +97,7 @@ public:
             held_.emplace(id, std::move(text));
             return;
         }
+        held_.erase(id);    // (one held before, now in by its resend: left behind, never read and never freed)
         if (!deliver(text)) return;
         next_++;
         count++;
@@ -197,6 +198,24 @@ public:
             return true;
         }
         const int32_t ahead = static_cast<int32_t>(id - newest_);
+        // Far off either way: taken only once a few in a row agree. One id far ahead moved the window there for good, and
+        // every real one after it read as too old (the lane dead till the next session); a real jump, ids sent on through
+        // a long outage, still comes through after three.
+        if (ahead >= FAR_IDS || ahead <= -FAR_IDS) {
+            const int32_t from_last = static_cast<int32_t>(id - far_);
+            if (far_hits_ > 0 && from_last > 0 && from_last < 64) {
+                far_hits_++;
+            } else {
+                far_hits_ = 1;
+            }
+            far_ = id;
+            if (far_hits_ < FAR_AGREE) return false;
+            far_hits_ = 0;
+            newest_ = id;
+            seen_ = 1;
+            return true;
+        }
+        far_hits_ = 0;
         if (ahead > 0) {
             seen_ = ahead >= 64 ? 0 : seen_ << ahead;
             seen_ |= 1;
@@ -210,12 +229,19 @@ public:
         return true;
     }
 
-    void restart() { any_ = false; }
+    void restart() {
+        any_ = false;
+        far_hits_ = 0;
+    }
 
 private:
+    static constexpr int32_t FAR_IDS = 4096;
+    static constexpr int FAR_AGREE = 3;
     bool any_ = false;
     uint32_t newest_ = 0;
     uint64_t seen_ = 0;
+    uint32_t far_ = 0;
+    int far_hits_ = 0;
 };
 
 }  // namespace relay

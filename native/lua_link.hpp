@@ -299,6 +299,12 @@ struct Character {
     double x, y, z, yaw, vx, vy, vz, mode, hp, max_hp, posture;
 };
 
+// A read of memory that may be gone: a bad address, but also a guard page or a mapped page that can't be paged in, which
+// took the game down as they weren't caught.
+inline bool bad_read(DWORD code) {
+    return code == EXCEPTION_ACCESS_VIOLATION || code == STATUS_GUARD_PAGE_VIOLATION || code == EXCEPTION_IN_PAGE_ERROR;
+}
+
 template <typename T>
 inline T field(uintptr_t object, ptrdiff_t offset) {
     return *reinterpret_cast<const T*>(object + offset);
@@ -324,7 +330,7 @@ inline bool read_character(uintptr_t actor, const Layout& l, Character& out) {
         out.max_hp = field<float>(attributes, l.max_health);
         out.posture = field<float>(attributes, l.posture);
         return true;
-    } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+    } __except (bad_read(GetExceptionCode()) ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
         return false;
     }
 }
@@ -332,7 +338,7 @@ inline bool read_character(uintptr_t actor, const Layout& l, Character& out) {
 inline uintptr_t read_pointer(uintptr_t object, ptrdiff_t offset) {
     __try {
         return field<uintptr_t>(object, offset);
-    } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+    } __except (bad_read(GetExceptionCode()) ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
         return 0;
     }
 }

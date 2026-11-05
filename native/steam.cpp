@@ -152,7 +152,8 @@ bool direct_wanted() {
     std::wstring dir(path, GetModuleFileNameW(self, path, static_cast<DWORD>(std::size(path))));
     for (int up = 0; up < 2; up++) dir = dir.substr(0, dir.find_last_of(L'\\'));
     wchar_t instance[16];
-    if (GetEnvironmentVariableW(L"PBZCOOP_INSTANCE", instance, 16) > 0 && _wtoi(instance) > 1)
+    const DWORD got = GetEnvironmentVariableW(L"PBZCOOP_INSTANCE", instance, 16);     // (16 or more: not written whole)
+    if (got > 0 && got < 16 && _wtoi(instance) > 1)
         dir += L"\\inst" + std::wstring(instance);
     relay::Ini ini = relay::read_ini(dir + L"\\PhantomPact.ini");
     return relay::lower(ini["steamdirect"]) == "on";
