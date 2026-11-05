@@ -79,6 +79,9 @@ return function(api)
     if api.mapicon then
         api.mapicon.on = (settings.partnermapicon or "on"):lower() ~= "off"
     end
+    if api.freetravel then
+        api.freetravel.on = (settings.freebelltravel or "on"):lower() ~= "off"
+    end
     if api.revive then
         api.revive.set((settings.revive or "off"):lower() == "on")
     end

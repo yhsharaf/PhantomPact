@@ -29,17 +29,19 @@ return function(api)
 
     local SETTINGS = { x = 690, y = 494 }
     local BACK = { x = 40, y = 494 }
-    local OPTION_W, OPTION_H = 124, 40
-    local OPTION_X, OPTION_STEP = 300, 136
-    -- The gameplay options: a row per setting, top to bottom on the settings page.
-    local ROWS = {
-        { name = "teleport", y = 84, choices = { "off", "on" } },
-        { name = "pvp", y = 186, choices = { "off", "on" } },
-        { name = "compass", y = 237, choices = { "off", "on" } },
-        { name = "mapicon", y = 288, choices = { "off", "on" } },
-        { name = "direct", y = 339, choices = { "off", "on" } },
-        { name = "players", y = 390, choices = { "2", "4", "6" } },
-        { name = "mode", y = 441, choices = { "multiplayer", "local" } },
+    -- The gameplay options as square tiles (the user's design, art/make_online_panel.py's TILE): five on top, four centred
+    -- below. A click moves a tile to its next choice; one with no choices (Revive, still to come) only shows.
+    local TILE = 150
+    local TILES = {
+        { name = "teleport", x = 41, y = 88, choices = { "off", "on" } },
+        { name = "revive", x = 208, y = 88, choices = {} },
+        { name = "pvp", x = 375, y = 88, choices = { "off", "on" } },
+        { name = "compass", x = 542, y = 88, choices = { "off", "on" } },
+        { name = "mapicon", x = 709, y = 88, choices = { "off", "on" } },
+        { name = "freetravel", x = 124, y = 255, choices = { "off", "on" } },
+        { name = "direct", x = 291, y = 255, choices = { "off", "on" } },
+        { name = "players", x = 458, y = 255, choices = { "2", "4", "6" } },
+        { name = "mode", x = 625, y = 255, choices = { "multiplayer", "local" } },
     }
 
     local panel = { open = false }
@@ -83,6 +85,8 @@ return function(api)
             pvp = api.coop.net.party and "off" or onOff(s.pvp, "off"),     -- (off in a party, whatever the ini says)
             compass = onOff(s.partnercompass, "on"),
             mapicon = onOff(s.partnermapicon, "on"),
+            freetravel = onOff(s.freebelltravel, "on"),
+            revive = "soon",
             direct = onOff(s.steamdirect, "off"),
             players = partySize(s),
             -- Only Role = Local is local: Off, Host and Guest, and a fresh install, are all multiplayer. Read each time this
@@ -119,6 +123,11 @@ return function(api)
         elseif row == "mapicon" then
             save({ PartnerMapIcon = word })
             api.mapicon.on = on
+        elseif row == "freetravel" then
+            save({ FreeBellTravel = word })
+            if api.freetravel then
+                api.freetravel.on = on
+            end
         elseif row == "direct" then
             save({ SteamDirect = word })
         elseif row == "players" then
@@ -310,12 +319,16 @@ return function(api)
             showPage("main")
             return
         end
-        for _, row in ipairs(ROWS) do
-            for i, value in ipairs(row.choices) do
-                local at = { x = OPTION_X + (i - 1) * OPTION_STEP, y = row.y }
-                if value ~= options[row.name] and kit.inside(x, y, at, OPTION_W, OPTION_H) then
-                    choose(row.name, value)
+        for _, t in ipairs(TILES) do
+            if #t.choices > 0 and kit.inside(x, y, t, TILE, TILE) then
+                local next = t.choices[1]
+                for i, value in ipairs(t.choices) do
+                    if value == options[t.name] then
+                        next = t.choices[i % #t.choices + 1]
+                    end
                 end
+                choose(t.name, next)
+                return
             end
         end
     end
@@ -377,14 +390,9 @@ return function(api)
         kit.place(worded("on_bg2", "online_settings_bg", kit.W, kit.H, 0), 0, 0)
         kit.place(kit.part("on_close", "close", CLOSE.w, CLOSE.h, 1), CLOSE.x, CLOSE.y)
         kit.place(worded("on_back", "online_back", BUTTON_W, BUTTON_H, 1), BACK.x, BACK.y)
-        for _, row in ipairs(ROWS) do
-            for i, value in ipairs(row.choices) do
-                local x = OPTION_X + (i - 1) * OPTION_STEP
-                kit.place(worded("on_" .. row.name .. "_" .. value, "opt_" .. value, OPTION_W, OPTION_H, 1), x, row.y)
-                if value == options[row.name] then
-                    kit.place(kit.part("on_sel_" .. row.name, "sel_opt", OPTION_W, OPTION_H, 2), x, row.y)
-                end
-            end
+        for _, t in ipairs(TILES) do
+            local value = options[t.name] or t.choices[1] or "soon"
+            kit.place(worded("on_tile_" .. t.name, "tile_" .. t.name .. "_" .. value, TILE, TILE, 1), t.x, t.y)
         end
     end
 

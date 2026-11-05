@@ -541,6 +541,7 @@ PBZ = {
     game = api.game,
     link = api.link,
     story = api.story,
+    freetravel = api.freetravel,
 }
 
 -- Command file: lets a developer drive tests from outside the game. Write one command per line

@@ -2308,9 +2308,22 @@ local function offAndBack()
     local ph = p.pcs[1]
     ph.files["PhantomPact.ini"] = "Role = Host\nSecret = hunter2"
     Session.command(ph, "onlinepanel press 700 500")
-    Session.command(ph, "onlinepanel press 441 430")
+    Session.command(ph, "onlinepanel press 530 330")       -- (the Players tile: 2 -> 4)
     p:run(1)
     check(ph.files["PhantomPact.ini"]:find("Secret = hunter2\nPartySize = 4\n", 1, true) ~= nil, "a setting added to an ini with no line end at its end keeps both")
+    Session.command(ph, "onlinepanel press 530 330")
+    p:run(1)
+    check(ph.files["PhantomPact.ini"]:find("PartySize = 6", 1, true) ~= nil, "a click moves the Players tile on to its next choice")
+    check(ph.env.PBZ.freetravel.on == true, "free bell travel is on with no line for it in the ini")
+    Session.command(ph, "onlinepanel press 199 330")       -- (the Free Bell Travel tile)
+    p:run(1)
+    check(ph.files["PhantomPact.ini"]:find("FreeBellTravel = Off", 1, true) ~= nil and ph.env.PBZ.freetravel.on == false,
+        "the Free Bell Travel tile turns it off, kept in the ini and in force at once")
+    Session.command(ph, "onlinepanel press 280 150")       -- (Revive: still to come, nothing to choose)
+    Session.command(ph, "onlinepanel press 199 330")
+    p:run(1)
+    check(ph.files["PhantomPact.ini"]:find("FreeBellTravel = On", 1, true) ~= nil and ph.env.PBZ.freetravel.on == true
+        and not ph.files["PhantomPact.ini"]:find("Revive", 1, true), "and back on; the Revive tile writes nothing")
     allErrors(p)
 
     local lang = dofile(SIM_SCRIPTS .. "/lang.lua")()
@@ -3186,7 +3199,8 @@ local function modeRow()
     local s = Session.new(SIM_SCRIPTS, { "Off" }, false, ENEMIES)
     s:run(2)
     pc = s.pcs[1]
-    local LOCAL, MULTIPLAYER = "onlinepanel press 441 450", "onlinepanel press 305 450"
+    -- (One Mode tile, which a click moves to its other choice: each use below comes from the other.)
+    local LOCAL, MULTIPLAYER = "onlinepanel press 700 330", "onlinepanel press 700 330"
     Session.command(pc, "onlinepanel press 700 500")
     Session.command(pc, LOCAL)
     s:run(1)
@@ -3381,18 +3395,18 @@ local function panel()
     s:run(2)
     local h = s.pcs[1]
     Session.command(h, "onlinepanel press 700 500")      -- MORE
-    Session.command(h, "onlinepanel press 441 430")      -- the PLAYERS row's 4
+    Session.command(h, "onlinepanel press 530 330")      -- the Players tile: 2 -> 4
     s:run(1)
     check(h.files["PhantomPact.ini"]:find("PartySize = 4\n", 1, true) ~= nil, "4 is kept in the ini")
     check(h.files["PhantomPact.ini"]:find("Role = Host\n", 1, true) ~= nil and h.files["PhantomPact.ini"]:find("CoopEnemyHealth = 150\n", 1, true) ~= nil, "and nothing else moves")
-    Session.command(h, "onlinepanel press 577 430")      -- 6
+    Session.command(h, "onlinepanel press 530 330")      -- 6
     s:run(1)
     check(h.files["PhantomPact.ini"]:find("PartySize = 6\n", 1, true) ~= nil, "6 too")
-    Session.command(h, "onlinepanel press 305 430")      -- 2
+    Session.command(h, "onlinepanel press 530 330")      -- and round to 2
     s:run(1)
     check(h.files["PhantomPact.ini"]:find("PartySize = 2\n", 1, true) ~= nil, "and 2")
-    Session.command(h, "onlinepanel press 305 100")      -- the TP row, moved up to fit
-    Session.command(h, "onlinepanel press 441 100")
+    Session.command(h, "onlinepanel press 47 94")        -- the TP tile, at its very corner
+    Session.command(h, "onlinepanel press 400 470")      -- under the tiles: nothing
     s:run(1)
     check(h.files["PhantomPact.ini"]:find("PartnerTeleport = On\n", 1, true) ~= nil, "the rows that moved up still answer where they're drawn")
     allErrors(s)
