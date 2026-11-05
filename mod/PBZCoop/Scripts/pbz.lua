@@ -79,7 +79,7 @@ return function(api)
         -- on the guest, they couldn't be talked to and their fight never ended there), nor an enemy the game brings back
         -- again and again for a puzzle (the Bomber that opens the way to the Red House: killed for good on the guest, the
         -- way stayed shut). Each world has its own, as alone.
-        if cn:find("NpcHelper", 1, true) or cn:find("Respawn_C$") then
+        if cn:lower():find("npchelper", 1, true) or cn:find("Respawn_C$") then     -- (spelt NpcHelper and NPChelper)
             return false
         end
         local ok, monster = pcall(function() return actor.BIsMonster end)
