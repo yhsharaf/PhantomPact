@@ -852,15 +852,21 @@ return function(api)
             paidThere = true        -- the guest's game ran that death itself, loot and all
         end
         if dead then
+            -- (A guest's kill heard after it died here anyway is done with: kept, it killed the spawner's next enemy under
+            -- that id on its first turn.)
+            net.guestKilled[name] = nil
             if net.guestRuns[name] then
                 handover.drop(actor, addr, name)
             end
             -- (And by the body: a rest forgets the names, and a spawner's new enemy under the same id clears its name each
             -- turn, so the old body's turn told its death again, every round: boss items paid twice, and the guest's live
             -- copy killed.)
-            if not net.deadSent[name] and not net.deadBodies[addr] then
+            -- (The body by its address, id and actor name: by address alone, a later enemy that got a collected body's
+            -- address was taken for it, and its death never told.)
+            local body = name .. "|" .. tostring(select(2, pcall(function() return actor:GetFName():ToString() end)))
+            if not net.deadSent[name] and net.deadBodies[addr] ~= body then
                 net.deadSent[name] = true
-                net.deadBodies[addr] = true
+                net.deadBodies[addr] = body
                 sendEvent("K", name)
                 log("Enemy died here: " .. name .. "; telling the other player.")
                 if game.markBeaten then
@@ -1566,9 +1572,20 @@ return function(api)
     -- Client: what bringBack turned back in this save's records goes back as it was.
     function bring.putBackAll()
         if game.putBack and next(net.broughtBack) then
-            game.putBack(net.broughtBack)
+            game.putBack(net.broughtBack)       -- (those not loaded now stay owed: game.owed, tried again later)
         end
         net.broughtBack, net.bringing = {}, {}
+    end
+
+    -- Records still owed (their spawner wasn't loaded when they were to be put back) are tried again every few seconds, sync
+    -- on or off, leaving out those a session uses right now. (Its own loop: coop's ticks stop with sync.)
+    if type(LoopInGameThreadWithDelay) == "function" then
+        LoopInGameThreadWithDelay(5000, function()
+            if game.owed and next(game.owed.ids) then
+                pcall(game.owed.retry, net.broughtBack)
+            end
+            return false
+        end)
     end
 
     local function startGuestRound(now)
@@ -1925,11 +1942,12 @@ return function(api)
                             log("Boss items for your partner too: " .. table.concat(paid, ", ") .. ".")
                         end
                     elseif not real and game.rollLoot then
-                        payKillLoot(name, actor, nil, from)
+                        payKillLoot(name, actor, nil, not boss and from or nil)     -- (a boss's: everyone's, as by its real death)
                     end
                     -- At once, not at the enemy's next turn: the partner is looking at a copy held at 1 health.
                     net.deadSent[name] = true
-                    net.deadBodies[actor:GetAddress()] = true   -- (by the body too, as shareEnemy marks it: else a new enemy
+                    net.deadBodies[actor:GetAddress()] = name .. "|" .. tostring(select(2, pcall(function()
+                        return actor:GetFName():ToString() end)))   -- (by the body too, as shareEnemy marks it: else a new enemy
                                                                 -- under the id cleared the name, the old body told it again,
                                                                 -- and a boss's items went out twice)
                     sendEvent("K", name)

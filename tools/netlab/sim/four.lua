@@ -1523,6 +1523,27 @@ local function hostsEnemiesHere()
     check(field(tsp, "record") == false, "sync off: the guest's save has it dead again")
     allErrors(t)
 
+    -- Its spawner streamed out when the session ended: put back once it's loaded again.
+    local u = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES)
+    local uh, ug = u.pcs[1], u.pcs[2]
+    local ui = Session.indexOf(ug, "thug1")
+    local usp = ug.spawners[ui]
+    Fake.put(usp, "record", false)
+    Fake.put(usp, "SpawnedAI", nil)
+    table.remove(ug.enemies, ui)
+    Session.moveTo(uh, 1000, 300)
+    Session.moveTo(ug, 1200, 300)
+    u:run(8)
+    check(field(usp, "record") == true, "(brought back)")
+    table.remove(ug.spawners, ui)          -- (its part of the map streams out)
+    Session.command(ug, "netoff")
+    u:run(1)
+    check(field(usp, "record") == true, "(not there to put back)")
+    table.insert(ug.spawners, ui, usp)     -- (and streams in again)
+    u:run(7)
+    check(field(usp, "record") == false, "a spawner not loaded when the session ended is put back once it is")
+    allErrors(u)
+
     -- The guest's killing blow on the host's boss: the host's world has it beaten, as its own blow would.
     local k, kh, kg = pair()
     Session.moveTo(kh, 3000, 2800)

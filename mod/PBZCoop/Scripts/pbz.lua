@@ -521,6 +521,12 @@ return function(api)
         end
         local dead = game.isBeaten(enemyId) == true
         if dead then
+            -- (Owed from now: written dead again at the session's end, or later if its spawner isn't there then.)
+            local owed = game.owed.load()
+            if not owed[enemyId] then
+                owed[enemyId] = true
+                pcall(game.owed.save)
+            end
             pcall(function()
                 s.ShouldSpawn = true
                 if s:IsA(StaticFindObject(SPAWNER_BP)) then
@@ -535,13 +541,25 @@ return function(api)
         return ok, dead
     end
 
+    -- Records bringBack turned back that aren't dead again yet: one whose spawner had streamed out when the session ended
+    -- left that enemy alive in this save for good. Each is written dead again the next time its spawner is loaded
+    -- (game.owed.retry), and only then dropped. In memory only: a list kept in a file would follow the player into
+    -- another save, and kill there an enemy that save has alive.
+    game.owed = { ids = {} }
+    function game.owed.load()
+        return game.owed.ids
+    end
+    function game.owed.save()
+    end
+
     -- Spawners bringBack turned back, as this save had them: dead. One id, or a set of ids (id -> true) in one look
-    -- through the spawners.
+    -- through the spawners. Those not loaded now stay owed (game.owed).
     function game.putBack(ids)
         if type(ids) == "string" then
             ids = { [ids] = true }
         end
         local n = 0
+        local found = {}
         for _, s in ipairs(next(ids) and FindAllOf("AISpawner") or {}) do
             pcall(function()
                 if not valid(s) then
@@ -555,10 +573,34 @@ return function(api)
                         s:Save()
                     end
                     n = n + 1
+                    found[name] = true
                 end
             end)
         end
+        local owed, changed = game.owed.load(), false
+        for id in pairs(ids) do
+            local want = not found[id] or nil
+            if owed[id] ~= want then
+                owed[id], changed = want, true
+            end
+        end
+        if changed then
+            pcall(game.owed.save)
+        end
         return n > 0
+    end
+
+    -- Every few seconds while any are owed: those not in use by a session right now (keep: id -> true) are tried again.
+    function game.owed.retry(keep)
+        local try = {}
+        for id in pairs(game.owed.load()) do
+            if not (keep and keep[id]) then
+                try[id] = true
+            end
+        end
+        if next(try) then
+            game.putBack(try)
+        end
     end
 
     -- Cached for ENEMY_CACHE_S: the host and client halves (and aggro) all ask within the same tick.
