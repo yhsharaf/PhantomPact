@@ -75,7 +75,11 @@ return function(api)
     local BYTES_LOG_S = 60        -- seconds between lines on how much we send
     local ENEMY_RADIUS_CM = 6000  -- host shares enemies within this distance of its player
     local PARTNER_REACH_CM = 12000 -- and around a client this close to it. (Measured: enemies fight a client up to 120 m off, not at 200.)
-    local ENEMY_ROUND_S = 0.1     -- each enemy in reach gets a turn this often, a few per frame so none costs a hitch
+    -- Each enemy in reach gets a turn this often, a few per frame so none costs a hitch: 30 a second (was 10). On the guest a
+    -- copy then runs on 3-4 cm past a stop instead of 20 (latency.hpp's run_enemy), and on the bench host, 12 thugs around,
+    -- it cost about 2 ms of game thread a second with frame times unchanged (16-17 ms typical, 23-25 at the 99th).
+    -- net.enemyRoundS overrides it (a dev eval, for measuring).
+    local ENEMY_ROUND_S = 1 / 30
     local ENEMY_LIST_S = 0.5      -- and who's in reach is worked out this often
     local ENEMY_STALE_S = 1.0     -- a host enemy not updated this long is no longer shared
     local ENEMY_MATCH_CM = 2000   -- client: a same-class enemy this close stands in for a host enemy with another id
@@ -1696,7 +1700,7 @@ return function(api)
                 local near = t ~= nil and not net.ghostHidden and gap3d(origin, t) <= PARTNER_REACH_CM
                 updateReach(origin, near and t or nil, dt)
             end
-            if round.at > #round.queue and now - round.startedAt >= ENEMY_ROUND_S then
+            if round.at > #round.queue and now - round.startedAt >= (net.enemyRoundS or ENEMY_ROUND_S) then
                 startHostRound(now)
             end
         else
@@ -1713,12 +1717,12 @@ return function(api)
                 return
             end
             updateReach(origin, nil, dt)
-            if round.at > #round.queue and now - round.startedAt >= ENEMY_ROUND_S then
+            if round.at > #round.queue and now - round.startedAt >= (net.enemyRoundS or ENEMY_ROUND_S) then
                 startGuestRound(now)
             end
         end
         -- Whatever share of the round this frame stands for.
-        local turns = math.ceil(#round.queue * math.max(dt, 0.004) / ENEMY_ROUND_S)
+        local turns = math.ceil(#round.queue * math.max(dt, 0.004) / (net.enemyRoundS or ENEMY_ROUND_S))
         for _ = 1, turns do
             local item = round.queue[round.at]
             if item == nil then

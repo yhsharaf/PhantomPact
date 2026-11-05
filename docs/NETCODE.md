@@ -152,6 +152,14 @@ delay; 30 a second with half the round trip is 10 ms behind, about as smooth as 
 19, 41 cm back at worst against 49). A line rate above 10 is more work for every enemy on the host's game thread each turn,
 so that needs the real game's frame time first (`PERF.stages`), and nothing about enemies changed here.
 
+Since then (11-05, six-players): **30 lines a second**, no carrying on. `run_enemy` over RTT 30/80/150/250 ms, 10 ms jitter,
+1% loss, six enemy paths each: the delay stays where it was (56 ms behind at RTT 80), and a stop runs on 3-4 cm typically
+instead of 18-21 (20 a second: 6 cm), 29-50 cm at worst instead of 67-71. Carrying the line on by half the round trip still
+doubles the overshoot at every rate, so it stays off. On the bench host (host and guest copies on one PC, 12 thugs spawned
+around the host, `PERF.frames` and `PERF.profile` for 12 s at each rate, twice): `link.enemy` went from about 1,300 calls to
+3,500, the enemy work from about 4.5 to 6.8 ms of game thread a second, and the frames didn't move (59-60 FPS, 16-17 ms
+typical, 23-25 at the 99th percentile, none over 50 ms at 30 a second). `net.enemyRoundS` overrides the rate from a dev eval.
+
 ## Testing
 
 See `tools/netlab/README.md`. `relay_cli test` is the logic, `tools/netlab/bench.ps1` is two relays through a bad connection,
