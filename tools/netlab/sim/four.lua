@@ -1846,6 +1846,39 @@ local function playerReports()
         allErrors(s)
     end
     do
+        -- Report 3: "small enemies go invisible; teleporting to the player or sitting at a bell sets it off".
+        local s = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES)
+        local h, g = s.pcs[1], s.pcs[2]
+        local i = Session.indexOf(h, "thug1")
+        table.remove(h.enemies, i)
+        table.remove(h.spawners, i)
+        Session.moveTo(h, 1000, 300)
+        Session.moveTo(g, 1200, 300)
+        s:run(8)
+        local copy = Session.enemyOn(g, "thug1")
+        check(field(copy, "hidden") == true, "(an enemy only the guest's save has is put aside)")
+        local handlers = h.env.PBZ.coop.handlers
+        local realHAS = handlers.HAS
+        handlers.HAS = function() end               -- (the host says no more "no": as if its world had it now)
+        s:run(30)
+        check(field(copy, "hidden") ~= true, "a 'not in my world' gone stale doesn't keep an enemy hidden for good")
+        handlers.HAS = realHAS
+        allErrors(s)
+
+        local t = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES)
+        local th, tg = t.pcs[1], t.pcs[2]
+        local j = Session.indexOf(th, "thug1")
+        table.remove(th.enemies, j)
+        table.remove(th.spawners, j)
+        Session.moveTo(th, 1000, 300)
+        Session.moveTo(tg, 1200, 300)
+        t:run(1)
+        Session.loadMap(th)                         -- (the host's world loads: a trip or a bell)
+        t:run(6)
+        check(count(th.sent, "^E NOT sp:thug1$") == 0, "a host whose world is still loading doesn't say 'not here'")
+        allErrors(t)
+    end
+    do
         -- Report 1: "the guest empties a small enemy's bar and it can still be hit, now and then it never dies".
         local s, h, g = pair()
         Session.moveTo(g, 400, 300)

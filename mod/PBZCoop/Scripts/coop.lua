@@ -1148,6 +1148,14 @@ return function(api)
         net.aside = keep or {}
     end
 
+    -- A trip, a load or a rest here: every "no" heard is old news (the enemies around have changed), what was put aside comes
+    -- back to be asked about afresh, and as host, no "no" is given while this world settles (see HAS).
+    function net.unsettle()
+        net.unsettledUntil = os.clock() + net.UNSETTLED_S
+        net.notOnHost = {}
+        pcall(showAside)
+    end
+
     -- Each player keeps their own save, so the two worlds can disagree on who's dead, and near the host its world leads. An
     -- enemy this world has and the host's hasn't would fight this player with nothing for the host to see or hit. Not being
     -- in the host's lines proves nothing: those only cover what's near it, and a copy here may have run after this player. So
@@ -1183,15 +1191,32 @@ return function(api)
                     sendEvent("HAS", name)
                 end
             elseif near then
-                -- (A new enemy at a gone one's address isn't that one: it took its record, stopped and never woke.)
+                -- (A new enemy at a gone one's address isn't that one: it took its record, stopped and never woke. Nor left
+                -- hidden: the record put aside an actor the game brought back at that address, unseen but fighting.)
                 local a = net.aside[e.addr]
+                if a and a.name ~= name and a.hidden then
+                    game.stepAside(e.actor, false, a.home)
+                    game.startAI(e.actor)
+                end
                 if not a or a.name ~= name then
+                    a = { actor = e.actor, name = name, since = now, askedAt = -1e9 }
+                end
+                -- The host's "no" stays good NOT_LIFE_S: one given while its world was still loading (a teleport, a bell) hid
+                -- an enemy it had, for good. A hidden one is asked about again now and then, and back if no fresh "no" comes.
+                local saidNot = net.notOnHost[name] and now - net.notOnHost[name] < net.NOT_LIFE_S
+                if a.hidden and not saidNot then
+                    game.stepAside(e.actor, false, a.home)
+                    game.startAI(e.actor)
                     a = { actor = e.actor, name = name, since = now, askedAt = -1e9 }
                 end
                 kept[e.addr] = a
                 if a.hidden then
                     a.brain = game.stopAI(e.actor, a.brain)     -- (the game starts a stopped AI again by itself)
-                elseif net.notOnHost[name] then
+                    if now - a.askedAt >= ASK_AGAIN_S then
+                        a.askedAt = now
+                        sendEvent("HAS", name)
+                    end
+                elseif saidNot and not net.hitHere[name] then   -- (never one this player is fighting)
                     a.hidden = true
                     a.home = { X = e.loc.X, Y = e.loc.Y, Z = e.loc.Z }
                     game.stepAside(e.actor, true, a.home)
@@ -1207,9 +1232,14 @@ return function(api)
         -- the host, or it came straight back down.)
         for addr, a in pairs(net.aside) do
             if not kept[addr] and a.hidden and a.home and here and valid(a.actor) and not game.isDead(a.actor)
-                and inReach(a.home.X, a.home.Y, a.home.Z, t) then
+                and inReach(a.home.X, a.home.Y, a.home.Z, t)
+                and net.notOnHost[a.name] and now - net.notOnHost[a.name] < net.NOT_LIFE_S then
                 kept[addr] = a
                 a.brain = game.stopAI(a.actor, a.brain)
+                if now - a.askedAt >= ASK_AGAIN_S then
+                    a.askedAt = now
+                    sendEvent("HAS", a.name)
+                end
             end
         end
         showAside(kept)
@@ -1233,6 +1263,8 @@ return function(api)
     local HEAL_TICKS = 1.0
     local HELD_HP = 1             -- the floor the client's copies of host enemies are held at
     net.LETHAL_AGAIN_S, net.LETHAL_TRIES = 0.8, 4   -- a killing blow with no K back is told again this often, this many times
+    net.NOT_LIFE_S = 25           -- client: the host's "not in my world" (NOT) is good this long (asked again every ASK_AGAIN_S)
+    net.UNSETTLED_S = 10          -- host: no NOT this long after its own load, rest or trip
 
     -- keep: address -> actor still held this tick (nil releases every held copy).
     local function releaseHeld(keep)
@@ -2423,6 +2455,7 @@ return function(api)
         for name in pairs(net.hostKilled) do
             net.pendingDeaths[name] = true
         end
+        net.unsettle()      -- (a rest: enemies back, and every "no" heard is old news, a party's rest too)
         if whose then
             endFights(whose)
             game.forgetFocus()
@@ -2463,6 +2496,7 @@ return function(api)
     end
 
     local function onLocalRest(kind)
+        net.unsettle()
         -- (A guest's own death refreshes only its own world: the host's enemies, and their twins, go on.)
         net.restRefreshes = isHost()
         restEvent(kind)
@@ -2752,7 +2786,16 @@ return function(api)
         if not isHost() then
             return
         end
-        local list, addrs = game.listEnemies()
+        -- (Not while this world is still settling, after a load, a rest or a trip: its enemies there aren't all in, or not yet
+        -- known by their spawner, and a "no" hid an enemy it had on the guest's screen: invisible enemies after a teleport or a
+        -- bell. The guest asks again.)
+        if os.clock() < (net.unsettledUntil or 0) then
+            return
+        end
+        if game.refreshEnemyIds then
+            game.refreshEnemyIds(true)
+        end
+        local list, addrs = game.listEnemies(true)
         for i, actor in ipairs(list) do
             if valid(actor) and enemyName(actor, addrs[i]) == name and not game.isDead(actor) then
                 return
@@ -2771,7 +2814,7 @@ return function(api)
         if from ~= nil then
             return          -- (the host's word only: another guest's, passed on by the relay, is no host's)
         end
-        net.notOnHost[name] = true
+        net.notOnHost[name] = os.clock()        -- (when: a "no" goes stale, see setAside)
     end
 
     handlers.C = function(amount)
@@ -2785,6 +2828,7 @@ return function(api)
 
     -- side: how far off the spot to land. (Beside a boss, not on it. On a partner it's fine: the ghost ignores pawns.)
     local function arriveAt(pawn, at, side)
+        net.unsettle()
         pawn.CharacterMovement:SetMovementMode(MOVE_FLYING, 0)
         local spot = { X = at.X + (side or BOSS_JOIN_SIDE_CM), Y = at.Y, Z = at.Z + 100 }
         pawn:K2_SetActorLocation(spot, false, {}, true)
@@ -3546,6 +3590,8 @@ return function(api)
     pcall(function()
         RegisterLoadMapPreHook(function()
             net.tellLoading()
+            net.unsettledUntil = os.clock() + net.UNSETTLED_S + 20     -- (a load takes a while: no "no" given till settled)
+            net.notOnHost, net.aside = {}, {}     -- (this world's actors go with the load: nothing to bring back down)
             -- Enemies this world brought back for the host go back to dead in it before it's saved and left: put back at the
             -- end of the session, they'd be put back in whatever world is loaded then.
             pcall(bring.putBackAll)
