@@ -127,7 +127,11 @@ return function(api)
         if now - loadsWindow >= 60 then
             loads, loadsWindow = 0, now
         end
-        if loads >= MAX_NEW_LOADS_PER_MIN then
+        -- (For each partner: one cap for a whole party of five, each with weapons of their own, refused real moves for a
+        -- minute at a time.)
+        local partners = 1
+        pcall(function() partners = math.max(1, #api.coop.partners()) end)
+        if loads >= MAX_NEW_LOADS_PER_MIN * partners then
             return false
         end
         loads = loads + 1

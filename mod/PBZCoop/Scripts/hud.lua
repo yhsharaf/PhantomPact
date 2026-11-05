@@ -197,9 +197,10 @@ return function(api)
             return
         end
         local now = os.clock()
-        if now >= nextLayout or not (valid(dotWidget) and valid(camera)) then
+        -- (On screen, not only valid: one gone with a map change reads as valid for a while, and moving it crashed.)
+        if now >= nextLayout or not (onScreen(dotWidget) and valid(camera)) then
             nextLayout = layOut() and now + LAYOUT_S or 0
-            if not (valid(dotWidget) and valid(camera)) then
+            if not (onScreen(dotWidget) and valid(camera)) then
                 return
             end
         end
@@ -274,9 +275,9 @@ return function(api)
             return
         end
         local now = os.clock()
-        if now >= nextLayout or not (valid(dotWidget) and valid(camera)) then
+        if now >= nextLayout or not (onScreen(dotWidget) and valid(camera)) then
             nextLayout = layOut() and now + LAYOUT_S or 0
-            if not (valid(dotWidget) and valid(camera)) then
+            if not (onScreen(dotWidget) and valid(camera)) then
                 return
             end
             for _, d in ipairs(extraDots) do

@@ -102,7 +102,8 @@ return function(api)
 
     local function part(name, tex, w, h, z)
         local p = parts[name]
-        if p and valid(p.widget) then
+        -- (On screen: one left from the map before reads as valid, and drawing it crashed.)
+        if p and api.status and api.status.onScreen and api.status.onScreen(p.widget) then
             return p
         end
         local widget = hud.newImage("panel/" .. tex .. ".png", w, h, Z + (z or 0))

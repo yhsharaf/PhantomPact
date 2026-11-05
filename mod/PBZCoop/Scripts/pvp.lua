@@ -36,8 +36,13 @@ return function(api)
     local function faction(actor)
         local addr = actor:GetAddress()
         local c = factionOf[addr]
+        -- (And still that actor's: another at the same address after the old one was collected got its faction set.)
         if valid(c) then
-            return c
+            local ok, owner = pcall(function() return c:GetOwner() end)
+            if ok and valid(owner) and owner:GetAddress() == addr then
+                return c
+            end
+            factionOf[addr] = nil
         end
         for _, comp in ipairs(FindAllOf("FactionComponent") or {}) do
             local ok, owner = pcall(function() return comp:GetOwner() end)
@@ -223,6 +228,15 @@ return function(api)
 
     local function tick()
         if not pvp.on then
+            if pvp.unhostileDue then
+                local _, body = getPlayer1()
+                if valid(body) and valid(net.ghost) then
+                    pvp.unhostileDue = nil
+                    setHostile(body, net.ghost, false)
+                elseif not valid(net.ghost) then
+                    pvp.unhostileDue = nil
+                end
+            end
             return
         end
         local _, pawn = getPlayer1()
@@ -267,7 +281,12 @@ return function(api)
             scoreRound(true)
         elseif kind == "parry" then
             -- Our swing was parried: stagger and lose posture, like a boss whose attack you deflected.
-            local amount = math.min(tonumber(arg) or pvp.parryPosture, 400)
+            -- (Off the wire: "nan" emptied this player's posture, a huge negative overfilled it.)
+            local a = tonumber(arg)
+            if not a or a ~= a or a < 0 then
+                a = pvp.parryPosture
+            end
+            local amount = math.min(a, 400)
             local _, pawn = getPlayer1()
             if not valid(pawn) then
                 return
@@ -295,14 +314,18 @@ return function(api)
             setAttr(pawn, "Health_Min", 0)     -- (1.1.0 duels held health at 1; deaths are real now)
         end
         if not on then
-            if valid(pawn) then
-                if valid(net.ghost) then
+            -- (The ghost made harmless whether or not this player has a body right now: ended while dead or loading, it
+            -- stayed armed and hostile with PvP off.)
+            if valid(net.ghost) then
+                if valid(pawn) then
                     setHostile(pawn, net.ghost, false)
-                    if game.setupGhost then
-                        game.setupGhost(net.ghost)       -- harmless again
-                    end
-                    game.shieldGhost(net.ghost, true)    -- and out of the enemies' reach
+                else
+                    pvp.unhostileDue = true     -- (the tick does it once there's a body)
                 end
+                if game.setupGhost then
+                    game.setupGhost(net.ghost)       -- harmless again
+                end
+                game.shieldGhost(net.ghost, true)    -- and out of the enemies' reach
             end
             hostileGhost = nil
         end

@@ -199,8 +199,15 @@ return function(api)
                 end
                 if api.scaling and (tonumber(s.coopenemyhealth) or tonumber(s.coopenemyposture)) then
                     -- (Whole numbers: %d throws on 150.5, and the throw skipped the PvP settings below too.)
-                    api.scaling.command(string.format("%d %d", math.floor(tonumber(s.coopenemyhealth) or 150),
-                        math.floor(tonumber(s.coopenemyposture) or 130)))
+                    -- (And finite, in range: 1e999 threw the same way.)
+                    local function whole(v, default)
+                        v = tonumber(v)
+                        if not v or v ~= v then
+                            return default
+                        end
+                        return math.floor(math.max(1, math.min(1000, v)))
+                    end
+                    api.scaling.command(string.format("%d %d", whole(s.coopenemyhealth, 150), whole(s.coopenemyposture, 130)))
                 end
                 if api.pvp then
                     if tonumber(s.pvpdamage) then

@@ -492,6 +492,7 @@ return function(api)
     V.OPT_NEAR_CM = 8000
     V.OPT_FAR_CM = 10000
     V.unoptimized = {}          -- proxy address -> true while switched off by us
+    V.optProxy = {}             -- proxy address -> the proxy, to give its optimizations back
     V.nextOpt = 0
     local function keepEnemiesAlive(p1, p2)
         if os.clock() < V.nextOpt then
@@ -518,6 +519,7 @@ return function(api)
                     if not V.unoptimized[addr] and d2 <= V.OPT_NEAR_CM then
                         pcall(function() proxy:DisableAllOptimizations() end)
                         V.unoptimized[addr] = true
+                        V.optProxy[addr] = proxy
                     end
                     -- (Flowers and such have a proxy too. Asked for a Soul's parts, UE4SS can answer from some class it has seen, and calling into
                     -- what it hands back killed the game beside a Memory Flower.)
@@ -578,16 +580,26 @@ return function(api)
                     end
                     if V.unoptimized[addr] and d2 > V.OPT_FAR_CM then
                         pcall(function() proxy:EnableOptimizations() end)
-                        V.unoptimized[addr] = nil
+                        V.unoptimized[addr], V.optProxy[addr] = nil, nil
                     end
                 end
             end
         end
         for addr in pairs(V.unoptimized) do
             if not seen[addr] then
-                V.unoptimized[addr] = nil
+                V.unoptimized[addr], V.optProxy[addr] = nil, nil
             end
         end
+    end
+
+    -- Back to one player: what was switched off for player 2 goes back to the game's own.
+    function V.giveBackOptimizations()
+        for addr, proxy in pairs(V.optProxy) do
+            if valid(proxy) and proxy:GetAddress() == addr then
+                pcall(function() proxy:EnableOptimizations() end)
+            end
+        end
+        V.unoptimized, V.optProxy = {}, {}
     end
 
     -- An enemy only closes in on a target that its fight area (the game's "mob domain") lists as inside, and the area
@@ -1074,7 +1086,10 @@ return function(api)
                 downSince = nil
                 -- (Player 2 down is held at a sliver of health, never dead: going by that, both down brought player 1 back
                 -- beside player 2's body, and nobody ever went to the bell. Nor is a player 2 with no pad any help.)
-                if valid(p2) and not game.isDead(p2) and not p2DownSince and not waiting[2] then
+                -- (And not one at the floor: player 2's killing blow while player 1 lay dead stopped at it, and the check
+                -- that marks player 2 down never ran, as this returns first.)
+                if valid(p2) and not game.isDead(p2) and not p2DownSince and not waiting[2]
+                    and (game.getHealth(p2) or 0) > DOWN_HP then
                     revivePlayer1(p1, p2)
                 else
                     log("Both players are down: back to the bell.")
@@ -1281,13 +1296,17 @@ return function(api)
         V.dropHud()
         V.dropDeathCard()
         V.real, V.realUp, V.pointsFor, V.points = nil, false, nil, nil
-        api.gs():SetForceDisableSplitscreen(pc, true)
+        if valid(pc) then
+            api.gs():SetForceDisableSplitscreen(pc, true)   -- (none mid-load: the call threw, and nothing below ran)
+        end
         local hadWait1 = waiting[1] ~= nil
         waiting, configApplied = {}, false
         p2Dust, p2DownSince, fallingSince = nil, nil, nil
         -- (A screen up as player 2 left (the boat's is one, all ride long): the next look found it gone, took that for the
         -- menu closing, and split the screen again, a black half for nobody, pads routed to an empty player 2.)
         menuOpen, V.screenHeld, V.sceneHeld = false, nil, nil
+        -- (Enemies switched to full detail for player 2 went back to the game's own: they stayed at full cost all solo.)
+        V.giveBackOptimizations()
         api.setGamepadOffset(false)
         routePads(nil)
         if valid(pc) then
@@ -1321,6 +1340,8 @@ return function(api)
             goSolo()
         elseif paused then
             join()
+        elseif menuOpen then
+            configApplied = false       -- (under a game menu: split as the menu closes, as claim does)
         else
             applyConfig()
         end
@@ -2634,6 +2655,9 @@ return function(api)
 
     -- Where the game shows the thing's own prompt, or over it when it has none. Nil for what has no place in the world (a loot card).
     function V.promptAnchor(target)
+        if not valid(target) then
+            return nil              -- (a pickup player 2 just took: touched once gone, a crash pcall doesn't catch)
+        end
         local ok, at = pcall(function()
             local wc = not isGapBlocker(target) and target:GetComponentByClass(StaticFindObject("/Script/UMG.WidgetComponent")) or nil      -- (a gap's is by the Soul: the point to reach is the actor)
             if valid(wc) then
@@ -3037,6 +3061,13 @@ return function(api)
                     -- Kept by enemy address: the next map's enemies get those addresses, and an old time could hold one
                     -- back from waking for player 2, or skip its fight area.
                     V.armed, V.noticed, V.bossArmed, V.domainFailAt, V.aiComps = {}, {}, {}, {}, {}
+                    V.unoptimized, V.inFace, V.optProxy = {}, {}, {}
+                    -- (Player 1 back on controller 0: with the keyboard for player 2 it was on 1, and player 2's new
+                    -- local player, asked for on 1, was refused after every load.)
+                    local pc1 = getPlayer1()
+                    if valid(pc1) then
+                        pcall(function() api.gs():SetPlayerControllerID(pc1, 0) end)
+                    end
                     api.removePlayer2()
                     V.dropHud()
                     V.dropDeathCard()
