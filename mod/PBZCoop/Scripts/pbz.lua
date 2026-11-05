@@ -692,7 +692,7 @@ return function(api)
                 w:ForSeq_UpdateHealth(hp / maxhp)
             end
         end)
-        if bosses[actor:GetAddress()] then
+        if game.bossAt(actor:GetAddress(), actor) then
             pcall(function()
                 local addr = actor:GetAddress()
                 local hud = FindFirstOf("PBZHUDLayout")
@@ -796,11 +796,30 @@ return function(api)
         return #game.bossActors() > 0
     end
 
+    -- A boss fight's boss at this address, and still that actor (by its name): one unloaded mid-fight without a word left its
+    -- address marked, and the enemy that got the address next was taken for the boss (its health on the bar, its items
+    -- sent as a boss's). A stale mark is dropped.
+    function game.bossAt(addr, actor)
+        local mark = bosses[addr]
+        if not mark then
+            return false
+        end
+        if mark == true or actor == nil then
+            return true
+        end
+        local ok, name = pcall(function() return actor:GetFName():ToString() end)
+        if ok and name == mark then
+            return true
+        end
+        bosses[addr], bossActors[addr] = nil, nil
+        return false
+    end
+
     -- The bosses of the fights going on: live actors only.
     function game.bossActors()
         local out = {}
         for addr, actor in pairs(bossActors) do
-            if bosses[addr] and valid(actor) and not game.isDead(actor) then
+            if valid(actor) and game.bossAt(addr, actor) and not game.isDead(actor) then
                 out[#out + 1] = actor
             else
                 -- Gone without a word (the player's own death reloads the fight): the fight is over for us too.
@@ -1163,7 +1182,7 @@ return function(api)
         if twin.at(addr, actor) then
             return false
         end
-        if bosses[addr] then
+        if game.bossAt(addr, actor) then
             return true
         end
         local known = knownBoss[addr]
@@ -1194,8 +1213,8 @@ return function(api)
     pcall(function()
         RegisterHook("/Script/ProjectPBZ.PBZHUDLayout:RegisterBossHPBar", function(_, bossParam)
             local boss = bossParam:get()
-            if valid(boss) and not bosses[boss:GetAddress()] and not twin.at(boss:GetAddress(), boss) then
-                bosses[boss:GetAddress()] = true
+            if valid(boss) and not game.bossAt(boss:GetAddress(), boss) and not twin.at(boss:GetAddress(), boss) then
+                bosses[boss:GetAddress()] = boss:GetFName():ToString()
                 bossActors[boss:GetAddress()] = boss
                 log("Boss fight: " .. boss:GetFName():ToString())
                 if api.coop and not showingRemoteBoss then
@@ -1225,7 +1244,7 @@ return function(api)
     -- The other player's game started a fight with this boss: show its health bar here too (our copy of the
     -- boss mirrors the host's health, so the bar follows the real fight).
     function game.showBossBar(boss)
-        if not valid(boss) or bosses[boss:GetAddress()] then
+        if not valid(boss) or game.bossAt(boss:GetAddress(), boss) then
             return
         end
         local hud = FindFirstOf("PBZHUDLayout")
@@ -1236,7 +1255,7 @@ return function(api)
         showingRemoteBoss = true
         local ok, err = pcall(function() hud:RegisterBossHPBar(boss) end)
         showingRemoteBoss = false
-        bosses[boss:GetAddress()] = true
+        bosses[boss:GetAddress()] = boss:GetFName():ToString()
         bossActors[boss:GetAddress()] = boss
         log(ok and ("Showing boss bar for " .. boss:GetFName():ToString()) or ("Boss bar failed: " .. tostring(err)))
     end
@@ -1793,12 +1812,23 @@ return function(api)
         if hitreactMissUntil[addr] ~= nil and os.clock() < hitreactMissUntil[addr] then
             return nil
         end
-        for _, c in ipairs(FindAllOf("HitreactComponent") or {}) do
-            local ok, owner = pcall(function() return c:GetOwner() end)
-            if ok and valid(owner) and owner:GetAddress() == addr then
-                hitreactMissUntil[addr] = nil
-                return c
+        -- (One search of every component, kept half a second, for all the lookups in that time: a search each, several
+        -- copies with none came due in the same frame and hitched it.)
+        local scan = game.hitScan
+        if not scan or os.clock() - scan.at > 0.5 then
+            scan = { at = os.clock(), byOwner = {} }
+            for _, c in ipairs(FindAllOf("HitreactComponent") or {}) do
+                local ok, owner = pcall(function() return c:GetOwner() end)
+                if ok and valid(owner) then
+                    scan.byOwner[owner:GetAddress()] = c
+                end
             end
+            game.hitScan = scan
+        end
+        local c = scan.byOwner[addr]
+        if valid(c) then
+            hitreactMissUntil[addr] = nil
+            return c
         end
         hitreactMissUntil[addr] = os.clock() + HITREACT_RETRY_S
         return nil
