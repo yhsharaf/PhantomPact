@@ -55,6 +55,11 @@ return function(api)
         if not due then
             return
         end
+        -- (Not in the seconds after a load or a trip, while the world still streams in: its loads of the masks and its
+        -- search of every object came just before the bench's crashes inside UE4SS. See coop.lua's QUIET_AFTER_LOAD_S.)
+        if os.clock() < (api.coop.net.quietUntil or 0) then
+            return
+        end
         local _, pawn = api.getPlayer1()
         if not valid(pawn) or (api.game.inCutscene and api.game.inCutscene()) then
             return
