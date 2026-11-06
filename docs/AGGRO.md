@@ -26,7 +26,11 @@ The host, once a second, for each enemy near two players or more (within 25 m), 
   less, so a first hit isn't "the most damage", and two or three are, whatever its health. (A floor of 3% of its health
   was 10,000 points on the bench's boss: a guest hitting it for a minute never counted, and the owner saw it "totally
   ignores the one that is hitting him".)
-- **Score** = near + damage. It goes for the highest, and turns from its target only when all of these hold:
+- **Healing**: 1 more for 4 s from the start of a drink from the gourd, as much as having done the most damage: a drink
+  draws its eye (the owner's choice, from a design a friend sent: "punish healing"). It still turns only by the rules
+  below, so a drink right after a turn does nothing, and drinking can't spin it. A guest's drink reaches the host as
+  `HEAL` (quick lane); an older host has no handler for it and leaves it.
+- **Score** = near + damage + healing. It goes for the highest, and turns from its target only when all of these hold:
   - someone else is 0.5 ahead: at the same distance, twice the damage; on distance alone, about 11 m nearer;
   - it has held its target 6 s (a boss 10 s);
   - it isn't in one of its moves: it waits up to 2 s for one to end, so no swing is turned halfway.
