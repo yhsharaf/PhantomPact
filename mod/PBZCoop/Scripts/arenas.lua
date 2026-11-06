@@ -146,15 +146,34 @@ data.edges = {
 -- A loadout to start from: the game's first weapons.
 data.DEFAULT = { main = { "Tang", "PoJun" }, edge = { "ShachiHook", "TigerCannon" } }
 
--- The finishing moves: bosses' moves the game keeps for the player's own body (each played whole on a player on the
--- bench, 11-06). hit: seconds in, when the blow lands (the slow beat, the body thrown). One is picked for each finish.
+-- The game's own sounds at a match's big moments (Wwise events: its music's stingers, its UI's near-death loop; the stingers
+-- picked by name from the game's 33). Swap any here.
+local STINGERS = "/Game/Wwise/Events/Mus/Mus_Stinger/"
+data.SOUNDS = {
+    decided = STINGERS .. "Mus_MountainRoad_Stinger2_hit3_Loud",                -- the blow that decides the match
+    finisher = STINGERS .. "Mus_MountainRoad_Stinger_metalBig3",                -- the finishing move lands
+    victory = STINGERS .. "Mus_DuanHun_Stinger_Logo",                           -- the winners' 生还 (the game's own title)
+    defeat = STINGERS .. "Mus_MountainRoad_Stinger_XinZangZhouSuo_01",          -- the fallen's 殒命 (心脏骤缩)
+    heartbeat = "/Game/Wwise/Events/UI/UI_Plot/SFX_UI_Plot_NearDeath_Loop",     -- the fallen waiting for it
+    heartbeatStop = "/Game/Wwise/Events/Stop/UI/SFX_UI_Plot_NearDeath_Loop_Stop",
+}
+
+-- The beaten's stance while the winners come to finish them: the game's own posture-broken stagger for the player's body
+-- (the long blades' one: its hunched sway lasts most of its 3.6 s; the Sanguine's is over in one), seen on the bench 11-07.
+data.DAZED = "/PBZCombatAsset/ActorData/Players/Hun/Montage/LongBlade/Deflect/AM_Hun_Long_StanceWeak.AM_Hun_Long_StanceWeak"
+
+-- How the finished body dies: the game's own death for the player's body (the user, 11-07: "Why death is not same as the way
+-- the game does it"), seen on the bench: a stagger and a fall, held on its last frame.
+data.DEATH = "/PBZCombatAsset/ActorData/Players/Hun/Montage/Hit/AM_Hun_Dead_F.AM_Hun_Dead_F"
+
+-- The finishing moves: the game's own executions for the player's body, on the ground (each played whole on the bench,
+-- 11-07). hit: seconds in, when the blow lands (the slow beat, the death). One is picked for each finish.
+-- (The club bosses' leap and slam was the first: the user, 11-07, "the one you go up then down is wrong". The archer
+-- Du Yan's point-blank shot went with it.)
 data.FINISHERS = {
-    { key = "club",                 -- a leap and a two-handed slam: the club bosses' ultimate
-        path = "/HuaShira/Characters/Hero/Hero_Hun/Animation/Retarget/Club/A/Hun_Club_SpecialAttack_08_Ultimate_Montage."
-            .. "Hun_Club_SpecialAttack_08_Ultimate_Montage", len = 5.77, hit = 2.6 },
-    { key = "bow",                  -- the archer Du Yan's point-blank shot
-        path = "/HuaShira/Characters/Hero/Hero_Hun/Animation/ShaChi_Weapon/Bow/Anim/Retarget/ArrowMan_DuYan_SpecialAttack_03_C_Montage."
-            .. "ArrowMan_DuYan_SpecialAttack_03_C_Montage", len = 4.0, hit = 2.0 },
+    { key = "rouge",                -- the Infernal Rouge's execution: a spinning grab, the cut, the winner over the body
+        path = "/PBZCombatAsset/ActorData/Players/Hun/Montage/HeiMoShang/ExE/Hun_HeiMoShang_EXE_F_04_Montage."
+            .. "Hun_HeiMoShang_EXE_F_04_Montage", len = 4.07, hit = 2.3 },     -- (the overhead cut: film, 11-07)
 }
 
 local function byId(list, id)

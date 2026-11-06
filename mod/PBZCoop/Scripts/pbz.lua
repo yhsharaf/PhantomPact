@@ -1624,6 +1624,39 @@ return function(api)
         end
     end
 
+    -- The bar breaking as a boss's posture does: the game's own animation and its sparks (NS_UI_ShaChiBar_Break_001),
+    -- for a PvP match's deciding blow.
+    function game.breakFoeBar(addr)
+        local bar = game.foeBar(addr)
+        if bar then
+            pcall(function() bar:PlayAnimation(bar.ShachiEmpty, 0, 1, 0, 1, false) end)
+            pcall(function() bar.NS_UI_ShaChiBar_Break_001:ActivateSystem(true) end)
+        end
+        return bar ~= nil
+    end
+
+    -- One of the game's own sounds (a Wwise event: path "/Game/Wwise/Events/.../Name"), played on an actor: its music's
+    -- stingers, its UI's. Loaded when first wanted (not just after a load: the world's quiet, as for searches). The
+    -- playing id, or nil.
+    function game.playSound(path, actor)
+        if not (path and valid(actor)) or os.clock() < ((api.coop and api.coop.net.quietUntil) or 0) then
+            return nil
+        end
+        local name = path:match("([^/]+)$")
+        local full = path .. "." .. name
+        local ev = StaticFindObject(full)
+        if not valid(ev) and type(LoadAsset) == "function" then
+            pcall(LoadAsset, path)
+            ev = StaticFindObject(full)
+        end
+        local lib = StaticFindObject("/Script/AkAudio.Default__AkGameplayStatics")
+        if not (valid(ev) and valid(lib)) then
+            return nil
+        end
+        local ok, id = pcall(function() return lib:PostEvent(ev, actor, 0, {}, false) end)
+        return ok and id or nil
+    end
+
     -- The bar of a fight that ended without the game saying so (the other PC's boss, a refresh).
     function game.hideBossBar(boss)
         local hud = FindFirstOf("PBZHUDLayout")
@@ -1913,6 +1946,14 @@ return function(api)
         localMoveAt = os.clock()
     end
 
+    -- A move, by its ability's class name: Hun's own (GA_Hun_Young_A, ..._AdvancedDash, ...), not a passive. A passive is
+    -- equipment's always-on part, not something the player did: a match's Phantom Edges turn theirs on as it's set up,
+    -- they went as moves, and the other world gave one to the player's figure and started it there, where it called into
+    -- nothing (the bench, 11-07: GA_Hun_ShachiHook_Passive_C, then a guest's game gone at PBZ.exe+0x153e1a6, a call to 0).
+    function game.isMoveName(name)
+        return name:find("^GA_Hun") ~= nil and name:find("Passive", 1, true) == nil
+    end
+
     function game.watchLocalPlayer(pawn, sendEvent)
         local asc = abilitySystem(pawn)
         if not asc then
@@ -1924,9 +1965,9 @@ return function(api)
             if spec.ActiveCount > 0 and valid(ability) then
                 local cls = ability:GetClass()
                 local name = cls:GetFName():ToString()
-                -- Only Hun's own moves (GA_Hun_Young_A, ..._AdvancedDash, ...); background abilities such as
-                -- GA_LocomotionDriver_3DDefault are always active and aren't moves.
-                if name:find("^GA_Hun") then
+                -- Only Hun's own moves; background abilities such as GA_LocomotionDriver_3DDefault and the
+                -- passives are always active and aren't moves.
+                if game.isMoveName(name) then
                     local path = cls:GetFullName():gsub("^%S+ ", "")
                     nowActive[path] = true
                     if not activeLocal[path] then
@@ -2027,6 +2068,10 @@ return function(api)
     function game.playMove(ghost, classPath, yaw)
         -- (A path off the wire: an asset path's shape only, as playAbility asks; and only ever an ability class below.)
         if type(classPath) ~= "string" or #classPath > 256 or not classPath:match("^/[%w_/%-]+%.[%w_%-]+$") then
+            return
+        end
+        -- (Never a passive, whoever sent it: started on a figure, one took the game down. isMoveName says why.)
+        if (classPath:match("([^.]+)$") or ""):find("Passive", 1, true) then
             return
         end
         local cls = StaticFindObject(classPath)
@@ -3323,6 +3368,98 @@ return function(api)
 
     function game.isSpectating()
         return spectating ~= nil
+    end
+
+    -- A PvP finishing move's camera (arena.lua), as a fighting game shows one: beside the two bodies and low, turning round
+    -- them from the winner's face to the beaten's and closing in while the move plays, a narrower lens than the game's.
+    -- bodies(): the two, asked again each frame (none kept). Real seconds, so it keeps moving through the slowed blow.
+    -- Then the view goes back: to the spectating camera if that was on, else this player.
+    do      -- (a block of its own: this function is at the 200 locals Lua allows)
+    local cinemaCam, cinemaRun = nil, 0
+    local CINE_FROM_DEG, CINE_TO_DEG = 58, 108          -- round the pair, from the line winner -> beaten
+    local CINE_FAR_CM, CINE_NEAR_CM = 560, 380
+    local CINE_HIGH_CM, CINE_LOW_CM = 110, 30           -- above the bodies' middles
+    local CINE_FOV = 55
+
+    local function cinemaSpot(a, b, t, side)
+        local la, lb = a:K2_GetActorLocation(), b:K2_GetActorLocation()
+        local mid = { X = (la.X + lb.X) / 2, Y = (la.Y + lb.Y) / 2, Z = (la.Z + lb.Z) / 2 }
+        local e = t * t * (3 - 2 * t)
+        local turn = math.atan(lb.Y - la.Y, lb.X - la.X) + side * math.rad(CINE_FROM_DEG + (CINE_TO_DEG - CINE_FROM_DEG) * e)
+        local r = CINE_FAR_CM + (CINE_NEAR_CM - CINE_FAR_CM) * e
+        local spot = { X = mid.X + math.cos(turn) * r, Y = mid.Y + math.sin(turn) * r,
+            Z = mid.Z + CINE_HIGH_CM + (CINE_LOW_CM - CINE_HIGH_CM) * e }
+        return spot, { X = mid.X, Y = mid.Y, Z = mid.Z - 50 }      -- (aim looks 60 over what it's given)
+    end
+
+    local function cinemaFrame(run, bodies, from, seconds, side)
+        if run ~= cinemaRun or not valid(cinemaCam) then
+            return
+        end
+        local t = (os.clock() - from) / seconds
+        local a, b = bodies()
+        if t >= 1 or not (valid(a) and valid(b)) then
+            game.endCinema()
+            return
+        end
+        pcall(function()
+            local spot, at = cinemaSpot(a, b, t, side)
+            cinemaCam:K2_SetActorLocationAndRotation(spot, aim(spot, at), false, {}, true)
+        end)
+        game.after(0.016, function() cinemaFrame(run, bodies, from, seconds, side) end)
+    end
+
+    function game.cinema(bodies, seconds, side)
+        local pc = api.getPlayer1()
+        local a, b = bodies()
+        if not (valid(pc) and valid(a) and valid(b)) then
+            return false
+        end
+        side = side or 1
+        local spot, at = cinemaSpot(a, b, 0, side)
+        if not valid(cinemaCam) then
+            local t = { Rotation = { X = 0.0, Y = 0.0, Z = 0.0, W = 1.0 }, Translation = spot, Scale3D = { X = 1.0, Y = 1.0, Z = 1.0 } }
+            pcall(function()
+                local gs = api.gs()
+                local cam = gs:BeginDeferredActorSpawnFromClass(pc, StaticFindObject("/Script/Engine.CameraActor"), t,
+                    SPAWN_ADJUST_ALWAYS, nil, SCALE_MULTIPLY_WITH_ROOT)
+                cinemaCam = gs:FinishSpawningActor(cam, t, SCALE_MULTIPLY_WITH_ROOT)
+            end)
+            if not valid(cinemaCam) then
+                cinemaCam = nil
+                return false
+            end
+            pcall(function() cinemaCam.CameraComponent:SetFieldOfView(CINE_FOV) end)
+        end
+        local ok = pcall(function()
+            cinemaCam:K2_SetActorLocationAndRotation(spot, aim(spot, at), false, {}, true)
+            pc:SetViewTargetWithBlend(cinemaCam, 0.0, 0, 0, false)     -- (a cut: a blend swept the view across)
+        end)
+        if ok then
+            cinemaRun = cinemaRun + 1
+            local run, from = cinemaRun, os.clock()
+            game.after(0.016, function() cinemaFrame(run, bodies, from, seconds, side) end)
+        end
+        return ok
+    end
+
+    function game.endCinema()
+        cinemaRun = cinemaRun + 1
+        if not valid(cinemaCam) then
+            cinemaCam = nil
+            return
+        end
+        local pc, pawn = api.getPlayer1()
+        pcall(function()
+            local back = (spectating and valid(spectating) and valid(spectateCam)) and spectateCam or pawn
+            if valid(pc) and valid(back) then
+                pc:SetViewTargetWithBlend(back, 0.0, 0, 0, false)      -- (a cut back too: a blend swept across)
+            end
+        end)
+        local cam = cinemaCam
+        cinemaCam = nil
+        game.after(0.7, function() if valid(cam) then cam:K2_DestroyActor() end end)
+    end
     end
 
     -- rest: test helper, run the game's enemy refresh as if player 1 rested at a bell (the hook sees it).

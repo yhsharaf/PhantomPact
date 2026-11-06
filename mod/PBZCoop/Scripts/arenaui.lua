@@ -11,12 +11,24 @@ return function(api)
     local COUNT_SIZE = 300          -- the countdown's picture, against a screen 1080 high
     local BANNER_W, BANNER_H = 900, 150
     local BANNER_S = 2.6            -- a banner on screen this long
+    -- The match's last screens, the winners' and the losers' made and played the same way (the user, 11-07: "Make both
+    -- victory and defeat play same way", "without that black background and same size", "Make sure it doesn't stretch or
+    -- expands"): the game's own dark edge over the scene, then the calligraphy fading in, each picture at its own shape and
+    -- one size from start to end. Picture (a game path, or our own art by file name); height against the screen's (nil:
+    -- all of it); down from the middle; seconds to come in.
     local DEATH_ART = "/Game/PBZContent/UI/InGame/Dead/"
-    local DEATH_PARTS = {           -- picture; height against the screen's (nil: all of it); down from the middle; seconds in
-        { DEATH_ART .. "bg_dead.bg_dead", nil, 0, 0.5 },
-        { DEATH_ART .. "T_UI_blood_Combine.T_UI_blood_Combine", 0.7, 0.02, 0.9 },
-        { "/Game/PBZContent/UI/UINew/testplaceholder/yun.yun", 0.31, -0.12, 0.4 },
-        { "/Game/PBZContent/UI/UINew/testplaceholder/ming.ming", 0.31, 0.14, 0.6 },
+    local CARDS = {
+        lost = {
+            { DEATH_ART .. "bg_dead.bg_dead", nil, 0, 0.5 },
+            { DEATH_ART .. "T_UI_blood_Combine.T_UI_blood_Combine", 0.7, 0.02, 0.9 },
+            { "/Game/PBZContent/UI/UINew/testplaceholder/yun.yun", 0.31, -0.12, 0.4 },
+            { "/Game/PBZContent/UI/UINew/testplaceholder/ming.ming", 0.31, 0.14, 0.6 },
+        },
+        -- 生 over 还 (art/shenghuan.png, the gilded painting after the screen's own 殒命), as tall as 殒 and 命 together.
+        won = {
+            { DEATH_ART .. "bg_dead.bg_dead", nil, 0, 0.5 },
+            { "shenghuan.png", 0.57, 0.01, 0.5 },
+        },
     }
 
     local ui = {}
@@ -225,8 +237,8 @@ return function(api)
         showBanner(why == "fell" and "fell" or "down", 2.2)
     end
 
-    -- No word over the finishing move (the user didn't like the FINISHED banner): the boss's move, the slow beat, the body
-    -- thrown, then the game's own screens (生还, 殒命) say it. Only the hint to press F goes.
+    -- No word over the finishing move (the user didn't like the FINISHED banner): the boss's move, the slow beat, the
+    -- game's own death, then the game's own screens (生还, 殒命) say it. Only the hint to press F goes.
     function ui.finisher(victim, by, mine)
         banner = nil
         hide("banner")
@@ -343,6 +355,16 @@ return function(api)
         end
     end
 
+    -- The blow that decides the match: on the winners' screens the beaten's bars break, as a boss's posture does.
+    function ui.decided(m, winner, me)
+        if m.teams[me] ~= winner or not api.game.breakFoeBar then
+            return
+        end
+        for _, fb in pairs(foeBars) do
+            api.game.breakFoeBar(fb.addr)
+        end
+    end
+
     ------------------------------------------------------------------ the fallen: the game's own death card
 
     local function gameTexture(path)
@@ -354,23 +376,33 @@ return function(api)
         return valid(t) and t or nil
     end
 
-    function ui.deathCard()
+    local function card(parts)
         death = { since = os.clock(), widgets = {} }
-        for i, d in ipairs(DEATH_PARTS) do
-            local t = gameTexture(d[1])
+        for i, d in ipairs(parts) do
+            local ours = not d[1]:find("^/")
+            local t = ours and hud.texture(d[1]) or gameTexture(d[1])
             if t then
-                local w, h = 1920, 1080
-                if d[2] then
-                    local okS, wide = pcall(function() return t:Blueprint_GetSizeX() / t:Blueprint_GetSizeY() end)
-                    h = 1080 * d[2]
-                    w = h * ((okS and wide and wide > 0) and wide or 1)
-                end
+                -- Its own shape: as wide as its height asks (a whole-screen one 1080 high, its width by its shape too).
+                local okS, wide = pcall(function() return t:Blueprint_GetSizeX() / t:Blueprint_GetSizeY() end)
+                local h = 1080 * (d[2] or 1)
+                local w = h * ((okS and wide and wide > 0) and wide or (d[2] and 1 or 16 / 9))
                 local widget = hud.newImage(t, w, h, Z + 20 + i)
                 if widget then
+                    pcall(function() widget:SetRenderOpacity(0) end)
                     death.widgets[#death.widgets + 1] = { widget = widget, w = w, h = h, dy = d[3], fade = d[4] }
                 end
             end
         end
+        return #death.widgets > 0
+    end
+
+    -- The losers' 殒命 and the winners' 生还. True when it's up.
+    function ui.deathCard()
+        return card(CARDS.lost)
+    end
+
+    function ui.victoryCard()
+        return card(CARDS.won)
     end
 
     local function drawDeath(now)
@@ -382,10 +414,13 @@ return function(api)
             local a = math.min(1, (now - death.since) / d.fade)
             pcall(function()
                 d.widget:SetPositionInViewport({ X = W / 2 * screen.s, Y = (540 + 1080 * d.dy) * screen.s }, false)
-                d.widget:SetRenderOpacity(a)
             end)
-            hud.fit(d.widget, d.w * screen.s, d.h * screen.s)
-            hud.show(d.widget, true)
+            -- (Seen only once sized: a new one isn't laid out in its first frame and drew at its own size, as put() says.)
+            local fitted = hud.fit(d.widget, d.w * screen.s, d.h * screen.s)
+            pcall(function() d.widget:SetRenderOpacity(fitted and a or 0) end)
+            if fitted then
+                hud.show(d.widget, true)
+            end
         end
     end
 

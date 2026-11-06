@@ -20,16 +20,19 @@ Two ways to fight each other:
 | Start | the host picks the mode, the clock and the arena on the F6 page; everyone picks a team and presses READY; the host presses START |
 | Countdown | 三 二 一 in brush strokes, then 斗: nobody moves till then |
 | Down | health can't go below 1: at 1 you fall, out of the round. So does a fall from the arena, and a rest at a bell. A team with nobody up loses the round. Down, the camera follows a teammate still up, or else a foe; a team that lost the match watches the winners come for them |
-| The end | the winners get about 5 s to finish a fallen foe: F near them plays a boss's move (below). Then the winners get the golden VICTORY, the losers the game's death card, and everyone goes back where they were, with what they had |
+| The end | the blow that decides the match is slowed nearly to a stop, and leaves the losers on their feet, dazed (the game's own posture-broken stagger, held on its hunch). The winners get about 5 s to finish them: F near them plays a boss's move (below). Then the winners get a golden 生还 and the losers the game's red 殒命, both made and played the same way (the game's own dark edge over the scene, the calligraphy fading in at one size), and everyone goes back where they were, with what they had |
 | Leaving | F6, then LEAVE twice. A player not heard from for 8 s ends the match for everyone |
 
 ## The finishing move
 
-A winner who presses F within 9 m of a fallen foe in the finishing window (7 s, F taken till 1.5 s before its end, so the move reaches every screen in time) steps in before the body, facing it, and plays one of
-the bosses' moves the game keeps for the player's own body (`FINISHERS` in `arenas.lua`): the club bosses' leap and two-handed
-slam, or the archer Du Yan's point-blank shot. As it lands the game slows to 0.3 for 0.6 s and the body is thrown. Every player
-sees it: the winner's world plays it on the winner, every other world on the winner's figure (`AR fin` says which move and where
-they stood). The result waits until the move is over.
+A winner who presses F within 9 m of a dazed foe in the finishing window (7 s, F taken till 1.5 s before its end, so the move reaches every screen in time) steps in before them, facing them, and plays a boss's move
+the game keeps for the player's own body (`FINISHERS` in `arenas.lua`): the club bosses' leap and two-handed slam. (The archer
+Du Yan's point-blank shot was a second one; the user found it poor, so it went.) Every screen cuts to a camera beside the two, low,
+turning round them from the winner's face to the beaten's as the move plays, as a fighting game shows its finishing moves. As it
+lands the game slows to 0.2 for a second (held every frame: the game puts its own time back each frame), the game's musical hit
+sounds, and the beaten dies as the game shows a player's death (`DEATH`, its own death animation, held on its last frame till
+everyone goes home). Every player sees it: the winner's world plays it on the winner, every other world on the winner's figure
+(`AR fin` says which move and where they stood). The result waits until the move is over.
 
 Known, not fixed: after the step-in and the leap, thin red lines can hang from the winner back to where they stood, for good.
 They're simulated cords left behind: the Sanguine's tassel (hiding the blade took one away) and one on the body. The body's

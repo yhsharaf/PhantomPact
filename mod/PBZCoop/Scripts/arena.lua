@@ -1199,15 +1199,19 @@ return function(api)
 
     ------------------------------------------------------------------ the match: everyone, each frame
 
-    -- (Not while a finishing blow lands: its slow beat is the one slowing allowed.)
-    local function timeAtOne(pawn, m)
-        if os.clock() < (m.slowUntil or 0) then
+    -- The game's time in a match, every frame (coop.frameTicks.arenaTime): at 1 for everyone (a perfect dodge's slow
+    -- motion slowed only the dodger's game, issue #13), but in the beats this file slows on purpose (beat), held there:
+    -- the game puts its own time back each frame (the bench, 11-07: a slowing set once was gone within a frame or two).
+    local function timeNow(m)
+        local _, pawn = pawnNow()
+        if not valid(pawn) then
             return
         end
+        local want = os.clock() < (m.slowUntil or 0) and (m.slowDilation or 1.0) or 1.0
         pcall(function()
             local gs = api.gs()
-            if math.abs(gs:GetGlobalTimeDilation(pawn) - 1.0) > 0.01 then
-                gs:SetGlobalTimeDilation(pawn, 1.0)
+            if math.abs(gs:GetGlobalTimeDilation(pawn) - want) > 0.01 then
+                gs:SetGlobalTimeDilation(pawn, want)
             end
         end)
     end
@@ -1277,7 +1281,6 @@ return function(api)
             return
         end
         if m.phase ~= "going" then
-            timeAtOne(pawn, m)
             if now >= areaAt and now >= (net.quietUntil or 0) then
                 areaAt = now + AREA_S
                 parkEnemies(middleOf(m))
@@ -1337,9 +1340,132 @@ return function(api)
 
     ------------------------------------------------------------------ results, finishing, home
 
+    -- The game slowed a moment (the only slowing in a match: timeNow holds it every frame), real seconds.
+    local function beat(m, dilation, seconds)
+        m.slowUntil = os.clock() + seconds
+        m.slowDilation = dilation
+        timeNow(m)
+    end
+
+    -- One of the game's own sounds at a big moment (arenas.lua's SOUNDS), on this player's body.
+    local function sound(key)
+        local _, pawn = pawnNow()
+        local path = data.SOUNDS and data.SOUNDS[key]
+        if path and valid(pawn) and game.playSound then
+            return game.playSound(path, pawn)
+        end
+        return nil
+    end
+
+    -- One of the game's montages by path, loaded as the moment comes, as moves.lua loads any move. (Not ahead, in the first
+    -- countdown: loading right after the arena's trip, its long load just over, crashed the bench host inside UE4SS.)
+    local function loadMontage(path)
+        local m = api.moves and api.moves.montage and api.moves.montage(path)
+        if not valid(m) then
+            m = StaticFindObject(path)
+            if not valid(m) and type(LoadAsset) == "function" then
+                pcall(LoadAsset, path)
+                m = StaticFindObject(path)
+                if not valid(m) then
+                    pcall(LoadAsset, (path:gsub("%.[^./]*$", "")))     -- (its package alone)
+                    m = StaticFindObject(path)
+                end
+            end
+        end
+        return valid(m) and m or nil
+    end
+
+    -- "Finish them", as a fighting game has it: the blow that decides the match doesn't lay the losers down, it leaves them on
+    -- their feet in the game's own broken stance (its posture-broken stagger, slowed to a sway once it's in) till the end.
+    -- In every world, on the loser's body there: their own, or their figure (held from its steering the while: in a
+    -- two-player game that hold is every figure's, and the winner's own world has no other). swayAfter: real seconds to
+    -- the sway (the stagger comes in through the kill cam's slow beat).
+    -- (The stagger's hunch is 0.8 to 1.7 s of its 3.6 s, the bench's stills, 11-07: after it the body stands up again.)
+    local DAZED_IN_S = 0.8          -- the stagger's own seconds before the sway
+    local DAZED_RATE = 0.08         -- the sway's speed through the hunch: about 11 s of it, then held at its end
+    local DAZED_HOLD_S = 1.7
+    local function dazed(m, slot, swayAfter)
+        local body = coop.playerBody and coop.playerBody(slot)
+        if not valid(body) then
+            return
+        end
+        arena.fall(body, false)
+        local move = data.DAZED and loadMontage(data.DAZED)
+        if not move then
+            return
+        end
+        pcall(function()
+            if slot == mySlot() then
+                body:PlayAnimMontage(move, 1.0, FName("None"))
+            else
+                if game.noteGhostMove then
+                    game.noteGhostMove(body, BETWEEN_S + FINISH_S)
+                end
+                body.Mesh:GetAnimInstance():Montage_Play(move, 1.0, 0, 0.0, true)
+            end
+        end)
+        local function rate(r)
+            local b = arena.match == m and m.finished ~= slot and coop.playerBody and coop.playerBody(slot)
+            local mv = valid(b) and loadMontage(data.DAZED)
+            if mv then
+                pcall(function() b.Mesh:GetAnimInstance():Montage_SetPlayRate(mv, r) end)
+            end
+        end
+        local sway = swayAfter or DAZED_IN_S
+        game.after(sway, function() rate(DAZED_RATE) end)
+        game.after(sway + (DAZED_HOLD_S - DAZED_IN_S) / DAZED_RATE, function() rate(0.0) end)
+    end
+
+    -- A pose of ours a body still holds when the match is over (the dazed stance, the death of a finishing move: the game's
+    -- death holds its last frame), let go. Only ours: a move of the player's own plays on.
+    local function letGo(body)
+        pcall(function()
+            local ai = valid(body) and body.Mesh:GetAnimInstance()
+            local held = valid(ai) and ai:GetCurrentActiveMontage()
+            if not valid(held) then
+                return
+            end
+            for _, path in ipairs({ data.DAZED, data.DEATH }) do
+                local mv = path and StaticFindObject(path)
+                if valid(mv) and mv:GetAddress() == held:GetAddress() then
+                    ai:Montage_Stop(0.3, held)
+                end
+            end
+        end)
+    end
+
+    -- The blow that decides the match, on every screen (the user: wins and losses worth it): the kill cam, slowed nearly to
+    -- a stop; the game's musical hit; the beaten's bars breaking on the winners' screens, as a boss's posture does; and the
+    -- beaten up again, dazed, waiting for the end to the game's own near-death heartbeat.
+    local KILL_DILATION, KILL_S = 0.2, 1.4
+    local function decided(m, winner)
+        beat(m, KILL_DILATION, KILL_S)
+        sound("decided")
+        if ui() and ui().decided then
+            ui().decided(m, winner, mySlot())
+        end
+        local swayAfter = KILL_S + math.max(0, DAZED_IN_S - KILL_S * KILL_DILATION)
+        for slot, team in pairs(m.teams) do
+            if team ~= winner then
+                dazed(m, slot, swayAfter)
+            end
+        end
+        if winner ~= myTeam() then
+            local _, pawn = pawnNow()
+            if valid(pawn) then
+                hold(pawn, true)            -- (a round the clock ended left them free: a step cut the stance short)
+                shield(pawn, true)
+            end
+            m.heartbeat = sound("heartbeat")
+        end
+    end
+
     function arena.onRound(m, round, winner, s1, s2)
         m.score = { s1, s2 }
         m.phase = "between"
+        if (m.mode == "death" and winner > 0) or s1 >= DUEL_WINS or s2 >= DUEL_WINS then
+            decided(m, winner)
+        end
         log(string.format("PvP: round %d to %s. %s %d - %d %s.", round, winner == 0 and "nobody (a draw)" or teamName(winner),
             teamName(1), s1, s2, teamName(2)))
         if ui() then
@@ -1353,7 +1479,7 @@ return function(api)
         m.phase = "finish"
         m.finishUntil = os.clock() + FINISH_S
         m.finishBy = m.finishUntil - FINISH_LATE_S
-        -- The losers wait for it where they are (a round the clock ended leaves them standing).
+        -- The losers wait for it where they are, on their feet and swaying (dazed).
         if myTeam() ~= winner then
             local _, pawn = pawnNow()
             if valid(pawn) then
@@ -1370,27 +1496,36 @@ return function(api)
     function arena.showResult(m)
         m.phase = "result"
         if myTeam() == m.winner then
-            if game.showAliveScreen then
+            sound("victory")
+            -- 生还 made and played as the losers' 殒命 (arenaui); the game's own screen turned golden if that can't be had.
+            if not (ui() and ui().victoryCard and ui().victoryCard()) and game.showAliveScreen then
                 game.showAliveScreen(RESULT_S, "V I C T O R Y")
             end
-        elseif ui() then
-            ui().deathCard()
+        else
+            sound("heartbeatStop")
+            sound("defeat")
+            if ui() then
+                ui().deathCard()
+            end
         end
     end
 
-    -- The finishing blow, from the winner on a fallen enemy (F in the finishing window, or a command): a boss's move
-    -- (arenas.lua's FINISHERS) on the winner, who steps in before the fallen body and faces it. Every world plays it: the
+    -- The finishing blow, from the winner on a beaten enemy (F in the finishing window, or a command): a boss's move
+    -- (arenas.lua's FINISHERS) on the winner, who steps in before the dazed body and faces it. Every world plays it: the
     -- winner's on their own body, the others' on the winner's ghost (in PvP a ghost plays no sent montages, moves.lua, so
-    -- it's told here); as it lands the game slows a beat and the body is thrown.
+    -- it's told here). Shown as a fighting game shows its finishing moves (the user: "like mortal kombat execution"): every
+    -- screen cuts to a camera beside the two, turning round them as the move plays; as it lands the game slows nearly to a
+    -- stop, the game's own musical hit sounds, and the beaten dies as the game shows a player's death (dies).
     local FINISH_REACH_CM = 900
     local FINISH_RISE_CM = 400      -- a body this far below or above can't be reached (one that fell off the arena)
-    local FINISH_GAP_CM = 140       -- the winner stands this far from the fallen body
-    local SLOW_DILATION = 0.3
-    local SLOW_S = 0.6              -- (real seconds)
+    local FINISH_GAP_CM = 140       -- the winner stands this far from the beaten body
+    local SLOW_DILATION = 0.2
+    local SLOW_S = 1.0              -- (real seconds)
     local THROW_CM_S = 700          -- the body thrown away from the blow, and up
     local THROW_UP_CM_S = 450
+    local CINEMA_AFTER_S = 1.0      -- the camera stays on them this long after the move (with the slow beat in it)
 
-    -- Where a body lies: a fallen one's mesh (loose on its own), else the body.
+    -- Where a body is: a fallen one's mesh (loose on its own), else the body. loose: whether it lies loose.
     local function lyingAt(body)
         local l
         pcall(function()
@@ -1399,7 +1534,10 @@ return function(api)
                 l = mesh:K2_GetComponentLocation()
             end
         end)
-        return l or locOf(body)
+        if l then
+            return l, true
+        end
+        return locOf(body), false
     end
 
     local function finisherMove(n)
@@ -1407,25 +1545,23 @@ return function(api)
         if not f then
             return nil
         end
-        -- Loaded as the blow starts, as moves.lua loads any move. (Not ahead, in the first countdown: loading right after
-        -- the arena's trip, its long load just over, crashed the bench host inside UE4SS.)
-        local m = api.moves and api.moves.montage and api.moves.montage(f.path)
-        if not valid(m) then
-            m = StaticFindObject(f.path)
-            if not valid(m) and type(LoadAsset) == "function" then
-                pcall(LoadAsset, f.path)
-                m = StaticFindObject(f.path)
-            end
+        return loadMontage(f.path), f
+    end
+
+    -- The camera's side of the two: the arena's middle's (the open side, away from its walls and rocks).
+    local function cinemaSide(m, by, victim)
+        local a, b = coop.playerBody(by), coop.playerBody(victim)
+        local la, lb = valid(a) and locOf(a), valid(b) and locOf(b)
+        local mid = middleOf(m)
+        if not (la and lb and mid and mid.X) then
+            return 1
         end
-        return valid(m) and m or nil, f
+        local cross = (lb.X - la.X) * (mid.Y - la.Y) - (lb.Y - la.Y) * (mid.X - la.X)
+        return cross >= 0 and 1 or -1
     end
 
     local function slowBeat(m)
-        m.slowUntil = os.clock() + SLOW_S
-        local _, pawn = pawnNow()
-        if valid(pawn) then
-            pcall(function() api.gs():SetGlobalTimeDilation(pawn, SLOW_DILATION) end)
-        end
+        beat(m, SLOW_DILATION, SLOW_S)
     end
 
     local function throw(body, from)
@@ -1437,6 +1573,31 @@ return function(api)
         local d = math.max(1, math.sqrt(dx * dx + dy * dy))
         local v = { X = dx / d * THROW_CM_S, Y = dy / d * THROW_CM_S, Z = THROW_UP_CM_S }
         pcall(function() body.Mesh:SetAllPhysicsLinearVelocity(v, true) end)
+    end
+
+    -- The finished body dies as the game shows a player's death (the user: "Why death is not same as the way the game does
+    -- it"): its own death, played where it stands, held on its last frame (letGo puts it back). If that can't be had,
+    -- loose and thrown as before.
+    local function dies(victim, body, from)
+        local move = data.DEATH and loadMontage(data.DEATH)
+        local played = false
+        if move then
+            arena.fall(body, false)
+            played = pcall(function()
+                if victim == mySlot() then
+                    body:PlayAnimMontage(move, 1.0, FName("None"))
+                else
+                    if game.noteGhostMove then
+                        game.noteGhostMove(body, FINISH_S)
+                    end
+                    body.Mesh:GetAnimInstance():Montage_Play(move, 1.0, 0, 0.0, true)
+                end
+            end)
+        end
+        if not played then
+            arena.fall(body, true)
+            throw(body, from)
+        end
     end
 
     -- The move, in this world. by: the winner's slot; spot: where they stand for it (their own world works it out).
@@ -1456,12 +1617,21 @@ return function(api)
                     if valid(pc) and spot then
                         pc:SetControlRotation({ Pitch = -10, Yaw = spot.Yaw, Roll = 0 })
                     end
+                    hold(winner, true)              -- (played whole: a button pressed in it cut it short)
                     len = winner:PlayAnimMontage(montage, 1.0, FName("None")) or len
                 else
                     if game.noteGhostMove then
                         game.noteGhostMove(winner, len + 0.5)
                     end
                     winner.Mesh:GetAnimInstance():Montage_Play(montage, 1.0, 0, 0.0, true)
+                end
+            end)
+        end
+        if mine then
+            game.after(len, function()
+                local _, pawn = pawnNow()
+                if arena.match == m and valid(pawn) then
+                    hold(pawn, false)
                 end
             end)
         end
@@ -1472,6 +1642,10 @@ return function(api)
                 shield(pawn, true)
             end
         end
+        if game.cinema then
+            game.cinema(function() return coop.playerBody(by), coop.playerBody(victim) end, len + CINEMA_AFTER_S,
+                cinemaSide(m, by, victim))
+        end
         m.finishUntil = math.max(m.finishUntil or 0, os.clock() + len + 1.2)
         game.after(f and f.hit or len * 0.5, function()
             if arena.match ~= m then
@@ -1480,12 +1654,10 @@ return function(api)
             local body = coop.playerBody and coop.playerBody(victim)
             local w = coop.playerBody and coop.playerBody(by)
             if valid(body) then
-                if not m.down[victim] then
-                    arena.fall(body, true)          -- (still standing: the clock ended it)
-                end
-                throw(body, valid(w) and locOf(w) or nil)
+                dies(victim, body, valid(w) and locOf(w) or nil)
             end
             slowBeat(m)
+            sound("finisher")
         end)
         log(string.format("PvP: %s finishes %s (%s).", playerName(by), playerName(victim), f and f.key or "?"))
         if ui() and ui().finisher then
@@ -1509,7 +1681,11 @@ return function(api)
         -- In front of the body, on the side the winner came from, facing it (a body not found here: where they stand).
         local _, pawn = pawnNow()
         local body = coop.playerBody and coop.playerBody(victim)
-        local at, me = valid(body) and lyingAt(body), valid(pawn) and locOf(pawn)
+        local at, loose = nil, false
+        if valid(body) then
+            at, loose = lyingAt(body)
+        end
+        local me = valid(pawn) and locOf(pawn)
         local spot, where = nil, { "-", "-", "-", "-" }
         if at and me then
             local dx, dy = me.X - at.X, me.Y - at.Y
@@ -1517,8 +1693,9 @@ return function(api)
             if d < 1 then
                 dx, dy, d = 1, 0, 1
             end
-            spot = { X = at.X + dx / d * FINISH_GAP_CM, Y = at.Y + dy / d * FINISH_GAP_CM, Z = math.max(me.Z, at.Z + 90),
-                Yaw = math.deg((math.atan2 or math.atan)(-dy, -dx)) }
+            -- (A loose body's mesh lies on the ground, a standing one's middle is the body's own height: 90 cm up.)
+            spot = { X = at.X + dx / d * FINISH_GAP_CM, Y = at.Y + dy / d * FINISH_GAP_CM,
+                Z = math.max(me.Z, at.Z + (loose and 90 or 0)), Yaw = math.deg((math.atan2 or math.atan)(-dy, -dx)) }
             where = { string.format("%.0f", spot.X), string.format("%.0f", spot.Y), string.format("%.0f", spot.Z),
                 string.format("%.1f", spot.Yaw) }
         end
@@ -1570,6 +1747,12 @@ return function(api)
         if ui() then
             ui().clear()
         end
+        if m.heartbeat then
+            sound("heartbeatStop")
+        end
+        if game.endCinema then
+            game.endCinema()
+        end
         if m.watching and game.spectate then
             game.spectate(nil)
         end
@@ -1579,6 +1762,7 @@ return function(api)
         fightOn(false)
         if valid(pawn) then
             arena.fall(pawn, false)
+            letGo(pawn)
             hold(pawn, false)
             shield(pawn, false)
             pcall(function() api.gs():SetGlobalTimeDilation(pawn, 1.0) end)
@@ -1586,6 +1770,7 @@ return function(api)
         for _, p in ipairs(coop.partners()) do
             if valid(p.ghost) then
                 arena.fall(p.ghost, false)
+                letGo(p.ghost)
             end
         end
         unparkEnemies()
@@ -1984,6 +2169,13 @@ return function(api)
     end
     coop.frameTicks.arenaMoves = function()
         pcall(frameMoves)
+    end
+    -- (Every frame, not at ARENA_TICK_S: the game puts its own time back each frame.)
+    coop.frameTicks.arenaTime = function()
+        local m = arena.match
+        if m and m.phase ~= "going" then
+            timeNow(m)
+        end
     end
 
     -- arena status | start | mode duel|death | timer 0|60|90|120 | place 0-4 | team 1|2 | ready [off] | leave | down |
