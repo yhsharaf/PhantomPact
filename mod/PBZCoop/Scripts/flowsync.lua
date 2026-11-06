@@ -260,6 +260,9 @@ return function(api)
             flow.told, flow.sent, flow.seen, flow.linkedN = nil, {}, nil, 0
             return
         end
+        if os.clock() < (coop.net.quietUntil or 0) then
+            return          -- (the quiet after a load or a trip: see coop's QUIET_AFTER_LOAD_S)
+        end
         if coop.isHost() then
             local ok, err = pcall(hostTick, now)
             if not ok and err ~= flow.lastError then

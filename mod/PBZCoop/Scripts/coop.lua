@@ -3489,7 +3489,10 @@ return function(api)
         if net.pvp and game.watchLocalPlayer then
             game.watchLocalPlayer(pawn, sendEvent)    -- ability replays: elsewhere montages say it all (moves.lua)
         end
-        if game.watchItemFx and now >= (slow.itemFxAt or 0) then
+        -- (Not in the quiet after a load or a trip: see net.QUIET_AFTER_LOAD_S. A host crashed in here, in its first frame
+        -- after a trip on the same map.)
+        local quiet = os.clock() < (net.quietUntil or 0)
+        if game.watchItemFx and now >= (slow.itemFxAt or 0) and not quiet then
             slow.itemFxAt = now + SLOW_S
             -- A drink from the gourd draws the eye of the host's enemies near this player (game.steerTarget).
             if game.watchItemFx(pawn, sendEvent) and not net.pvp then
@@ -3501,7 +3504,7 @@ return function(api)
             end
         end
         -- (The game takes the bars down for a cutscene: put back at once, they'd flicker through it.)
-        if next(net.partnerBosses) and game.keepBossBar and now >= (slow.barsAt or 0) and not game.inCutscene() then
+        if next(net.partnerBosses) and game.keepBossBar and now >= (slow.barsAt or 0) and not quiet and not game.inCutscene() then
             slow.barsAt = now + BOSS_BAR_S
             for name in pairs(net.partnerBosses) do
                 local boss = enemyByName[name]
@@ -3511,7 +3514,9 @@ return function(api)
             end
         end
         -- (Never both in a frame: each looks through every actor of a kind.)
-        if game.watchPickups and now >= (slow.pickupsAt or 0) then
+        if quiet then
+            -- (nothing: the searches wait)
+        elseif game.watchPickups and now >= (slow.pickupsAt or 0) then
             if game.watchPickups(pawn, reportPickup) ~= false then
                 slow.pickupsAt = now + PICKUP_S
             end
@@ -4435,6 +4440,10 @@ return function(api)
             return
         end
         local now = link.now()
+        if lastFrame and now - lastFrame > 0.5 then
+            -- A stall (a load, a trip on the same map, the world streaming in): the world searches wait a while after it.
+            net.quietUntil = math.max(net.quietUntil or 0, os.clock() + net.QUIET_AFTER_LOAD_S)
+        end
         frameNow, frameDt = now, lastFrame and math.min(now - lastFrame, 0.1) or 0.016
         net.frameNow = now
         lastFrame = now
