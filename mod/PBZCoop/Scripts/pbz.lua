@@ -2178,6 +2178,10 @@ return function(api)
                 end
                 timers = keep
                 for _, t in ipairs(due) do
+                    if api.trace and api.trace.on() then
+                        local info = debug.getinfo(t.fn, "S")
+                        log("trace timer " .. (tostring(info and info.short_src):match("[^/" .. string.char(92) .. "]*$") or "?") .. ":" .. tostring(info and info.linedefined))
+                    end
                     local ok, err = pcall(t.fn)
                     if not ok then
                         log("Timer error: " .. tostring(err))

@@ -477,7 +477,52 @@ local function openLink()
     return link
 end
 
+-- A developer's trace (off unless a bench turns it on: PBZ.trace.armed = true): for a while after each map load, every loop
+-- and hook callback, frame stage and timer logs its source line before it runs, so a crash's last line names what ran.
+-- (Two crashes on the bench in UE4SS itself, each just after a trip and the partner's figure made, the log silent on which.)
+local TRACE = { armed = false, untilAt = 0, AFTER_LOAD_S = 15 }
+function TRACE.on()
+    return TRACE.armed and os.clock() < TRACE.untilAt
+end
+do
+    local function traced(kind, fn)
+        if type(fn) ~= "function" then
+            return fn
+        end
+        local info = debug.getinfo(fn, "S")
+        local where = kind .. " " .. ((info and info.short_src or "?"):match("[^/" .. string.char(92) .. "]+$") or "?") .. ":"
+            .. tostring(info and info.linedefined or 0)
+        return function(...)
+            if TRACE.armed and os.clock() < TRACE.untilAt then
+                log("trace " .. where)
+            end
+            return fn(...)
+        end
+    end
+    TRACE.traced = traced
+    local rawLoop, rawHook = LoopInGameThreadWithDelay, RegisterHook
+    if type(rawLoop) == "function" then
+        LoopInGameThreadWithDelay = function(ms, fn)
+            return rawLoop(ms, traced("loop", fn))
+        end
+    end
+    if type(rawHook) == "function" then
+        RegisterHook = function(path, pre, post, ...)
+            return rawHook(path, traced("hook " .. tostring(path), pre), post and traced("hook-post " .. tostring(path), post) or post, ...)
+        end
+    end
+    pcall(function()
+        RegisterLoadMapPostHook(function()
+            if TRACE.armed then
+                TRACE.untilAt = os.clock() + TRACE.AFTER_LOAD_S
+                log("trace: on for " .. TRACE.AFTER_LOAD_S .. " s after this load")
+            end
+        end)
+    end)
+end
+
 local api = {
+    trace = TRACE,
     link = openLink(),
     log = log,
     valid = valid,
@@ -531,6 +576,7 @@ local net = coop.net
 
 -- Helpers for the "eval" command, so test snippets can reuse the mod's functions.
 PBZ = {
+    trace = TRACE,
     state = state,
     log = log,
     valid = valid,

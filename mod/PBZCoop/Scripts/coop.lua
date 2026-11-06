@@ -3971,6 +3971,9 @@ return function(api)
 
     -- Each stage in its own pcall, so one failing (say, a stale enemy) doesn't stop the others.
     local function runStage(stage, fn)
+        if api.trace and api.trace.on() then
+            log("trace stage " .. stage)
+        end
         local profile = net.profile       -- tools/netlab/perf.lua: time spent per stage
         local began = profile and link.now()
         local ok, err = pcall(fn)
