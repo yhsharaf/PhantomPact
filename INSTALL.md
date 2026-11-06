@@ -45,6 +45,15 @@ repository (`native/`).
 The UE4SS console shows `Phantom Pact Host: co-op on` (or Guest), and
 `ue4ss\Mods\PBZCoop\net_status.txt` shows `connected=yes` once you're linked.
 
+**Steam Deck and Linux.** UE4SS starts from a file it puts in the game folder, `dwmapi.dll`, and Proton uses its own
+copy of that file unless told otherwise, so UE4SS and the mod never start. In Steam, right-click the game > Properties >
+General > Launch Options, and paste:
+
+    WINEDLLOVERRIDES="dwmapi=n,b" %command%
+
+Then install UE4SS and the mod as above, into the same folders: Browse local files opens the game folder in the file
+manager (on a Steam Deck, in Desktop Mode). We haven't tried it on a Steam Deck ourselves yet: tell us how it goes.
+
 **Easiest: the panel.** In the game, press **F5** to open the online panel, with no text file and no restart. Pick
 Steam (nothing to set up: it finds your friend who's hosting), Tailscale, or Other Network, then press Host or Guest.
 For Tailscale and other networks, copy the host's address and press Paste. Tailscale also covers Hamachi, Radmin and
@@ -287,6 +296,7 @@ From both players if you can, right after it happens and before you restart the 
 start over:
 
 - `ue4ss\UE4SS.log`
+- If the game closed by itself: the newest `ue4ss\crash_*.dmp` (UE4SS writes one when the game goes down; it says where)
 - `ue4ss\Mods\PBZCoop\net_status.txt` and `relay_log.txt`, plus `relay_error.txt` if it's there
 - What `tailscale ping` prints, if you use Tailscale
 - Host or guest, which area or boss, what happened, and Wi-Fi or cable

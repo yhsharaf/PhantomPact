@@ -47,6 +47,17 @@ a second handler on a name quietly drops the first, unless it keeps that one and
 with the `units` command and reports whether enemies hate and hit them and whether the game's error panel appears. With two
 accounts, it's the only evidence from the real game for three or more.
 
+### A crash
+
+    python -I tools\netlab\crashdump.py --newest
+    python -I tools\netlab\crashdump.py <ue4ss\crash_*.dmp>
+
+UE4SS writes a minidump when the game goes down. `crashdump.py` reads it with no debugger: the exception, the registers, the
+call site and the frames on the stack, as module + offset. A call through a null pointer (execute at 0) leaves the caller at
+`[rsp]`, and the same call site in several dumps is one bug: three match-start crashes on 11-06 and 11-07 were all
+`PBZ.exe+0x153e1a6`, a passive ability started on a player's figure, which had first been put down to something else. Read the
+log's last Lua lines before the dump's time with it.
+
 This PC has no Lua of its own, so `luasim.py` needs a Lua DLL: Cheat Engine's `lua53-64.dll` is what it looks for, or name one in
 `PP_LUA_DLL`. UE4SS has Lua 5.4, and the mod uses nothing that differs. The stand-in only knows what its author thought of: it
 finds wrong names, wrong order and wrong logic, not how the real game answers.
