@@ -47,7 +47,9 @@ return function(api)
     local LEAVE_S = 3.0             -- a second LEAVE within this ends it
     local SETTLE_S = 1.8            -- skill nodes take this long to show in the stats
     local LAND_S = 1.2              -- held in the air at the spot this long, the ground streaming in
-    local NEAR_CM = 30000           -- nearer than this on the same map: no trip, a hop
+    local NEAR_CM = 5000            -- nearer than this on the same map: no trip, a hop. Further, the game's own trip (its
+                                    -- loading screen sets the player down once the ground is in): a 280 m hop to the
+                                    -- Gold-Masked One's gorge on the bench landed before its floor had loaded, and fell.
     local INVULNERABLE = "GE_PBZLieInvulnerable_C"
     local SAVE_VETO = { { "PhantomPactPvP", 0 }, { "PhantomPactPvP2", 2 } }   -- 0 stops the quiet autosave, 2 bells and trips
     local RISE = "/Game/PBZContent/UI/InGame/Dead/GA_PlayerRespawn"
@@ -671,7 +673,9 @@ return function(api)
             end
             saved.pushed = pcall(function() bp:PushEquippedWeapons(main, edge, 0, 0) end)
             -- Up to the top level now, and again in a moment: one just lent reads level 0 till the game has it in the bag
-            -- (the bench: lent ones stayed at 1 when raised in the same breath as the lending).
+            -- (the bench: lent ones stayed at 1 when raised in the same breath as the lending). With the game's plain
+            -- setter, ResetWeaponToLevel, not its upgrade: UpgradeWeapon to 30 gave the bench player the "Skill Over
+            -- Strength" achievement (a Phantom Edge to level 30) for nothing.
             local function raise(b)
                 for key in pairs(want) do
                     local kind, id = key:match("^(%a+):(.+)$")
@@ -679,7 +683,7 @@ return function(api)
                     pcall(function()
                         local level = b:GetWeaponLevel(FName(id), isMain)
                         if level and level > 0 and level < data.WEAPON_LEVEL then
-                            b:UpgradeWeapon(FName(id), isMain, data.WEAPON_LEVEL - level)
+                            b:ResetWeaponToLevel(FName(id), isMain, data.WEAPON_LEVEL, {}, {})
                         end
                     end)
                 end

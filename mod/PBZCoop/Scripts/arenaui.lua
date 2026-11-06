@@ -81,6 +81,7 @@ return function(api)
             if not widget then
                 return nil
             end
+            pcall(function() widget:SetVisibility(2) end)     -- hidden till put() can size it (see there)
             p = { widget = widget, tex = tex, w = w, h = h }
             parts[name] = p
         end
@@ -98,8 +99,13 @@ return function(api)
             p.widget:SetPositionInViewport({ X = x * screen.s, Y = y * screen.s }, false)
             p.widget:SetRenderOpacity(a or 1)
         end)
-        hud.fit(p.widget, (w or p.w) * s, (h or p.h) * s)
-        hud.show(p.widget, (a or 1) > 0.01)
+        -- Shown only once sized: a new one isn't laid out yet in its first frame and drew at its own size (on the bench, a
+        -- guest's countdown opened on a huge "PLAYER 1" over a red block). Hidden, not collapsed, so it gets laid out.
+        if hud.fit(p.widget, (w or p.w) * s, (h or p.h) * s) then
+            hud.show(p.widget, (a or 1) > 0.01)
+        else
+            pcall(function() p.widget:SetVisibility(2) end)
+        end
     end
 
     local function hide(name)

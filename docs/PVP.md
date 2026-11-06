@@ -31,8 +31,10 @@ slam, or the archer Du Yan's point-blank shot. As it lands the game slows to 0.3
 sees it: the winner's world plays it on the winner, every other world on the winner's figure (`AR fin` says which move and where
 they stood). The result waits until the move is over.
 
-The Phantom Edge moves were tried too: a bare Dread Axe release leaves its red chains lying on the ground for good, so none of
-those are used.
+Known, not fixed: after the step-in and the leap, thin red lines can hang from the winner back to where they stood, for good.
+They're simulated cords left behind: the Sanguine's tassel (hiding the blade took one away) and one on the body. The body's
+cloth reset (`ForceNextUpdateTeleportAndReset`) didn't clear them, and `ResetAnimInstanceDynamics` on the body's parts hung
+the game thread, so don't call that. The Dread Axe's release left the same lines, which first looked like its chains.
 
 ## Who decides what
 
@@ -91,8 +93,10 @@ start):
 
 Weapon levels: a blow's damage in the defender's world goes by the defender's own level of the attacker's weapon. On the bench a
 guest's Sanguine blow took 128 from the host at the host's Sanguine level 1, 256 at level 11. So in every world every weapon
-anyone in the match fights with goes to level 30 (`UpgradeWeapon`, lent first if not owned), and the loadouts travel with the
-start so every world knows them.
+anyone in the match fights with goes to level 30 (lent first if not owned), and the loadouts travel with the start so every
+world knows them. The level is set with the game's plain setter, `ResetWeaponToLevel`, not its upgrade: `UpgradeWeapon` to 30
+gave the bench player the "Skill Over Strength" achievement (a Phantom Edge to level 30). That bench account has it now, so
+it's not proven that the setter never grants it.
 
 ## Arenas
 
@@ -106,6 +110,10 @@ start so every world knows them.
 A boss arena is offered only when every player's own save has its boss beaten (the game's `SpawnerSaveData`): going there before
 plays the boss's story (seen on the bench: Mu Xiaokui's scene, the forest's). Any enemy near the arena is moved aside for the match
 and put back after; the boss's fog walls go up. Spots: three a side, 8 m from the middle, facing each other.
+
+Getting there (and home): a spot within 50 m on the same map is a hop; anything further is the game's own trip, whose loading
+screen sets the player down once the ground is in. A 280 m hop on the bench landed before the gorge's floor had loaded: the host
+fell 110 m and lost round 1.
 
 ## Files
 
