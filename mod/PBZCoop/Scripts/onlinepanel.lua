@@ -29,8 +29,9 @@ return function(api)
 
     local SETTINGS = { x = 690, y = 494 }
     local BACK = { x = 40, y = 494 }
-    -- The gameplay options as square tiles (the user's design, art/make_online_panel.py's TILE): five on top, four centred
-    -- below. A click moves a tile to its next choice; one with no choices (Revive, still to come) only shows.
+    -- The gameplay options as square tiles (the user's design, art/make_online_panel.py's TILE): five on top, five below.
+    -- A click moves a tile to its next choice; one with no choices (Revive, still to come) only shows. Skip Prologue is
+    -- no setting: it shows where this player is (red in the prologue, green past it), and a click is prologue.lua's.
     local TILE = 150
     local TILES = {
         { name = "teleport", x = 41, y = 88, choices = { "off", "on" } },
@@ -38,10 +39,11 @@ return function(api)
         { name = "pvp", x = 375, y = 88, choices = { "off", "on" } },
         { name = "compass", x = 542, y = 88, choices = { "off", "on" } },
         { name = "mapicon", x = 709, y = 88, choices = { "off", "on" } },
-        { name = "freetravel", x = 124, y = 255, choices = { "off", "on" } },
-        { name = "direct", x = 291, y = 255, choices = { "off", "on" } },
-        { name = "players", x = 458, y = 255, choices = { "2", "4", "6" } },
-        { name = "mode", x = 625, y = 255, choices = { "multiplayer", "local" } },
+        { name = "freetravel", x = 41, y = 255, choices = { "off", "on" } },
+        { name = "direct", x = 208, y = 255, choices = { "off", "on" } },
+        { name = "players", x = 375, y = 255, choices = { "2", "4", "6" } },
+        { name = "mode", x = 542, y = 255, choices = { "multiplayer", "local" } },
+        { name = "skip", x = 709, y = 255, choices = {}, live = true },
     }
 
     local panel = { open = false }
@@ -335,6 +337,16 @@ return function(api)
             return
         end
         for _, t in ipairs(TILES) do
+            if t.name == "skip" and kit.inside(x, y, t, TILE, TILE) then
+                local why = api.prologue.press()
+                if why then
+                    api.status.lastShown.join = nil     -- (a click deserves its answer, however soon after the last)
+                    api.status.notify("join", why)
+                else
+                    panel.close()                       -- (on the way: the panel keeps the player still)
+                end
+                return
+            end
             if #t.choices > 0 and kit.inside(x, y, t, TILE, TILE) then
                 local next = t.choices[1]
                 for i, value in ipairs(t.choices) do
@@ -406,7 +418,7 @@ return function(api)
         kit.place(kit.part("on_close", "close", CLOSE.w, CLOSE.h, 1), CLOSE.x, CLOSE.y)
         kit.place(worded("on_back", "online_back", BUTTON_W, BUTTON_H, 1), BACK.x, BACK.y)
         for _, t in ipairs(TILES) do
-            local value = options[t.name] or t.choices[1] or "soon"
+            local value = t.live and api.prologue.state() or options[t.name] or t.choices[1] or "soon"
             kit.place(worded("on_tile_" .. t.name, "tile_" .. t.name .. "_" .. value, TILE, TILE, 1), t.x, t.y)
         end
     end
@@ -598,6 +610,10 @@ return function(api)
             press(r.x + 5, r.y + 5)
         elseif word == "press" then
             press(tonumber(x), tonumber(y))
+        elseif word == "skip" then
+            local r = TILES[#TILES]
+            page = "settings"
+            press(r.x + 5, r.y + 5)
         elseif word == "row" then
             log("Online panel row " .. x .. ": " .. tostring(options[x]))
         end

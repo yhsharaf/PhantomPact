@@ -2350,11 +2350,43 @@ local function playerReports()
             Fake.put(bp, "PushMedicineToInventory", real)
         end
         check(pushed == 0, "the starting healing gourd is never handed out by the mod")
-        check(g.env.PBZ.coop.joinPartner ~= nil and g.env.PBZ.coop.joinPartner() == "finish the prologue first.",
-            "no trip to the partner out of the prologue")
+        local restored = 0
+        if bp then
+            Fake.put(bp, "RestoreEquipmentAfterPrologue", function() restored = restored + 1 end)
+        end
+        local join, gnet = g.env.PBZ.coop.joinPartner, net(g)
+        check(join ~= nil and join() == gnet.PROLOGUE_TIP and restored == 0,
+            "no trip to the partner out of the prologue on its own: it says how to skip it")
         table.insert(h.globalTags, "zlgw.intro.done")
         s:run(6)
         check(not g.storyMarks["zlgw.intro.done"], "and nothing of the host's flow comes into it")
+        check(join(nil, true) == gnet.PROLOGUE_ASK and restored == 0, "F3 once in the prologue asks first")
+        local why = join(nil, true)
+        check(restored == 1 and (why == nil or why == "the game wouldn't go there."),
+            "F3 again skips it by the game's own step (" .. tostring(why) .. ")")
+        allErrors(s)
+    end
+    do
+        -- The skip is the player's choice only: a guest in the prologue as sync links isn't taken out of it, and is told how.
+        local s = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES)
+        local h, g = s.pcs[1], s.pcs[2]
+        g.map = "PBZ_WP_ZhuLinGuWu"
+        g.env.PBZ.game.prologueAt = -1e9
+        local restored = 0
+        local bp = g.env.PBZ.game.backpackOf(g.pawn)
+        if bp then
+            Fake.put(bp, "RestoreEquipmentAfterPrologue", function() restored = restored + 1 end)
+        end
+        s:run(30)
+        check(restored == 0 and g.map == "PBZ_WP_ZhuLinGuWu", "linking from the prologue leaves the guest in it")
+        -- MORE's Skip Prologue tile: red, a click asks, the second skips it; green for the host, past it.
+        local skip = g.env.PBZ.prologue
+        check(skip.state() == "todo" and h.env.PBZ.prologue.state() == "done", "the tile: red in the prologue, green past it")
+        check(skip.press() ~= nil and skip.state() == "ask" and restored == 0, "a click on it asks first")
+        local why = skip.press()
+        check(restored == 1 and (why == nil or why == "the game wouldn't go there."),
+            "the second click skips it by the game's own step (" .. tostring(why) .. ")")
+        check(h.env.PBZ.prologue.press() == "you're past the prologue.", "a click past it does nothing")
         allErrors(s)
     end
     do
@@ -3295,19 +3327,19 @@ local function offAndBack()
     local ph = p.pcs[1]
     ph.files["PhantomPact.ini"] = "Role = Host\nSecret = hunter2"
     Session.command(ph, "onlinepanel press 700 500")
-    Session.command(ph, "onlinepanel press 530 330")       -- (the Players tile: 2 -> 4)
+    Session.command(ph, "onlinepanel press 450 330")       -- (the Players tile: 2 -> 4)
     p:run(1)
     check(ph.files["PhantomPact.ini"]:find("Secret = hunter2\nPartySize = 4\n", 1, true) ~= nil, "a setting added to an ini with no line end at its end keeps both")
-    Session.command(ph, "onlinepanel press 530 330")
+    Session.command(ph, "onlinepanel press 450 330")
     p:run(1)
     check(ph.files["PhantomPact.ini"]:find("PartySize = 6", 1, true) ~= nil, "a click moves the Players tile on to its next choice")
     check(ph.env.PBZ.freetravel.on == true, "free bell travel is on with no line for it in the ini")
-    Session.command(ph, "onlinepanel press 199 330")       -- (the Free Bell Travel tile)
+    Session.command(ph, "onlinepanel press 116 330")       -- (the Free Bell Travel tile)
     p:run(1)
     check(ph.files["PhantomPact.ini"]:find("FreeBellTravel = Off", 1, true) ~= nil and ph.env.PBZ.freetravel.on == false,
         "the Free Bell Travel tile turns it off, kept in the ini and in force at once")
     Session.command(ph, "onlinepanel press 280 150")       -- (Revive: still to come, nothing to choose)
-    Session.command(ph, "onlinepanel press 199 330")
+    Session.command(ph, "onlinepanel press 116 330")
     p:run(1)
     check(ph.files["PhantomPact.ini"]:find("FreeBellTravel = On", 1, true) ~= nil and ph.env.PBZ.freetravel.on == true
         and not ph.files["PhantomPact.ini"]:find("Revive", 1, true), "and back on; the Revive tile writes nothing")
@@ -3317,7 +3349,7 @@ local function offAndBack()
     local r, rh, rg = pair()
     check(rg.env.PBZ.rules.following() == true and rg.env.PBZ.freetravel.on == true, "a linked guest follows the host's rules")
     Session.command(rh, "onlinepanel press 700 500")
-    Session.command(rh, "onlinepanel press 199 330")        -- the host: Free Bell Travel off
+    Session.command(rh, "onlinepanel press 116 330")        -- the host: Free Bell Travel off
     Session.command(rh, "onlinepanel press 116 163")        -- and TP > Partner on
     Session.command(rh, "onlinepanel press 617 163")        -- Partner Compass off (a PvP surprise)
     Session.command(rh, "onlinepanel press 784 163")        -- and Partner On The Map off
@@ -3327,7 +3359,7 @@ local function offAndBack()
     check(rh.env.PBZ.rules.following() == false, "the host follows nobody")
     Session.command(rg, "onlinepanel press 700 500")
     rg.logs = {}
-    Session.command(rg, "onlinepanel press 199 330")        -- the guest tries to turn it back on
+    Session.command(rg, "onlinepanel press 116 330")        -- the guest tries to turn it back on
     r:run(1)
     check(rg.env.PBZ.freetravel.on == false and not (rg.files["PhantomPact.ini"] or ""):find("FreeBellTravel", 1, true)
         and count(rg.logs, "Only the host's setting counts%.") == 1, "a guest's click changes nothing, and says why")
@@ -4303,7 +4335,7 @@ local function modeRow()
     s:run(2)
     pc = s.pcs[1]
     -- (One Mode tile, which a click moves to its other choice: each use below comes from the other.)
-    local LOCAL, MULTIPLAYER = "onlinepanel press 700 330", "onlinepanel press 700 330"
+    local LOCAL, MULTIPLAYER = "onlinepanel press 617 330", "onlinepanel press 617 330"
     Session.command(pc, "onlinepanel press 700 500")
     Session.command(pc, LOCAL)
     s:run(1)
@@ -4498,14 +4530,14 @@ local function panel()
     s:run(2)
     local h = s.pcs[1]
     Session.command(h, "onlinepanel press 700 500")      -- MORE
-    Session.command(h, "onlinepanel press 530 330")      -- the Players tile: 2 -> 4
+    Session.command(h, "onlinepanel press 450 330")      -- the Players tile: 2 -> 4
     s:run(1)
     check(h.files["PhantomPact.ini"]:find("PartySize = 4\n", 1, true) ~= nil, "4 is kept in the ini")
     check(h.files["PhantomPact.ini"]:find("Role = Host\n", 1, true) ~= nil and h.files["PhantomPact.ini"]:find("CoopEnemyHealth = 150\n", 1, true) ~= nil, "and nothing else moves")
-    Session.command(h, "onlinepanel press 530 330")      -- 6
+    Session.command(h, "onlinepanel press 450 330")      -- 6
     s:run(1)
     check(h.files["PhantomPact.ini"]:find("PartySize = 6\n", 1, true) ~= nil, "6 too")
-    Session.command(h, "onlinepanel press 530 330")      -- and round to 2
+    Session.command(h, "onlinepanel press 450 330")      -- and round to 2
     s:run(1)
     check(h.files["PhantomPact.ini"]:find("PartySize = 2\n", 1, true) ~= nil, "and 2")
     Session.command(h, "onlinepanel press 47 94")        -- the TP tile, at its very corner

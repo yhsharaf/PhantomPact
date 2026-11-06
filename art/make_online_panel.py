@@ -25,7 +25,10 @@ WORDS = {
                   "freetravel": ("Free Bell Travel", "Off: a trip to a bell costs a Traversal Talisman"),
                   "direct": ("Steam Direct", "Less delay, but your partner can see your IP"),
                   "players": ("Players", "Host's choice. 6: ghost twins (test)"),
-                  "mode": ("Mode", "Local: split screen on this PC, next start")},
+                  "mode": ("Mode", "Local: split screen on this PC, next start"),
+                  "skip": ("Skip Prologue", "New save: the gear and gourd its end gives, then onward"),
+                  "skip_ask": ("Skip Prologue", "Click again to skip it. It can't be undone"),
+                  "skip_done": ("Skip Prologue", "You're past the prologue")},
         "soon": "SOON",
         "foot": ["Click a tile to change it. Kept for next time. Steam Direct and Players: next connection.",
                  "Mode: next game start. Online, the host decides every tile but Steam Direct and Mode."],
@@ -37,6 +40,7 @@ WORDS = {
                   "online_password_set": ("Password set", "press to remove")},
         "buttons": {"host": "HOST", "join": "GUEST", "leave": "LEAVE", "settings": "MORE", "back": "BACK"},
         "on": "ON", "off": "OFF", "multiplayer": "MULTIPLAYER", "local": "LOCAL",
+        "skip_words": {"todo": "SKIP", "ask": "SURE?", "done": "DONE"},
     },
     "zh": {
         "prefix": "zh_", "face": chinese, "title": "联机合作", "status": "状态", "through": "连接方式",
@@ -55,7 +59,10 @@ WORDS = {
                   "freetravel": ("免费钟传送", "关闭后,传送到钟要消耗道具,与原版相同"),
                   "direct": ("Steam 直连", "延迟更低,但队友能看到你的 IP"),
                   "players": ("人数", "房主决定。6 人:幽灵双生(实验)"),
-                  "mode": ("模式", "本地:同一台电脑分屏,下次启动生效")},
+                  "mode": ("模式", "本地:同一台电脑分屏,下次启动生效"),
+                  "skip": ("跳过序章", "新存档:获得序章结束时的装备和葫芦,然后继续"),
+                  "skip_ask": ("跳过序章", "再点一次即跳过,无法撤销"),
+                  "skip_done": ("跳过序章", "你已经过了序章")},
         "soon": "即将推出",
         "foot": ["点击方块切换。设置会保存。Steam 直连和人数下次连接时生效,",
                  "模式下次启动游戏时生效。联机时,除 Steam 直连和模式外,其他设置都由房主决定。"],
@@ -67,6 +74,7 @@ WORDS = {
                   "online_password_set": ("密码已设置", "按一下清除")},
         "buttons": {"host": "开房", "join": "加入", "leave": "离开", "settings": "更多", "back": "返回"},
         "on": "开", "off": "关", "multiplayer": "多人联机", "local": "本地分屏",
+        "skip_words": {"todo": "跳过", "ask": "确定?", "done": "已完成"},
     },
 }
 
@@ -177,6 +185,14 @@ def tiles(w_):
     label, sub = t["mode"]
     for value in ("multiplayer", "local"):
         tile(prefix + "tile_mode_" + value, label, sub, w_[value], "multi", face)
+    # Skip Prologue (the user's design): red in the prologue, red asking once clicked, green for anyone past it.
+    sw = w_["skip_words"]
+    label, sub = t["skip"]
+    tile(prefix + "tile_skip_todo", label, sub, sw["todo"], "off", face, "cross")
+    label, sub = t["skip_ask"]
+    tile(prefix + "tile_skip_ask", label, sub, sw["ask"], "off", face)
+    label, sub = t["skip_done"]
+    tile(prefix + "tile_skip_done", label, sub, sw["done"], "on", face, "tick")
 
 
 def option(name, text, face=font, w=124, h=40):

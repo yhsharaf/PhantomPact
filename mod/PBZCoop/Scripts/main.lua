@@ -572,6 +572,7 @@ api.mapfog = dofile(SCRIPT_DIR .. "mapfog.lua")(api)
 api.freetravel = dofile(SCRIPT_DIR .. "freetravel.lua")(api)
 api.blockers = dofile(SCRIPT_DIR .. "blockers.lua")(api)
 api.rules = dofile(SCRIPT_DIR .. "rules.lua")(api)
+api.prologue = dofile(SCRIPT_DIR .. "prologue.lua")(api)
 local net = coop.net
 
 -- Helpers for the "eval" command, so test snippets can reuse the mod's functions.
@@ -593,6 +594,7 @@ PBZ = {
     game = api.game,
     link = api.link,
     story = api.story,
+    prologue = api.prologue,
     freetravel = api.freetravel,
     rules = api.rules,
     moves = api.moves,

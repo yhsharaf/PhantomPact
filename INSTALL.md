@@ -54,7 +54,9 @@ and the co-op messages. Your choices are kept for the next start.
 
 **MORE** opens the settings: TP > Partner, PvP, the partner compass, your partner on the map and Steam Direct, each ON or
 OFF, Players (2, 4 or 6), and Mode: MULTIPLAYER, or LOCAL for two players on this PC. Mode works from the next time you start the
-game. Revive is coming soon. Enemy difficulty is the game's own setting. With a partner, enemies always get extra health and
+game. **Skip Prologue** is red while you're in the prologue: click it, then click again to say yes, and you get the gear
+and healing gourd the prologue's end gives, then go to your partner (or, alone, to the valley where the prologue ends).
+It's green once you're past the prologue. Revive is coming soon. Enemy difficulty is the game's own setting. With a partner, enemies always get extra health and
 posture on top of it.
 
 **Going to your partner.** Joining takes you to the host once, even on another map, so a friend with a new save can

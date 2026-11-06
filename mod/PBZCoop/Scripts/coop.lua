@@ -3158,7 +3158,9 @@ return function(api)
     -- This player goes to the partner, on this map or another: a friend on a new save could never walk to a host deep in
     -- the story, and a door only the other world has opened would keep them apart. Says why not, or nil once on the way.
     -- p: who, in a party (no one named: the host, or the host's first guest here).
-    local function joinPartner(p)
+    net.PROLOGUE_TIP = "you're in the prologue: press F3 twice to skip it and go to your partner, with the gear and gourd its end gives."
+    net.PROLOGUE_ASK = "press F3 again to skip the prologue: you get the gear and gourd its end gives, and go to your partner."
+    local function joinPartner(p, pressed)
         p = p or net
         local controller, pawn = getPlayer1()
         local t = p.target
@@ -3170,15 +3172,22 @@ return function(api)
             or api.gs():IsGamePaused(controller) or api.localcoop.bellMenuUp() or api.localcoop.screenUp() then
             return "not now."
         end
-        -- (Not out of the prologue: a guest taken from it to the host skipped the end that gives back the starting gear,
-        -- the healing gourd among it.)
-        if game.inPrologue and game.inPrologue() then
-            return "finish the prologue first."
-        end
-        -- (Nor into it: the partner's prologue map is theirs alone.)
+        -- (Not into the prologue: the partner's prologue map is theirs alone.)
         local tmap = tostring(t.Map or "")
         if tmap:find("ZhuLinGuWu", 1, true) or tmap:find("ZLGW", 1, true) then
             return "your partner is still in the prologue."
+        end
+        -- (Out of the prologue only by the player's choice, F3 twice: a guest taken from it to the host skipped the end that
+        -- gives back the starting gear, the healing gourd among it, so the skip runs that end's step first: game.skipPrologue,
+        -- just before the trip. Never on its own, as the trip on linking: that one says how, once, and stops.)
+        local skipping = game.inPrologue and game.inPrologue()
+        if skipping then
+            if not pressed then
+                return net.PROLOGUE_TIP
+            elseif os.clock() > (net.skipAskedAt or -1e9) + 10 then
+                net.skipAskedAt = os.clock()
+                return net.PROLOGUE_ASK
+            end
         end
         if t.Hp == nil or t.Hp <= 0 or t.Cine then
             return "your partner can't be joined right now."
@@ -3208,6 +3217,13 @@ return function(api)
         local level = (link.status() or ""):match((p.number and p ~= net) and (" map" .. p.number .. "=(%S+)") or "partner_map=(%S+)")
         if not level or level == "-" or level == "?" then
             return "your partner's map isn't known yet."
+        end
+        if skipping then
+            net.skipAskedAt = nil
+            if not (game.skipPrologue and game.skipPrologue()) then
+                return "the game wouldn't skip the prologue."
+            end
+            log("Prologue skipped: going to the other player.")
         end
         if not (game.travel and game.travel(level, t)) then
             return "the game wouldn't go there."

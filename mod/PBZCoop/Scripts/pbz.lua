@@ -3001,8 +3001,7 @@ return function(api)
 
     -- gourd: a player who came out of a new game's prologue with no healing gourd to drink from gets it back, equipped and full.
     -- (Players of 1.6.3 lost it in co-op: see game.inPrologue.) Says what it found.
-    if game.commands then
-        game.commands.gourd = function()
+    function game.giveGourd()
             local _, pawn = api.getPlayer1()
             local bp = valid(pawn) and game.backpackOf(pawn)
             if not bp then
@@ -3032,7 +3031,28 @@ return function(api)
                     g:SetDisplayTime(g.MaxTime)
                 end)
             end
+    end
+    if game.commands then
+        game.commands.gourd = function()
+            game.giveGourd()
         end
+    end
+
+    -- Skipping the prologue (a new save joining a friend): what its end does, by the game's own step. The prologue runs on a
+    -- stripped loadout ("PrologueBare"), and the bag's RestoreEquipmentAfterPrologue gives the starting gear back as it ends.
+    -- A plain trip out of it gives nothing back (the bench's guest went a day of trips with no gourd). Then the gourd, if
+    -- that step didn't put it there. The story after it comes from the host's (catch-up). True once the gear is back.
+    function game.skipPrologue()
+        local _, pawn = api.getPlayer1()
+        local bp = valid(pawn) and game.backpackOf(pawn)
+        if not bp then
+            log("Prologue skip: no player or bag yet.")
+            return false
+        end
+        local ok, err = pcall(function() bp:RestoreEquipmentAfterPrologue() end)
+        log("Prologue skip: starting gear " .. (ok and "given back by the game's own step." or ("not given back: " .. tostring(err))))
+        game.giveGourd()
+        return ok
     end
 
     -- Sitting at a bell heals, fills the gourd and saves, and runs no Refresh Monster. RestoreHealth is the step every sit has,
