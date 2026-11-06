@@ -44,6 +44,15 @@ perfect dodge, posture). So nobody gets hit by a swing they saw miss.
 
 A player who is down says so (`AR down`); the host counts.
 
+## On screen
+
+Each foe is on the game's own boss health bar (`PBZHUDLayout:RegisterBossHPBar`), white health over gold posture, at the
+top, as a boss fight shows its boss. Its name text (`BossName`, the game's own font) says who, and over the first foe's bar the
+score (YOU 1 – 0) and the round's clock; its health is moved with the bar's own `ForSeq_UpdateHealth`. A player's figure on
+a boss bar gets no `Character` (the bench), so pbz.lua knows each bar by the widget the HUD made for it, and keeps it out of
+the mod's own boss lists (`bosses`, `bossActors`), so nothing that walks the bosses sees a player. The countdown and banners are
+ink-brush pictures of ours; the death card and the golden VICTORY are the game's own screens.
+
 ## On the wire
 
 One sure-lane event kind, `AR <what> ...`, so older versions ignore all of it. A match only starts when every player runs the
@@ -94,9 +103,13 @@ start):
 Weapon levels: a blow's damage in the defender's world goes by the defender's own level of the attacker's weapon. On the bench a
 guest's Sanguine blow took 128 from the host at the host's Sanguine level 1, 256 at level 11. So in every world every weapon
 anyone in the match fights with goes to level 30 (lent first if not owned), and the loadouts travel with the start so every
-world knows them. The level is set with the game's plain setter, `ResetWeaponToLevel`, not its upgrade: `UpgradeWeapon` to 30
-gave the bench player the "Skill Over Strength" achievement (a Phantom Edge to level 30). That bench account has it now, so
-it's not proven that the setter never grants it.
+world knows them. Raised with the game's own `UpgradeWeapon` and put back with `ResetWeaponToLevel` (both only set the level:
+no dust, nothing in the bag). Tried and dropped: `ResetWeaponToLevel` won't raise (asked for 30, the weapons stayed at 1), and
+the bag's own level field written by hand (`MainWeaponInfos`' `WeaponLevel`, `ShaqiWeaponInfos`' `ShaChiWeaponLevel`) reads
+back right, but a match after either crashed the bench host within a second, a call to an empty function pointer.
+
+Known: the upgrade to 30 gives a player who doesn't have it the game's "Skill Over Strength" achievement (a Phantom Edge to
+level 30), as it did the bench player.
 
 ## Arenas
 
@@ -119,7 +132,9 @@ fell 110 m and lost round 1.
 
 - `arena.lua`: the match (the host's side, each player's own side, the events, putting things back).
 - `arenas.lua`: the arenas, the weapon lists, the stats, the finishing moves.
-- `arenaui.lua`: the countdown, banners, health bars, score, clock and death card.
+- `arenaui.lua`: the countdown, banners, each foe on the game's own boss bar (its name text says who, the score and the
+  clock: the user wants the game's own bar design, so ours went), and the game's own death card. Teammates get no bar: the
+  game's player bar only follows its own player.
 - `pvppanel.lua`: the F6 page (lobby and loadout).
 - `pvp.lua`: the fight itself, for PvPvE and the arena: hostile figures, parries, teams.
 - `art/make_pvp_art.py`: every picture above.

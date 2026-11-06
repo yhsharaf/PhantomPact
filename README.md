@@ -25,7 +25,7 @@ share loot and dust, and rest at bells together. The host's world leads, and you
 - Elden Ring–style co-op difficulty: enemies and bosses get more health and posture while you play together
 - PvP matches (F6, new in 1.7.0): duels (best of three) and death matches, one on one or two teams of up to six, in four
   of the game's own boss arenas or where the host stands. Fair for everyone: the same body and level-30 weapons of your own
-  choosing, three drinks of one gourd, a brush-stroke countdown, health bars, a clock or none, and a boss's move to finish
+  choosing, three drinks of one gourd, a brush-stroke countdown, each foe on the game's own boss health bar, a clock or none, and a boss's move to finish
   the loser. Nothing is saved, and everything goes back after ([docs/PVP.md](docs/PVP.md))
 - PvPvE (MORE > PvPvE): fight your partner in the open world, enemies and all: the game's own block, parry and dodge;
   parries stagger the attacker; the loser dies

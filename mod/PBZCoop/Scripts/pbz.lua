@@ -1441,9 +1441,13 @@ return function(api)
     -- The HUD registers a boss health bar when a boss fight starts: the surest way to know who the boss is.
     local showingRemoteBoss = false
     local mirroredAt = {}       -- address -> true: a bar shown here for another player's fight (showBossBar)
+    local foeBars = {}          -- address -> true: a PvP foe on the game's boss bar (game.showFoeBar), no boss to the mod
     pcall(function()
         RegisterHook("/Script/ProjectPBZ.PBZHUDLayout:RegisterBossHPBar", function(_, bossParam)
             local boss = bossParam:get()
+            if valid(boss) and foeBars[boss:GetAddress()] then
+                return
+            end
             if valid(boss) and not showingRemoteBoss and mirroredAt[boss:GetAddress()] and game.bossAt(boss:GetAddress(), boss) then
                 -- This game's own fight with a boss it showed for another player's: its own from now on. (A guest who
                 -- started first had the host's own fight taken for a mirror, ended with the guest's: walls open, bar gone,
@@ -1513,6 +1517,113 @@ return function(api)
         log(ok and ("Showing boss bar for " .. boss:GetFName():ToString()) or ("Boss bar failed: " .. tostring(err)))
     end
 
+    -- A PvP foe's health on the game's own boss bar (arena.lua: the bars are the game's, not ours). Never a boss to the
+    -- mod: kept out of bosses and bossActors, so nothing that walks the bosses (the host telling its fights, fog walls,
+    -- scaling, the arena putting the real boss's bar away) sees it. name: what the bar says over it, or nil for the game's.
+    -- The HUD's boss bars now, valid ones only (asked for each time: no widget kept across frames).
+    local function bossBarList(hud)
+        local out = {}
+        pcall(function()
+            local bars = hud:GetBossHPBarInstances()
+            for i = 1, #bars do
+                local bar = nil
+                pcall(function() bar = bars[i]:get() end)
+                if valid(bar) then
+                    out[#out + 1] = bar
+                end
+            end
+        end)
+        return out
+    end
+
+    -- A player's figure on a boss bar gets no Character (the bench: the bar showed, but pointed at nothing), so its bar is
+    -- known by the widget the HUD made for it: the one that wasn't there before.
+    function game.showFoeBar(actor, name)
+        local hud = FindFirstOf("PBZHUDLayout")
+        if not (valid(actor) and valid(hud)) then
+            return false
+        end
+        local addr = actor:GetAddress()
+        local before = {}
+        for _, bar in ipairs(bossBarList(hud)) do
+            before[bar:GetAddress()] = true
+        end
+        foeBars[addr] = true
+        if not pcall(function() hud:RegisterBossHPBar(actor) end) then
+            return false
+        end
+        for _, bar in ipairs(bossBarList(hud)) do
+            if not before[bar:GetAddress()] then
+                foeBars[addr] = bar:GetAddress()
+                if name then
+                    pcall(function() bar.BossName:SetText(FText(name)) end)
+                end
+            end
+        end
+        return foeBars[addr] ~= true
+    end
+
+    -- Its bar, or nil. addr: the actor's address. (Registered but its bar not seen yet, if the HUD makes it a moment later:
+    -- the first one nobody has claimed and with no Character is it. A real boss's bar has one.)
+    function game.foeBar(addr)
+        local want = foeBars[addr]
+        local hud = want and FindFirstOf("PBZHUDLayout")
+        if not valid(hud) then
+            return nil
+        end
+        local bars = bossBarList(hud)
+        if type(want) == "number" then
+            for _, bar in ipairs(bars) do
+                if bar:GetAddress() == want then
+                    return bar
+                end
+            end
+            return nil
+        end
+        local claimed = {}
+        for _, a in pairs(foeBars) do
+            if type(a) == "number" then
+                claimed[a] = true
+            end
+        end
+        for _, bar in ipairs(bars) do
+            local ch = nil
+            pcall(function() ch = bar.Character end)
+            if not claimed[bar:GetAddress()] and not valid(ch) then
+                foeBars[addr] = bar:GetAddress()
+                return bar
+            end
+        end
+        return nil
+    end
+
+    function game.setFoeBar(addr, fraction)
+        local bar = game.foeBar(addr)
+        if bar then
+            pcall(function() bar:ForSeq_UpdateHealth(math.max(0, math.min(1, fraction))) end)
+        end
+        return bar ~= nil
+    end
+
+    -- The words over it (the game's own text, in its own font): the name, the score, the clock.
+    function game.setFoeName(addr, name)
+        local bar = game.foeBar(addr)
+        if bar then
+            pcall(function() bar.BossName:SetText(FText(name)) end)
+        end
+        return bar ~= nil
+    end
+
+    function game.hideFoeBar(actor)
+        local hud = FindFirstOf("PBZHUDLayout")
+        if valid(actor) and valid(hud) then
+            pcall(function() hud:UnRegisterBossHPBar(actor) end)
+        end
+        if valid(actor) then
+            foeBars[actor:GetAddress()] = nil
+        end
+    end
+
     -- The bar of a fight that ended without the game saying so (the other PC's boss, a refresh).
     function game.hideBossBar(boss)
         local hud = FindFirstOf("PBZHUDLayout")
@@ -1526,7 +1637,8 @@ return function(api)
     -- fog walls near our copy of the boss; when the boss dies, open them. at: where the boss stands (it may be gone
     -- by the time the walls open).
     local FOG_RADIUS_CM = 6000
-    function game.setBossFog(at, closed)
+    -- quiet: no line in the log (a PvP match closes them again every second).
+    function game.setBossFog(at, closed, quiet)
         local n = 0
         for _, door in ipairs(FindAllOf("BP_FogDoor_C") or {}) do
             -- (By the wall's nearest point, not the actor: that stands at the wall's first point, up to 50 m from the rest.)
@@ -1541,7 +1653,7 @@ return function(api)
                 end
             end
         end
-        if n > 0 then
+        if n > 0 and not quiet then
             log(string.format("%s %d fog wall(s) at %.0f %.0f.", closed and "Closed" or "Opened", n, at.X, at.Y))
         end
         return n

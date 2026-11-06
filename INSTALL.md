@@ -157,6 +157,7 @@ New in 1.7.0: real matches, fair for everyone, in the game's own boss arenas. Ev
 1. **The host** picks the mode (**Duel**: best of three rounds; **Death**: one life), the clock (none, 60, 90 or 120 s a
    round) and the arena: the Crimson Forest (YuCong), Hua Qianxiao's stage, the Gold-Masked One's gorge, Mu Xiaokui's
    meadow, or **Here**, where the host stands. A boss's arena opens once every player's own save has that boss beaten.
+   For Here, stand on open, flat ground: the two sides start 8 m in front of and behind the host.
 2. **Everyone** picks a loadout (two weapons and two Phantom Edges, any in the game, owned or not: click a slot), a team
    if there are more than two of you (Crimson or Azure), and presses **READY**.
 3. The host presses **START**. Everyone goes to the arena, the fog walls go up, there are no monsters, and after

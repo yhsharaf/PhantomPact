@@ -641,7 +641,10 @@ return function(api)
             -- Every weapon anyone fights with, at the top level in this world. The blows this player takes are worked out here,
             -- from this world's own level of the weapon that lands them (the bench: a defender whose Tang was at level 11 took
             -- twice the damage of one at level 1, 256 to 128): so all at one level, everywhere. One this player doesn't own is
-            -- lent for the match. (UpgradeWeapon and ResetWeaponToLevel only set the level: no dust, nothing in the bag.)
+            -- lent for the match. (UpgradeWeapon and ResetWeaponToLevel only set the level: no dust, nothing in the bag.
+            -- Only the game's own upgrade raises it cleanly: ResetWeaponToLevel won't go up, and the bag's level written by
+            -- hand, or that reset asked to go up, crashed both bench copies' next match within a second, a call to nothing.
+            -- The upgrade to 30 does give a Phantom Edge's "Skill Over Strength" achievement to a player without it.)
             local want = {}
             local function add(pr)
                 for i = 1, 2 do
@@ -672,10 +675,8 @@ return function(api)
                 edge[i] = FName(p.edge[i])
             end
             saved.pushed = pcall(function() bp:PushEquippedWeapons(main, edge, 0, 0) end)
-            -- Up to the top level now, and again in a moment: one just lent reads level 0 till the game has it in the bag
-            -- (the bench: lent ones stayed at 1 when raised in the same breath as the lending). With the game's plain
-            -- setter, ResetWeaponToLevel, not its upgrade: UpgradeWeapon to 30 gave the bench player the "Skill Over
-            -- Strength" achievement (a Phantom Edge to level 30) for nothing.
+            -- Up to the top level now, and again in a moment: one just lent can read level 0 till the game has it in the bag
+            -- (the bench: lent ones raised in the same breath as the lending stayed at 1).
             local function raise(b)
                 for key in pairs(want) do
                     local kind, id = key:match("^(%a+):(.+)$")
@@ -683,7 +684,7 @@ return function(api)
                     pcall(function()
                         local level = b:GetWeaponLevel(FName(id), isMain)
                         if level and level > 0 and level < data.WEAPON_LEVEL then
-                            b:ResetWeaponToLevel(FName(id), isMain, data.WEAPON_LEVEL, {}, {})
+                            b:UpgradeWeapon(FName(id), isMain, data.WEAPON_LEVEL - level)
                         end
                     end)
                 end
@@ -763,7 +764,9 @@ return function(api)
             end
             for key, level in pairs(s.levels or {}) do
                 local kind, id = key:match("^(%a+):(.+)$")
-                pcall(function() bp:ResetWeaponToLevel(FName(id), kind == "main", level, {}, {}) end)
+                if level and level > 0 then
+                    pcall(function() bp:ResetWeaponToLevel(FName(id), kind == "main", level, {}, {}) end)
+                end
             end
             for _, loan in ipairs(s.loans or {}) do
                 local kind, id = loan:match("^(%a+):(.+)$")
@@ -988,9 +991,6 @@ return function(api)
         if api.pvp then
             api.pvp.lastHitBy = nil
         end
-        if round == 1 and arena.preloadFinishers then
-            arena.preloadFinishers()        -- (loaded now, in the countdown, not as the blow starts)
-        end
         if valid(pawn) then
             arena.fall(pawn, false)
             if m.downSelf then
@@ -1096,12 +1096,18 @@ return function(api)
         end
     end
 
+    -- How long a player may go unheard before they count as lost: on the way there and setting up, a trip's whole time
+    -- (the game's own trip is a loading screen, 12 s with nothing sent on the bench); after that, SILENT_S.
+    local function quietLimit(m)
+        return (m.phase == "going" or m.phase == "there") and TRAVEL_S or SILENT_S
+    end
+
     local function hostTick(m)
         local now = os.clock()
         -- Anyone gone quiet ends it for everyone.
         for _, p in ipairs(coop.partners()) do
             local s = peerSlot(p)
-            if m.teams[s] and (p.partnerGone or (p.lastRemoteAt and now - p.lastRemoteAt > SILENT_S)) then
+            if m.teams[s] and (p.partnerGone or (p.lastRemoteAt and now - p.lastRemoteAt > quietLimit(m))) then
                 coop.sendEvent("AR", "quit", m.id, "lost")
                 arena.quit(playerName(s) .. " was lost", true)
                 return
@@ -1225,7 +1231,7 @@ return function(api)
             if now >= areaAt then
                 areaAt = now + AREA_S
                 parkEnemies(middleOf(m))
-                game.setBossFog(middleOf(m), true)
+                game.setBossFog(middleOf(m), true, true)        -- (said once, as they first close: arrive)
             end
         end
         if m.phase == "count" and now >= m.fightAt then
@@ -1261,6 +1267,10 @@ return function(api)
         end
         if coop.isHost() then
             hostTick(m)
+        elseif net.partnerGone or (net.lastRemoteAt and now - net.lastRemoteAt > quietLimit(m)) then
+            -- The host gone quiet: nobody runs the match any more (the bench: a guest stood in round 1 for good, the save
+            -- held off and the match's loadout on, after the host's game crashed). A guest's host is net, two or more.
+            arena.quit("the host was lost", true)
         end
     end
 
@@ -1347,21 +1357,17 @@ return function(api)
         if not f then
             return nil
         end
-        local m = StaticFindObject(f.path)
-        if not valid(m) and type(LoadAsset) == "function" then
-            pcall(LoadAsset, (f.path:gsub("%.[^.]*$", "")))     -- (the package, as the game's own textures load)
+        -- Loaded as the blow starts, as moves.lua loads any move. (Not ahead, in the first countdown: loading right after
+        -- the arena's trip, its long load just over, crashed the bench host inside UE4SS.)
+        local m = api.moves and api.moves.montage and api.moves.montage(f.path)
+        if not valid(m) then
             m = StaticFindObject(f.path)
-        end
-        if not valid(m) and api.moves and api.moves.montage then
-            m = api.moves.montage(f.path)
+            if not valid(m) and type(LoadAsset) == "function" then
+                pcall(LoadAsset, f.path)
+                m = StaticFindObject(f.path)
+            end
         end
         return valid(m) and m or nil, f
-    end
-
-    function arena.preloadFinishers()
-        for i = 1, #data.FINISHERS do
-            finisherMove(i)
-        end
     end
 
     local function slowBeat(m)
@@ -1856,7 +1862,9 @@ return function(api)
                 end
             end)
             for kind, id, level in (j.levels or ""):gmatch("(%a+):([^,=]+)=(%d+)") do
-                pcall(function() bp:ResetWeaponToLevel(FName(id), kind == "main", tonumber(level), {}, {}) end)
+                if tonumber(level) > 0 then
+                    pcall(function() bp:ResetWeaponToLevel(FName(id), kind == "main", tonumber(level), {}, {}) end)
+                end
             end
             for kind, id in (j.loans or ""):gmatch("(%a+):([^,]+)") do
                 pcall(function() bp:DisposeWeapon(FName(id), kind == "main") end)

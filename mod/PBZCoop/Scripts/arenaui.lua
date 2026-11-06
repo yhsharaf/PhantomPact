@@ -1,7 +1,7 @@
--- What a PvP match shows (arena.lua drives it): the countdown, painted 三 二 一 and 斗 over a crimson ink circle; the score
--- and the clock at the top; the foes' health bars under them, a pale trail showing what a hit just took; teammates' small bars
--- at the left; the banners between rounds; and the game's own death card for the fallen at the end. Pictures from
--- art/make_pvp_art.py (art/pvp), each in the game's one-image widget (hud.lua), placed every frame against the screen's size.
+-- What a PvP match shows (arena.lua drives it): the countdown, painted 三 二 一 and 斗 over a crimson ink circle; each foe on the
+-- game's own boss health bar, its name text saying who, the score and the clock; the banners between rounds; and the game's
+-- own death card for the fallen at the end. Pictures from art/make_pvp_art.py (art/pvp), each in the game's one-image widget
+-- (hud.lua), placed every frame against the screen's size. (The user, 11-06: health bars in the game's own design.)
 
 return function(api)
     local log, valid, hud = api.log, api.valid, api.hud
@@ -11,8 +11,6 @@ return function(api)
     local COUNT_SIZE = 300          -- the countdown's picture, against a screen 1080 high
     local BANNER_W, BANNER_H = 900, 150
     local BANNER_S = 2.6            -- a banner on screen this long
-    local TRAIL_HOLD_S = 0.45       -- the pale trail waits this long after a hit, then runs down to the bar
-    local TRAIL_RATE = 0.9          -- of the whole bar a second
     local DEATH_ART = "/Game/PBZContent/UI/InGame/Dead/"
     local DEATH_PARTS = {           -- picture; height against the screen's (nil: all of it); down from the middle; seconds in
         { DEATH_ART .. "bg_dead.bg_dead", nil, 0, 0.5 },
@@ -27,7 +25,6 @@ return function(api)
     local count = nil               -- { start, total, round, mode }: the countdown on screen
     local banner = nil              -- { tex, at, until }
     local fightAt = nil             -- 斗's moment
-    local trails = {}               -- slot -> { shown, held }
     local death = nil               -- { since, widgets }
 
     local function zh()
@@ -218,52 +215,19 @@ return function(api)
     end
 
     function ui.matchStarted(m, me)
-        trails = {}
         death = nil
     end
 
-    ------------------------------------------------------------------ the score, the clock, the bars
+    ------------------------------------------------------------------ the bars, the score, the clock
 
-    local function digitsOf(seconds)
-        local mm, ss = math.floor(seconds / 60), math.floor(seconds % 60)
-        return { tostring(mm), "colon", tostring(math.floor(ss / 10)), tostring(ss % 10) }
-    end
-
-    local function drawScore(m, now)
-        local W = screen.w / screen.s
-        local cx = W / 2
-        put(part("score_bg", "pvp/score_bg.png", 460, 74, 0), cx, 46, 460, 74, 0.95)
-        put(part("team1", "pvp/" .. worded("team_1") .. ".png", 120, 26, 1), cx - 150, 30, 120, 26)
-        put(part("team2", "pvp/" .. worded("team_2") .. ".png", 120, 26, 1), cx + 150, 30, 120, 26)
-        local wins = m.mode == "duel" and 2 or 1
-        for team = 1, 2 do
-            for i = 1, wins do
-                local on = (m.score[team] or 0) >= i and 1 or 0
-                local x = team == 1 and (cx - 120 - (i - 1) * 26) or (cx + 120 + (i - 1) * 26)
-                put(part("pip" .. team .. i, "pvp/pip_" .. team .. "_" .. on .. ".png", 22, 22, 1), x, 56, 18, 18)
-            end
-            for i = wins + 1, 2 do
-                hide("pip" .. team .. i)
-            end
-        end
-        local left = nil
+    -- Seconds left this round, or nil with no clock.
+    local function clockLeft(m, now)
         if m.endsAt and (m.phase == "fight" or m.phase == "out") then
-            left = math.max(0, m.endsAt - now)
+            return math.max(0, m.endsAt - now)
         elseif m.timer and m.timer > 0 then
-            left = m.timer
+            return m.timer
         end
-        if left then
-            local ds = digitsOf(math.ceil(left))
-            for i, d in ipairs(ds) do
-                local p = part("digit" .. i, "pvp/digit_" .. d .. ".png", 40, 64, 2)
-                local warn = left <= 10 and (math.floor(now * 4) % 2 == 0) and 0.55 or 1
-                put(p, cx - 39 + (i - 1) * 26, 46, 30, 48, warn)
-            end
-        else
-            for i = 1, 4 do
-                hide("digit" .. i)
-            end
-        end
+        return nil
     end
 
     local function healthOf(slot, me)
@@ -287,66 +251,75 @@ return function(api)
         return nil
     end
 
-    local function drawBar(key, slot, kind, x, y, w, h, frac, team, down, now)
-        local tr = trails[slot]
-        if not tr then
-            tr = { shown = frac, held = now }
-            trails[slot] = tr
+    -- The foes' bars are the game's: slot -> { addr = the body's address, checkAt, last = the share shown }.
+    local foeBars = {}
+    local FOE_CHECK_S = 1.0
+
+    -- A foe's name over their bar, in the player's language.
+    local function foeName(slot)
+        return (zh() and "玩家 " or "PLAYER ") .. tostring(slot)
+    end
+
+    -- The words over the first foe's bar: their name, then (a duel) this player's rounds against theirs, then the clock.
+    -- The game's own text in its own font, where the score strip of ours was.
+    local function foeLabel(m, slot, first, mine, now)
+        local text = foeName(slot)
+        if not first then
+            return text
         end
-        if frac >= tr.shown then
-            tr.shown, tr.held = frac, now
-        elseif now - tr.held > TRAIL_HOLD_S then
-            tr.shown = math.max(frac, tr.shown - TRAIL_RATE * (1 / 60))
+        if m.mode == "duel" then
+            text = text .. string.format("  ·  %s %d – %d", zh() and "你" or "YOU", m.score[mine] or 0, m.score[3 - mine] or 0)
         end
-        local a = down and 0.45 or 1
-        put(part(key .. "bg", "pvp/bar_" .. kind .. "_bg.png", w + 8, h + 8, 0), x, y, w + 8, h + 8, a)
-        local trail = part(key .. "trail", "pvp/bar_" .. kind .. "_trail.png", w, h, 1)
-        local fill = part(key .. "fill", "pvp/bar_" .. kind .. "_fill_" .. team .. ".png", w, h, 2)
-        -- A bar's width is its health: drawn narrower from its left edge.
-        local left = x - w / 2
-        put(trail, left + w * tr.shown / 2, y, math.max(0.5, w * tr.shown), h, tr.shown > frac and 0.9 * a or 0)
-        put(fill, left + w * frac / 2, y, math.max(0.5, w * frac), h, frac > 0.001 and a or 0)
-        put(part(key .. "name", "pvp/name_" .. slot .. ".png", 160, 28, 3), left + 70, y - h / 2 - 12, 160, 28, a)
-        if down then
-            put(part(key .. "down", "pvp/" .. worded("down") .. ".png", 90, 28, 3), x + w / 2 - 40, y - h / 2 - 12, 90, 28)
-        else
-            hide(key .. "down")
+        local left = (m.phase == "count" or m.phase == "fight" or m.phase == "out") and clockLeft(m, now)
+        if left then
+            left = math.ceil(left)
+            text = text .. string.format("  ·  %d:%02d", math.floor(left / 60), left % 60)
         end
+        return text
+    end
+
+    local function hideFoeBar(slot)
+        local body = coop.playerBody and coop.playerBody(slot)
+        if valid(body) and api.game.hideFoeBar then
+            api.game.hideFoeBar(body)
+        end
+        foeBars[slot] = nil
     end
 
     local function drawBars(m, me, now)
-        local W = screen.w / screen.s
         local mine = m.teams[me]
-        local foes, mates = {}, {}
+        local foes = {}
         for slot, team in pairs(m.teams) do
-            if slot ~= me then
-                if team ~= mine then
-                    foes[#foes + 1] = slot
-                else
-                    mates[#mates + 1] = slot
-                end
+            if slot ~= me and team ~= mine then
+                foes[#foes + 1] = slot
             end
         end
         table.sort(foes)
-        table.sort(mates)
-        local shown = {}
+        -- Foes on the game's own boss bar (the user: health bars in the game's own design, not ours): put up once, its
+        -- health moved by the game's own ForSeq_UpdateHealth, its words by its own name text, put up again if the HUD
+        -- drops it. (Teammates get no bar: the game's player bar only follows its own player, and ours isn't the game's.)
         for i, slot in ipairs(foes) do
-            local frac = healthOf(slot, me) or 1
-            local kind = #foes == 1 and "big" or "small"
-            local w, h = #foes == 1 and 520 or 300, #foes == 1 and 16 or 11
-            local y = 112 + (i - 1) * 40
-            drawBar("foe" .. i, slot, kind, W / 2, y, w, h, frac, m.teams[slot], m.down[slot], now)
-            shown["foe" .. i] = true
-        end
-        for i, slot in ipairs(mates) do
-            local frac = healthOf(slot, me) or 1
-            drawBar("mate" .. i, slot, "mate", 150, 170 + (i - 1) * 40, 220, 9, frac, m.teams[slot], m.down[slot], now)
-            shown["mate" .. i] = true
-        end
-        for i = 1, 5 do
-            for _, prefix in ipairs({ "foe", "mate" }) do
-                if not shown[prefix .. i] then
-                    hideAll(prefix .. i)
+            local body = coop.playerBody and coop.playerBody(slot)
+            if valid(body) then
+                local addr = body:GetAddress()
+                local fb = foeBars[slot]
+                if not fb or fb.addr ~= addr or (now >= fb.checkAt and not api.game.foeBar(addr)) then
+                    if fb and fb.addr ~= addr then
+                        hideFoeBar(slot)
+                    end
+                    fb = { addr = addr, checkAt = now + FOE_CHECK_S, last = -1 }
+                    foeBars[slot] = fb
+                    api.game.showFoeBar(body, foeName(slot))
+                elseif now >= fb.checkAt then
+                    fb.checkAt = now + FOE_CHECK_S
+                end
+                local frac = healthOf(slot, me) or 1
+                if math.abs(frac - fb.last) > 0.001 and api.game.setFoeBar(addr, frac) then
+                    fb.last = frac
+                end
+                local label = foeLabel(m, slot, i == 1, mine, now)
+                if label ~= fb.label and api.game.setFoeName(addr, label) then
+                    fb.label = label
                 end
             end
         end
@@ -417,15 +390,11 @@ return function(api)
         local ok, err = pcall(function()
             local fighting = m.phase ~= "going" and m.phase ~= "there"
             if fighting and m.phase ~= "result" then
-                drawScore(m, now)
                 drawBars(m, me, now)
             else
-                hideAll("score_bg")
-                hideAll("team")
-                hideAll("pip")
-                hideAll("digit")
-                hideAll("foe")
-                hideAll("mate")
+                for slot in pairs(foeBars) do
+                    hideFoeBar(slot)
+                end
             end
             drawCount(now)
             if api.arena.finishHint and now >= api.arena.finishHint and m.phase == "finish" and not m.finished
@@ -444,8 +413,10 @@ return function(api)
     function ui.clear()
         count, banner, fightAt = nil, nil, nil
         hideAll()
+        for slot in pairs(foeBars) do
+            hideFoeBar(slot)
+        end
         dropDeath()
-        trails = {}
         api.arena.finishHint = nil
     end
 

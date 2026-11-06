@@ -15,7 +15,7 @@ Not posted. For the user to edit and post, on GitHub and Nexus.
   drinks from the same gourd for the whole match. Every blow does half the usual damage: about six clean hits to bring
   someone down, so parries and reads decide it
 - The arena's fog walls go up and there are no monsters. A countdown in brush strokes, 三 二 一, then 斗
-- Health bars for every foe and teammate, the score and the clock at the top, round and match banners
+- Every foe on the game's own boss health bar, with their name, the score and the clock over it; round and match banners
 - Win the match and you have about five seconds to finish a fallen foe with F: a boss's own move, with a slow beat as it lands
 - The winners get the golden VICTORY, the losers the game's death card, and everyone goes back where they were with their
   own weapons, levels, gourd and skills. Nothing in a match is saved
@@ -37,7 +37,7 @@ Both players need 1.7.0. Thanks to shilover (Rakka) for the ideas in issue #13.
 - 一对一,或最多六人分成赤队和青队:每个人选队伍,然后按准备
 - 所有人用同样的身体作战:技能全部点满,生命和攻击相同,所有武器都是 30 级,整场比赛同一个葫芦只能喝三口。每一击的伤害是平时的一半:大约六次干净的命中才能击倒对手,胜负取决于弹反和读招
 - 场地的雾墙升起,没有怪物。水墨笔触的倒数 三 二 一,然后 斗
-- 每个对手和队友的血条,顶部的比分和时间,每局和整场的结果横幅
+- 每个对手都显示在游戏自己的首领血条上,上方写着名字、比分和时间;每局和整场的结果横幅
 - 赢下比赛后有大约五秒钟:按 F 用首领的招式终结倒下的对手,命中的一刻慢放
 - 胜者看到金色的 VICTORY,败者看到游戏自己的死亡画面,所有人回到原来的地方,武器、等级、葫芦和技能都会还原。比赛中的一切都不会存档
 - 比赛中网络只传送玩家的数据(没有敌人的数据),招式在开始的那一帧就会发出;比赛中没有完美闪避的慢动作,所有人的游戏以同样的速度运行
