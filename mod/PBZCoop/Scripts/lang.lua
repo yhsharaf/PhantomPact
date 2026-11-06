@@ -46,14 +46,11 @@ return function()
         ["no partner to go to yet."] = "还没有可以传送的队友。",
         ["not now."] = "现在不能传送。",
         ["finish the prologue first."] = "请先完成序章。",
-        ["you're in the prologue: press F3 twice to skip it and go to your partner, with the gear and gourd its end gives."] =
-            "你在序章中:连按两次 F3 可跳过序章并前往队友身边,同时获得序章结束时的装备和葫芦。",
-        ["press F3 again to skip the prologue: you get the gear and gourd its end gives, and go to your partner."] =
-            "再按一次 F3 跳过序章:你会获得序章结束时的装备和葫芦,并前往队友身边。",
-        ["the game wouldn't skip the prologue."] = "游戏无法跳过序章。",
+        ["you're in the prologue: finish it first, or start a New Game and choose the game's own skip there."] =
+            "你在序章中:请先完成序章,或者开始新游戏时选择游戏自带的跳过序章。",
+        ["to skip the prologue, start a New Game and choose the game's own skip there."] =
+            "要跳过序章,请开始新游戏并选择游戏自带的跳过序章选项。",
         ["you're past the prologue."] = "你已经过了序章。",
-        ["click again to skip the prologue: you get the gear and gourd its end gives, and leave it."] =
-            "再点一次跳过序章:你会获得序章结束时的装备和葫芦,并离开序章。",
         ["your partner is still in the prologue."] = "你的同伴还在序章中。",
         ["your partner can't be joined right now."] = "现在无法传送到队友身边。",
         ["your partner's position looks wrong."] = "队友的位置不正常。",

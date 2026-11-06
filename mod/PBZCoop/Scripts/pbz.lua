@@ -1357,8 +1357,10 @@ return function(api)
     end
 
     -- One item of a loot roll, into this player's backpack. Weapons, medicines and accessories each have their own way in.
-    -- (GiveItem answers without complaint and adds neither of the last two.)
-    function game.grantLoot(pawn, itemId, kind, count)
+    -- (GiveItem answers without complaint and adds neither of the last two.) quiet: no pickup card at all, for the catch-up
+    -- on joining (game.mergeBag), which gave a new player a card to close with Escape for each thing the host had (the
+    -- user: "we only should display items collected after joining not when first joining").
+    function game.grantLoot(pawn, itemId, kind, count, quiet)
         count = count or 1
         local bp = valid(pawn) and worldSubsystem(pawn, "/Script/ProjectPBZ.PBZBackPackSubsystem")
         if not bp then
@@ -1374,7 +1376,8 @@ return function(api)
             -- the partner beforehand, unequipped, a new game's player had it in the bag and none to drink from.)
             return
         elseif kind == "medicine" then
-            pcall(function() bp:PushMedicineToInventory(FName(itemId), false, true) end)
+            -- (MedicineID, bAutoEquip, bShowPickupUI.)
+            pcall(function() bp:PushMedicineToInventory(FName(itemId), false, not quiet) end)
             log("Shared loot: medicine " .. itemId)
         elseif kind == "accessory" then
             pcall(function() bp:PushAccessoryToInventory(FName(itemId), false) end)
@@ -1388,7 +1391,8 @@ return function(api)
             local before = game.itemCount(bp, itemId)
             pcall(function() bp:AddPropsToBackPack(count, FName(itemId), false) end)
             local after = game.itemCount(bp, itemId)
-            if after <= before and not itemId:find("^[RI]_%d") then
+            -- (Not when quiet: GiveItem is the player blueprint's own helper, with no way to keep its card down.)
+            if after <= before and not itemId:find("^[RI]_%d") and not quiet then
                 pcall(function() pawn:GiveItem(FName(itemId), count) end)
                 after = game.itemCount(bp, itemId)
             end
@@ -3001,7 +3005,8 @@ return function(api)
 
     -- gourd: a player who came out of a new game's prologue with no healing gourd to drink from gets it back, equipped and full.
     -- (Players of 1.6.3 lost it in co-op: see game.inPrologue.) Says what it found.
-    function game.giveGourd()
+    -- quiet: no pickup card (the catch-up on joining, see game.mergeBag).
+    function game.giveGourd(quiet)
             local _, pawn = api.getPlayer1()
             local bp = valid(pawn) and game.backpackOf(pawn)
             if not bp then
@@ -3020,7 +3025,7 @@ return function(api)
             if has and bottom == "Hulu" then
                 log("Gourd: equipped already.")
             else
-                local ok = pcall(function() bp:PushMedicineToInventory(FName("Hulu"), true, true) end)
+                local ok = pcall(function() bp:PushMedicineToInventory(FName("Hulu"), true, not quiet) end)
                 pcall(function() bottom = bp.BottomMedicineID:ToString() end)
                 log("Gourd: given back " .. (ok and "" or "(the game wouldn't) ") .. "and equipped as " .. tostring(bottom) .. ".")
             end
@@ -3038,22 +3043,8 @@ return function(api)
         end
     end
 
-    -- Skipping the prologue (a new save joining a friend): what its end does, by the game's own step. The prologue runs on a
-    -- stripped loadout ("PrologueBare"), and the bag's RestoreEquipmentAfterPrologue gives the starting gear back as it ends.
-    -- A plain trip out of it gives nothing back (the bench's guest went a day of trips with no gourd). Then the gourd, if
-    -- that step didn't put it there. The story after it comes from the host's (catch-up). True once the gear is back.
-    function game.skipPrologue()
-        local _, pawn = api.getPlayer1()
-        local bp = valid(pawn) and game.backpackOf(pawn)
-        if not bp then
-            log("Prologue skip: no player or bag yet.")
-            return false
-        end
-        local ok, err = pcall(function() bp:RestoreEquipmentAfterPrologue() end)
-        log("Prologue skip: starting gear " .. (ok and "given back by the game's own step." or ("not given back: " .. tostring(err))))
-        game.giveGourd()
-        return ok
-    end
+    -- (No prologue skip of our own any more: the bag's RestoreEquipmentAfterPrologue gave the gear back, but the player
+    -- stayed in the prologue's young body. The game's own skip at New Game is the one: see prologue.lua.)
 
     -- Sitting at a bell heals, fills the gourd and saves, and runs no Refresh Monster. RestoreHealth is the step every sit has,
     -- the first ring included. It works on player 1 from any bell, however far: a partner's sit rests this player with it.
@@ -3737,10 +3728,18 @@ return function(api)
             local key = kind and kind .. ":" .. id
             local mine = key and have[key] or nil
             if kind == "p" and counts ~= false and n and n > (mine or 0) then
-                game.grantLoot(pawn, id, nil, n - (mine or 0))
+                game.grantLoot(pawn, id, nil, n - (mine or 0), true)
                 came = came + 1
+            elseif kind == "m" and id == "Hulu" and mine == nil then
+                -- The healing gourd, which grantLoot never hands over (in the prologue it came unequipped, and none to drink
+                -- from): past the prologue, a player without one gets it equipped and full. The game's own prologue skip
+                -- (New Game, 66 days) left a guest with none (the user, 11-06), as did joining from the prologue in 1.6.3.
+                if not (game.inPrologue and game.inPrologue()) then
+                    game.giveGourd(true)
+                    came = came + 1
+                end
             elseif kind and kind ~= "p" and mine == nil then
-                game.grantLoot(pawn, id, ({ w = "weapon", e = "weapon2", a = "accessory", m = "medicine" })[kind])
+                game.grantLoot(pawn, id, ({ w = "weapon", e = "weapon2", a = "accessory", m = "medicine" })[kind], nil, true)
                 if gearKnown then
                     gearKnown[id] = true     -- (or the next look at the lists sends it back as found)
                 end

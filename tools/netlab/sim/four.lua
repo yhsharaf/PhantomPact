@@ -2360,10 +2360,7 @@ local function playerReports()
         table.insert(h.globalTags, "zlgw.intro.done")
         s:run(6)
         check(not g.storyMarks["zlgw.intro.done"], "and nothing of the host's flow comes into it")
-        check(join(nil, true) == gnet.PROLOGUE_ASK and restored == 0, "F3 once in the prologue asks first")
-        local why = join(nil, true)
-        check(restored == 1 and (why == nil or why == "the game wouldn't go there."),
-            "F3 again skips it by the game's own step (" .. tostring(why) .. ")")
+        check(join() == gnet.PROLOGUE_TIP and restored == 0, "F3 again: no skip of our own, only where the game's is")
         allErrors(s)
     end
     do
@@ -2379,13 +2376,10 @@ local function playerReports()
         end
         s:run(30)
         check(restored == 0 and g.map == "PBZ_WP_ZhuLinGuWu", "linking from the prologue leaves the guest in it")
-        -- MORE's Skip Prologue tile: red, a click asks, the second skips it; green for the host, past it.
+        -- MORE's Skip Prologue tile: red in the prologue, a click says where the game's own skip is; green past it.
         local skip = g.env.PBZ.prologue
         check(skip.state() == "todo" and h.env.PBZ.prologue.state() == "done", "the tile: red in the prologue, green past it")
-        check(skip.press() ~= nil and skip.state() == "ask" and restored == 0, "a click on it asks first")
-        local why = skip.press()
-        check(restored == 1 and (why == nil or why == "the game wouldn't go there."),
-            "the second click skips it by the game's own step (" .. tostring(why) .. ")")
+        check(skip.press() == skip.HOW and restored == 0, "a click on it points at the game's own skip, nothing more")
         check(h.env.PBZ.prologue.press() == "you're past the prologue.", "a click past it does nothing")
         allErrors(s)
     end
@@ -3327,19 +3321,19 @@ local function offAndBack()
     local ph = p.pcs[1]
     ph.files["PhantomPact.ini"] = "Role = Host\nSecret = hunter2"
     Session.command(ph, "onlinepanel press 700 500")
-    Session.command(ph, "onlinepanel press 450 330")       -- (the Players tile: 2 -> 4)
+    Session.command(ph, "onlinepanel press 366 330")       -- (the Players tile: 2 -> 4)
     p:run(1)
     check(ph.files["PhantomPact.ini"]:find("Secret = hunter2\nPartySize = 4\n", 1, true) ~= nil, "a setting added to an ini with no line end at its end keeps both")
-    Session.command(ph, "onlinepanel press 450 330")
+    Session.command(ph, "onlinepanel press 366 330")
     p:run(1)
     check(ph.files["PhantomPact.ini"]:find("PartySize = 6", 1, true) ~= nil, "a click moves the Players tile on to its next choice")
     check(ph.env.PBZ.freetravel.on == true, "free bell travel is on with no line for it in the ini")
-    Session.command(ph, "onlinepanel press 116 330")       -- (the Free Bell Travel tile)
+    Session.command(ph, "onlinepanel press 784 163")       -- (the Free Bell Travel tile)
     p:run(1)
     check(ph.files["PhantomPact.ini"]:find("FreeBellTravel = Off", 1, true) ~= nil and ph.env.PBZ.freetravel.on == false,
         "the Free Bell Travel tile turns it off, kept in the ini and in force at once")
     Session.command(ph, "onlinepanel press 280 150")       -- (Revive: still to come, nothing to choose)
-    Session.command(ph, "onlinepanel press 116 330")
+    Session.command(ph, "onlinepanel press 784 163")
     p:run(1)
     check(ph.files["PhantomPact.ini"]:find("FreeBellTravel = On", 1, true) ~= nil and ph.env.PBZ.freetravel.on == true
         and not ph.files["PhantomPact.ini"]:find("Revive", 1, true), "and back on; the Revive tile writes nothing")
@@ -3349,17 +3343,16 @@ local function offAndBack()
     local r, rh, rg = pair()
     check(rg.env.PBZ.rules.following() == true and rg.env.PBZ.freetravel.on == true, "a linked guest follows the host's rules")
     Session.command(rh, "onlinepanel press 700 500")
-    Session.command(rh, "onlinepanel press 116 330")        -- the host: Free Bell Travel off
+    Session.command(rh, "onlinepanel press 784 163")        -- the host: Free Bell Travel off
     Session.command(rh, "onlinepanel press 116 163")        -- and TP > Partner on
-    Session.command(rh, "onlinepanel press 617 163")        -- Partner Compass off (a PvP surprise)
-    Session.command(rh, "onlinepanel press 784 163")        -- and Partner On The Map off
+    Session.command(rh, "onlinepanel press 617 163")        -- and Partner On The Map off
     r:run(1)
     check(rg.env.PBZ.freetravel.on == false and rg.env.PBZ.partner.teleport == true, "the host's change reaches the guest at once")
-    check(rg.env.PBZ.hud.on == false and rg.env.PBZ.mapicon.on == false, "the compass and the map mark too")
+    check(rg.env.PBZ.hud.on == false and rg.env.PBZ.mapicon.on == false, "the map mark too")
     check(rh.env.PBZ.rules.following() == false, "the host follows nobody")
     Session.command(rg, "onlinepanel press 700 500")
     rg.logs = {}
-    Session.command(rg, "onlinepanel press 116 330")        -- the guest tries to turn it back on
+    Session.command(rg, "onlinepanel press 784 163")        -- the guest tries to turn it back on
     r:run(1)
     check(rg.env.PBZ.freetravel.on == false and not (rg.files["PhantomPact.ini"] or ""):find("FreeBellTravel", 1, true)
         and count(rg.logs, "Only the host's setting counts%.") == 1, "a guest's click changes nothing, and says why")
@@ -3367,7 +3360,7 @@ local function offAndBack()
     Session.command(rg, "netoff")
     r:run(1)
     check(rg.env.PBZ.rules.following() == false and rg.env.PBZ.freetravel.on == true and rg.env.PBZ.partner.teleport == false
-        and rg.env.PBZ.hud.on == true and rg.env.PBZ.mapicon.on == true, "sync off: the guest's own rules come back")
+        and rg.env.PBZ.hud.on == false and rg.env.PBZ.mapicon.on == true, "sync off: the guest's own rules come back")
     allErrors(r)
 
     local lang = dofile(SIM_SCRIPTS .. "/lang.lua")()
@@ -4213,7 +4206,7 @@ local function lateHello()
             shown = shown + 1
         end
     end
-    check(shown == 4, "its compass goes on to show everyone (" .. shown .. ")")
+    check(shown == 0, "and no compass for it: it is gone (1.6.6) (" .. shown .. ")")
     check(#s.pcs[3].spawned == 3, "and its first ghost is still the host's, with two more")
     allErrors(s)
 end
@@ -4335,7 +4328,7 @@ local function modeRow()
     s:run(2)
     pc = s.pcs[1]
     -- (One Mode tile, which a click moves to its other choice: each use below comes from the other.)
-    local LOCAL, MULTIPLAYER = "onlinepanel press 617 330", "onlinepanel press 617 330"
+    local LOCAL, MULTIPLAYER = "onlinepanel press 533 330", "onlinepanel press 533 330"
     Session.command(pc, "onlinepanel press 700 500")
     Session.command(pc, LOCAL)
     s:run(1)
@@ -4446,37 +4439,11 @@ local function screens()
         return n, spots, tints
     end
     local n, _, tints = dots(h)
-    check(n == 4, "the compass: the line and a dot for each of three partners (" .. n .. " widgets)")
-    local players = h.env.PBZ.coop.players
-    local shown = {}
-    for _, tint in ipairs(tints) do
-        shown[tint] = true
-    end
-    check(shown[players[2].tint] and shown[players[3].tint] and shown[players[4].tint], "each in that player's colour, told apart at a glance")
-    local theirs, mine = s.pcs[3].env.PBZ.coop.players, {}
-    for _, tint in ipairs(select(3, dots(s.pcs[3]))) do
-        mine[tint] = true
-    end
-    check(mine[theirs[1].tint] and mine[theirs[2].tint] and mine[theirs[4].tint] and not mine[theirs[3].tint], "the same colours on a guest's PC, and not their own")
-    n = dots(s.pcs[3])
-    check(n == 4, "on a guest too (" .. n .. ")")
-    Session.moveTo(s.pcs[2], 5000, 0)
-    Session.moveTo(s.pcs[3], 5000, 10)
-    Session.moveTo(s.pcs[4], 5000, 20)
-    s:run(2)
-    local _, spots = dots(h)
-    local heights, different = {}, 0
-    for _, p in ipairs(spots) do
-        if not heights[p.Y] then
-            heights[p.Y] = true
-            different = different + 1
-        end
-    end
-    check(different == 3, "three partners in one direction don't hide each other")     -- (the line shares its height with the first)
+    check(n == 0 and dots(s.pcs[3]) == 0, "no compass, on the host or a guest: it is gone (1.6.6) (" .. n .. ")")
     s.pcs[4].map = "Map_Other"
     s:run(6)
     n = dots(h)
-    check(n == 3, "one on another map: their dot goes (" .. n .. ")")
+    check(n == 0, "one on another map: still no compass (" .. n .. ")")
     Session.moveTo(s.pcs[4], 5000, 20)
     check(count(h.logs, "player 4 %(blue%) is on another map") == 1, "and the tip says who")
     s.pcs[4].map = "Map_Xigu"
@@ -4530,14 +4497,14 @@ local function panel()
     s:run(2)
     local h = s.pcs[1]
     Session.command(h, "onlinepanel press 700 500")      -- MORE
-    Session.command(h, "onlinepanel press 450 330")      -- the Players tile: 2 -> 4
+    Session.command(h, "onlinepanel press 366 330")      -- the Players tile: 2 -> 4
     s:run(1)
     check(h.files["PhantomPact.ini"]:find("PartySize = 4\n", 1, true) ~= nil, "4 is kept in the ini")
     check(h.files["PhantomPact.ini"]:find("Role = Host\n", 1, true) ~= nil and h.files["PhantomPact.ini"]:find("CoopEnemyHealth = 150\n", 1, true) ~= nil, "and nothing else moves")
-    Session.command(h, "onlinepanel press 450 330")      -- 6
+    Session.command(h, "onlinepanel press 366 330")      -- 6
     s:run(1)
     check(h.files["PhantomPact.ini"]:find("PartySize = 6\n", 1, true) ~= nil, "6 too")
-    Session.command(h, "onlinepanel press 450 330")      -- and round to 2
+    Session.command(h, "onlinepanel press 366 330")      -- and round to 2
     s:run(1)
     check(h.files["PhantomPact.ini"]:find("PartySize = 2\n", 1, true) ~= nil, "and 2")
     Session.command(h, "onlinepanel press 47 94")        -- the TP tile, at its very corner

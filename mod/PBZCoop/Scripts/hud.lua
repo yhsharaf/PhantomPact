@@ -27,7 +27,7 @@ return function(api)
     local DOWN_TINT = { R = 1.0, G = 0.35, B = 0.3, A = 1.0 }
     local NORMAL_TINT = { R = 1.0, G = 1.0, B = 1.0, A = 1.0 }
 
-    local hud = { on = true }
+    local hud = { on = false }      -- (the compass is gone: see hud.set)
     local lineWidget, dotWidget
     local extraDots = {}            -- more than two players: the dots after dotWidget, as { widget, x, y, tint, dim }
     local textures = {}
@@ -341,8 +341,11 @@ return function(api)
         return false
     end)
 
-    function hud.set(on)
-        hud.on = on
+    -- The compass is gone (1.6.6, the user: "remove the map compass, since i don't like the way it stretches or grow in
+    -- size"): always off, whatever the ini, the host's rules or the "hud" command say. The partner on the game's map
+    -- (mapicon.lua) stays. The drawing code is kept for the widgets revive.lua borrows.
+    function hud.set(_)
+        hud.on = false
     end
 
     -- For revive.lua's ring, the same kind of widget.

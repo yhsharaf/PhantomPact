@@ -121,7 +121,7 @@ return function(api)
                     partner.goUntil, partner.goTo = nil, nil
                     coop.watchFight(false)
                 elseif why == net.PROLOGUE_TIP then
-                    -- (A new save in the prologue: the skip is theirs to choose, F3 twice. Said once, no more tries.)
+                    -- (A new save in the prologue: said once where the game's own skip is, no more tries.)
                     partner.goUntil, partner.goTo = nil, nil
                     coop.watchFight(false)
                     tip("join", why)
@@ -203,7 +203,7 @@ return function(api)
             tip("join", "TP > PARTNER is off. Turn it on in MORE (F5).")
             return
         end
-        local why = coop.joinPartner(coop.nearestPartner(), true)
+        local why = coop.joinPartner(coop.nearestPartner())
         if why then
             api.status.lastShown.join = nil     -- (a press deserves its answer, however soon after the last)
             tip("join", why)

@@ -52,11 +52,11 @@ a home network; Other Network is for ZeroTier and UU Accelerator. If you want a 
 password on both PCs before you connect. English and 中文 at the top of the panel switch the language of the panel
 and the co-op messages. Your choices are kept for the next start.
 
-**MORE** opens the settings: TP > Partner, PvP, the partner compass, your partner on the map and Steam Direct, each ON or
+**MORE** opens the settings: TP > Partner, PvP, your partner on the map and Steam Direct, each ON or
 OFF, Players (2, 4 or 6), and Mode: MULTIPLAYER, or LOCAL for two players on this PC. Mode works from the next time you start the
-game. **Skip Prologue** is red while you're in the prologue: click it, then click again to say yes, and you get the gear
-and healing gourd the prologue's end gives, then go to your partner (or, alone, to the valley where the prologue ends).
-It's green once you're past the prologue. Revive is coming soon. Enemy difficulty is the game's own setting. With a partner, enemies always get extra health and
+game. **Skip Prologue** is red while you're in the prologue: the game skips it itself, when you start a New Game and
+choose its skip. A player who did that gets the healing gourd from the host on joining. It's green once you're past the
+prologue. Revive is coming soon. Enemy difficulty is the game's own setting. With a partner, enemies always get extra health and
 posture on top of it.
 
 **Going to your partner.** Joining takes you to the host once, even on another map, so a friend with a new save can
@@ -80,7 +80,7 @@ players it takes (5 by default) or turns them off (`GhostTwins = Off`). Only the
 
 With more than two players:
 
-- Each player has a number and a colour, the same on every PC, on the compass and the map and in the tips: the host is purple,
+- Each player has a number and a colour, the same on every PC, on the map and in the tips: the host is purple,
   player 2 green, player 3 gold, player 4 blue, player 5 orange, player 6 pink. Red still means down. The panel says how many are connected and who you are.
 - F3 goes to the nearest partner who's up. If nobody's on your map, a guest goes to the host.
 - Enemies get more health and posture for each person connected: see [Co-op difficulty](#co-op-difficulty).
@@ -114,8 +114,6 @@ With more than two players:
 
 ## On screen
 
-- **Partner compass:** a silver seal on a line at the top shows which way your partner is. Turn it off with
-  `PartnerCompass = Off`.
 - **Map:** your partner is a jade copy of your own map marker, turned the way they face, when you're in the same
   area (red while they're down). Turn it off with `PartnerMapIcon = Off`.
 - **Tips:** short messages when your partner connects, drops, goes down or wanders far off, and when something is in

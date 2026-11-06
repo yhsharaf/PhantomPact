@@ -29,7 +29,8 @@ return function(api)
 
     local SETTINGS = { x = 690, y = 494 }
     local BACK = { x = 40, y = 494 }
-    -- The gameplay options as square tiles (the user's design, art/make_online_panel.py's TILE): five on top, five below.
+    -- The gameplay options as square tiles (the user's design, art/make_online_panel.py's TILE): five on top, four centred
+    -- below. (The Partner Compass tile went with the compass, 1.6.6: the user didn't like how it stretched and grew.)
     -- A click moves a tile to its next choice; one with no choices (Revive, still to come) only shows. Skip Prologue is
     -- no setting: it shows where this player is (red in the prologue, green past it), and a click is prologue.lua's.
     local TILE = 150
@@ -37,13 +38,12 @@ return function(api)
         { name = "teleport", x = 41, y = 88, choices = { "off", "on" } },
         { name = "revive", x = 208, y = 88, choices = {} },
         { name = "pvp", x = 375, y = 88, choices = { "off", "on" } },
-        { name = "compass", x = 542, y = 88, choices = { "off", "on" } },
-        { name = "mapicon", x = 709, y = 88, choices = { "off", "on" } },
-        { name = "freetravel", x = 41, y = 255, choices = { "off", "on" } },
-        { name = "direct", x = 208, y = 255, choices = { "off", "on" } },
-        { name = "players", x = 375, y = 255, choices = { "2", "4", "6" } },
-        { name = "mode", x = 542, y = 255, choices = { "multiplayer", "local" } },
-        { name = "skip", x = 709, y = 255, choices = {}, live = true },
+        { name = "mapicon", x = 542, y = 88, choices = { "off", "on" } },
+        { name = "freetravel", x = 709, y = 88, choices = { "off", "on" } },
+        { name = "direct", x = 124, y = 255, choices = { "off", "on" } },
+        { name = "players", x = 291, y = 255, choices = { "2", "4", "6" } },
+        { name = "mode", x = 458, y = 255, choices = { "multiplayer", "local" } },
+        { name = "skip", x = 625, y = 255, choices = {}, live = true },
     }
 
     local panel = { open = false }
