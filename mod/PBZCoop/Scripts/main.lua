@@ -576,6 +576,7 @@ api.freetravel = dofile(SCRIPT_DIR .. "freetravel.lua")(api)
 api.blockers = dofile(SCRIPT_DIR .. "blockers.lua")(api)
 api.rules = dofile(SCRIPT_DIR .. "rules.lua")(api)
 api.prologue = dofile(SCRIPT_DIR .. "prologue.lua")(api)
+api.qte = dofile(SCRIPT_DIR .. "qte.lua")(api)
 local net = coop.net
 
 -- Helpers for the "eval" command, so test snippets can reuse the mod's functions.
@@ -606,6 +607,8 @@ PBZ = {
     mapicon = api.mapicon,
     pvp = api.pvp,
     arena = api.arena,
+    mapfog = api.mapfog,
+    qte = api.qte,
 }
 
 -- Command file: lets a developer drive tests from outside the game. Write one command per line
@@ -638,6 +641,7 @@ end
 COMMANDS.pvp = api.pvp.command
 COMMANDS.arena = api.arena.command
 COMMANDS.scale = api.scaling.command
+COMMANDS.bosspoise = api.scaling.bossPoiseCommand
 COMMANDS.twins = api.twins.command
 COMMANDS.tips = api.status.command
 COMMANDS.partner = api.partner.command

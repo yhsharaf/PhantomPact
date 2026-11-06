@@ -13,6 +13,12 @@
 -- moment. Someone who joins during a boss fight only watches, so that boss keeps its number until the fight is over.
 -- It stops at four players (250 and 190): with five or six every enemy has a ghost twin instead (twins.lua), which is harder
 -- enough. scaling.players() is how many are connected, for twins.lua.
+--
+-- Boss poise (CoopBossPoise, percent, 100 = off): posture above is the bar that opens an execution; being knocked out of
+-- an attack is the game's other number, poise. Each hit takes poise off the move the boss is doing, and when it's gone the
+-- move breaks. A boss here takes 100/CoopBossPoise of the poise damage (its TakenReductionMultiplier_Poise, 1 by default),
+-- so at 200 it takes twice the hits to stagger out of a move. Bosses only, the same with any number of players, and only
+-- while someone is with you, like the rest. Each PC sets its own: the host's bosses and each guest's copies.
 
 return function(api)
     local log, valid, game = api.log, api.valid, api.game
@@ -21,6 +27,7 @@ return function(api)
     local scaling = {
         health = 1.5,       -- CoopEnemyHealth / 100
         posture = 1.3,      -- CoopEnemyPosture / 100
+        bossPoise = 2.0,    -- CoopBossPoise / 100
     }
 
     local PASS_S = 1.0              -- a look over the enemies starts this often while the partner is here
@@ -114,6 +121,24 @@ return function(api)
         return true
     end
 
+    -- Bosses: the share of poise damage they take, set once per body (an address comes back for a new actor, so by name too).
+    local poised = {}               -- boss address -> its name once set
+    local function poiseBoss(e, addr, name)
+        if poised[addr] == name or scaling.bossPoise == 1 or not game.isBoss(e, addr) then
+            return false
+        end
+        poised[addr] = name
+        local ok = pcall(function()
+            local a = e.AttributeSetBase.TakenReductionMultiplier_Poise
+            a.BaseValue = 1 / scaling.bossPoise
+            a.CurrentValue = 1 / scaling.bossPoise
+        end)
+        if ok then
+            log(string.format("Co-op difficulty: boss %s at %d%% poise.", name, math.floor(scaling.bossPoise * 100 + 0.5)))
+        end
+        return ok
+    end
+
     local function noteSoloFights()
         soloFights = {}
         if game.bossFightActive() then
@@ -135,7 +160,7 @@ return function(api)
     local next, todo, addrs, at, n = 0, {}, {}, 1, 0
     local players = 2
     local function tick()
-        if scaling.health == 1 and scaling.posture == 1 then
+        if scaling.health == 1 and scaling.posture == 1 and scaling.bossPoise == 1 then
             return
         end
         if at > #todo then
@@ -170,6 +195,9 @@ return function(api)
             at = at + 1
             -- (Not a ghost twin: it took its original's numbers, already scaled, as it came (twins.lua).)
             local name = valid(e) and not inSoloFight(addr) and not (game.twinId and game.twinId(addr, e)) and e:GetFName():ToString()
+            if name and not game.isDead(e) and poiseBoss(e, addr, name) then
+                return
+            end
             if name and net.party then
                 if scaleForParty(e, addr, name, players) then
                     n = n + 1
@@ -199,6 +227,18 @@ return function(api)
         end
         log(string.format("Co-op difficulty: enemies at %d%% health, %d%% posture while your partner is here.",
             math.floor(scaling.health * 100 + 0.5), math.floor(scaling.posture * 100 + 0.5)))
+    end
+
+    -- bosspoise <percent>   (100 = normal; read at start from CoopBossPoise). Bosses around take the new number on the next
+    -- pass.
+    function scaling.bossPoiseCommand(args)
+        local v = tonumber((args or ""):match("^%s*(%d+)"))
+        if v then
+            scaling.bossPoise = math.max(1.0, math.min(10.0, v / 100))
+            poised = {}
+        end
+        log(string.format("Co-op difficulty: bosses at %d%% poise while your partner is here.",
+            math.floor(scaling.bossPoise * 100 + 0.5)))
     end
 
     return scaling

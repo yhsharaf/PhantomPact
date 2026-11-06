@@ -296,8 +296,10 @@ return function(api)
     end
 
     -- One row, by the game's own calls, as its QA tool's table did it: the quest steps (a branch begun, or finished, begun
-    -- first if it wasn't), the tags (bells woken by the story come as "bell." tags), the flow nodes marked done, the maps
-    -- whose bells all wake, the UI shown. What a row hands out (weapons, items, loot) isn't: a player's own finds, and what
+    -- first if it wasn't), the tags (bells woken by the story come as "bell." tags), the flow nodes marked done, the UI
+    -- shown. Not a row's maps (its "m", rows like 庞镇-地图解锁, "Pangzhen map unlocked"): ActivateAllBellsByMaps on them
+    -- rang every bell of the region on arrival, fast travel to all of them and the progression gone (a player report, 11-06).
+    -- A bell is the player's to ring, or comes by its own id (b) or tag. What a row hands out (weapons, items, loot) isn't: a player's own finds, and what
     -- the story needs comes with the host's bag. Returns how many of its parts the game took, and how many it was given.
     local function applyRow(row, nc, ep, bells, ui)
         local took, tried = 0, 0
@@ -333,10 +335,6 @@ return function(api)
         if valid(bells) then
             for _, id in ipairs(split(row.b)) do
                 try(function() bells:ActivateBellByID(FName(id)) end)
-            end
-            local maps = split(row.m)
-            if #maps > 0 then
-                try(function() bells:ActivateAllBellsByMaps(maps) end)
             end
         end
         if valid(ui) then

@@ -6,6 +6,9 @@
 -- who (re)starts sync or comes back from a gap. A guest follows them while it's linked to that host, keeps its own choices
 -- aside meanwhile, and goes back to them when the link ends or it hosts itself. The MORE page shows a guest the host's
 -- choice and won't change it there.
+--
+-- ClearMapFog too (the user, 11-06: "keep it off but the host can make it go away if he wants to"): "fog=<0|1>" on the end.
+-- A host of an older version doesn't say it, and the fog stays.
 
 return function(api)
     local log, coop = api.log, api.coop
@@ -22,6 +25,7 @@ return function(api)
             pvp = api.pvp and api.pvp.on == true or false,
             compass = not (api.hud and api.hud.on == false),
             mapicon = not (api.mapicon and api.mapicon.on == false),
+            mapfog = api.mapfog and api.mapfog.on == true or false,
         }
     end
 
@@ -40,6 +44,9 @@ return function(api)
         end
         if api.mapicon then
             api.mapicon.on = r.mapicon
+        end
+        if api.mapfog then
+            api.mapfog.on = r.mapfog == true
         end
     end
 
@@ -63,14 +70,14 @@ return function(api)
         if r.ft == nil or r.tp == nil or r.pvp == nil or r.cp == nil or r.mi == nil then
             return
         end
-        local got = { freetravel = r.ft, teleport = r.tp, pvp = r.pvp, compass = r.cp, mapicon = r.mi }
+        local got = { freetravel = r.ft, teleport = r.tp, pvp = r.pvp, compass = r.cp, mapicon = r.mi, mapfog = r.fog == true }
         own = own or current()
         local h = rules.host
         if not h or h.freetravel ~= got.freetravel or h.teleport ~= got.teleport or h.pvp ~= got.pvp
-            or h.compass ~= got.compass or h.mapicon ~= got.mapicon then
+            or h.compass ~= got.compass or h.mapicon ~= got.mapicon or h.mapfog ~= got.mapfog then
             log(string.format("The host's rules: Free Bell Travel %s, TP > Partner %s, PvPvE %s, Partner Compass %s, "
-                .. "Partner On The Map %s.", onOff(got.freetravel), onOff(got.teleport), onOff(got.pvp),
-                onOff(got.compass), onOff(got.mapicon)))
+                .. "Partner On The Map %s, Clear Map Fog %s.", onOff(got.freetravel), onOff(got.teleport), onOff(got.pvp),
+                onOff(got.compass), onOff(got.mapicon), onOff(got.mapfog)))
         end
         rules.host = got
         apply(got)
@@ -101,8 +108,8 @@ return function(api)
             local function bit(v)
                 return v and 1 or 0
             end
-            local text = string.format("ft=%d tp=%d pvp=%d cp=%d mi=%d", bit(c.freetravel), bit(c.teleport), bit(c.pvp),
-                bit(c.compass), bit(c.mapicon))
+            local text = string.format("ft=%d tp=%d pvp=%d cp=%d mi=%d fog=%d", bit(c.freetravel), bit(c.teleport),
+                bit(c.pvp), bit(c.compass), bit(c.mapicon), bit(c.mapfog))
             if text ~= sentText then
                 sentText = text
                 coop.sendEvent("RULES", text)

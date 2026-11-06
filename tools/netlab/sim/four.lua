@@ -363,18 +363,36 @@ local function sharing()
         gone = gone and not rawget(pc.pickups[1], "__alive")
     end
     check(gone, "a pickup one guest takes goes from every world")
-    -- A quest item (a key): each picks up their own, through the game, so the quest moves on for each.
+    -- A quest item (a key, a letter, a stone): shared now, like any find (a player report, 11-06: with the host's story steps
+    -- reaching everyone, the partner's copy vanished with nothing given). Its pickup goes from every world, and the item, as the
+    -- game gives it, comes to everyone with its card.
     for _, pc in ipairs({ h, a, b, c }) do
         Fake.pickup(pc, "keyspot", "I_KEY_9", 310.0, 0.0, 100.0)
+        -- (What went in with its card, and what quietly: "<id> <push>".)
+        pc.pushes = {}
+        local add = rawget(rawget(pc.bag, "__fields"), "AddPropsToBackPack")
+        Fake.put(pc.bag, "AddPropsToBackPack", function(self, n, id, push)
+            pc.pushes[#pc.pushes + 1] = (id.ToString and id:ToString() or tostring(id)) .. " " .. tostring(push)
+            return add(self, n, id, push)
+        end)
     end
     s:run(1.5)
     b.pickups[#b.pickups]:K2_DestroyActor()
+    Session.gainItem(b, "I_KEY_9")
     s:run(1.5)
-    local kept = true
+    local shared, carded = true, true
     for _, pc in ipairs({ h, a, c }) do
-        kept = kept and rawget(pc.pickups[#pc.pickups], "__alive") ~= false
+        shared = shared and rawget(pc.pickups[#pc.pickups], "__alive") == false and Session.items(pc, "I_KEY_9") == 1
+        carded = carded and count(pc.pushes, "^I_KEY_9 true$") == 1
     end
-    check(kept and count(b.sent, "^E I keyspot") == 0, "a quest item one player takes stays in the others' worlds, for them to take")
+    check(count(b.sent, "^E I keyspot") == 1 and shared, "a quest item one player takes goes from the others' worlds, and they get it too")
+    check(carded, "with its card, as the one who picked it up saw")
+    Session.gainItem(b, "Item_Herb", 1)
+    s:run(1.5)
+    Session.gainItem(b, "Item_Herb", 1)
+    s:run(1.5)
+    check(count(h.pushes, "^Item_Herb true$") == 1 and count(h.pushes, "^Item_Herb false$") == 1,
+        "a thing new to the partner shows its card; one they have already comes quietly")
     -- Issue #15: one whose item can't be read (the Snake Tongue, a token half) went out as loot, and the others' copy vanished
     -- with nothing given, their quest stuck. Only what's known to be loot goes.
     for _, pc in ipairs({ h, a, b, c }) do
@@ -390,15 +408,17 @@ local function sharing()
     end
     check(kept and count(b.sent, "^E I tonguespot") == 0, "a pickup whose item can't be read stays in the others' worlds too")
     -- Issue #15 as it was: a pile with a story item in it (the Snake Tongue, a token half) opened by one player was taken
-    -- from the other's world, the item with it, never shared. One holding a quest item stays; one of loot goes.
+    -- from the other's world, the item with it, never shared. Shared now, it goes as any pile does: its item comes by the gift.
+    -- With the old rule (game.shareQuestItems = false) it stays, for this player to open.
     local qpile = Fake.switch(h, "BP_Rubbish_C", 330.0, 0.0, 100.0)
     rawset(qpile, "K2_DestroyActor", function(self) rawset(self, "__alive", false) end)
     rawset(rawget(qpile, "__fields"), "Loot Item ID", Fake.name("Houjie.I_KEY_9"))
+    h.env.PBZ.game.shareQuestItems = false
     h.env.PBZ.game.partnerOpened("BP_Rubbish_C")
-    check(rawget(qpile, "__alive") ~= false, "a pile holding a quest item another player opened stays, for this player to open")
-    rawset(rawget(qpile, "__fields"), "Loot Item ID", Fake.name("Houjie.R_500"))
+    check(rawget(qpile, "__alive") ~= false, "the old rule: a pile holding a quest item another player opened stays")
+    h.env.PBZ.game.shareQuestItems = true
     h.env.PBZ.game.partnerOpened("BP_Rubbish_C")
-    check(rawget(qpile, "__alive") == false, "and one of loot goes")
+    check(rawget(qpile, "__alive") == false, "shared: it goes as one of loot does")
 
     -- Iron chains one player breaks (a Phantom Edge out of a fight) are broken in the others' worlds too.
     for _, pc in ipairs({ h, a, b, c }) do
@@ -1867,6 +1887,8 @@ local function followTheHost()
     check(g.storyState("Side-Cry", "1") == 2, "an optional quest the host did, too")
     check(g.storyMarks["camp.arrived"] and g.storyMarks["UI.VisibilityTag.Shop"], "and the marks and unlocks along the way")
     check(not g.storyMarks["I_1"] and not g.storyMarks["item.recipe"], "but not a row with the host's finds in it")
+    check(count(g.trace, "ActivateAllBellsByMaps") == 0,
+        "nor a map's every bell (a row like Pangzhen's 'map unlocked' rang them all: fast travel everywhere on arrival)")
     check(count(g.logs, "Story: caught up with the host's") == 1 and count(g.logs, "your story caught up with the host's: ") == 1,
         "the guest is told, once")
     check(#h.storyApplied == 0, "and the host's world isn't touched")
@@ -3029,6 +3051,23 @@ local function itemEffects()
     Fake.effectOn(g, g.pawn, POTION)
     s:run(1)
     check(#h.effectsOn == 1, "an effect long after the item's use isn't sent")
+    s:run(3)
+    check(on[1].active == false and on[1].destroyed == true,
+        "the drink's effect on the figure ends after a while (the gourd's glow looped on, one more each drink, the frame rate down)")
+    -- Two drinks close together: one glow, the new in the old's place.
+    for _ = 1, 2 do
+        Fake.running(g, g.pawn, "GA_Medicine_Common_Additive_C", true)
+        s:run(0.5)
+        Fake.effectOn(g, g.pawn, POTION)
+        s:run(1)
+        Fake.running(g, g.pawn, "GA_Medicine_Common_Additive_C", false)
+        s:run(1)
+    end
+    local lit = 0
+    for _, e in ipairs(h.effectsOn) do
+        lit = lit + (e.active and 1 or 0)
+    end
+    check(#h.effectsOn == 3 and lit == 1, "two drinks: one glow on the figure, not two (" .. lit .. " on)")
     allErrors(s)
 end
 
@@ -3202,6 +3241,19 @@ local function shots()
     e:run(32)
     check(orphan.started == true and orphan.ended == true, "and one whose end never comes is over after 30 s")
     allErrors(e)
+
+    -- A particle bullet's copy that ends by its own timer: its look (the level's) is turned off too, then and there. A Wild
+    -- Oriole Sword's sword energy stayed in place for good, its bullet gone before the sender's end came.
+    local w, wh, wg = pair()
+    w:run(3)
+    Session.bullet(wh, wh.pawn, flower, 120.0, 340.0, 100.0)
+    w:run(1)
+    local energy = wg.fired[1] or {}
+    check(energy.started == true and energy.fxOn == true, "a sword energy's copy comes up, its look on")
+    energy.ended = true             -- (its own timer: the bullet's gone, the sender's end not here yet)
+    w:run(1.5)
+    check(energy.fxOn == false, "its bullet over here: its look is turned off, not left in place")
+    allErrors(w)
     local q = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES, "PvP = On\n")
     q:run(4)
     Session.moveTo(q.pcs[1], 0, 0)
@@ -3350,6 +3402,10 @@ local function offAndBack()
     check(rg.env.PBZ.freetravel.on == false and rg.env.PBZ.partner.teleport == true, "the host's change reaches the guest at once")
     check(rg.env.PBZ.hud.on == false and rg.env.PBZ.mapicon.on == false, "the map mark too")
     check(rh.env.PBZ.rules.following() == false, "the host follows nobody")
+    check(rg.env.PBZ.mapfog.on == false and rh.env.PBZ.mapfog.on == false, "the map fog stays by default (ClearMapFog Off)")
+    rh.env.PBZ.mapfog.on = true
+    r:run(1)
+    check(rg.env.PBZ.mapfog.on == true, "the host clears it: for the guest too")
     Session.command(rg, "onlinepanel press 700 500")
     rg.logs = {}
     Session.command(rg, "onlinepanel press 784 163")        -- the guest tries to turn it back on
@@ -3360,7 +3416,8 @@ local function offAndBack()
     Session.command(rg, "netoff")
     r:run(1)
     check(rg.env.PBZ.rules.following() == false and rg.env.PBZ.freetravel.on == true and rg.env.PBZ.partner.teleport == false
-        and rg.env.PBZ.hud.on == false and rg.env.PBZ.mapicon.on == true, "sync off: the guest's own rules come back")
+        and rg.env.PBZ.hud.on == false and rg.env.PBZ.mapicon.on == true and rg.env.PBZ.mapfog.on == false,
+        "sync off: the guest's own rules come back")
     allErrors(r)
 
     local lang = dofile(SIM_SCRIPTS .. "/lang.lua")()
@@ -4117,6 +4174,56 @@ local function scaling()
     v:run(6)
     check(select(1, max(v.pcs[1], "thug1")) == 600, "100 stays 100, with any number of players")
     allErrors(v)
+
+    -- Boss poise (CoopBossPoise, 200 when the ini has none): bosses take half the poise damage, on every PC; nobody else.
+    local function poise(pc, id)
+        return Session.enemyOn(pc, id).AttributeSetBase.TakenReductionMultiplier_Poise.CurrentValue
+    end
+    check(everyone(v, function(pc) return math.abs(poise(pc, "boss") - 0.5) < 1e-6 end), "boss poise: the boss takes half the poise damage, on every PC")
+    check(everyone(v, function(pc) return poise(pc, "thug1") == 1 end), "and an enemy that isn't a boss takes it all")
+    check(count(v.pcs[1].logs, "at 200%% poise") == 1, "said once for the boss")
+    local p = party(nil, "CoopBossPoise = 100\n")
+    p:run(6)
+    check(everyone(p, function(pc) return poise(pc, "boss") == 1 end), "CoopBossPoise = 100: bosses as the game has them")
+    allErrors(p)
+    local q = party(nil, "CoopBossPoise = 400\n")
+    q:run(6)
+    check(math.abs(poise(q.pcs[1], "boss") - 0.25) < 1e-6, "CoopBossPoise = 400: a quarter")
+    allErrors(q)
+end
+
+-- A QTE that never ends on a guest (Xiaoxue's third phase, failed: the grab's end is the boss's, which the copy doesn't run):
+-- after a while it's ended the game's way and the player's controls come back.
+local function stuckQte()
+    part("a QTE with no end")
+    local s, h, g = pair()
+    s:run(2)
+    local function grab(pc)
+        local ctrl = pc.env.PBZ.getPlayer1()
+        local q = { active = true, finished = 0 }
+        local obj = { IsValid = function() return true end, GetFName = function() return { ToString = function() return "QTE_Grab" end } end }
+        Fake.put(ctrl, "QTEManager", { ForEach = function(_, fn)
+            if q.active then
+                fn({ get = function() return obj end }, { get = function() return obj end })
+            end
+        end })
+        Fake.put(ctrl, "FinishQTEObject", function(_, o)
+            if o == obj then
+                q.finished, q.active = q.finished + 1, false
+            end
+        end)
+        return q
+    end
+    local q = grab(g)
+    s:run(6)
+    check(q.active and q.finished == 0, "a QTE going on isn't touched")
+    s:run(8)
+    check(not q.active and q.finished == 1 and count(g.logs, "A QTE ran 12 s with no end") == 1,
+        "one that runs on: ended the game's way, the controls given back, and said")
+    local hq = grab(h)
+    s:run(15)
+    check(hq.active and hq.finished == 0, "never on the host, whose boss runs its own grab to the end")
+    allErrors(s)
 end
 
 local function leaving()
@@ -5103,6 +5210,7 @@ return function(print_, scripts)
     toldOnChange()
     reviving()
     scaling()
+    stuckQte()
     sixPlayers()
     gaps()
     leaving()

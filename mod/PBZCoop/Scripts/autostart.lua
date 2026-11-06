@@ -79,6 +79,9 @@ return function(api)
     if api.mapicon then
         api.mapicon.on = (settings.partnermapicon or "on"):lower() ~= "off"
     end
+    if api.mapfog then
+        api.mapfog.on = (settings.clearmapfog or "off"):lower() == "on"
+    end
     if api.freetravel then
         api.freetravel.on = (settings.freebelltravel or "on"):lower() ~= "off"
     end
@@ -211,6 +214,9 @@ return function(api)
                         return math.floor(math.max(1, math.min(1000, v)))
                     end
                     api.scaling.command(string.format("%d %d", whole(s.coopenemyhealth, 150), whole(s.coopenemyposture, 130)))
+                end
+                if api.scaling and tonumber(s.coopbosspoise) then
+                    api.scaling.bossPoiseCommand(tostring(math.floor(math.max(100, math.min(1000, tonumber(s.coopbosspoise))))))
                 end
                 if api.pvp then
                     if tonumber(s.pvpdamage) then

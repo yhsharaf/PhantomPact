@@ -1,4 +1,5 @@
--- The map's fog, gone for everyone (the user: "remove all fog from map ... it is annoying"): each region's map is
+-- The map's fog, gone (the user: "remove all fog from map ... it is annoying"), but only with ClearMapFog = On: a player
+-- found the whole map uncovered spoiled the game's progression (11-06), so it's off unless asked for. Each region's map is
 -- painted over by fog pieces until the player has been there, and the game uncovers one with the map subsystem's
 -- AddUnLockMaskID(map, layer, piece). Every piece of every region is uncovered once after each load. A piece is a
 -- widget of that region's mask (W_MapMask_<region>), named after it: their names are the ids. The world map's gold
@@ -7,7 +8,7 @@
 return function(api)
     local log, valid = api.log, api.valid
 
-    local mapfog = {}
+    local mapfog = { on = false }       -- PhantomPact.ini ClearMapFog (autostart.lua)
 
     local MASKS = "/Game/PBZContent/UI/InGame/Map/Mask/W_MapMask_"
     -- Which map ids each piece's prefix belongs to (the region maps of DT_MapData).
@@ -52,7 +53,7 @@ return function(api)
     end)
 
     local function look()
-        if not due then
+        if not due or not mapfog.on then
             return
         end
         -- (Not in the seconds after a load or a trip, while the world still streams in: its loads of the masks and its

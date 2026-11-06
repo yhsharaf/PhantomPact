@@ -152,6 +152,7 @@ function Fake.character(pc, class, x, y, z, hp, posture)
         Shachi = attribute(pc, posture or 100), Shachi_Max = attribute(pc, posture or 100), Level = attribute(pc, 1),
         ShachiAttack = attribute(pc, 50), Infliction_Max = attribute(pc, 100), BreakDurationAdditionalMultiplier = attribute(pc, 1),
         UltimateCharge = attribute(pc, 0), UltimateChargeCount = attribute(pc, 0),
+        TakenReductionMultiplier_Poise = attribute(pc, 1),
     }))
     local cmc = object(pc, "Movement", { MovementMode = 1, Velocity = { X = 0.0, Y = 0.0, Z = 0.0 }, MaxWalkSpeed = 0, AirControl = 0,
         MaxAcceleration = 0, bRunPhysicsWithNoController = false, bOrientRotationToMovement = true })
@@ -1364,9 +1365,16 @@ function Fake.new(id, scripts, ini, link)
         pc.fired[#pc.fired + 1] = shot
         local n = #pc.fired
         -- (Its own end, as the game's timer ends it: a copy that ended is gone, as an object.)
+        -- (A particle bullet: its look is a component the level keeps, on until turned off, after the bullet itself is gone.)
+        shot.fxOn = true
+        local fx = { IsValid = function() return true end,
+            GetFName = function() return { ToString = function() return "NiagaraComponent_" .. n end } end,
+            IsActive = function() return shot.fxOn end, Deactivate = function() shot.fxOn = false end }
         local made = { Start = function() shot.started = true end,
             GetFName = function() return { ToString = function() return "PBZ_ParticleBullet_" .. n end } end,
             IsValid = function() return not shot.ended end,
+            IsA = function(_, cls) return rawget(cls, "__path") == "/Script/PBZCombatAsset.PBZ_ParticleBullet" end,
+            ParticleComponent = fx,
             OnTimeToDestroy = function() shot.ended = true end }
         fired[#fired + 1] = { get = function() return made end }
     end })
@@ -1571,8 +1579,17 @@ function Fake.new(id, scripts, ini, link)
     pc.effectsOn = {}
     local niagara = object(pc, "NiagaraFunctionLibrary")
     defs(pc, niagara, { SpawnSystemAttached = function(_, system, on, socket)
-        pc.effectsOn[#pc.effectsOn + 1] = { path = rawget(system, "__path"), on = on, socket = socket:ToString() }
+        local e = { path = rawget(system, "__path"), on = on, socket = socket:ToString(), active = true }
+        pc.effectsOn[#pc.effectsOn + 1] = e
+        local n = #pc.effectsOn
+        -- (The component it makes: one that loops is on until turned off.)
+        return { IsValid = function() return not e.destroyed end,
+            GetFName = function() return { ToString = function() return "NiagaraComponent_fx" .. n end } end,
+            Deactivate = function() e.active = false end, K2_DestroyComponent = function() e.destroyed = true end }
     end })
+    local particleClass = object(pc, "Class")
+    rawset(particleClass, "__path", "/Script/PBZCombatAsset.PBZ_ParticleBullet")
+    found["/Script/PBZCombatAsset.PBZ_ParticleBullet"] = particleClass
     found["/Script/Niagara.Default__NiagaraFunctionLibrary"] = niagara
     pc.chestSkeleton = pc.chestSkeleton or object(pc, "Skeleton")
     for _, anim in ipairs({ "Chest_Close2Open", "Chest_Open" }) do
