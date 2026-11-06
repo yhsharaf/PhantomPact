@@ -2780,19 +2780,19 @@ return function(api)
         if not valid(hatred) or hatred:CheckCanHatredTarget(best.body) == false then
             return
         end
-        hatred:AddActorToHatredList(best.body, {})
-        for _, who in ipairs(near) do
-            if who ~= best then
-                hatred:RemoveActorFromHatredList(who.body)
+        pcall(function()
+            hatred:AddActorToHatredList(best.body, {})
+            for _, who in ipairs(near) do
+                if who ~= best then
+                    hatred:RemoveActorFromHatredList(who.body)
+                end
             end
-        end
-        pcall(function()        -- (whatever it does, the others go back on its list)
             f.picker.LastSwitchTime = 0
             f.picker:TrySwitchTarget()
         end)
-        for _, who in ipairs(near) do
+        for _, who in ipairs(near) do      -- (whatever happened above, the others go back on its list)
             if who ~= best then
-                hatred:AddActorToHatredList(who.body, {})
+                pcall(function() hatred:AddActorToHatredList(who.body, {}) end)
             end
         end
         f.slot = best.slot
@@ -3089,6 +3089,10 @@ return function(api)
     -- the ghost's own camera can't be used (it follows a controller the ghost doesn't have, so it sat in the
     -- bamboo looking nowhere).
     local spectating = nil        -- the actor the camera follows, or nil
+    -- The address of what the camera follows (a ghost about to be put away), or nil.
+    function game.spectatingAt()
+        return spectating and valid(spectating) and spectating:GetAddress() or nil
+    end
     local spectateCam = nil
     local DEATH_SCREEN_DIM = 0.25
     local CAM_BACK_CM, CAM_UP_CM, CAM_FOLLOW = 380, 170, 0.12   -- behind, above, fraction of the way per frame

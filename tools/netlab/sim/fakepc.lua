@@ -254,6 +254,7 @@ function Fake.character(pc, class, x, y, z, hp, posture)
             end
         end,
         SetActorHiddenInGame = function(self, on) put(self, "hidden", on) end,
+        SetActorTickEnabled = function(self, on) put(self, "ticking", on) end,
         SetActorEnableCollision = false,
         IsDead = function(self) return rawget(self, "__fields").dead end,
     })
@@ -1702,7 +1703,15 @@ function Fake.new(id, scripts, ini, link)
         elseif class == "PBZFlowInteractActorBase" then
             return pc.flows
         end
-        return nil
+        -- Anything spawned, by its class's name (a clone ghost's: the player's class).
+        local out = {}
+        for _, a in ipairs(pc.spawned or {}) do
+            local ok, cn = pcall(function() return a:GetClass():GetFName():ToString() end)
+            if ok and cn == class and rawget(a, "__alive") ~= false then
+                out[#out + 1] = a
+            end
+        end
+        return #out > 0 and out or nil
     end
     env.FName = function(text)
         return setmetatable({ TagName = nil }, { __index = { ToString = function() return text end } })

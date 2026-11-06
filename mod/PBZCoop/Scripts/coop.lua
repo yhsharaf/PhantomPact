@@ -310,6 +310,39 @@ return function(api)
 
     ------------------------------------------------------------------ ghost (the remote player)
 
+    -- A clone put away earlier (destroyGhost), of this class, taken back for a new ghost: up, shown and ticking beside player 1.
+    -- Nil if none is left in this world.
+    function net.unparkClone(cls)
+        local list = net.parkedClones
+        if not (list and #list > 0 and valid(cls)) then
+            return nil
+        end
+        local cname = cls:GetFName():ToString()
+        local all = FindAllOf(cname) or {}
+        for i = #list, 1, -1 do
+            local k = list[i]
+            table.remove(list, i)
+            if k.class == cname then
+                for _, a in pairs(all) do
+                    if valid(a) and a:GetAddress() == k.addr and a:GetFName():ToString() == k.fname then
+                        local ok = pcall(function()
+                            local _, pawn = getPlayer1()
+                            local l = pawn:K2_GetActorLocation()
+                            a:SetActorTickEnabled(true)
+                            a:SetActorHiddenInGame(false)
+                            a:K2_SetActorLocation({ X = l.X + 200, Y = l.Y, Z = l.Z + 50 }, false, {}, true)
+                        end)
+                        if ok then
+                            log("A ghost body put away before taken back.")
+                            return a
+                        end
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
     local function spawnGhost(p)
         local ghostClass
         -- (Not a clone in the prologue: a body of the player's own class bound itself to the backpack the game was still
@@ -321,7 +354,10 @@ return function(api)
         if not valid(ghostClass) then
             ghostClass = StaticFindObject(GHOST_CLASS)
         end
-        p.ghost = spawnBesidePlayer1(ghostClass)
+        p.ghost = net.unparkClone and net.unparkClone(ghostClass) or nil
+        if not valid(p.ghost) then
+            p.ghost = spawnBesidePlayer1(ghostClass)
+        end
         if not valid(p.ghost) then
             return
         end
@@ -828,7 +864,8 @@ return function(api)
     local function aggroParty(actor, addr, x, y, z, hp, name)
         local here = {}
         for _, p in ipairs(partners()) do
-            if valid(p.ghost) and not p.ghostHidden and not p.silent and p.target then
+            -- (Same map only: in the 3 s before a ghost hides, a partner's spot on another map turned enemies to nothing.)
+            if valid(p.ghost) and not p.ghostHidden and not p.silent and p.target and sameMap(p.target) then
                 game.hateGhost(actor, p.ghost, addr, x, y, z, p.number, p.target)
                 here[#here + 1] = { body = p.ghost, addr = p.ghostAddr, at = p.target, slot = p.number or 2 }
             end
@@ -1236,7 +1273,10 @@ return function(api)
                 end
                 kept[e.addr] = a
                 if a.hidden then
-                    a.brain = game.stopAI(e.actor, a.brain)     -- (the game starts a stopped AI again by itself)
+                    if now - (a.aiAt or -9) >= 1 then       -- (once a second: dozens hidden cost calls every round)
+                        a.aiAt = now
+                        a.brain = game.stopAI(e.actor, a.brain)     -- (the game starts a stopped AI again by itself)
+                    end
                     if now - a.askedAt >= ASK_AGAIN_S then
                         a.askedAt = now
                         sendEvent("HAS", name)
@@ -1260,7 +1300,10 @@ return function(api)
                 and inReach(a.home.X, a.home.Y, a.home.Z, t)
                 and net.notOnHost[a.name] and now - net.notOnHost[a.name] < net.NOT_LIFE_S then
                 kept[addr] = a
-                a.brain = game.stopAI(a.actor, a.brain)
+                if now - (a.aiAt or -9) >= 1 then
+                    a.aiAt = now
+                    a.brain = game.stopAI(a.actor, a.brain)
+                end
                 if now - a.askedAt >= ASK_AGAIN_S then
                     a.askedAt = now
                     sendEvent("HAS", a.name)
@@ -1370,6 +1413,10 @@ return function(api)
             if pending and os.clock() - pending.at >= net.LETHAL_AGAIN_S and net.heldAlive[addr] ~= nil then
                 if pending.tries >= net.LETHAL_TRIES then
                     net.lethalPending[name] = nil
+                    -- (No answer at all: lifted off the floor, so the next blow is a killing blow told again, not nothing.)
+                    if game.setHealth and valid(actor) and not game.isDead(actor) then
+                        game.setHealth(actor, HELD_HP + 1)
+                    end
                 else
                     pending.at, pending.tries = os.clock(), pending.tries + 1
                     reportHit(name, actor, 0, 0, true)
@@ -1394,7 +1441,9 @@ return function(api)
                 -- (Never below the floor it's held at: the host's line can say 0 before its K comes, and a copy written to 0
                 -- reads as dead here without the game's death ever running. The forest's last boss then died in the guest's
                 -- world with no scene after it, and the guest's story stayed in the forest while the host's went on.)
-                local want = r.Hp ~= nil and math.max(r.Hp, HELD_HP) or nil
+                -- (Half a point above it: a copy written to exactly the floor took every blow after with no drop, so none
+                -- was ever sent, the enemy the host's alone to finish.)
+                local want = r.Hp ~= nil and math.max(r.Hp, HELD_HP + 0.5) or nil
                 if game.setHealth and want ~= nil and hp ~= nil and want < hp - 0.5 then
                     game.setHealth(actor, want)
                     hp = want
@@ -1944,11 +1993,19 @@ return function(api)
             local n, x, y, z, yaw, vx, vy, hp, maxhp, boss, posture = line:match(
                 "^(%d+) (%S+) (%S+) (%S+) (%S+) (%S+) (%S+) (%S+) (%S+) (%S+) (%S+)$")
             local who = n and net.enemyNames[tonumber(n)]
-            if who and (isHost() and net.guestRuns[who.name] or (isClient() and not net.mine[who.name])) then
+            -- (Not a line from before its K, come in the same frame: it brought the dead enemy back here, and another of its
+            -- class stood in for it, its hits sent for a dead one.)
+            local justKilled = who and isClient() and net.killedAt and net.killedAt[who.name]
+                and os.clock() - net.killedAt[who.name] < 1.5 and line:match(" (%S+) %S+$") ~= "1"
+            if who and not justKilled and (isHost() and net.guestRuns[who.name] or (isClient() and not net.mine[who.name])) then
                 local X, Y, Z, Yaw, Hp, MaxHp = num(x), num(y), num(z), num(yaw), num(hp), num(maxhp)
                 -- Unparsable numbers or no health (MaxHp 0) would teleport or zero our copy: ignore the record.
                 if X and Y and Z and Yaw and Hp and MaxHp and MaxHp > 0 then
                     -- The same table each time: puppets hold on to it and steer by the newest numbers.
+                    if isClient() then
+                        -- (A line from the host proves it has it: a "no" from before stops hiding it at once, not 25 s on.)
+                        net.notOnHost[who.name] = nil
+                    end
                     local r = into[who.name] or { Class = who.class }
                     r.X, r.Y, r.Z, r.Yaw, r.Hp, r.MaxHp = X, Y, Z, Yaw, Hp, MaxHp
                     r.VX, r.VY = num(vx) or 0, num(vy) or 0
@@ -2082,6 +2139,8 @@ return function(api)
                 return
             end
             net.hostKilled[name] = true
+            net.killedAt = net.killedAt or {}
+            net.killedAt[name] = os.clock()
             net.remoteEnemies[name] = nil
             net.mine[name] = nil
             -- (The host's death settles a kill of this player's still to tell: a hit left here kept the dead body paired
@@ -3632,6 +3691,17 @@ return function(api)
                 return valid(pawn) and p.ghost:GetClass():GetAddress() == pawn:GetClass():GetAddress()
             end)
             if ok and clone then
+                -- (Not left following one put away 2 km up: a downed player watching it saw the sky till respawn.)
+                if game.spectatingAt and game.spectatingAt() == p.ghost:GetAddress() then
+                    game.spectate(nil)
+                end
+                -- Kept by address and name for the next ghost of this class to take back (spawnGhost): one made each time
+                -- piled up, a full player body each, five more with each hiccup of a 6-player party.
+                net.parkedClones = net.parkedClones or {}
+                pcall(function()
+                    table.insert(net.parkedClones, { addr = p.ghost:GetAddress(), fname = p.ghost:GetFName():ToString(),
+                        class = p.ghost:GetClass():GetFName():ToString() })
+                end)
                 pcall(function()
                     if game.ghostInFight then
                         game.ghostInFight(p.ghost, false, game.listEnemies() or {})     -- (off every enemy's list)
@@ -3758,7 +3828,11 @@ return function(api)
         end
     end
     pcall(function()
-        RegisterHook("/Script/ProjectPBZ.PBZSaveLoadSubsystem:TeleportTo", net.tellLoading)
+        -- (And this world settles: a host's bell trip on the same map said "not here" of enemies still streaming in.)
+        RegisterHook("/Script/ProjectPBZ.PBZSaveLoadSubsystem:TeleportTo", function()
+            net.tellLoading()
+            pcall(net.unsettle)
+        end)
     end)
 
     pcall(function()
@@ -3766,6 +3840,7 @@ return function(api)
             net.tellLoading()
             net.unsettledUntil = os.clock() + net.UNSETTLED_S + 20     -- (a load takes a while: no "no" given till settled)
             net.notOnHost, net.aside = {}, {}
+            net.parkedClones = {}       -- (the world takes them with it)
             net.bossFell, net.extraBossWatch, net.lethalPending = {}, {}, {}     -- (this world's actors go with the load: nothing to bring back down)
             -- Enemies this world brought back for the host go back to dead in it before it's saved and left: put back at the
             -- end of the session, they'd be put back in whatever world is loaded then.

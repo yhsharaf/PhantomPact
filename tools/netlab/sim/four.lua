@@ -2249,6 +2249,59 @@ local function playerReports()
         allErrors(s)
     end
     do
+        -- The bug hunt (report 1): the host's own hits left an enemy under 1, its line wrote the guest's copy to exactly the
+        -- floor, and every blow of the guest's after read as no drop: nothing sent, the enemy the host's alone to finish.
+        local s = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES)
+        local h, g = s.pcs[1], s.pcs[2]
+        s:run(4)
+        Session.moveTo(h, 0, 0)
+        Session.moveTo(g, 500, 0)
+        s:run(2)
+        local hostThug, copy = Session.enemyOn(h, "near"), Session.enemyOn(g, "near")
+        Fake.setHealth(hostThug, 0.8)
+        s:run(1)
+        local before = #g.sent
+        g.env.PBZ.game.noteLocalMove()
+        Fake.setHealth(copy, 1)
+        s:run(1)
+        local d = 0
+        for j = before + 1, #g.sent do
+            if g.sent[j]:match("^E D sp:near") then
+                d = d + 1
+            end
+        end
+        check(d > 0, "a guest's blow on a copy held at its floor is told to the host")
+        allErrors(s)
+    end
+    do
+        -- The bug hunt: a guest who stopped and started sync again put a new clone of each partner beside the old ones, a
+        -- full player body each, five more with each hiccup of a 6-player party. The ones put away are taken back.
+        local s = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest", "Guest" }, 4, ENEMIES)
+        for i = 2, 4 do
+            Session.moveTo(s.pcs[i], 200 * i, 0)
+        end
+        s:run(10)
+        local g = s.pcs[2]
+        local function bodies()
+            local n = 0
+            for _, a in ipairs(g.spawned) do
+                if a:IsValid() and rawget(a, "__alive") ~= false and not field(a, "BIsMonster") then
+                    n = n + 1
+                end
+            end
+            return n
+        end
+        local first = bodies()
+        for _ = 1, 3 do
+            Session.command(g, "netoff")
+            s:run(1)
+            Session.command(g, "neton client")
+            s:run(4)
+        end
+        check(bodies() == first, "sync off and on again takes the partners' put-away bodies back, no new ones")
+        allErrors(s)
+    end
+    do
         -- A new game's players both came out of the prologue without the healing gourd: co-op keeps its hands off there.
         local s, h, g = pair()
         s:run(2)

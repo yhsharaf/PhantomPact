@@ -464,15 +464,18 @@ return function(api)
             -- (Near this player only: one by another player, far off, was made where this world hadn't loaded the floor.
             -- And not a class that couldn't be had: each try was a blocking load.)
             if id:match("^tw%d+:") and guestTwins[id] == nil and not cleared[id] and (r.Hp or 0) > 0 and not net.hostKilled[id]
-                and r.Class and not twins.noClass[r.Class] and r.X and r.Y
+                and r.Class and not (twins.noClass[r.Class] and now < twins.noClass[r.Class]) and r.X and r.Y
                 and (r.X - here.X) ^ 2 + (r.Y - here.Y) ^ 2 <= (2 * NEAR_CM) ^ 2 then
                 nextSpawn = now + SPAWN_EVERY_S
                 local cls = classFor(r.Class)
                 if not cls then
-                    twins.noClass[r.Class] = true
+                    -- (Tried again in 30 s: a class not loaded here yet, a scene's boss say, was left out for the session.)
+                    twins.noClass[r.Class] = now + 30
                 end
                 local twin = cls and spawnTwin(cls, r, r.Yaw or 0, id)
-                guestTwins[id] = { twin = twin, twinAddr = twin and twin:GetAddress(), seenAt = now }
+                if cls then
+                    guestTwins[id] = { twin = twin, twinAddr = twin and twin:GetAddress(), seenAt = now }
+                end
                 if twin then
                     -- (The host's numbers from the start: by its class alone, a boss's copy came in at 8000 of 20000 and
                     -- jumped up a few seconds later.)
@@ -493,6 +496,7 @@ return function(api)
 
     local function clearAll(why)
         local n = 0
+        twins.noClass = {}
         for _, h in pairs(hostTwins) do
             if h.twin then
                 destroy(h.twin)
