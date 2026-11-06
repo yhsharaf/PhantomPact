@@ -820,9 +820,8 @@ return function(api)
                 pcall(function() at.BaseValue = base end)
             end
         end
-        if valid(pawn) then
-            game.setMinHealth(pawn, 0)
-        end
+        -- (The health floor stays at 1 till the health is back, below: let go at once, a loser lay at 1 health for the 3.6 s
+        -- the skill tree takes, and an enemy back at its post or a PvPvE partner's blow was a real death; the review.)
         local nodesSet = s.nodes ~= nil         -- (setup reached the skill tree)
         local nodes = nodesSet and valid(pawn) and componentOf(pawn, "PBZAbilityNodesComponent")
         local a = nodesSet and valid(pawn) and asc(pawn)
@@ -863,6 +862,9 @@ return function(api)
                             end)
                         end)
                     end
+                end
+                if valid(p) then
+                    game.setMinHealth(p, 0)     -- (the game's own floor again, the health back first)
                 end
                 setVeto(false)
                 if done then done() end
@@ -1760,11 +1762,11 @@ return function(api)
         -- The others stop being foes at once, before the shield and the health floor go: put back later, the figures
         -- stayed hostile for the 3.6 s the skill tree takes, and a blow then was a real death (the review).
         fightOn(false)
+        -- (The shield stays on till this player is put back: the health is back at its end, restore says why.)
         if valid(pawn) then
             arena.fall(pawn, false)
             letGo(pawn)
             hold(pawn, false)
-            shield(pawn, false)
             pcall(function() api.gs():SetGlobalTimeDilation(pawn, 1.0) end)
         end
         for _, p in ipairs(coop.partners()) do
@@ -1776,6 +1778,9 @@ return function(api)
         unparkEnemies()
         game.setBossFog(middleOf(m), false)
         if not home then
+            if valid(pawn) then
+                shield(pawn, false)
+            end
             dropJournal()
             tip("back from the match: " .. said .. ".")
             return
@@ -1784,6 +1789,10 @@ return function(api)
         arena.restoring = true
         restore(pawn, function()
             arena.restoring = nil
+            local _, back = pawnNow()
+            if valid(back) then
+                shield(back, false)
+            end
             if api.pvp and api.pvp.set and api.pvp.on ~= home.pvpve then
                 api.pvp.set(home.pvpve)
             end
@@ -2059,9 +2068,15 @@ return function(api)
         end
     end
 
-    -- A partner (re)starting sync or joining hears the lobby at once.
+    -- A partner (re)starting sync or joining hears the lobby at once, and what the lobby held for that place goes: it was
+    -- the last player's. (The review of 1.7.0: the relay gives a quiet player's place to a newcomer, who was then taken
+    -- into a match on the leaver's READY, version, arenas and loadout. Someone back in their own place presses READY again.)
     local syncStarted = coop.handlers.S
     coop.handlers.S = function(rest, from)
+        local s = senderSlot(from)
+        if s and s ~= mySlot() and not arena.match then
+            arena.picks[s] = nil
+        end
         lobbySent = nil
         return syncStarted(rest, from)
     end
