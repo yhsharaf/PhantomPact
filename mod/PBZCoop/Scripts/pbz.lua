@@ -3996,8 +3996,10 @@ return function(api)
                     end
                 elseif retiring[name] then
                     retiring[name] = nil
-                    pcall(function() c:SwitchWithoutPlaySequence() end)
-                    chests.showOpen(c, false)
+                    if not game.holdsQuestItem(c) then
+                        pcall(function() c:SwitchWithoutPlaySequence() end)
+                        chests.showOpen(c, false)
+                    end
                 else
                     local paid = false
                     if owed[name] and pays > 0 and c:GetAddress() ~= busy then    -- (not one they're opening)
@@ -4018,10 +4020,25 @@ return function(api)
             for _, p in ipairs(FindAllOf(PILE_CLASS) or {}) do
                 if valid(p) and retiring[p:GetFName():ToString()] then
                     retiring[p:GetFName():ToString()] = nil
-                    pcall(function() p:K2_DestroyActor() end)
+                    if not game.holdsQuestItem(p) then
+                        pcall(function() p:K2_DestroyActor() end)
+                    end
                 end
             end
         end
+    end
+
+    -- A pile or chest whose content is a quest item ("<map>.K_03001": a key, the Snake Tongue, a token half). Opened by a
+    -- partner, it stays here for this player to open: taken away, the quest item went with it, never shared (quest items
+    -- aren't), and the quest was stuck until they swapped host and guest (issue #15).
+    function game.holdsQuestItem(c)
+        local id = nil
+        pcall(function() id = c["Loot Item ID"]:ToString() end)
+        if type(id) ~= "string" or id == "None" then
+            pcall(function() id = c["Item ID"]:ToString() end)
+        end
+        local item = type(id) == "string" and id:match("([^%.]+)$") or nil
+        return item ~= nil and item ~= "None" and game.isNarrative(item), item
     end
 
     function game.partnerOpened(name)
@@ -4029,6 +4046,11 @@ return function(api)
         closedNear[name] = nil
         for _, c in ipairs(FindAllOf(isPile and PILE_CLASS or CHEST_CLASS) or {}) do
             if valid(c) and c:GetFName():ToString() == name then
+                local quest, item = game.holdsQuestItem(c)
+                if quest then
+                    log("The other player opened " .. name .. ": it holds a quest item (" .. tostring(item) .. "), left here for you.")
+                    return
+                end
                 if isPile then
                     pcall(function() c:K2_DestroyActor() end)
                 elseif not chestOpen(c) then

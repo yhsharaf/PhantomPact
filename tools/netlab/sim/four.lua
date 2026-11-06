@@ -389,6 +389,16 @@ local function sharing()
         kept = kept and rawget(pc.pickups[#pc.pickups], "__alive") ~= false
     end
     check(kept and count(b.sent, "^E I tonguespot") == 0, "a pickup whose item can't be read stays in the others' worlds too")
+    -- Issue #15 as it was: a pile with a story item in it (the Snake Tongue, a token half) opened by one player was taken
+    -- from the other's world, the item with it, never shared. One holding a quest item stays; one of loot goes.
+    local qpile = Fake.switch(h, "BP_Rubbish_C", 330.0, 0.0, 100.0)
+    rawset(qpile, "K2_DestroyActor", function(self) rawset(self, "__alive", false) end)
+    rawset(rawget(qpile, "__fields"), "Loot Item ID", Fake.name("Houjie.I_KEY_9"))
+    h.env.PBZ.game.partnerOpened("BP_Rubbish_C")
+    check(rawget(qpile, "__alive") ~= false, "a pile holding a quest item another player opened stays, for this player to open")
+    rawset(rawget(qpile, "__fields"), "Loot Item ID", Fake.name("Houjie.R_500"))
+    h.env.PBZ.game.partnerOpened("BP_Rubbish_C")
+    check(rawget(qpile, "__alive") == false, "and one of loot goes")
 
     -- Iron chains one player breaks (a Phantom Edge out of a fight) are broken in the others' worlds too.
     for _, pc in ipairs({ h, a, b, c }) do

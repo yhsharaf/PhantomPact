@@ -3849,6 +3849,15 @@ return function(api)
         end)
     end)
 
+    -- The first seconds after a map's load: the world searches (FindAllOf) of the slower jobs still hand back the old map's
+    -- actors being torn down, and touching one crashed the game inside UE4SS, where no pcall catches it (three times on the
+    -- bench, each just after a trip; the trace named the chains-and-levers job). They wait till it's over.
+    net.QUIET_AFTER_LOAD_S = 5
+    pcall(function()
+        RegisterLoadMapPostHook(function()
+            net.quietUntil = os.clock() + net.QUIET_AFTER_LOAD_S
+        end)
+    end)
     pcall(function()
         RegisterLoadMapPreHook(function()
             net.tellLoading()
@@ -4454,7 +4463,7 @@ return function(api)
             runStage("watchOwnDeath", watchOwnDeath)
             runStage("watchPartner", watchPartner)
         end
-        if now >= nextExtra then
+        if now >= nextExtra and os.clock() >= (net.quietUntil or 0) then
             nextExtra = now + EXTRA_S
             for name, fn in pairs(extraTicks) do
                 runStage(name, fn)

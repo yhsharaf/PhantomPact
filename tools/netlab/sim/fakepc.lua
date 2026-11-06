@@ -140,6 +140,7 @@ end
 local function name(text)
     return { ToString = function() return text end }
 end
+Fake.name = name
 
 function Fake.character(pc, class, x, y, z, hp, posture)
     local a = object(pc, class)
@@ -1705,7 +1706,10 @@ function Fake.new(id, scripts, ini, link)
         end
         -- Anything spawned, by its class's name (a clone ghost's: the player's class).
         local out = {}
-        for _, a in ipairs(pc.spawned or {}) do
+        local pool = {}
+        for _, a in ipairs(pc.spawned or {}) do pool[#pool + 1] = a end
+        for _, a in ipairs(pc.switches or {}) do pool[#pool + 1] = a end
+        for _, a in ipairs(pool) do
             local ok, cn = pcall(function() return a:GetClass():GetFName():ToString() end)
             if ok and cn == class and rawget(a, "__alive") ~= false then
                 out[#out + 1] = a
