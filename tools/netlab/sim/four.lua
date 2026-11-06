@@ -375,6 +375,20 @@ local function sharing()
         kept = kept and rawget(pc.pickups[#pc.pickups], "__alive") ~= false
     end
     check(kept and count(b.sent, "^E I keyspot") == 0, "a quest item one player takes stays in the others' worlds, for them to take")
+    -- Issue #15: one whose item can't be read (the Snake Tongue, a token half) went out as loot, and the others' copy vanished
+    -- with nothing given, their quest stuck. Only what's known to be loot goes.
+    for _, pc in ipairs({ h, a, b, c }) do
+        local p = Fake.pickup(pc, "tonguespot", "R_500", 320.0, 0.0, 100.0)
+        rawset(rawget(p, "__fields"), "ItemId", nil)
+    end
+    s:run(1.5)
+    b.pickups[#b.pickups]:K2_DestroyActor()
+    s:run(1.5)
+    kept = true
+    for _, pc in ipairs({ h, a, c }) do
+        kept = kept and rawget(pc.pickups[#pc.pickups], "__alive") ~= false
+    end
+    check(kept and count(b.sent, "^E I tonguespot") == 0, "a pickup whose item can't be read stays in the others' worlds too")
 
     -- Iron chains one player breaks (a Phantom Edge out of a fight) are broken in the others' worlds too.
     for _, pc in ipairs({ h, a, b, c }) do

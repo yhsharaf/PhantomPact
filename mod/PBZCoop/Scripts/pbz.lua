@@ -3381,7 +3381,11 @@ return function(api)
             local now = present[name]
             if now == nil or distance(now.loc, info.loc) > PICKUP_JUMP_CM then
                 takenHere[name] = true
-                if not game.isNarrative(info.itemId) then
+                -- (Only loot known to be loot: a pickup whose item couldn't be read, or read before the item table was, went
+                -- out as loot, and the partner's copy of a quest item (the Snake Tongue, a token half) vanished with nothing
+                -- given, their quest stuck: issue #15.)
+                local quest = game.isNarrative(info.itemId)
+                if not quest and info.itemId ~= "?" and info.itemId ~= "None" and game.narrative ~= nil then
                     report(name, info.itemId)
                 end
                 present[name] = nil
@@ -3400,6 +3404,12 @@ return function(api)
         if takenHere[name] then
             -- Both players grabbed it within the same moment: each already has theirs, as in single-player.
             log("The other player took " .. name .. " too; you already have yours.")
+            return
+        end
+        -- A quest item stays for this player to pick up. (A ground pickup comes as "?", only that it's gone: the sender
+        -- tells loot alone, see watchPickups.)
+        if itemId and itemId ~= "?" and game.isNarrative(itemId) then
+            log("The other player took " .. name .. " (" .. tostring(itemId) .. "): a quest item, left here for you to take.")
             return
         end
         for _, p in ipairs(FindAllOf("PBZPickupActor") or {}) do
