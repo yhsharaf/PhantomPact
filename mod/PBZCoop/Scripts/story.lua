@@ -706,8 +706,20 @@ return function(api)
         end
         local names = {}
         batch = {}
+        -- (No more than 6 quests to load from disk in one go: each is a load on the game thread, and forty at once for a
+        -- guest far behind could stall the game as they joined.)
+        local loads, seenQuest = 0, {}
         for n = 1, math.min(BATCH, #todo) do
-            names[n] = todo[n].i
+            local row = DATA.rows[todo[n].i]
+            local q = row and row.q
+            if type(q) == "string" and q ~= "" and not seenQuest[q] and not valid(classes[q]) then
+                seenQuest[q] = true
+                loads = loads + 1
+                if loads > 6 and n > 1 then
+                    break
+                end
+            end
+            names[#names + 1] = todo[n].i
             if todo[n].mark then
                 marked[todo[n].i] = true
             else

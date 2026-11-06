@@ -3166,6 +3166,11 @@ return function(api)
         if game.inPrologue and game.inPrologue() then
             return "finish the prologue first."
         end
+        -- (Nor into it: the partner's prologue map is theirs alone.)
+        local tmap = tostring(t.Map or "")
+        if tmap:find("ZhuLinGuWu", 1, true) or tmap:find("ZLGW", 1, true) then
+            return "your partner is still in the prologue."
+        end
         if t.Hp == nil or t.Hp <= 0 or t.Cine then
             return "your partner can't be joined right now."
         end
