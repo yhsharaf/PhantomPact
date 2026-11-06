@@ -171,9 +171,15 @@ return function(api)
         end
     end
 
+    -- A loop of its own, once a second on the game thread: as an entry of coop.extraTicks it was gone on the bench after
+    -- a while, cause not found, and the host told nothing.
     local nextGuest = 0
-    coop.extraTicks.flowsync = function()
+    local function tick()
         local now = os.clock()
+        if not (coop.net and coop.net.enabled) then
+            flow.told = nil
+            return
+        end
         if coop.isHost() then
             local ok, err = pcall(hostTick, now)
             if not ok and err ~= flow.lastError then
@@ -189,6 +195,11 @@ return function(api)
             end
         end
     end
+    flow.tick = tick
+    LoopInGameThreadWithDelay(1000, function()
+        pcall(tick)
+        return false
+    end)
 
     return flow
 end

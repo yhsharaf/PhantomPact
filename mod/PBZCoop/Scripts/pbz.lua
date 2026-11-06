@@ -2363,11 +2363,17 @@ return function(api)
 
     -- The ghost is a full Hun: make it harmless (the remote player's hits arrive as reported damage) and let
     -- nearby enemies hate it so they fight it as well as the local player.
+    -- (A token attack, not 0: at 0 its swings went through enemies with no hit at all, no sound or flash of one, and players
+    -- saw the partner's blade pass through enemies. A token one lands as the game's own hit, sound and spark, for next to no
+    -- damage; the real damage still comes reported. No posture: that's reported too.)
+    game.GHOST_ATTACK = 0.01
     function game.setupGhost(ghost)
         pcall(function()
-            local atk = ghost.AttributeSetBase.Attack
-            atk.BaseValue = 0
-            atk.CurrentValue = 0
+            local set = ghost.AttributeSetBase
+            set.Attack.BaseValue = game.GHOST_ATTACK
+            set.Attack.CurrentValue = game.GHOST_ATTACK
+            set.ShachiAttack.BaseValue = 0
+            set.ShachiAttack.CurrentValue = 0
         end)
     end
 

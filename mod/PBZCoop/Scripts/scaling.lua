@@ -51,7 +51,9 @@ return function(api)
     local scaledMax = {}            -- enemy address -> the Health_Max it was scaled to
     local function maxOf(e)
         local ok, v = pcall(function() return e.AttributeSetBase.Health_Max.CurrentValue end)
-        return ok and v or nil
+        -- (A number only: on some actors the read hands back an object, and the comparison with it threw every pass, seen on
+        -- the bench beside the forest's YuCong.)
+        return ok and type(v) == "number" and v or nil
     end
     -- (The host's only: a guest's copies take the host's Health_Max, which isn't theirs to judge by. And only a body below
     -- what it was given: one the game raises itself is still the one scaled.)
