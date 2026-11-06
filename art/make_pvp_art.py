@@ -270,7 +270,7 @@ def banners():
         "death": ("ONE LIFE", "一命定胜负"),
         "round_won": ("ROUND TAKEN", "本回合胜"), "round_lost": ("ROUND LOST", "本回合负"), "round_draw": ("DRAW", "平局"),
         "down": ("YOU'RE DOWN", "你倒下了"), "fell": ("YOU FELL", "你坠落了"),
-        "finish": ("PRESS F TO FINISH", "按 F 处决"), "finished": ("FINISHED", "已处决"),
+        "finish": ("PRESS F TO FINISH", "按 F 处决"),
         "won": ("YOUR TEAM WINS", "你的队伍获胜"), "lost": ("YOUR TEAM FALLS", "你的队伍落败"),
         "timeup": ("TIME", "时间到"),
     }
@@ -280,59 +280,14 @@ def banners():
             W, H = 900, 150
             img = Image.new("RGBA", (W * K, H * K), (0, 0, 0, 0))
             img.alpha_composite(smear(W * K, H * K, DEEP if key in dark else (20, 18, 20, 255), sum(map(ord, key))))
-            color = CRIMSON if key in ("finish", "finished") else (GOLD if key in ("won", "round_won") else BONE)
+            color = CRIMSON if key == "finish" else (GOLD if key in ("won", "round_won") else BONE)
             words = caption(text, 38, color, gap=12, face=face, w=W)
             img.alpha_composite(words, (0, (H * K - words.size[1]) // 2))
             save_hud(img, prefix + "banner_" + key)
 
 
-def digits():
-    """The clock's numbers: bone on a soft shadow."""
-    for c in "0123456789:":
-        f = font(44, True)
-        img = Image.new("RGBA", (40 * K, 64 * K), (0, 0, 0, 0))
-        sh = Image.new("RGBA", img.size, (0, 0, 0, 0))
-        ImageDraw.Draw(sh).text((22 * K, 34 * K), c, font=f, fill=(0, 0, 0, 210), anchor="mm")
-        img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(3 * K)))
-        ImageDraw.Draw(img).text((20 * K, 32 * K), c, font=f, fill=BONE, anchor="mm")
-        save_hud(img, "digit_" + ("colon" if c == ":" else c))
-
-
-def bars():
-    """Health bars: a dark trough with a silver edge, a fill per team, and the pale trail of health just lost."""
-    for name, (w, h) in (("big", (520, 16)), ("small", (300, 11)), ("mate", (220, 9))):
-        img, d = canvas(w + 8, h + 8)
-        d.rectangle((0, 0, (w + 8) * K, (h + 8) * K), fill=(6, 6, 8, 205))
-        d.rectangle((2 * K, 2 * K, (w + 6) * K - 1, (h + 6) * K - 1), outline=(150, 150, 156, 220), width=K)
-        save_hud(img, "bar_%s_bg" % name)
-        for team, color in TEAM.items():
-            img, d = canvas(w, h)
-            for y in range(h * K):
-                f = 1.0 - 0.35 * abs(y / (h * K) - 0.35) * 2
-                d.line((0, y, w * K, y), fill=tuple(int(v * f) for v in color[:3]) + (255,))
-            save_hud(img, "bar_%s_fill_%d" % (name, team))
-        img, d = canvas(w, h)
-        d.rectangle((0, 0, w * K, h * K), fill=(240, 222, 200, 210))
-        save_hud(img, "bar_%s_trail" % name)
-    for slot, (rgb, text) in PLAYERS.items():
-        save_hud(caption(text, 13, rgb + (255,), gap=4), "name_%d" % slot)
-    for team, color in TEAM.items():
-        for on in (0, 1):
-            img, d = canvas(22, 22)
-            if on:
-                d.ellipse((3 * K, 3 * K, 19 * K, 19 * K), fill=color)
-            d.ellipse((3 * K, 3 * K, 19 * K, 19 * K), outline=(220, 214, 204, 230), width=2 * K)
-            save_hud(img, "pip_%d_%d" % (team, on))
-    img, d = canvas(460, 74)
-    for y in range(74 * K):
-        a = int(170 * (1 - abs(y / (74 * K) - 0.5) * 2) ** 0.6)
-        d.line((0, y, 460 * K, y), fill=(0, 0, 0, a))
-    save_hud(img, "score_bg")
-    for team, (en, zh) in ((1, ("CRIMSON", "赤")), (2, ("AZURE", "青"))):
-        save_hud(caption(en, 13, TEAM[team], gap=5), "team_%d" % team)
-        save_hud(caption(zh, 15, TEAM[team], gap=0, face=chinese), "zh_team_%d" % team)
-    save_hud(caption("DOWN", 13, (200, 200, 200, 255), gap=4), "down")
-    save_hud(caption("倒下", 14, (200, 200, 200, 255), gap=0, face=chinese), "zh_down")
+# (The match's health bars, its score strip and clock digits were ours once: the foes are on the game's own boss bar now,
+# the score and the clock in its own name text, as the user asked: health bars in the game's own design.)
 
 
 # ------------------------------------------------------------------ the F6 page
@@ -557,8 +512,6 @@ def player_rows():
 if __name__ == "__main__":
     countdown()
     banners()
-    digits()
-    bars()
     player_rows()
     frames()
     for wd in WORDS.values():

@@ -206,6 +206,10 @@ return function(api)
             end
             f:close()
         end
+        -- Told again (a guest's pick carries it): changed after READY, the other worlds lent and raised the old weapons.
+        if arena.setPick and net.enabled and not coop.isHost() then
+            arena.setPick(nil, nil)
+        end
         return arena.preset
     end
 
@@ -271,6 +275,27 @@ return function(api)
     -- Teams nobody picked: the host Crimson; with two players the other Azure; in a party the smaller side.
     local function fillTeams()
         local slots = everyone()
+        -- The picks of players who left the party go (a new player in that slot inherited their READY, version and
+        -- loadout). Not those of one quiet a moment, in a loading screen: still a partner.
+        local inParty = { [mySlot()] = true }
+        for _, p in ipairs(coop.partners()) do
+            inParty[peerSlot(p)] = true
+        end
+        for s in pairs(arena.picks) do
+            if not inParty[s] then
+                arena.picks[s] = nil
+            end
+        end
+        -- Two players: one team each, whatever was picked before (left over from a party, both on one side, the page
+        -- refusing a change with two rows: it never started; the review of 1.7.0).
+        if #slots == 2 then
+            for _, s in ipairs(slots) do
+                local p = arena.picks[s] or {}
+                arena.picks[s] = p
+                p.team = s == mySlot() and 1 or 2
+            end
+            return
+        end
         local count = { 0, 0 }
         for _, s in ipairs(slots) do
             local p = arena.picks[s]
@@ -322,6 +347,9 @@ return function(api)
         end
         if not coop.isHost() then
             return "The host starts the match."
+        end
+        if arena.restoring then
+            return "Putting the last match back: a moment."
         end
         local slots = everyone()
         if #slots < 2 then
@@ -690,11 +718,14 @@ return function(api)
                 end
             end
             raise(bp)
+            -- (Only while this same match is on: one called off within the moment was put back first, and raising after
+            -- that left the player's own weapons at 30 for the save to keep.)
+            local mine = saved
             for _, later in ipairs({ 0.5, 1.5 }) do
                 game.after(later, function()
                     local _, now = pawnNow()        -- (the body asked for again: nothing kept across frames)
                     local b = valid(now) and game.backpackOf(now)
-                    if b and saved then
+                    if b and saved == mine and arena.match == m then
                         raise(b)
                     end
                 end)
@@ -736,11 +767,12 @@ return function(api)
             levels[#levels + 1] = key .. "=" .. tostring(level)
         end
         journal({ map = saved.map, at = string.format("%.0f %.0f %.0f %.0f", saved.at.X, saved.at.Y, saved.at.Z, saved.yaw or 0),
-            loans = #saved.loans > 0 and table.concat(saved.loans, ",") or "-",
+            loans = #saved.loans > 0 and table.concat(saved.loans, ",") or "-", arena = saved.arenaAt,
             levels = #levels > 0 and table.concat(levels, ",") or "-", nodes = table.concat(saved.nodes or {}, ",") })
         -- The drinks once the gourd is the match's: a moment later (the game writes the count as it swaps).
         game.after(0.5, function()
-            local g = valid(pawn) and game.gourdInfo(pawn)
+            local _, now = pawnNow()
+            local g = arena.match == m and valid(now) and game.gourdInfo(now)
             if g then
                 pcall(function()
                     g:SetCurrentTime(data.DRINKS)
@@ -750,7 +782,10 @@ return function(api)
         end)
     end
 
-    -- All of it back, in the order it went on (the nodes off, a moment for the game, then the old ones on again).
+    -- All of it back, in the order it went on (the nodes off, a moment for the game, then the old ones on again). Only what
+    -- setup changed: a match called off before this player was set up (on the way there) leaves the skill tree alone (the
+    -- review: all of it was switched off then, nothing to switch back on, and the next save kept that). The timers ask for
+    -- the body and its parts again: nothing kept across frames.
     local function restore(pawn, done)
         if not saved then
             if done then done() end
@@ -788,33 +823,39 @@ return function(api)
         if valid(pawn) then
             game.setMinHealth(pawn, 0)
         end
-        local nodes = valid(pawn) and componentOf(pawn, "PBZAbilityNodesComponent")
-        local a = valid(pawn) and asc(pawn)
+        local nodesSet = s.nodes ~= nil         -- (setup reached the skill tree)
+        local nodes = nodesSet and valid(pawn) and componentOf(pawn, "PBZAbilityNodesComponent")
+        local a = nodesSet and valid(pawn) and asc(pawn)
         if valid(nodes) and a then
             pcall(function() nodes:DeactivateAllNodes(a) end)
         end
         game.after(SETTLE_S, function()
-            if valid(nodes) and a then
+            local _, now = pawnNow()
+            local n2 = nodesSet and valid(now) and componentOf(now, "PBZAbilityNodesComponent")
+            local a2 = nodesSet and valid(now) and asc(now)
+            if valid(n2) and a2 then
                 for _, id in ipairs(s.nodes or {}) do
-                    pcall(function() nodes:ActivateNode(FName(id), a, true, false) end)
+                    pcall(function() n2:ActivateNode(FName(id), a2, true, false) end)
                 end
             end
             game.after(SETTLE_S, function()
-                if valid(pawn) then
-                    local _, maxhp = game.getHealth(pawn)
+                local _, p = pawnNow()
+                if valid(p) and s.attrs then
+                    local _, maxhp = game.getHealth(p)
                     if maxhp then
-                        game.setHealth(pawn, maxhp)
+                        game.setHealth(p, maxhp)
                     end
-                    local g = game.gourdInfo(pawn)
+                    local g = game.gourdInfo(p)
                     if g and s.drinks then
                         pcall(function()
                             g:SetCurrentTime(s.drinks)
                             g:SetDisplayTime(s.drinks)
                         end)
                     end
-                    if s.top and s.top ~= "None" and s.topDrinks and bp then
+                    local b = game.backpackOf(p)
+                    if s.top and s.top ~= "None" and s.topDrinks and b then
                         pcall(function()
-                            bp.MedicineInfos:ForEach(function(k, v)
+                            b.MedicineInfos:ForEach(function(k, v)
                                 if k:get():ToString() == s.top then
                                     v:get():SetCurrentTime(s.topDrinks)
                                     v:get():SetDisplayTime(s.topDrinks)
@@ -921,6 +962,11 @@ return function(api)
     end
 
     local function begin(m)
+        -- Still being put back from the last match (goHome's 3.6 s): this one begins when that's done.
+        if arena.restoring then
+            arena.pendingStart = m
+            return
+        end
         local _, pawn = pawnNow()
         if not valid(pawn) then
             coop.sendEvent("AR", "quit", m.id, "nobody")
@@ -937,7 +983,10 @@ return function(api)
             yaw = pawn:K2_GetActorRotation().Yaw,
             pvpve = api.pvp and api.pvp.on,
         }
-        journal({ map = saved.map, at = string.format("%.0f %.0f %.0f %.0f", l.X, l.Y, l.Z, saved.yaw), loans = "-" })
+        local mid = middleOf(m)
+        saved.arenaAt = string.format("%s %.0f %.0f %.0f", mapOf(m), mid.X or 0, mid.Y or 0, mid.Z or 0)
+        journal({ map = saved.map, at = string.format("%.0f %.0f %.0f %.0f", l.X, l.Y, l.Z, saved.yaw), loans = "-",
+            arena = saved.arenaAt })
         fightOn(true)
         local spot = spotOf(m, mySlot())
         local where = mapOf(m)
@@ -1090,8 +1139,9 @@ return function(api)
         coop.sendEvent("AR", "round", m.id, m.round, winner, m.score[1], m.score[2])
         arena.onRound(m, m.round, winner, m.score[1], m.score[2])
         m.nextAt = os.clock() + BETWEEN_S
-        if m.mode == "death" or m.score[1] >= DUEL_WINS or m.score[2] >= DUEL_WINS then
-            m.winner = m.score[1] > m.score[2] and 1 or (m.score[2] > m.score[1] and 2 or (winner > 0 and winner or 1))
+        -- (A draw ends nothing: in Death it's fought again, where it gave the match to Crimson; the review of 1.7.0.)
+        if (m.mode == "death" and winner > 0) or m.score[1] >= DUEL_WINS or m.score[2] >= DUEL_WINS then
+            m.winner = m.score[1] > m.score[2] and 1 or 2
             m.nextAt = os.clock() + BETWEEN_S * 0.6
         end
     end
@@ -1228,7 +1278,7 @@ return function(api)
         end
         if m.phase ~= "going" then
             timeAtOne(pawn, m)
-            if now >= areaAt then
+            if now >= areaAt and now >= (net.quietUntil or 0) then
                 areaAt = now + AREA_S
                 parkEnemies(middleOf(m))
                 game.setBossFog(middleOf(m), true, true)        -- (said once, as they first close: arrive)
@@ -1445,7 +1495,8 @@ return function(api)
 
     function arena.finish(victim, n)
         local m = arena.match
-        if not (m and m.phase == "finish" and myTeam() == m.winner and not m.finished) then
+        -- (A winner down on the ground doesn't: it played on a body lying loose, and the teammate standing lost it.)
+        if not (m and m.phase == "finish" and myTeam() == m.winner and not m.finished and not m.down[mySlot()]) then
             return false
         end
         if not (victim and m.teams[victim] and m.teams[victim] ~= myTeam()) then
@@ -1523,6 +1574,9 @@ return function(api)
             game.spectate(nil)
         end
         net.arenaWatching = nil
+        -- The others stop being foes at once, before the shield and the health floor go: put back later, the figures
+        -- stayed hostile for the 3.6 s the skill tree takes, and a blow then was a real death (the review).
+        fightOn(false)
         if valid(pawn) then
             arena.fall(pawn, false)
             hold(pawn, false)
@@ -1537,13 +1591,14 @@ return function(api)
         unparkEnemies()
         game.setBossFog(middleOf(m), false)
         if not home then
-            fightOn(false)
             dropJournal()
             tip("back from the match: " .. said .. ".")
             return
         end
+        -- Being put back: a new match waits for it (begin), or its start was torn down by this one's late timers.
+        arena.restoring = true
         restore(pawn, function()
-            fightOn(false)
+            arena.restoring = nil
             if api.pvp and api.pvp.set and api.pvp.on ~= home.pvpve then
                 api.pvp.set(home.pvpve)
             end
@@ -1562,6 +1617,11 @@ return function(api)
             end
             coop.sendEvent("AR", "here", m.id, "home")
             tip("back from the match: " .. said .. ".")
+            local waiting = arena.pendingStart
+            arena.pendingStart = nil
+            if waiting then
+                begin(waiting)
+            end
         end)
     end
 
@@ -1612,6 +1672,7 @@ return function(api)
     ------------------------------------------------------------------ the host starts
 
     function arena.start()
+        hostPick()              -- (the host's own loadout as it is now, changed on the page since the lobby went out)
         local why = arena.blocker()
         if why then
             tip(why)
@@ -1783,6 +1844,11 @@ return function(api)
 
     function AR.quit(rest, slot)
         local id, why = rest:match("^(%d+)%s*(%S*)")
+        local waiting = arena.pendingStart
+        if waiting and tostring(waiting.id) == tostring(id) then
+            arena.pendingStart = nil            -- (called off before it began here)
+            return
+        end
         local m = sameMatch(id)
         if not m then
             return
@@ -1854,6 +1920,17 @@ return function(api)
             return
         end
         recoverAt = false
+        -- Only a game that came back in that match's arena: the save is held off all match, so one loaded anywhere else
+        -- never saw it, and putting levels, weapons and the place back there undid a save that had moved on (another
+        -- slot: its weapons lowered or taken, the player sent off; the review of 1.7.0).
+        local am, ax, ay = (j.arena or ""):match("^(%S+) (%S+) (%S+)")
+        local here = locOf(pawn)
+        if not (am and here and game.mapName(pawn) == am and tonumber(ax)
+                and flatDist(here, { X = tonumber(ax), Y = tonumber(ay) }) <= PARK_CM) then
+            dropJournal()
+            log("PvP: a match was cut short when the game closed, but nothing of it was saved: nothing to put back.")
+            return
+        end
         local bp = game.backpackOf(pawn)
         if bp then
             pcall(function()
@@ -1881,10 +1958,21 @@ return function(api)
 
     ------------------------------------------------------------------ ticks and commands
 
-    coop.extraTicks.arena = function()
+    -- Each frame, at most ARENA_TICK_S apart: not one of coop's extraTicks, which all wait out its quiet after a load or a
+    -- hitch, so the match's clock, its countdown and a player falling to 1 health froze for up to 5 s (the review of
+    -- 1.7.0). Its world searches (enemies put aside, fog walls) still wait for the quiet: tick() asks.
+    local ARENA_TICK_S, arenaTickAt = 1 / 40, 0
+    coop.frameTicks.arena = function()
+        local clock = os.clock()
+        if clock < arenaTickAt then
+            return
+        end
+        arenaTickAt = clock + ARENA_TICK_S
         local ok, err = pcall(function()
             if coop.isHost() and net.enabled and not arena.match then
                 arena.sendLobby()
+            elseif not coop.isHost() and arena.lobby and net.partnerGone then
+                arena.lobby, arena.pick.ready = nil, false      -- (the host gone: its lobby and this READY with it)
             end
             tick()
             recover()

@@ -24,6 +24,9 @@ return function()
             "这个游戏版本尚未用当前的 Phantom Pact 测试过,部分联机功能可能失效。",
         ["Couldn't start the relay: dlls\\main.dll can't be reached. Reinstall Phantom Pact, check your antivirus didn't remove it, and use the UE4SS build from the install guide."] =
             "无法启动联机模块:找不到 dlls\\main.dll。请重新安装 Phantom Pact,检查杀毒软件是否删除了它,并使用安装说明里的 UE4SS 版本。",
+        -- PvP (F6)
+        ["Putting the last match back: a moment."] = "正在还原上一场对决,请稍候。",
+        ["too late to finish them: the match is over."] = "来不及处决了:对决已经结束。",
         -- the partner
         ["your partner is down."] = "队友倒下了。",
         ["your partner is back."] = "队友回来了。",
@@ -163,7 +166,12 @@ return function()
         { "^back from the match: you left%.$", "你离开了对决,已返回。" },
         { "^back from the match: you died%.$", "你在对决中死亡,已返回。" },
         { "^back from the match: a player was lost%.$", "有玩家断线,对决结束,已返回。" },
+        { "^back from the match: the host was lost%.$", "房主断线了,对决结束,已返回。" },
+        { "^back from the match: co%-op was turned off%.$", "联机已关闭,对决结束,已返回。" },
+        { "^back from the match: the trip to the arena took too long%.$", "前往战场用时太久,对决取消,已返回。" },
+        { "^back from the match: you couldn't get to the arena%.$", "你无法前往战场,对决取消,已返回。" },
         { "^back from the match: not everyone got to the arena in time%.$", "有人没能及时到达战场,对决取消,已返回。" },
+        { "^back from the match: (.+) was lost%.$", "%1 断线了,对决结束,已返回。" },
         { "^back from the match: (.+) left%.$", "%1 离开了,对决结束,已返回。" },
         { "^back from the match: (.+) couldn't get to the arena%.$", "%1 无法前往战场,对决取消,已返回。" },
         { "^back from the match: (.+)%.$", "对决结束,已返回:%1。" },
@@ -183,6 +191,15 @@ return function()
             PARTS[#PARTS + 1] = { "^" .. who[1] .. line[1], who[2] .. line[2] }
         end
         PARTS[#PARTS + 1] = { " You're " .. who[1] .. "%.$", " 你是" .. who[2] .. "。" }
+    end
+    -- Last, names anywhere in a line, once the lines' own rows have had it: PvP's arenas (the longer names first, the
+    -- F6 page's own words for them), its bosses, the players.
+    for _, name in ipairs({ { "The Gold%-Masked One's Gorge", "金面人之谷" }, { "Hua Qianxiao's Stage", "花千笑之台" },
+        { "Mu Xiaokui's Meadow", "木小葵之野" }, { "Crimson Forest", "赤林" }, { "前往Here。", "前往此地。" },
+        { "the Gold%-Masked One", "金面人" }, { "Hua Qianxiao", "花千笑" }, { "Mu Xiaokui", "木小葵" }, { "YuCong", "余聪" },
+        { "the host %(purple%)", "房主(紫)" }, { "player 2 %(green%)", "玩家 2(绿)" }, { "player 3 %(gold%)", "玩家 3(金)" },
+        { "player 4 %(blue%)", "玩家 4(蓝)" }, { "player 5 %(orange%)", "玩家 5(橙)" }, { "player 6 %(pink%)", "玩家 6(粉)" } }) do
+        PARTS[#PARTS + 1] = name
     end
 
     function lang.set(word)

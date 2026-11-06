@@ -3931,6 +3931,11 @@ return function(api)
     end
 
     local function stop()
+        -- A PvP match ends with sync, everything put back (arena.lua; its timers run on their own): left running, it
+        -- froze there, the save held off and the match's loadout on (the review of 1.7.0).
+        if api.arena and api.arena.match and api.arena.quit then
+            pcall(api.arena.quit, "co-op was turned off", false)
+        end
         pcall(sendEvent, "BYE")
         net.enabled = false
         net.partnerFighting, net.toldFighting = false, nil

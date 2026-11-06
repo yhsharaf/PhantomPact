@@ -605,14 +605,15 @@ return function(api)
         return someoneJoined(rest, from)
     end
 
-    -- Ability replays only in PvP.
+    -- Ability replays only in PvP. (With the sender: in a party it says whose figure swings. Dropped here, every player's
+    -- moves were replayed on one figure in a PvP match of three or more; the review of 1.7.0.)
     local replayAbility = coop.handlers.M
     if replayAbility then
-        coop.handlers.M = function(rest)
+        coop.handlers.M = function(rest, from)
             if moves.partnerSends and not net.pvp then
                 return
             end
-            return replayAbility(rest)
+            return replayAbility(rest, from)
         end
     end
 

@@ -328,8 +328,8 @@ return function(api)
                     if setHostile(pawn, ghost, true) then
                         hostile[addr] = { ghost = ghost, at = now }
                     end
-                elseif pvp.teams and now - h.at >= RESTAT_S then
-                    h.at = now
+                elseif (pvp.teams and now - h.at >= RESTAT_S) or h.restat then
+                    h.at, h.restat = now, nil
                     giveGhostStats(ghost, pawn)
                 end
                 -- The ghost shows its player's real health (it never drops to 0 here, so it can keep fighting).
@@ -407,6 +407,11 @@ return function(api)
         pvp.matchDamage = teams and damage or nil
         pvp.lastHitBy = nil
         swings = {}             -- (a foe's stats, with the match's scale, are given again every RESTAT_S)
+        -- Its figures' stats again, with or without the match's numbers: after a match with PvPvE still on, the partner's
+        -- figure kept the match's half damage (the review of 1.7.0).
+        for _, h in pairs(hostile) do
+            h.restat = true
+        end
         net.pvp = pvp.on or teams ~= nil
     end
 

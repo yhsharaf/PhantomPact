@@ -128,7 +128,19 @@ return function(api)
     ------------------------------------------------------------------ the countdown
 
     function ui.countdown(seconds, round, m)
-        count = { start = os.clock(), total = seconds, round = round, mode = m and m.mode or "duel" }
+        -- Which banner over the numbers: FINAL ROUND by the score (both a round from winning), not by the round's number
+        -- (a draw adds a round: round 3 wasn't always the last, and a 4th had no banner at all; the review of 1.7.0).
+        local which = nil                       -- (a round with no banner of its own: the numbers alone)
+        if m and m.mode == "death" then
+            which = "death"
+        elseif m and (m.score[1] or 0) >= 1 and (m.score[2] or 0) >= 1 then
+            which = "round_3"
+        elseif (round or 1) <= 1 then
+            which = "round_1"
+        elseif round == 2 then
+            which = "round_2"
+        end
+        count = { start = os.clock(), total = seconds, round = round, which = which }
         fightAt = nil
         banner = nil
     end
@@ -152,10 +164,13 @@ return function(api)
             local words = part("count_words", "pvp/" .. worded("count_" .. n .. "_words") .. ".png", 260, 46, 3)
             put(words, cx, cy + COUNT_SIZE * 0.52, 260, 46, a)
             -- The round over the numbers.
-            local which = count.mode == "death" and "death" or ("round_" .. math.min(3, count.round or 1))
-            local ba = math.min(1, t / 0.3)
-            put(part("round", "pvp/" .. worded("banner_" .. which) .. ".png", BANNER_W, BANNER_H, 1), cx, 210, BANNER_W * 0.7,
-                BANNER_H * 0.7, ba)
+            if count.which then
+                local ba = math.min(1, t / 0.3)
+                put(part("round", "pvp/" .. worded("banner_" .. count.which) .. ".png", BANNER_W, BANNER_H, 1), cx, 210,
+                    BANNER_W * 0.7, BANNER_H * 0.7, ba)
+            else
+                hide("round")
+            end
         elseif fightAt and now - fightAt < 1.0 then
             local t = now - fightAt
             local a = t < 0.5 and 1 or 1 - ease((t - 0.5) / 0.5)
@@ -210,8 +225,11 @@ return function(api)
         showBanner(why == "fell" and "fell" or "down", 2.2)
     end
 
+    -- No word over the finishing move (the user didn't like the FINISHED banner): the boss's move, the slow beat, the body
+    -- thrown, then the game's own screens (生还, 殒命) say it. Only the hint to press F goes.
     function ui.finisher(victim, by, mine)
-        showBanner("finished", 2.4)
+        banner = nil
+        hide("banner")
     end
 
     function ui.matchStarted(m, me)
@@ -398,7 +416,7 @@ return function(api)
             end
             drawCount(now)
             if api.arena.finishHint and now >= api.arena.finishHint and m.phase == "finish" and not m.finished
-                and m.teams[me] == m.winner and not banner then
+                and m.teams[me] == m.winner and not m.down[me] and not banner then
                 showBanner("finish", math.max(0.5, (m.finishBy or m.finishUntil or now) - now))
             end
             drawBanner(now)
