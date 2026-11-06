@@ -984,7 +984,8 @@ local function focus()
     end
     check(flips <= 5, "second by second it's on one player, not flipping (" .. flips .. " changes)")
 
-    -- One player alone hits it: after the hold it turns to them, and to nobody else.
+    -- One player alone hits it: after the hold it turns to them, and to nobody else. (Hits that each take 1% of its health:
+    -- one that takes a thousandth of a percent isn't "the most damage", and the player beside it keeps it.)
     local s2 = party({ { "ring", THUG, 0.0, 0.0, 100.0, 60000, 100 } })
     local h2 = s2.pcs[1]
     Session.moveTo(s2.pcs[1], 100, 0)
@@ -996,9 +997,10 @@ local function focus()
     local on = field(ring, "target")
     check(on ~= nil, "it has a target")
     local hitter = 4
+    local hit = select(2, Fake.health(ring)) / 100
     for i = 1, 20 do
         local copy = Session.enemyOn(s2.pcs[hitter], "ring")
-        swing(s2.pcs[hitter], copy, select(1, Fake.health(copy)) - 5)
+        swing(s2.pcs[hitter], copy, select(1, Fake.health(copy)) - hit)
         s2:run(1)
     end
     check(field(ring, "target") == ghostOf(h2, hitter), "the player who kept hitting it gets its attention after the hold")
@@ -1006,6 +1008,255 @@ local function focus()
     check(#hatredList >= 4, "and the others are back on its list after the turn")
     allErrors(s)
     allErrors(s2)
+end
+
+-- Who an enemy goes for, by how near each player is and how much of its health they took lately: never by the clock, never
+-- back and forth (a player's report: "switching the lock every 15 s is worse than deciding by distance and by who deals the
+-- most damage"). One enemy that lives through it all; the host's enemy notices the host, as the game's own do.
+local function targetSession(n, boss)
+    local roles = { "Host" }
+    for i = 2, n do
+        roles[i] = "Guest"
+    end
+    local ring = boss and { "ring", "BP_Monster_Boss_C", 0.0, 0.0, 100.0, 600000, 400, true }
+        or { "ring", THUG, 0.0, 0.0, 100.0, 600000, 100 }
+    local s = Session.new(SIM_SCRIPTS, roles, n > 2 and (n == 4 or n), { ring }, n == 6 and "GhostTwins = Off\n" or nil)
+    s.pcs[1].perceive = true
+    s:run(4)
+    return s
+end
+
+-- Everyone `r` cm from it, evenly round it, going round at `speed` radians a second if given.
+local function aroundIt(r, speed)
+    return function(s, t)
+        for i, pc in ipairs(s.pcs) do
+            local a = (speed or 0) * t + i * 2 * math.pi / #s.pcs
+            Session.moveTo(pc, math.cos(a) * r, math.sin(a) * r)
+        end
+    end
+end
+
+-- The hits fn(t, on) asks for ({ [slot] = damage }), each player's no more often than every `period` seconds.
+local function hitsEvery(period, fn)
+    local due = {}
+    return function(t, on)
+        local now = {}
+        for slot, dmg in pairs(fn(t, on)) do
+            if dmg > 0 and t + 1e-6 >= (due[slot] or 0) then
+                now[slot], due[slot] = dmg, t + period
+            end
+        end
+        return now
+    end
+end
+
+-- A player's figure on the host's PC. (With two players there's no party: the guest's is net's own.)
+local function figureOn(h, slot)
+    return ghostOf(h, slot) or (slot == 2 and net(h).ghost) or nil
+end
+
+-- A fight, a tenth of a second at a time: place(s, t, on) puts everyone, hits(t, on) says who hits now, for how much in
+-- 5000ths of its health (a hit of 20 is 0.4%, a boss's numbers; a thug's are 5 to 10 times that). It's healed every 10 s so
+-- it lives. on: the slot it's after (0: nobody). Returns its changes of target as "<second>:<slot>", and the slot it ends on.
+local function targetFight(s, seconds, place, hits)
+    local h = s.pcs[1]
+    local e = Session.enemyOn(h, "ring")
+    local function slotOf()
+        local t = field(e, "target")
+        if t ~= nil and t == h.pawn then
+            return 1
+        end
+        for slot = 2, #s.pcs do
+            if t ~= nil and t == figureOn(h, slot) then
+                return slot
+            end
+        end
+        return 0
+    end
+    place(s, 0, slotOf())
+    s:run(6)
+    local maxhp = select(2, Fake.health(e))
+    local changes, on, t = {}, slotOf(), 0
+    while t < seconds - 1e-6 do
+        place(s, t, on)
+        if t > 0 and math.floor(t * 10 + 0.5) % 100 == 0 then
+            Fake.setHealth(e, maxhp)
+        end
+        for slot, dmg in pairs(hits(t, on)) do
+            local copy = slot == 1 and e or Session.enemyOn(s.pcs[slot], "ring")
+            swing(s.pcs[slot], copy, select(1, Fake.health(copy)) - dmg * maxhp / 5000)
+        end
+        s:run(0.1)
+        t = t + 0.1
+        local now = slotOf()
+        if now ~= on then
+            changes[#changes + 1] = string.format("%.1f:%d", t, now)
+            on = now
+        end
+    end
+    return changes, on
+end
+
+-- The shortest time between two changes of target, in seconds (a big number with fewer than two).
+local function shortestHold(changes)
+    local shortest, last = 1e9, nil
+    for _, c in ipairs(changes) do
+        local at = tonumber(c:match("^([%d%.]+):"))
+        if last then
+            shortest = math.min(shortest, at - last)
+        end
+        last = at
+    end
+    return shortest
+end
+
+local function targets()
+    part("who an enemy goes for, two players")
+    -- Taking turns at it, 3 s each, the same damage: nothing to choose between.
+    local s = targetSession(2)
+    local changes = targetFight(s, 60, aroundIt(250), hitsEvery(0.5, function(t)
+        return { [math.floor(t / 3) % 2 + 1] = 30 }
+    end))
+    check(#changes <= 1, "two players taking turns at it, the same damage: " .. #changes .. " changes in a minute, not one every 15 s ("
+        .. table.concat(changes, " ") .. ")")
+    allErrors(s)
+
+    -- The guest deals the damage from 6 m, the host only chips from 1 m: it goes for the guest, and the game's own picker,
+    -- which wants the nearest, never takes it back.
+    s = targetSession(2)
+    local on
+    changes, on = targetFight(s, 60, function(s)
+        Session.moveTo(s.pcs[1], 100, 0)
+        Session.moveTo(s.pcs[2], -600, 0)
+    end, hitsEvery(0.5, function(t)
+        return { [2] = 30, [1] = math.floor(t * 2) % 8 == 0 and 3 or 0 }
+    end))
+    check(on == 2 and #changes <= 1, "the guest deals the damage from 6 m, the host chips from 1 m: it's on the guest, and stays ("
+        .. table.concat(changes, " ") .. ")")
+    allErrors(s)
+
+    -- Who it's after walks off to 22 m (in reach still), nobody hitting: it turns to the one still beside it, at once.
+    s = targetSession(2)
+    local walker, leftAt = nil, nil
+    changes, on = targetFight(s, 20, function(s, t, now)
+        if t >= 10 and walker == nil and now ~= 0 then
+            walker, leftAt = now, t
+        end
+        Session.moveTo(s.pcs[1], walker == 1 and 2200 or 150, 0)
+        Session.moveTo(s.pcs[2], walker == 2 and -2200 or -150, 0)
+    end, function() return {} end)
+    local turnedAt = changes[#changes] and tonumber(changes[#changes]:match("^([%d%.]+):"))
+    check(walker ~= nil and on ~= walker and turnedAt and turnedAt - leftAt <= 2.0,
+        "who it's after walks off to 22 m: it turns to the one beside it within 2 s (" .. table.concat(changes, " ") .. ")")
+    allErrors(s)
+
+    -- A turn that comes due during one of its moves waits for the move to end, up to 2 s.
+    s = targetSession(2)
+    local h = s.pcs[1]
+    local e = Session.enemyOn(h, "ring")
+    Session.moveTo(h, 100, 0)
+    Session.moveTo(s.pcs[2], -600, 0)
+    s:run(12)
+    check(field(e, "target") == h.pawn, "beside the host, nobody hitting: it's on the host")
+    Session.enemyMove(h, "ring", "/PBZCombatAsset/ActorData/Move/E1.E1")
+    local copy = Session.enemyOn(s.pcs[2], "ring")
+    local part20 = select(2, Fake.health(e)) / 20
+    for _ = 1, 3 do
+        swing(s.pcs[2], copy, select(1, Fake.health(copy)) - part20)
+        s:run(0.5)
+    end
+    check(field(e, "target") == h.pawn, "the guest takes 15% of it during one of its moves: it doesn't turn halfway through")
+    Session.enemyMove(h, "ring", nil)
+    s:run(1.2)
+    check(field(e, "target") == figureOn(h, 2), "the move over, it turns to the guest")
+    -- The host takes it over in a move that goes on and on: the turn waits 2 s for it, no longer. (Both near as can be:
+    -- the damage decides.)
+    Session.moveTo(s.pcs[2], -150, 0)
+    Session.moveTo(h, 300, 0)
+    Session.enemyMove(h, "ring", "/PBZCombatAsset/ActorData/Move/E2.E2")
+    for _ = 1, 6 do
+        swing(h, e, select(1, Fake.health(e)) - part20)
+        s:run(0.5)
+    end
+    s:run(6)
+    check(field(e, "target") == h.pawn, "a move that goes on and on holds a turn off 2 s at most")
+    Session.enemyMove(h, "ring", nil)
+
+    -- The two apart, one of them near it: the game's own again, with its own picker's wait back.
+    Session.moveTo(s.pcs[2], 9000, 0)
+    s:run(2.5)
+    check(field(field(e, "picker"), "SwitchTargetCooldown") == 1.5, "with one player near it, its own picker's wait is back ("
+        .. tostring(field(field(e, "picker"), "SwitchTargetCooldown")) .. " s)")
+    -- Steered again, then sync off on the host: alone, it picks for itself again.
+    Session.moveTo(s.pcs[2], -150, 0)
+    s:run(2.5)
+    local held = field(field(e, "picker"), "SwitchTargetCooldown")
+    Session.command(h, "netoff")
+    s:run(1)
+    check(held > 1.5 and field(field(e, "picker"), "SwitchTargetCooldown") == 1.5, "sync off: its own picker's wait is back ("
+        .. tostring(held) .. " s steered, " .. tostring(field(field(e, "picker"), "SwitchTargetCooldown")) .. " s after)")
+    allErrors(s)
+
+    -- A boss with a great deal of health (YuCong had 333180 on the real bench): the host stands beside it doing nothing, the
+    -- guest hits it from 4 m, a little at a time. It turns to the guest. (With a floor of 3% of its health, more than a
+    -- minute of the guest's hits, it stayed on the host for good: "totally ignores the one that is hitting him".)
+    s = targetSession(2, true)
+    changes, on = targetFight(s, 40, function(s)
+        Session.moveTo(s.pcs[1], 100, 0)
+        Session.moveTo(s.pcs[2], -400, 0)
+    end, hitsEvery(1.1, function() return { [2] = 0.25 } end))
+    check(on == 2 and #changes == 1, "a boss of great health, the host idle beside it, the guest's small hits from 4 m: it turns to the guest ("
+        .. table.concat(changes, " ") .. ")")
+    allErrors(s)
+
+    -- A boss whose target can only chip at it while the other hits freely: it turns to the one hitting, never sooner than
+    -- 10 s after its last turn.
+    s = targetSession(2, true)
+    changes = targetFight(s, 90, aroundIt(250), hitsEvery(0.6, function(t, now)
+        return { [1] = now == 1 and 6 or 20, [2] = now == 2 and 6 or 20 }
+    end))
+    check(#changes >= 2 and shortestHold(changes) >= 10, "a boss turns to whoever hits it most, and holds each target 10 s at least ("
+        .. table.concat(changes, " ") .. ")")
+    allErrors(s)
+end
+
+local function targetsInParties()
+    part("who an enemy goes for, four and six players")
+    for _, n in ipairs({ 4, 6 }) do
+        -- Everyone round it, going round, all hitting the same: it stays where it is.
+        local s = targetSession(n)
+        local changes = targetFight(s, 60, aroundIt(250, 0.35), hitsEvery(0.7, function()
+            local all = {}
+            for slot = 1, n do
+                all[slot] = 20
+            end
+            return all
+        end))
+        check(#changes <= 1, n .. " players all hitting it the same, going round it: " .. #changes .. " changes in a minute ("
+            .. table.concat(changes, " ") .. ")")
+        allErrors(s)
+        -- Player 2 deals the damage, the last one only chips now and then: it's on player 2, not on whoever hit last.
+        s = targetSession(n)
+        local on
+        changes, on = targetFight(s, 60, aroundIt(250), hitsEvery(0.5, function(t)
+            return { [2] = 40, [n] = math.floor(t * 2) % 4 == 0 and 3 or 0 }
+        end))
+        check(on == 2 and #changes <= 1, n .. " players: it goes for whoever deals the damage, and stays (" .. table.concat(changes, " ")
+            .. "), not for the last to hit")
+        allErrors(s)
+        -- Whoever it's after can only chip, all the others hit freely: it turns, but never twice within 6 s.
+        s = targetSession(n)
+        changes = targetFight(s, 90, aroundIt(250), hitsEvery(0.6, function(t, now)
+            local all = {}
+            for slot = 1, n do
+                all[slot] = slot == now and 6 or 20
+            end
+            return all
+        end))
+        check(shortestHold(changes) >= 6, n .. " players, its target only chipping: never two turns within 6 s ("
+            .. table.concat(changes, " ") .. ")")
+        allErrors(s)
+    end
 end
 
 local function aiming()
@@ -4563,6 +4814,8 @@ return function(print_, scripts)
     travel()
     hatred()
     focus()
+    targets()
+    targetsInParties()
     aiming()
     holding()
     lateJoiner()

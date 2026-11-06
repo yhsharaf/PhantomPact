@@ -2494,16 +2494,37 @@ return function(api)
     ------------------------------------------------------------------ who an enemy goes for
 
     -- An enemy's own script picks its target: the nearest on its hatred list, looked at again each time it's hit or starts a
-    -- move, 1.5 s after the last change. With two players in a fight that flips all the time and it looks lost. So an enemy
-    -- near both stays on one for FOCUS_S, by making that cooldown longer. After that it turns to the other player if they
-    -- hit it lately; if not, the script goes on as it does. The script does the turning, with the other player off the
-    -- list for that moment.
-    local FOCUS_S = 15.0
-    local FOCUS_HIT_S = 2.0       -- a hit this recent counts
-    local FOCUS_REACH_CM = GHOST_AGGRO_CM   -- farther off than this a player isn't in this fight
-    local focused = {}            -- enemy address -> { picker, onGuest, since, hp }
-    local hitByPartner = {}       -- enemy address -> os.clock() of the partner's last hit
-    local hitBySlot = {}          -- with more than two players: "<slot>:<enemy address>" -> the same
+    -- move, 1.5 s after the last change. With two players near it that flips all the time: a boss turned back and forth as
+    -- it walked. Holding one player for 15 s and then turning to whoever hit it last turned it by the clock, "worse than
+    -- deciding by distance and by who deals the most damage" (a player's report). So an enemy near two players or more goes
+    -- for whoever scores most, the same with 2, 4 or 6:
+    --   near     1 within CLOSE_CM, 0 at REACH_CM, in a line between
+    --   damage   the health they took from it lately (halving every HALF_S): 1 for whoever took most, the others in
+    --            proportion, and less for everyone while nobody has taken FIRST_HITS of the biggest hit on it lately (so a
+    --            first hit isn't "the most damage", whatever its health: a floor of 3% of it meant 10000 on a boss of 333180,
+    --            and in the real game a guest hitting it for a minute was never noticed)
+    -- It turns only to someone MARGIN ahead of whoever it's after, once it has held them HOLD_S (a boss BOSS_HOLD_S), and not
+    -- in the middle of one of its moves (it waits up to MOVE_WAIT_S for one to end). Someone who goes past REACH_CM isn't held
+    -- to. Its own picker is held off meanwhile, its wait GAME_HOLD_S and its last change put at now each turn: left to look
+    -- by itself, it turned to the nearest behind the score's back and was turned back, the same back and forth. The script
+    -- does the turning, with the others off its list for that moment.
+    local aim = {
+        REACH_CM = GHOST_AGGRO_CM,  -- farther off than this a player isn't in this fight
+        CLOSE_CM = 300,
+        HALF_S = 12.0,
+        FIRST_HITS = 2.5,
+        MARGIN = 0.5,
+        HOLD_S = 6.0,
+        BOSS_HOLD_S = 10.0,
+        MOVE_WAIT_S = 2.0,
+        GAME_HOLD_S = 15.0,         -- (not longer: with a day's wait a real boss turned to a guest, then no attack in a minute)
+        GAME_WAIT_S = 1.5,          -- its picker's own wait, given back when the one it had was already ours
+        OWN_HIT_S = 2.0,            -- health it lost is this player's hit if they started a move this recently
+        LOOK_S = 2.5,               -- and the look before was this recent (over a longer gap it says nothing of who)
+        steered = {},               -- enemy address -> { picker, actor, fname, orig, slot, since, wantSince }
+        dmg = {},                   -- enemy address -> { at, hp, seen, taken, big, [slot] = health taken lately }
+    }
+    game.aim = aim                  -- (for tests, and a look from the console)
 
     local function targetPicker(actor)
         local found = nil
@@ -2526,18 +2547,6 @@ return function(api)
             StaticFindObject("/Script/SGameAI.Default__SGameAIFunctionLibrary"):GetTargetActor(actor.Controller, out)
         end)
         return ok and valid(out.Target) and out.Target or nil
-    end
-
-    local function turnTo(actor, picker, want, other)
-        local hatred = actor.BP_PBZHatredManagerComponent
-        if not valid(hatred) or hatred:CheckCanHatredTarget(want) == false then
-            return
-        end
-        hatred:AddActorToHatredList(want, {})
-        hatred:RemoveActorFromHatredList(other)
-        picker.LastSwitchTime = 0
-        picker:TrySwitchTarget()
-        hatred:AddActorToHatredList(other, {})
     end
 
     -- Host: who this enemy is after, as "host", "guest" or "-".
@@ -2599,177 +2608,207 @@ return function(api)
         end
     end
 
-    function game.partnerHit(addr, slot)
-        hitByPartner[addr] = os.clock()
-        if slot then
-            hitBySlot[slot .. ":" .. addr] = os.clock()
+    -- The health each player took from this enemy lately, as of now: what was there halves every HALF_S.
+    function aim.lately(addr, now)
+        local d = aim.dmg[addr]
+        if d == nil then
+            d = { at = now, taken = 0 }
+            aim.dmg[addr] = d
         end
-    end
-
-    -- (Each focused enemy's own cooldown back: kept at the focus value, every enemy ever focused took 15 s to change
-    -- targets for the rest of the session.)
-    function game.forgetFocus()
-        for addr, f in pairs(focused) do
-            pcall(function()
-                if f.orig and valid(f.actor) and f.actor:GetAddress() == addr and f.actor:GetFName():ToString() == f.fname
-                    and valid(f.picker) then
-                    f.picker.SwitchTargetCooldown = f.orig
-                end
-            end)
-        end
-        focused, hitByPartner, hitBySlot = {}, {}, {}
-    end
-
-    -- One enemy no longer focused: its own cooldown back first (dropped without, the next entry read the focus value as its
-    -- own, and that was what came back).
-    function game.unfocus(addr)
-        local f = focused[addr]
-        focused[addr] = nil
-        if f then
-            pcall(function()
-                if f.orig and valid(f.actor) and f.actor:GetAddress() == addr and f.actor:GetFName():ToString() == f.fname
-                    and valid(f.picker) then
-                    f.picker.SwitchTargetCooldown = f.orig
-                end
-            end)
-        end
-    end
-
-    -- A focus entry for this enemy now: the one kept if it's still this enemy's (address and name), else a new one.
-    function game.focusEntry(actor, addr, fields)
-        local f = focused[addr]
-        local fname = nil
-        pcall(function() fname = actor:GetFName():ToString() end)
-        if f and valid(f.picker) and f.fname == fname then
-            return f, false
-        end
-        f = fields
-        f.picker, f.actor, f.fname = targetPicker(actor), actor, fname
-        focused[addr] = f
-        if f.picker then
-            pcall(function()
-                f.orig = f.picker.SwitchTargetCooldown
-                f.picker.SwitchTargetCooldown = FOCUS_S
-            end)
-        end
-        return f, true
-    end
-
-    function game.steerFocus(actor, addr, x, y, z, hp, pawn, ghost)
-        local at = { X = x, Y = y, Z = z }
-        if not x or distance(at, pawn:K2_GetActorLocation()) > FOCUS_REACH_CM
-            or distance(at, ghost:K2_GetActorLocation()) > FOCUS_REACH_CM then
-            return
-        end
-        local target = currentTarget(actor)
-        if target == nil then
-            game.unfocus(addr)
-            return
-        end
-        local onGuest = target:GetAddress() == ghost:GetAddress()
-        if not onGuest and target:GetAddress() ~= pawn:GetAddress() then
-            return
-        end
-        local now = os.clock()
-        local f = game.focusEntry(actor, addr, { onGuest = onGuest, since = now, hp = hp })
-        if f.picker == nil then
-            return
-        end
-        local dropped = f.hp and hp and hp < f.hp - 0.5
-        f.hp = hp
-        if f.onGuest ~= onGuest then
-            f.onGuest, f.since = onGuest, now
-        end
-        if now - f.since < FOCUS_S then
-            return
-        end
-        local otherHit
-        if onGuest then
-            otherHit = dropped and game.localMoveRecent(FOCUS_HIT_S)
-        else
-            otherHit = now - (hitByPartner[addr] or -FOCUS_HIT_S) < FOCUS_HIT_S
-        end
-        if otherHit then
-            f.since = now
-            if onGuest then
-                turnTo(actor, f.picker, pawn, ghost)
-            else
-                turnTo(actor, f.picker, ghost, pawn)
+        local keep = 0.5 ^ ((now - d.at) / aim.HALF_S)
+        for slot, v in pairs(d) do
+            if type(slot) == "number" then
+                d[slot] = v * keep
             end
         end
+        d.big = (d.big or 0) * keep     -- the biggest single hit lately
+        d.at = now
+        return d
     end
 
-    -- With more than two players the rule is the same: one target for FOCUS_S, then whoever hit it last among the others near
-    -- it, if anyone did. Holding comes first, however much the others hit it, so a crowd can't make it spin. Turning takes all
-    -- the others off the list for that moment. players: { body, addr, at, slot, mine } for each.
-    function game.steerPartyFocus(actor, addr, x, y, z, hp, players)
-        local at, near, on = { X = x, Y = y, Z = z }, {}, nil
+    -- Host: a partner's hit landed here (their D). slot: theirs, 2 with two players. taken: the health it took.
+    function game.partnerHit(addr, slot, taken)
+        local d = aim.lately(addr, os.clock())
+        taken = math.max(0, tonumber(taken) or 0)
+        slot = slot or 2
+        d[slot] = (d[slot] or 0) + taken
+        d.big = math.max(d.big, taken)
+        d.taken = d.taken + taken       -- (what this player's turn sees it lost isn't theirs for that much)
+    end
+
+    -- An enemy no longer steered: its picker's own wait back, if it's still that enemy (address and name). It looks again at
+    -- its next chance, as it would have.
+    function aim.release(addr)
+        local f = aim.steered[addr]
+        aim.steered[addr] = nil
+        if f then
+            pcall(function()
+                if valid(f.actor) and f.actor:GetAddress() == addr and f.actor:GetFName():ToString() == f.fname
+                    and valid(f.picker) then
+                    f.picker.SwitchTargetCooldown = f.orig
+                end
+            end)
+        end
+    end
+
+    -- (Each steered enemy's own wait back: kept at ours, every enemy ever steered took 15 s to change targets for the rest of
+    -- the session.)
+    function game.forgetFocus()
+        for addr in pairs(aim.steered) do
+            aim.release(addr)
+        end
+        aim.steered, aim.dmg = {}, {}
+    end
+
+    -- One enemy done with (dead, or nobody near it): its wait back, its damage forgotten.
+    function game.unfocus(addr)
+        aim.release(addr)
+        aim.dmg[addr] = nil
+    end
+
+    -- The entry for an enemy steered now (the one kept if it's still this enemy's, by address and name), its own picker held
+    -- off.
+    function aim.hold(actor, addr, on, now)
+        local f = aim.steered[addr]
+        local fname = nil
+        pcall(function() fname = actor:GetFName():ToString() end)
+        if not (f and valid(f.picker) and f.fname == fname) then
+            f = { picker = targetPicker(actor), actor = actor, fname = fname, orig = aim.GAME_WAIT_S, slot = on and on.slot,
+                since = now }
+            if f.picker == nil then
+                return nil
+            end
+            aim.steered[addr] = f
+            pcall(function()
+                local wait = f.picker.SwitchTargetCooldown
+                -- (Not a wait that was already ours: given back as its own, it never turned by itself again.)
+                if wait and wait < aim.GAME_HOLD_S then
+                    f.orig = wait
+                end
+                f.picker.SwitchTargetCooldown = aim.GAME_HOLD_S
+            end)
+        end
+        pcall(function() f.picker.LastSwitchTime = api.gs():GetTimeSeconds(actor) end)
+        return f
+    end
+
+    -- Who of those near scores most, and by how much over `on` (nil: over nobody). A tie stays with `on`.
+    function aim.best(d, near, on)
+        local top = aim.FIRST_HITS * (d.big or 0)
+        for _, who in ipairs(near) do
+            top = math.max(top, d[who.slot] or 0)
+        end
+        top = math.max(top, 1)
+        for _, who in ipairs(near) do
+            who.score = math.max(0, math.min(1, (aim.REACH_CM - who.dist) / (aim.REACH_CM - aim.CLOSE_CM)))
+                + (d[who.slot] or 0) / top
+        end
+        local best = on or near[1]
+        for _, who in ipairs(near) do
+            if who.score > best.score then
+                best = who
+            end
+        end
+        return best, best.score - (on and on.score or 0)
+    end
+
+    -- Turns an enemy to one player, the game's own way: the others near off its list for that moment, its picker asked now.
+    function aim.turn(actor, f, best, near)
+        f.since, f.wantSince = os.clock(), nil      -- (done or refused, not tried again before the next hold)
+        local hatred = actor.BP_PBZHatredManagerComponent
+        if not valid(hatred) or hatred:CheckCanHatredTarget(best.body) == false then
+            return
+        end
+        hatred:AddActorToHatredList(best.body, {})
+        for _, who in ipairs(near) do
+            if who ~= best then
+                hatred:RemoveActorFromHatredList(who.body)
+            end
+        end
+        pcall(function()        -- (whatever it does, the others go back on its list)
+            f.picker.LastSwitchTime = 0
+            f.picker:TrySwitchTarget()
+        end)
+        for _, who in ipairs(near) do
+            if who ~= best then
+                hatred:AddActorToHatredList(who.body, {})
+            end
+        end
+        f.slot = best.slot
+    end
+
+    -- Host, an enemy's aggro turn, with any number of players. players: { body, addr, at, slot, mine } for each one up and
+    -- here (mine: this PC's own player, whose hits show only as health it lost). boss: it holds longer. busy: it's in one of
+    -- its moves now.
+    function game.steerTarget(actor, addr, x, y, z, hp, players, boss, busy)
+        if not x then
+            return
+        end
+        local now, at, near = os.clock(), { X = x, Y = y, Z = z }, {}
         for _, who in ipairs(players) do
-            if distance(at, who.at) <= FOCUS_REACH_CM then
+            who.dist = distance(at, who.at)
+            if who.dist <= aim.REACH_CM then
                 near[#near + 1] = who
             end
         end
-        if #near < 2 then
-            return
-        end
-        local target = currentTarget(actor)
-        if target == nil then
+        if #near == 0 then
             game.unfocus(addr)
             return
         end
-        local targetAddr = target:GetAddress()
-        for _, who in ipairs(near) do
-            if who.addr == targetAddr then
-                on = who
+        local d = aim.lately(addr, now)
+        -- What it lost since the last look, less what partners' hits took, is this player's if they swung lately.
+        if hp and d.hp and d.seen and now - d.seen <= aim.LOOK_S and game.localMoveRecent(aim.OWN_HIT_S) then
+            local own = d.hp - hp - d.taken
+            for _, who in ipairs(near) do
+                if who.mine and own > 0.5 then
+                    d[who.slot] = (d[who.slot] or 0) + own
+                    d.big = math.max(d.big, own)
+                end
             end
         end
+        d.hp, d.seen, d.taken = hp, now, 0
+        if #near < 2 then
+            aim.release(addr)
+            return
+        end
+        local target = currentTarget(actor)
+        local targetAddr = target and target:GetAddress()
+        local on, player = nil, false
+        for _, who in ipairs(players) do
+            if targetAddr and who.addr == targetAddr then
+                on, player = who.dist <= aim.REACH_CM and who or nil, true
+            end
+        end
+        if not player then
+            aim.release(addr)       -- (after nobody, or after something that isn't a player here: not ours to steer)
+            return
+        end
+        local f = aim.hold(actor, addr, on, now)
+        if f == nil then
+            return
+        end
+        local best, lead = aim.best(d, near, on)
         if on == nil then
+            -- Who it was after has gone past REACH_CM: not held to. (Tried again only after MOVE_WAIT_S: a turn its picker
+            -- won't make, with something else nearer on its list, isn't asked for every second.)
+            if now - (f.forcedAt or -1e9) >= aim.MOVE_WAIT_S then
+                f.forcedAt = now
+                aim.turn(actor, f, best, near)
+            end
             return
         end
-        local now = os.clock()
-        local f = game.focusEntry(actor, addr, { slot = on.slot, since = now, hp = hp })
-        if f.picker == nil then
-            return
-        end
-        local dropped = f.hp and hp and hp < f.hp - 0.5
-        f.hp = hp
         if f.slot ~= on.slot then
-            f.slot, f.since = on.slot, now
+            f.slot, f.since, f.wantSince = on.slot, now, nil    -- (it turned by itself: its target out of its sight)
         end
-        if now - f.since < FOCUS_S then
+        if best == on or lead < aim.MARGIN or now - f.since < (boss and aim.BOSS_HOLD_S or aim.HOLD_S) then
+            f.wantSince = nil
             return
         end
-        local best, bestAt = nil, now - FOCUS_HIT_S
-        for _, who in ipairs(near) do
-            if who ~= on then
-                local hitAt = hitBySlot[who.slot .. ":" .. addr]
-                if who.mine then
-                    hitAt = (dropped and game.localMoveRecent(FOCUS_HIT_S)) and now or nil
-                end
-                if hitAt and hitAt > bestAt then
-                    best, bestAt = who, hitAt
-                end
-            end
+        f.wantSince = f.wantSince or now
+        if busy and now - f.wantSince < aim.MOVE_WAIT_S then
+            return
         end
-        if best then
-            f.since = now
-            local hatred = actor.BP_PBZHatredManagerComponent
-            if valid(hatred) and hatred:CheckCanHatredTarget(best.body) ~= false then
-                hatred:AddActorToHatredList(best.body, {})
-                for _, who in ipairs(near) do
-                    if who ~= best then
-                        hatred:RemoveActorFromHatredList(who.body)
-                    end
-                end
-                f.picker.LastSwitchTime = 0
-                f.picker:TrySwitchTarget()
-                for _, who in ipairs(near) do
-                    if who ~= best then
-                        hatred:AddActorToHatredList(who.body, {})
-                    end
-                end
-            end
-        end
+        aim.turn(actor, f, best, near)
     end
 
     -- A hidden ghost is nobody to fight: the partner's down, gone or elsewhere, and enemies swung at thin air. It comes off

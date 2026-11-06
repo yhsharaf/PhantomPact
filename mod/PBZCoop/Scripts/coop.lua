@@ -805,22 +805,25 @@ return function(api)
         end
     end
 
-    -- A party's host, an enemy's aggro turn: every ghost here goes on its hatred list, and its focus is steered among all the
-    -- players near it. Their ghosts' places are what the relay last said: no calls into the game for each of them.
-    local function aggroParty(actor, addr, x, y, z, hp)
+    -- The host, an enemy's aggro turn: every ghost here goes on its hatred list, and who it goes for is steered among the
+    -- players near it (game.steerTarget). Their ghosts' places are what the relay last said: no calls into the game for each
+    -- of them. With two players the partner is net, in slot 2. In PvP the partner is the one to fight: hated, never steered.
+    local function aggroParty(actor, addr, x, y, z, hp, name)
         local here = {}
         for _, p in ipairs(partners()) do
             if valid(p.ghost) and not p.ghostHidden and not p.silent and p.target then
                 game.hateGhost(actor, p.ghost, addr, x, y, z, p.number, p.target)
-                here[#here + 1] = { body = p.ghost, addr = p.ghostAddr, at = p.target, slot = p.number }
+                here[#here + 1] = { body = p.ghost, addr = p.ghostAddr, at = p.target, slot = p.number or 2 }
             end
         end
         local _, pawn = getPlayer1()
         if valid(pawn) and not game.isDead(pawn) and net.localLoc then
-            here[#here + 1] = { body = pawn, addr = pawn:GetAddress(), at = net.localLoc, slot = net.slot, mine = true }
+            here[#here + 1] = { body = pawn, addr = pawn:GetAddress(), at = net.localLoc, slot = net.slot or 1, mine = true }
         end
-        if #here >= 2 then
-            game.steerPartyFocus(actor, addr, x, y, z, hp, here)
+        -- (Also with one player near, or none: an enemy steered till now gets its own picker back.)
+        if #here > 0 and not net.pvp and game.steerTarget then
+            game.steerTarget(actor, addr, x, y, z, hp, here, game.isBoss and game.isBoss(actor, addr),
+                api.puppets and api.puppets.inMove(name))
         end
     end
 
@@ -932,6 +935,7 @@ return function(api)
             -- (A guest's kill heard after it died here anyway is done with: kept, it killed the spawner's next enemy under
             -- that id on its first turn.)
             net.guestKilled[name] = nil
+            game.unfocus(addr)      -- (who hit it is forgotten: a later enemy may get its address)
             if net.guestRuns[name] then
                 handover.drop(actor, addr, name)
             end
@@ -996,18 +1000,8 @@ return function(api)
                     x, y, z, yaw, vx == vx and vx or 0, vy == vy and vy or 0, hp, maxhp, boss,
                     posture ~= nil and string.format("%.1f", posture) or "-"))
             end
-            if net.party then
-                if aggro then
-                    aggroParty(actor, addr, x, y, z, hp)
-                end
-            elseif aggro and valid(net.ghost) and game.hateGhost and not net.ghostHidden and not net.silent then
-                game.hateGhost(actor, net.ghost, addr, x, y, z)
-                if not net.pvp then
-                    local _, pawn = getPlayer1()
-                    if valid(pawn) and not game.isDead(pawn) then
-                        game.steerFocus(actor, addr, x, y, z, hp, pawn, net.ghost)
-                    end
-                end
+            if aggro and game.hateGhost then
+                aggroParty(actor, addr, x, y, z, hp, name)
             end
         end
     end
@@ -2139,8 +2133,10 @@ return function(api)
                 and gap3d(actor:K2_GetActorLocation(), hitter) <= (lethal == "L" and OWN_HIT_CM * 2 or OWN_HIT_CM) then
                 local wasAlive = not (game.isDead and game.isDead(actor))
                 local boss = net.partnerBosses[name] or (game.isBoss and game.isBoss(actor))
+                local before = game.getHealth(actor)
                 local real = game.applyDamage(actor, amount, posture, true)
-                game.partnerHit(actor:GetAddress(), from)
+                -- (What it took, for who the enemy goes for: a floor or a kill takes less than was sent.)
+                game.partnerHit(actor:GetAddress(), from, (before or 0) - (game.getHealth(actor) or before or 0))
                 react(actor)
                 if wasAlive and (real or (game.isDead and game.isDead(actor))) then
                     if real and boss and game.rollLoot then
@@ -3691,6 +3687,7 @@ return function(api)
         reopenFog()
         api.revive.stop()
         game.forgetLink()
+        game.forgetFocus()      -- (alone, every enemy that was steered picks for itself again: its own wait back)
         clearRemoteState()
         log("Online sync off.")
     end

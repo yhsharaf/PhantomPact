@@ -83,6 +83,12 @@ return function(api)
         hostSeen[name] = { addr = addr, pos = pos }
     end
 
+    -- Host: this enemy was in one of its moves at its last turn (a montage playing: an attack, a flinch). A turn to another
+    -- player waits for it to end, so no move is turned halfway through.
+    function puppets.inMove(name)
+        return hostSeen[name] ~= nil
+    end
+
     -- Guest, for every copy of a host enemy, each snapshot.
     function puppets.follow(name, actor, target)
         local addr = actor:GetAddress()

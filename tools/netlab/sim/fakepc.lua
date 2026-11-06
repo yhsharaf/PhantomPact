@@ -977,10 +977,22 @@ function Fake.bullet(pc, owner, data, x, y, z, solid, parent)
     return b
 end
 
--- The AI of an enemy nobody stopped: it looks at its target again when its cooldown is up.
+-- The AI of an enemy nobody stopped: it looks at its target again when its cooldown is up. With pc.perceive it also notices
+-- this PC's own player within 25 m, as the game's senses put them on its list (the older tests were written without that).
 function Fake.thinkEnemies(pc)
+    local seen = pc.perceive and rawget(pc.pawn, "__fields")
     for _, e in ipairs(pc.enemies) do
         local f = rawget(e, "__fields")
+        if seen and not seen.dead and not f.dead and (seen.loc.X - f.loc.X) ^ 2 + (seen.loc.Y - f.loc.Y) ^ 2 <= 2500 ^ 2 then
+            local items = rawget(f.BP_PBZHatredManagerComponent, "__fields").HatredList.items
+            local listed = false
+            for _, a in ipairs(items) do
+                listed = listed or a == pc.pawn
+            end
+            if not listed then
+                items[#items + 1] = pc.pawn
+            end
+        end
         local picker = rawget(f.picker, "__fields")
         if rawget(f.Controller, "__fields").BrainComponent and not f.dead
             and rawget(rawget(f.Controller, "__fields").BrainComponent, "__fields").running
