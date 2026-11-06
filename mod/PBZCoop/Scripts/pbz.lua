@@ -1435,10 +1435,19 @@ return function(api)
 
     -- The HUD registers a boss health bar when a boss fight starts: the surest way to know who the boss is.
     local showingRemoteBoss = false
+    local mirroredAt = {}       -- address -> true: a bar shown here for another player's fight (showBossBar)
     pcall(function()
         RegisterHook("/Script/ProjectPBZ.PBZHUDLayout:RegisterBossHPBar", function(_, bossParam)
             local boss = bossParam:get()
-            if valid(boss) and not game.bossAt(boss:GetAddress(), boss) and not twin.at(boss:GetAddress(), boss) then
+            if valid(boss) and not showingRemoteBoss and mirroredAt[boss:GetAddress()] and game.bossAt(boss:GetAddress(), boss) then
+                -- This game's own fight with a boss it showed for another player's: its own from now on. (A guest who
+                -- started first had the host's own fight taken for a mirror, ended with the guest's: walls open, bar gone,
+                -- the boss alive, its kill the host's alone.)
+                mirroredAt[boss:GetAddress()] = nil
+                if api.coop and api.coop.ownFightOn then
+                    api.coop.ownFightOn(boss)
+                end
+            elseif valid(boss) and not game.bossAt(boss:GetAddress(), boss) and not twin.at(boss:GetAddress(), boss) then
                 bosses[boss:GetAddress()] = boss:GetFName():ToString()
                 bossActors[boss:GetAddress()] = boss
                 log("Boss fight: " .. boss:GetFName():ToString())
@@ -1460,11 +1469,24 @@ return function(api)
                 if bosses[addr] then
                     log("Boss fight over: " .. boss:GetFName():ToString())
                 end
+                mirroredAt[addr] = nil
                 bosses[addr] = nil
                 bossActors[addr] = nil
             end
         end)
     end)
+
+    -- A boss of this game's own fight, up again after a fall with no new bar from the game: known as in a fight again.
+    -- False if it already is.
+    function game.trackBoss(boss)
+        if not valid(boss) or game.bossAt(boss:GetAddress(), boss) then
+            return false
+        end
+        bosses[boss:GetAddress()] = boss:GetFName():ToString()
+        bossActors[boss:GetAddress()] = boss
+        log("Boss fight again: " .. boss:GetFName():ToString())
+        return true
+    end
 
     -- The other player's game started a fight with this boss: show its health bar here too (our copy of the
     -- boss mirrors the host's health, so the bar follows the real fight).
@@ -1480,6 +1502,7 @@ return function(api)
         showingRemoteBoss = true
         local ok, err = pcall(function() hud:RegisterBossHPBar(boss) end)
         showingRemoteBoss = false
+        mirroredAt[boss:GetAddress()] = true
         bosses[boss:GetAddress()] = boss:GetFName():ToString()
         bossActors[boss:GetAddress()] = boss
         log(ok and ("Showing boss bar for " .. boss:GetFName():ToString()) or ("Boss bar failed: " .. tostring(err)))

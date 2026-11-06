@@ -2179,6 +2179,76 @@ local function playerReports()
         allErrors(s)
     end
     do
+        -- The bug hunt: the guest started the boss fight first, and the host's own fight with that boss was then taken for a
+        -- mirror of the guest's, ended with it (walls open, bar gone, the boss alive): report 9's "only the host".
+        local s, h, g = pair()
+        Session.moveTo(h, 3000, 2800)
+        Session.moveTo(g, 3000, 2700)
+        s:run(3)
+        g.hudLayout:RegisterBossHPBar(Session.enemyOn(g, "boss"))
+        s:run(3)
+        h.hudLayout:RegisterBossHPBar(Session.enemyOn(h, "boss"))
+        s:run(3)
+        check(#net(h).ownBosses() == 1, "a host's own fight with a boss it showed for the guest's is the host's own")
+        Session.moveTo(g, 9000, 9000)
+        g.hudLayout:UnRegisterBossHPBar(Session.enemyOn(g, "boss"))
+        s:run(8)
+        check(h.env.PBZ.game.bossFightActive() and net(g).partnerBosses["sp:boss"] == true,
+            "and the guest's leaving it doesn't end it, still shown on the guest")
+        allErrors(s)
+    end
+    do
+        -- The bug hunt: a boss that fell in the host's fight and stood up again under the bar the host's game kept up (Xiaoxue)
+        -- came back on the guest with no fight: no bar, no walls, its death there a quiet one.
+        local s, h, g = pair()
+        Session.moveTo(h, 3000, 2800)
+        Session.moveTo(g, 3000, 2700)
+        s:run(3)
+        h.hudLayout:RegisterBossHPBar(Session.enemyOn(h, "boss"))
+        s:run(4)
+        local boss = Session.enemyOn(h, "boss")
+        Fake.setHealth(boss, 0)
+        Fake.put(boss, "dead", true)
+        s:run(4)
+        Fake.put(boss, "dead", false)
+        Fake.setHealth(boss, 3000)
+        s:run(15)
+        local gc = Session.enemyOn(g, "boss")
+        Fake.put(gc, "dead", false)
+        Fake.setHealth(gc, 3000)
+        s:run(4)
+        check(net(g).partnerBosses["sp:boss"] == true and g.env.PBZ.game.bossFightActive(),
+            "a boss up again in the host's fight is the host's fight again on the guest, bar and all")
+        local mark = #g.logs
+        Fake.setHealth(boss, 0)
+        Fake.put(boss, "dead", true)
+        s:run(1)
+        h.hudLayout:UnRegisterBossHPBar(boss)
+        s:run(4)
+        local whole = false
+        for i = mark + 1, #g.logs do
+            whole = whole or g.logs[i]:find("its death runs here too", 1, true) ~= nil
+        end
+        check(whole, "and its death at the host's kill is the whole death there")
+        allErrors(s)
+    end
+    do
+        -- The bug hunt: the chains the host broke just before its boss fight were held on the guest for the whole fight
+        -- (a fight shown there, not the guest's own), the guest shut out of the arena (report 7).
+        local s, h, g = pair()
+        Session.moveTo(h, 0, 0)
+        Session.moveTo(g, 500, 0)
+        s:run(8)
+        table.insert(h.globalTags, "zddy.chain.broken")
+        s:run(4)
+        Session.moveTo(h, 3000, 2800)
+        h.hudLayout:RegisterBossHPBar(Session.enemyOn(h, "boss"))
+        s:run(25)
+        check(g.storyMarks["zddy.chain.broken"] and g.env.PBZ.game.bossFightActive(),
+            "the host's flow comes to the guest while the host's fight is shown there")
+        allErrors(s)
+    end
+    do
         -- A new game's players both came out of the prologue without the healing gourd: co-op keeps its hands off there.
         local s, h, g = pair()
         s:run(2)

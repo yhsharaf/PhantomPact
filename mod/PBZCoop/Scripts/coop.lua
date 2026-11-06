@@ -972,6 +972,10 @@ return function(api)
                     game.markBeaten(name)
                 end
                 local boss = net.partnerBosses[name] or net.pendingBosses[name] or (game.isBoss and game.isBoss(actor))
+                if boss and not isClient() and (net.toldFighting or game.bossFightActive()) then
+                    net.fellInFight = net.fellInFight or {}
+                    net.fellInFight[name] = os.clock()      -- (fell in a fight here: see "up again" below)
+                end
                 -- (Once for each body: a restart or a map change forgets which bodies were told, and a boss's body still
                 -- lying there was told again, its items paid again.)
                 net.bossPaid = net.bossPaid or {}
@@ -997,6 +1001,16 @@ return function(api)
                 mirrorBossFight(name, actor)
             end
             -- (No health read = stale actor: left out rather than sent as 0/0, which the client would apply.)
+            -- A boss that fell in its fight up again here (Xiaoxue): still a fight, though no new bar came. The mod had let go
+            -- of it at its death, and the others' copies came back with no bar, walls or fight, their death a quiet one.
+            if net.deadSent[name] and net.fellInFight and net.fellInFight[name] then
+                local fell = net.fellInFight[name]
+                net.fellInFight[name] = nil
+                if os.clock() - fell < 600 and game.trackBoss and game.trackBoss(actor) then
+                    log("Boss " .. name .. " is up again here after its fall: still a fight.")
+                    net.ownFightOn(actor)
+                end
+            end
             -- Alive (again, after a bell respawn): its next death must be announced too.
             net.deadSent[name] = nil
             net.deadBodies[addr] = nil
@@ -1706,6 +1720,15 @@ return function(api)
                             spawned.untilAt = os.clock() + 120
                             net.extraBossWatch = net.extraBossWatch or {}
                             net.extraBossWatch[name] = spawned
+                        end
+                        -- (The host still in its fight, its bar up through the fall: no new B comes, and this copy stood with
+                        -- no bar or walls, its death at the host's kill a quiet one: no scene, no story step, no reward here.)
+                        local hostFights = net.party and peerOf(nil).fights or (not net.party and net.partnerFighting)
+                        if hostFights then
+                            net.partnerBosses[name], net.hostBosses[name], net.pendingBosses[name] = true, true, true
+                            if net.party then
+                                net.fightOf[name] = 1
+                            end
                         end
                         log("Boss " .. name .. " is up again on the host: back here too.")
                     end
@@ -3275,6 +3298,26 @@ return function(api)
         end
     end
 
+    -- The host's game started its own fight with a boss it was showing for a guest's: the host's fight from now on, told to
+    -- everyone (B), and a guest's F no longer ends it. (On a guest, a fight on the host's boss stays the host's.)
+    function net.ownFightOn(boss)
+        if isClient() or not valid(boss) then
+            return
+        end
+        local addr, name = boss:GetAddress(), enemyName(boss)
+        for id, e in pairs(enemyByName) do
+            if valid(e) and e:GetAddress() == addr then
+                name = id
+                break
+            end
+        end
+        if net.partnerBosses[name] then
+            net.partnerBosses[name], net.fightOf[name] = nil, nil
+            log("Boss fight with " .. name .. ": this game's own now, not only the other player's.")
+        end
+        announceBoss(boss)
+    end
+
     ------------------------------------------------------------------ snapshot exchange
 
     -- The local player, every frame. Only what moves is read this often; see watchSlowly for the rest.
@@ -3568,6 +3611,7 @@ return function(api)
         net.healTicks = {}
         net.lethalPending = {}
         net.bossFell, net.extraBossWatch, net.watchGaveUp, net.watchHeldAt = {}, {}, nil, nil
+        net.fellInFight = {}
         net.postureTicks = {}
         net.hostSeen = {}
         net.partnerDowned = false
@@ -4076,8 +4120,16 @@ return function(api)
         -- (Told again after a gap, a join or a sync start (fightToldAt 0), "no fight" too, once: only a change was ever
         -- said, and a fight's end missed in a gap was never heard.)
         if fighting ~= net.toldFighting or (fighting and now >= (net.fightToldAt or 0)) or net.fightToldAt == 0 then
+            local again = fighting and net.toldFighting == false
             net.toldFighting, net.fightToldAt = fighting, now + FIGHT_TOLD_S
             sendEvent("F", fighting and 1 or 0)
+            if again then
+                -- (A fight back on with no new bar: a boss up again after a fall, its bar up all along (Xiaoxue). Its B is
+                -- told again, so the others' copy has its bar, walls and the boss's whole death, not a quiet kill.)
+                for _, actor in ipairs(net.ownBosses()) do
+                    announceBoss(actor)
+                end
+            end
         end
     end
     -- A joiner watching a fight is let go after WATCH_MAX_S whatever the fight does: "in a fight" can go on with no end (a
@@ -4361,6 +4413,7 @@ return function(api)
         end,
         sendEvent = sendEvent,
         announceBoss = announceBoss,
+        ownFightOn = net.ownFightOn,
         reportHit = reportHit,
         reportPickup = reportPickup,
         commands = {

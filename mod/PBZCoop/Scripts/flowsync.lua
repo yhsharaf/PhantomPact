@@ -186,8 +186,14 @@ return function(api)
 
     local function calm()
         local _, pawn = api.getPlayer1()
+        -- (A fight of this player's own only: the host's fight shown here held the chains the host broke just before it
+        -- for the whole fight, the guest shut out of the arena.)
+        local ownFight = coop.net and coop.net.ownBosses and #coop.net.ownBosses() > 0
+        if ownFight == nil then
+            ownFight = game.bossFightActive()
+        end
         return valid(pawn) and not game.isDead(pawn) and not (game.sequenceOn or game.inCutscene)()
-            and not game.bossFightActive() and not (game.inDialogue and game.inDialogue())
+            and not ownFight and not (game.inDialogue and game.inDialogue())
             and not (api.story and api.story.isBusy and api.story.isBusy())
     end
 
