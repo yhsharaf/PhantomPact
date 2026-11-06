@@ -11,7 +11,7 @@
 ## 需要准备(双方都要)
 
 1. Steam 上的《影之刃零》。
-2. Vercadi 制作的 **UE4SS for Phantom Blade Zero**(Nexus Mods),安装到 `PBZ\platform\steam`。
+2. Vercadi 制作的 **UE4SS for Phantom Blade Zero**(Nexus Mods),1.0.3 或更新版本,安装到 `PBZ\platform\steam`。
 3. 一款虚拟局域网工具,双方连到同一网络:**UU 加速器的联机功能**、Tailscale、Hamachi、Radmin 或 ZeroTier 都可以。
 
 不需要安装 Python:联机程序运行在游戏内部(`PBZCoop\dlls\main.dll`),源代码在 GitHub 仓库的 `native/` 目录。

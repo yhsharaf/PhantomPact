@@ -17,7 +17,7 @@ start.)
 ## What you need (both players)
 
 1. **Phantom Blade Zero** on Steam.
-2. **UE4SS for Phantom Blade Zero** by Vercadi (Nexus Mods), installed in `PBZ\platform\steam`.
+2. **UE4SS for Phantom Blade Zero** by Vercadi (Nexus Mods), version 1.0.3 or newer, installed in `PBZ\platform\steam`.
 3. **Tailscale** (tailscale.com), both signed in to the same network.
 
 You don't need Python: the connection runs inside the game (`PBZCoop\dlls\main.dll`). Its source is in the GitHub
