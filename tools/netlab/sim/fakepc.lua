@@ -152,6 +152,7 @@ function Fake.character(pc, class, x, y, z, hp, posture)
         Shachi = attribute(pc, posture or 100), Shachi_Max = attribute(pc, posture or 100), Level = attribute(pc, 1),
         ShachiAttack = attribute(pc, 50), Infliction_Max = attribute(pc, 100), BreakDurationAdditionalMultiplier = attribute(pc, 1),
         UltimateCharge = attribute(pc, 0), UltimateChargeCount = attribute(pc, 0),
+        TakenReductionMultiplier_Poise = attribute(pc, 1),
     }))
     local cmc = object(pc, "Movement", { MovementMode = 1, Velocity = { X = 0.0, Y = 0.0, Z = 0.0 }, MaxWalkSpeed = 0, AirControl = 0,
         MaxAcceleration = 0, bRunPhysicsWithNoController = false, bOrientRotationToMovement = true })

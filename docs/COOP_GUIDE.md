@@ -183,6 +183,10 @@ While the partner's ghost is in this world, every enemy is scaled once: `Health_
 Both worlds scale the same enemy by the same factor, so the host's numbers (which the guest's copies follow down)
 match. Tested: one thug 400 -> 600 health and 200 -> 260 posture in both worlds; the guest's hit (-200) reached the
 host and the host's kill reached the guest; co-op e2e still passes.
+
+Bosses also get `TakenReductionMultiplier_Poise` (an `AttributeSetBase` attribute, 1.0 by default) set to
+100 / `CoopBossPoise` (default 200, so 0.5): the share of poise damage they take. Poise is the game's interrupt number
+(the `CharacterState.Hitreact.Endure.*` levels and each move's action poise), separate from posture (`Shachi`).
 - **Relay robustness:** Windows refused a rename once (WinError 1450) and killed the old relay. Writing
   `net_status.txt` now retries and skips instead.
 - **Parry reward:** the game's deflect leaves the attacker untouched, so the mod judges it on the defender's side:

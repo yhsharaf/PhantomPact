@@ -632,6 +632,7 @@ for name, fn in pairs(api.game.commands or {}) do
 end
 COMMANDS.pvp = api.pvp.command
 COMMANDS.scale = api.scaling.command
+COMMANDS.bosspoise = api.scaling.bossPoiseCommand
 COMMANDS.twins = api.twins.command
 COMMANDS.tips = api.status.command
 COMMANDS.partner = api.partner.command

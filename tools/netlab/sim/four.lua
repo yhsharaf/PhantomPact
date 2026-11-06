@@ -4117,6 +4117,22 @@ local function scaling()
     v:run(6)
     check(select(1, max(v.pcs[1], "thug1")) == 600, "100 stays 100, with any number of players")
     allErrors(v)
+
+    -- Boss poise (CoopBossPoise, 200 when the ini has none): bosses take half the poise damage, on every PC; nobody else.
+    local function poise(pc, id)
+        return Session.enemyOn(pc, id).AttributeSetBase.TakenReductionMultiplier_Poise.CurrentValue
+    end
+    check(everyone(v, function(pc) return math.abs(poise(pc, "boss") - 0.5) < 1e-6 end), "boss poise: the boss takes half the poise damage, on every PC")
+    check(everyone(v, function(pc) return poise(pc, "thug1") == 1 end), "and an enemy that isn't a boss takes it all")
+    check(count(v.pcs[1].logs, "at 200%% poise") == 1, "said once for the boss")
+    local p = party(nil, "CoopBossPoise = 100\n")
+    p:run(6)
+    check(everyone(p, function(pc) return poise(pc, "boss") == 1 end), "CoopBossPoise = 100: bosses as the game has them")
+    allErrors(p)
+    local q = party(nil, "CoopBossPoise = 400\n")
+    q:run(6)
+    check(math.abs(poise(q.pcs[1], "boss") - 0.25) < 1e-6, "CoopBossPoise = 400: a quarter")
+    allErrors(q)
 end
 
 local function leaving()

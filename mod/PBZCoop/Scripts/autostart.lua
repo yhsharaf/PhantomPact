@@ -212,6 +212,9 @@ return function(api)
                     end
                     api.scaling.command(string.format("%d %d", whole(s.coopenemyhealth, 150), whole(s.coopenemyposture, 130)))
                 end
+                if api.scaling and tonumber(s.coopbosspoise) then
+                    api.scaling.bossPoiseCommand(tostring(math.floor(math.max(100, math.min(1000, tonumber(s.coopbosspoise))))))
+                end
                 if api.pvp then
                     if tonumber(s.pvpdamage) then
                         api.pvp.command("damage " .. s.pvpdamage)
