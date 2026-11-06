@@ -2656,6 +2656,13 @@ return function(api)
     end
 
     local function onLocalRest(kind)
+        if net.arena then
+            -- (A PvP match: the world is the same, nothing to refresh anywhere. A real death there is the match's to deal with.)
+            if api.arena and api.arena.restDuring then
+                api.arena.restDuring(kind)
+            end
+            return
+        end
         net.unsettle()
         -- (A guest's own death refreshes only its own world: the host's enemies, and their twins, go on.)
         net.restRefreshes = isHost()
@@ -2870,6 +2877,12 @@ return function(api)
     -- A sit at a bell is everyone's: whoever's dead, down or watching comes to the one who sat, and anyone else is rested where
     -- they stand. It says the sitter's fight is over too, or a bar left up there would hold a partner's respawn for good.
     local function onLocalSit()
+        if net.arena then
+            if api.arena and api.arena.restDuring then     -- (a bell in a PvP match heals nobody else: it's a forfeit)
+                api.arena.restDuring("sit")
+            end
+            return
+        end
         restEvent("sit")
         if game.resetBosses then
             game.resetBosses()
@@ -3336,6 +3349,9 @@ return function(api)
     -- The game started a boss fight here, and the other PC shows it too. A client's copy goes by the host's id. A boss
     -- the partner's fight spawned here registers by itself: that's their fight coming back, not news.
     local function announceBoss(actor)
+        if net.arena then
+            return              -- (an arena's boss, parked for a PvP match: no fight to tell anyone of)
+        end
         local addr, name = actor:GetAddress(), enemyName(actor)
         for id, e in pairs(enemyByName) do
             if valid(e) and e:GetAddress() == addr then
@@ -3505,7 +3521,8 @@ return function(api)
             end
         end
         -- (The game takes the bars down for a cutscene: put back at once, they'd flicker through it.)
-        if next(net.partnerBosses) and game.keepBossBar and now >= (slow.barsAt or 0) and not quiet and not game.inCutscene() then
+        if next(net.partnerBosses) and game.keepBossBar and now >= (slow.barsAt or 0) and not quiet and not net.arena
+            and not game.inCutscene() then
             slow.barsAt = now + BOSS_BAR_S
             for name in pairs(net.partnerBosses) do
                 local boss = enemyByName[name]
@@ -3515,8 +3532,8 @@ return function(api)
             end
         end
         -- (Never both in a frame: each looks through every actor of a kind.)
-        if quiet then
-            -- (nothing: the searches wait)
+        if quiet or net.arena then
+            -- (nothing: the searches wait; in a PvP match nothing of the world's is told)
         elseif game.watchPickups and now >= (slow.pickupsAt or 0) then
             if game.watchPickups(pawn, reportPickup) ~= false then
                 slow.pickupsAt = now + PICKUP_S
@@ -3534,10 +3551,10 @@ return function(api)
                 end)
             end
         end
-        if (#giftsWaiting > 0 or dustWaiting > 0) and not game.isDead(pawn) then
+        if (#giftsWaiting > 0 or dustWaiting > 0) and not game.isDead(pawn) and not net.arena then
             takeGifts(pawn)
         end
-        if game.watchGear and now >= (slow.gearAt or 0) then
+        if game.watchGear and now >= (slow.gearAt or 0) and not net.arena then
             slow.gearAt = now + GEAR_S
             game.watchGear(pawn, sendGift)
         end
@@ -3552,7 +3569,7 @@ return function(api)
                 sendEvent("LOOK", line)
             end
         end
-        if game.watchCurrency and now >= (slow.dustAt or 0) then
+        if game.watchCurrency and now >= (slow.dustAt or 0) and not net.arena then
             slow.dustAt = now + CURRENCY_S
             game.watchCurrency(pawn, sendEvent)
         end
@@ -4430,6 +4447,12 @@ return function(api)
     -- Other modules (pvp.lua) run here every tick while sync is on: name -> function.
     local extraTicks = extraTicksEarly
 
+    -- What a PvP match (net.arena, arena.lua) goes without: the jobs of the enemies and of the world (story, loot, bells, map,
+    -- trips to a partner, revives, boss fights). The players' own stay: moves, weapons, bullets, hits, pvp, rules.
+    net.ARENA_SKIPS = { puppets = true, scaling = true, twins = true, story = true, scenes = true, blockers = true,
+        bags = true, fogPress = true, extraBosses = true, tellFight = true, watchCap = true, mapicon = true, hud = true,
+        partner = true, revive = true, arrival = true }
+
     local sendBudget, nextSlow, nextExtra, lastFrame = 1, 0, 0, nil
     local frameNow, frameDt = 0, 0.016
 
@@ -4467,11 +4490,19 @@ return function(api)
         end
         runStage("processEvents", processEvents)
         runStage("readPartner", readPartner)
-        runStage("readEnemies", stageReadEnemies)       -- (a host's: the ones a guest's game runs, see handover)
+        -- In a PvP match (arena.lua) there are no enemies to keep in step and none of the world's news: only the players.
+        local arena = net.arena
+        if not arena then
+            runStage("readEnemies", stageReadEnemies)       -- (a host's: the ones a guest's game runs, see handover)
+        end
         runStage("steerGhost", steerGhosts)
-        runStage("enemyTurns", stageEnemyTurns)
+        if not arena then
+            runStage("enemyTurns", stageEnemyTurns)
+        end
         for name, fn in pairs(frameTicks) do
-            runStage(name, fn)
+            if not (arena and net.ARENA_SKIPS[name]) then
+                runStage(name, fn)
+            end
         end
         if now >= nextSlow then
             nextSlow = now + SLOW_S
@@ -4484,7 +4515,9 @@ return function(api)
         if now >= nextExtra and os.clock() >= (net.quietUntil or 0) then
             nextExtra = now + EXTRA_S
             for name, fn in pairs(extraTicks) do
-                runStage(name, fn)
+                if not (arena and net.ARENA_SKIPS[name]) then
+                    runStage(name, fn)
+                end
             end
         end
     end

@@ -2338,13 +2338,14 @@ return function(api)
     end
 
     -- ALIVE sits in a language switcher that shows the localized DEAD image by default: switch to the text,
-    -- every time (the widget can reset it).
-    local function showAliveWord(w)
+    -- every time (the widget can reset it). word: what it says (a PvP match's winner: VICTORY), ALIVE by default.
+    local function showAliveWord(w, word)
         pcall(function()
             local sw = w.PBZLanguageWidgetSwitcher_31
             sw:SetVisibility(3)
             sw:SetRenderOpacity(1)
             sw:SetActiveWidget(w.DeadRichText)
+            w.DeadRichText:SetText(FText(word or "A L I V E"))
             w.DeadRichText:SetVisibility(3)
             w.DeadRichText:SetRenderOpacity(1)
         end)
@@ -2358,14 +2359,14 @@ return function(api)
         end
     end
 
-    function game.showAliveScreen(seconds)
+    function game.showAliveScreen(seconds, word)
         if not valid(aliveScreen) then
             aliveScreen = makeAliveScreen()
         end
         if not valid(aliveScreen) then
             return false
         end
-        showAliveWord(aliveScreen)
+        showAliveWord(aliveScreen, word)
         aliveScreen:SetVisibility(3)                          -- HitTestInvisible: seen, never clicked
         -- The death screen's own entrance (Deadpopup, 5 s): the world darkens and the calligraphy appears exactly
         -- as 殒命 does. It leaves the hidden parts (DEAD, blood, 命) hidden.
@@ -2387,10 +2388,12 @@ return function(api)
                 t = os.clock() - start
                 local a = math.min(1, t / 0.5)
                 local ease = 1 - (1 - a) * (1 - a)            -- fast landing, soft settle
-                w.DeadText:SetRenderOpacity(ease)
                 local s = 1.25 - 0.25 * ease
-                w.DeadText:SetRenderScale({ X = s, Y = s })
-                w.DeadRichText:SetRenderOpacity(math.max(0, math.min(1, (t - 0.4) / 0.5)))
+                pcall(function()
+                    w.DeadText:SetRenderOpacity(ease)
+                    w.DeadText:SetRenderScale({ X = s, Y = s })
+                    w.DeadRichText:SetRenderOpacity(math.max(0, math.min(1, (t - 0.4) / 0.5)))
+                end)
                 if t < 0.9 then
                     game.after(0.016, frame)
                 end

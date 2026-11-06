@@ -556,6 +556,8 @@ api.hud = dofile(SCRIPT_DIR .. "hud.lua")(api)
 api.mapicon = dofile(SCRIPT_DIR .. "mapicon.lua")(api)
 api.revive = dofile(SCRIPT_DIR .. "revive.lua")(api)
 api.pvp = dofile(SCRIPT_DIR .. "pvp.lua")(api)
+api.arenaData = dofile(SCRIPT_DIR .. "arenas.lua")
+api.arena = dofile(SCRIPT_DIR .. "arena.lua")(api)
 api.scaling = dofile(SCRIPT_DIR .. "scaling.lua")(api)
 api.twins = dofile(SCRIPT_DIR .. "twins.lua")(api)
 api.storyData = select(2, pcall(dofile, SCRIPT_DIR .. "storydata.lua"))     -- (our copy of the game's story table)
@@ -601,6 +603,8 @@ PBZ = {
     partner = api.partner,
     hud = api.hud,
     mapicon = api.mapicon,
+    pvp = api.pvp,
+    arena = api.arena,
 }
 
 -- Command file: lets a developer drive tests from outside the game. Write one command per line
@@ -631,6 +635,7 @@ for name, fn in pairs(api.game.commands or {}) do
     COMMANDS[name] = fn
 end
 COMMANDS.pvp = api.pvp.command
+COMMANDS.arena = api.arena.command
 COMMANDS.scale = api.scaling.command
 COMMANDS.twins = api.twins.command
 COMMANDS.tips = api.status.command
