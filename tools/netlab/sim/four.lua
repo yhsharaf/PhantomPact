@@ -2097,6 +2097,27 @@ local function playerReports()
         allErrors(s)
     end
     do
+        -- Report 9 and the bench's sweep: Xiaoxue fell, both worlds ran her death, then she was up again on the host and the
+        -- guest's copy stayed dead: the boss "vanished" for the guest, the host's alone to finish and be paid for.
+        local s, h, g = pair()
+        Session.moveTo(h, 3000, 2800)
+        Session.moveTo(g, 3000, 2700)
+        s:run(3)
+        bossStart(s)
+        s:run(4)
+        bossEnd(s)
+        s:run(3)
+        check(field(Session.enemyOn(g, "boss"), "dead") == true, "(the boss falls in both worlds)")
+        local gsp = g.spawners[Session.indexOf(g, "boss")]
+        local before = field(gsp, "claimed") or 0
+        local hostBoss = Session.enemyOn(h, "boss")
+        Fake.put(hostBoss, "dead", false)
+        Fake.setHealth(hostBoss, 3000)              -- (up again on the host, the same boss)
+        s:run(15)
+        check((field(gsp, "claimed") or 0) > before, "a boss up again on the host is up again on the guest")
+        allErrors(s)
+    end
+    do
         -- A new game's players both came out of the prologue without the healing gourd: co-op keeps its hands off there.
         local s, h, g = pair()
         s:run(2)

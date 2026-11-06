@@ -1670,6 +1670,27 @@ return function(api)
             return
         end
         local asked, back = 0, 0
+        -- A boss the host said died, alive again in its lines: up again on the host (Xiaoxue at the Mass Grave, a boss whose
+        -- fight goes on after a fall). Its copy here had died with it, and the fight went on with nothing on this player's
+        -- screen, the host's alone to finish and be paid for. Spawned again here, as for a fight.
+        for name, r in pairs(net.remoteEnemies) do
+            if enemyByName[name] == nil and r.Boss and (r.Hp or 0) > 0 and net.hostKilled[name] and name:sub(1, 3) == "sp:"
+                and net.bossFell and net.bossFell[name] and now - net.bossFell[name] < 600
+                and distance(net.localLoc, r) <= PARTNER_REACH_CM and asked < bring.PER_ROUND and game.spawnBoss then
+                local b = net.bringing[name] or { since = now, askedAt = -1e9 }
+                net.bringing[name] = b
+                if now - b.since >= bring.AFTER_S and now - b.askedAt >= bring.AGAIN_S then
+                    b.askedAt = now
+                    asked = asked + 1
+                    net.hostKilled[name], net.pendingDeaths[name] = nil, nil
+                    local at, turned = game.spawnBoss(name, true)
+                    if at then
+                        net.broughtBack[name] = turned or net.broughtBack[name]
+                        log("Boss " .. name .. " is up again on the host: back here too.")
+                    end
+                end
+            end
+        end
         for name, r in pairs(net.remoteEnemies) do
             if enemyByName[name] == nil and not r.Boss and (r.Hp or 0) > 0 and name:sub(1, 3) == "sp:" and not net.hostKilled[name]
                 and distance(net.localLoc, r) <= PARTNER_REACH_CM then
@@ -2028,6 +2049,10 @@ return function(api)
             local fought = net.hostBosses[name] or net.partnerBosses[name] or net.pendingBosses[name]
             local wasBoss = fought or (valid(actor) and game.isBoss and game.isBoss(actor))
             net.hostBosses[name] = nil
+            if wasBoss and not quiet then
+                net.bossFell = net.bossFell or {}
+                net.bossFell[name] = os.clock()     -- (fell in a fight: one up again on the host comes back, see bring.missing)
+            end
             if valid(actor) then
                 if api.puppets then
                     api.puppets.drop(actor)
