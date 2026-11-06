@@ -182,6 +182,7 @@ return function(api)
 
     -- A partner sat at a bell and this player can't use it: dead or watching, they go to p as soon as they're up.
     function partner.comeTo(p)
+        net.watchGaveUp = nil       -- (a capped watch let go of that fight only: this trip is a new one)
         partner.goUntil, partner.goFrom, partner.goTo = os.clock() + LINK_WAIT_S, 0, p
     end
 

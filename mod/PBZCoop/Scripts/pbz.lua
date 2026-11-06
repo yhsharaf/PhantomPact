@@ -663,13 +663,16 @@ return function(api)
     -- the scene's is the one paired. True if it went; false while it's the only one; nil once it's gone or dead anyway.
     function game.dropExtraBoss(mine)
         local ours, other = nil, false
-        for _, a in pairs(game.listEnemies(true) or {}) do
+        for _, a in pairs(game.listEnemies() or {}) do
             if valid(a) and not game.isDead(a) then
+                local addr = a:GetAddress()
                 local ok, cls = pcall(function() return a:GetClass():GetFName():ToString() end)
                 if ok and cls == mine.class then
-                    if a:GetAddress() == mine.addr and a:GetFName():ToString() == mine.fname then
+                    if addr == mine.addr and a:GetFName():ToString() == mine.fname then
                         ours = a
-                    else
+                    elseif not twin.at(addr, a) and game.isBoss(a, addr) then
+                        -- (Another boss of its kind, not its ghost twin: with 5-6 players the twin is the same class, and
+                        -- taken for the scene's boss, the boss being fought was taken away.)
                         other = true
                     end
                 end
@@ -1188,13 +1191,16 @@ return function(api)
     -- dust reaches this player from there. Falls back to the quiet kill if the effect doesn't take.
     function game.killForReal(actor)
         local boss = game.isBoss and game.isBoss(actor)
+        -- (A boss's level, floor and bar as they were: put back if the game won't let it die now. Left at level 0, with no
+        -- floor, bar or boss record, it fought on unknown as a boss, and its real death later paid nothing.)
+        local level0, floor0 = nil, game.healthFloor(actor)
+        pcall(function() level0 = actor.AttributeSetBase.Level.CurrentValue end)
         game.hideHealthBar(actor)
         pcall(function()
             local level = actor.AttributeSetBase.Level
             level.BaseValue = 0
             level.CurrentValue = 0
         end)
-        forgetBoss(actor)
         stopSwing(actor)
         game.setMinHealth(actor, 0)
         syncing = true
@@ -1202,11 +1208,23 @@ return function(api)
         syncing = false
         local hp = game.getHealth(actor)
         if ok and hp ~= nil and hp <= 0 then
+            forgetBoss(actor)
             return true
         end
         if boss then
-            return false        -- (a boss the game won't let die now isn't forced: see applyDamage)
+            -- A boss the game won't let die now isn't forced (see applyDamage): as it was.
+            pcall(function()
+                if type(level0) == "number" then
+                    local level = actor.AttributeSetBase.Level
+                    level.BaseValue = level0
+                    level.CurrentValue = level0
+                end
+            end)
+            game.setMinHealth(actor, floor0)
+            pcall(game.showBossBar, actor)
+            return false
         end
+        forgetBoss(actor)
         game.kill(actor)
         return false
     end

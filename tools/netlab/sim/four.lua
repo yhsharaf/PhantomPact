@@ -2158,6 +2158,27 @@ local function playerReports()
         allErrors(s)
     end
     do
+        -- The chaos fuzzer: a guest who'd hit the boss kept its dead body paired under its id (a kill still to tell), and the
+        -- boss up again on the host never came back there.
+        local s, h, g = pair()
+        Session.moveTo(h, 3000, 2800)
+        Session.moveTo(g, 3000, 2700)
+        s:run(3)
+        bossStart(s)
+        s:run(4)
+        net(g).hitHere["sp:boss"] = true
+        bossEnd(s)
+        s:run(3)
+        local gsp = g.spawners[Session.indexOf(g, "boss")]
+        local before = field(gsp, "claimed") or 0
+        local hostBoss = Session.enemyOn(h, "boss")
+        Fake.put(hostBoss, "dead", false)
+        Fake.setHealth(hostBoss, 3000)
+        s:run(15)
+        check((field(gsp, "claimed") or 0) > before, "and so it is when the guest had hit it before it fell")
+        allErrors(s)
+    end
+    do
         -- A new game's players both came out of the prologue without the healing gourd: co-op keeps its hands off there.
         local s, h, g = pair()
         s:run(2)
@@ -2190,17 +2211,37 @@ local function playerReports()
         h.eventPipeline.ExecuteNodeGuid:Add("ABCDEF0123456789ABCDEF0123456789")
         table.insert(h.bellIds, "Bell_YXZR_005")
         table.insert(h.globalTags, "GameMode.NewGamePlus")       -- (never sent)
-        s:run(6)
+        s:run(4)
+        table.insert(h.globalTags, "Combat.InFight")
+        s:run(20)
         check(g.storyMarks["zddy.chain.broken"] and g.storyGuids["ABCDEF0123456789ABCDEF0123456789"]
             and g.storyMarks["Bell_YXZR_005"], "what the host's flow did while linked (a flag, a flow step, a bell) is done on the guest too")
         check(not g.storyMarks["GameMode.NewGamePlus"], "but never the game's mode")
         check(not h.storyMarks["zddy.chain.broken"], "and nothing goes the other way")
+        check(not g.storyMarks["Combat.InFight"], "nor the state of a moment (a fight's)")
+        -- A flag up for a moment only (under one look) isn't story: not sent.
+        table.insert(h.globalTags, "zddy.blink")
+        s:run(5)
+        for i, t in ipairs(h.globalTags) do
+            if t == "zddy.blink" then
+                table.remove(h.globalTags, i)
+                break
+            end
+        end
+        s:run(20)
+        check(not g.storyMarks["zddy.blink"], "a flag up for a moment only isn't sent")
+        -- A world loaded on the host: hundreds new at once are its state, not play, and nothing goes.
+        for i = 1, 300 do
+            table.insert(h.globalTags, "load.flag" .. i)
+        end
+        s:run(20)
+        check(not g.storyMarks["load.flag1"], "hundreds of flags new at once (a load) aren't sent")
         allErrors(s)
 
         local o, oh, og = pair("FollowHostStory = Off\n")
         o:run(4)
         table.insert(oh.globalTags, "zddy.chain.broken")
-        o:run(6)
+        o:run(20)
         check(not og.storyMarks["zddy.chain.broken"], "FollowHostStory = Off: the guest's flow stays its own")
         allErrors(o)
     end

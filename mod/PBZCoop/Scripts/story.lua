@@ -233,8 +233,11 @@ return function(api)
     -- (Nor in a talk with an NPC: a story step applied under an open dialogue (both handing in to Yuer at once) finished
     -- what the talk was waiting for, and the talk stayed up with no way out.)
     local function calm(pawn)
-        return valid(pawn) and not game.isDead(pawn) and not game.inCutscene() and not game.bossFightActive()
-            and not (game.inDialogue and game.inDialogue())
+        -- (sequenceOn, any sequence: the camera check of inCutscene is for joining fights, a step under a scene that
+        -- keeps the camera on the player still finished it. Nor in the prologue: see flowsync.)
+        return valid(pawn) and not game.isDead(pawn) and not (game.sequenceOn or game.inCutscene)()
+            and not game.bossFightActive() and not (game.inDialogue and game.inDialogue())
+            and not (game.inPrologue and game.inPrologue())
     end
 
     -- "a，b, c" -> { "a", "b", "c" }
@@ -534,6 +537,11 @@ return function(api)
     local tried = {}                -- quest rows applied this session that didn't take: not tried again
     local marked = {}               -- mark rows applied this session
     local batch = nil               -- quest rows of the last batch, checked on the next read
+    -- Catching up now (a batch of the host's steps applied, not yet read back): flowsync waits, so a flag doesn't land in
+    -- the middle of the steps it follows.
+    function story.isBusy()
+        return batch ~= nil
+    end
     local caught, warned = 0, false
     -- The host started sync anew (another host, maybe): its old point isn't caught up to before the new one's comes.
     local guestSyncStarted = coop.handlers.S
@@ -556,6 +564,7 @@ return function(api)
         if tonumber(n) ~= #rows.quests or tonumber(check) ~= rows.check then
             if not warned then
                 warned = true
+                story.mismatch = true       -- (flowsync takes nothing either)
                 log("Story: the host's game has another story table (another game version?): your story stays your own.")
             end
             return

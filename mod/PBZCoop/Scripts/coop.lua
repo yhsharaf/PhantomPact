@@ -1324,7 +1324,7 @@ return function(api)
                         hp, posture = prev.hp, prev.posture
                     elseif net.mine[name] then
                         -- (This game runs it: what it loses is real, and the host's copy follows by its lines.)
-                    elseif dHp > 0.5 and not net.pvp and not ownHit(actor) then
+                    elseif (dHp > 0.5 or onFloor) and not net.pvp and not ownHit(actor) then
                         undoHit(actor, prev.hp, prev.posture)
                         hp, posture = prev.hp, prev.posture
                     else
@@ -1684,10 +1684,16 @@ return function(api)
                 if now - b.since >= bring.AFTER_S and now - b.askedAt >= bring.AGAIN_S then
                     b.askedAt = now
                     asked = asked + 1
-                    net.hostKilled[name], net.pendingDeaths[name] = nil, nil
-                    local at, turned = game.spawnBoss(name, true)
+                    local at, turned, spawned = game.spawnBoss(name, true)
                     if at then
+                        -- (Its death cleared only once it's up again: a failed spawn is tried again next round.)
+                        net.hostKilled[name], net.pendingDeaths[name] = nil, nil
                         net.broughtBack[name] = turned or net.broughtBack[name]
+                        if type(spawned) == "table" then
+                            spawned.untilAt = os.clock() + 120
+                            net.extraBossWatch = net.extraBossWatch or {}
+                            net.extraBossWatch[name] = spawned
+                        end
                         log("Boss " .. name .. " is up again on the host: back here too.")
                     end
                 end
@@ -2042,6 +2048,12 @@ return function(api)
             net.hostKilled[name] = true
             net.remoteEnemies[name] = nil
             net.mine[name] = nil
+            -- (The host's death settles a kill of this player's still to tell: a hit left here kept the dead body paired
+            -- under its id, and a boss up again on the host never came back here.)
+            net.hitHere[name] = nil
+            if net.guestKillSent then
+                net.guestKillSent[name] = nil
+            end
             if not valid(actor) then
                 actor = stickyEnemy(name)
             end
@@ -2067,8 +2079,14 @@ return function(api)
                 elseif fought and not quiet and game.killForReal then
                     -- The boss of a fight both are in: the whole death here too, so this world's story goes on with the
                     -- host's, its scene after the fight first (a quiet kill skipped it, and the next phase came unseen).
-                    game.killForReal(actor)
-                    log("Host says " .. name .. " died; its death runs here too.")
+                    if game.killForReal(actor) then
+                        log("Host says " .. name .. " died; its death runs here too.")
+                    elseif game.kill then
+                        -- (Refused here (a phase or floor of this world's own): the host's word stands, the quiet death.)
+                        game.kill(actor)
+                        log("Host says " .. name .. " died; its death was refused here, killed it quietly.")
+                        bring.cardsLater()
+                    end
                 elseif not wasBoss and not quiet and game.killForReal then
                     -- The game's own death, at level 0 so it pays nothing here: the quiet kill skipped what listens for
                     -- deaths, and a quest waiting for the monsters to be dealt with (Fierce Axe) never moved, not even after
@@ -2219,7 +2237,12 @@ return function(api)
                 elseif valid(actor) then
                     local hp = game.getHealth(actor)
                     if hp then
-                        sendEvent("LR", name, string.format("%.1f", hp))
+                        -- (To that guest alone: another guest's own killing blow on it, still on its way, was dropped.)
+                        if from then
+                            sendTo(from, "LR", name, string.format("%.1f", hp))
+                        else
+                            sendEvent("LR", name, string.format("%.1f", hp))
+                        end
                     end
                 end
             end
@@ -2825,10 +2848,15 @@ return function(api)
         if os.clock() < (net.unsettledUntil or 0) then
             return
         end
-        if game.refreshEnemyIds then
-            game.refreshEnemyIds(true)
+        -- (A fresh read at most once a second: a round of asks came together, and each one's full search hitched the host.)
+        local fresh = os.clock() - (net.hasFreshAt or -9) > 1
+        if fresh then
+            net.hasFreshAt = os.clock()
+            if game.refreshEnemyIds then
+                game.refreshEnemyIds(true)
+            end
         end
-        local list, addrs = game.listEnemies(true)
+        local list, addrs = game.listEnemies(fresh)
         for i, actor in ipairs(list) do
             if valid(actor) and enemyName(actor, addrs[i]) == name and not game.isDead(actor) then
                 return
@@ -2874,6 +2902,9 @@ return function(api)
     -- map (see fogPress, joinFarFight).
     local function joinBossFight(name, p)
         local _, pawn = getPlayer1()
+        if game.inPrologue and game.inPrologue() then
+            return          -- (no partner's boss in the prologue: its end gives back the starting gear, the gourd among it)
+        end
         -- (Another guest's fight, on a guest: only the host's world can say the boss lives, so one this save has beaten
         -- isn't brought back for it. The host tells everyone if it's beaten there.)
         local at, turned = nil, false
@@ -2922,8 +2953,15 @@ return function(api)
     -- there's no other way in.)
     local function joinFarFight()
         local far = net.farFight
-        local _, pawn = getPlayer1()
+        local controller, pawn = getPlayer1()
         if not (far and net.partnerBosses[far.name] and valid(pawn)) or game.isDead(pawn) then
+            return false
+        end
+        -- (joinPartner's guards: F3 skipped them all, and took a guest out of the prologue, a scene or a fight of their own.
+        -- False here, joinPartner says why.)
+        if (game.inCutscene and game.inCutscene()) or net.pvp or (game.inPrologue and game.inPrologue())
+            or (game.bossFightActive() and not net.watchingFight) or os.clock() < (net.travelUntil or 0)
+            or api.gs():IsGamePaused(controller) or api.localcoop.bellMenuUp() or api.localcoop.screenUp() then
             return false
         end
         net.farFight = nil
@@ -3411,8 +3449,11 @@ return function(api)
         end
         -- (Heard again after the silence of the load they told of (LOAD): it's over. Its minute went on, and a crash in it was
         -- a frozen figure and a held fight for a minute, not 12 s.)
-        if p.loadingUntil and p.lastRemoteAt and heardAt - p.lastRemoteAt >= 3 then
-            p.loadingUntil = nil
+        -- (Or heard steadily well after it: a trip on the same map can be silent under 3 s, and its minute ran on, a real
+        -- drop after it noticed in 60 s, not 12.)
+        if p.loadingUntil and p.lastRemoteAt and (heardAt - p.lastRemoteAt >= 3
+            or (p.loadToldAt and heardAt - p.loadToldAt > 8)) then
+            p.loadingUntil, p.loadToldAt = nil, nil
         end
         if p.byeAt and heardAt > p.byeAt + 1 then
             p.byeAt = nil           -- (their sync is on again: see BYE)
@@ -3513,6 +3554,8 @@ return function(api)
         net.joinedBoss, net.joinedWith, net.farFight, net.bossOverAt = nil, nil, nil, nil
         net.healTicks = {}
         net.lethalPending = {}
+        net.bossFell, net.extraBossWatch, net.watchGaveUp, net.watchHeldAt = {}, {}, nil, nil
+        net.postureTicks = {}
         net.hostSeen = {}
         net.partnerDowned = false
         enemyByName = {}
@@ -3650,6 +3693,7 @@ return function(api)
     -- that's told too.
     handlers.LOAD = function(_, from)
         peerOf(from).loadingUntil = os.clock() + 60
+        peerOf(from).loadToldAt = os.clock()
     end
     function net.tellLoading()
         if net.enabled then
@@ -3664,7 +3708,8 @@ return function(api)
         RegisterLoadMapPreHook(function()
             net.tellLoading()
             net.unsettledUntil = os.clock() + net.UNSETTLED_S + 20     -- (a load takes a while: no "no" given till settled)
-            net.notOnHost, net.aside = {}, {}     -- (this world's actors go with the load: nothing to bring back down)
+            net.notOnHost, net.aside = {}, {}
+            net.bossFell, net.extraBossWatch, net.lethalPending = {}, {}, {}     -- (this world's actors go with the load: nothing to bring back down)
             -- Enemies this world brought back for the host go back to dead in it before it's saved and left: put back at the
             -- end of the session, they'd be put back in whatever world is loaded then.
             pcall(bring.putBackAll)

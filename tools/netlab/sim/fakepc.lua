@@ -1492,7 +1492,9 @@ function Fake.new(id, scripts, ini, link)
     local codex = object(pc, "DataTable")
     defs(pc, codex, { FindRow = function(_, kind)
         for _, e in ipairs(pc.enemies) do
-            if (rawget(e, "__name") or ""):gsub("_C$", "") == kind and rawget(e, "__fields").boss then
+            local co = rawget(e, "__classObject")
+            local cn = co and co.GetFName and co:GetFName():ToString() or rawget(e, "__name") or ""
+            if (cn:gsub("_C$", "") == kind or (rawget(e, "__name") or ""):gsub("_C$", "") == kind) and rawget(e, "__fields").boss then
                 return { bIsBoss = true }
             end
         end

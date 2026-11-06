@@ -14,11 +14,16 @@ return function(api)
     local log, valid, game = api.log, api.valid, api.game
     local coop = api.coop
 
-    local LOOK_S = 3                -- host: what its flow added is looked for this often
+    local LOOK_S = 6                -- host: what its flow added is looked for this often
     local CHUNK = 600               -- characters of items in one event
-    local SKIP = { "^GameMode%.", "^UI%." }     -- never sent: the game's mode, the screen's own state
+    local FLOOD = 200               -- more new at once than this is a world loaded or restored, not play: the new baseline
+    -- Never sent: the game's mode, the screen's own state, and the states of a moment (a fight, a dodge, a lock-on).
+    local SKIP = { "^GameMode%.", "^UI%.", "^State%.", "^Combat%.", "^Battle%.", "^Input%.", "^Camera%.", "^Ability%.",
+        "^Status%.", "^Buff%.", "^Player%.State" }
 
-    local flow = { told = nil, queue = {}, applied = 0 }
+    -- told: what the guests have (the baseline and what was sent); sent: what was sent, in order, told again to a guest
+    -- (re)linked; seen: new last look, sent if it's still there this one (a tag on for a moment isn't story).
+    local flow = { told = nil, sent = {}, seen = nil, linkedN = 0, queue = {}, applied = 0 }
 
     local function skipped(tag)
         for _, p in ipairs(SKIP) do
@@ -76,16 +81,44 @@ return function(api)
         end
     end
 
+    local function linkedCount()
+        local n = 0
+        for _, p in ipairs(coop.partners and coop.partners() or {}) do
+            if not p.partnerGone and p.lastRemoteAt ~= nil and os.clock() - p.lastRemoteAt < 10 then
+                n = n + 1
+            end
+        end
+        return n
+    end
+
     local nextLook = 0
     local function hostTick(now)
-        if not coop.linked() then
-            flow.told = nil         -- (a new link starts from what this world has then)
-            return
+        -- (told is kept over a gap in the link: what was added meanwhile goes out when it's back, instead of becoming the
+        -- baseline nobody was told of. A guest linked again, or a new one, is told all that was sent again.)
+        local n = coop.linked() and linkedCount() or 0
+        if n > flow.linkedN and flow.told and #flow.sent > 0 then
+            local by = { t = {}, n = {}, b = {} }
+            for _, it in ipairs(flow.sent) do
+                by[it.kind][#by[it.kind] + 1] = it.item
+            end
+            for _, kind in ipairs({ "t", "n", "b" }) do
+                if #by[kind] > 0 then
+                    send(kind, by[kind])
+                end
+            end
+            log(string.format("Story flow: a player linked: the %d things sent so far told again.", #flow.sent))
         end
-        if now < nextLook then
+        flow.linkedN = n
+        if n == 0 or now < nextLook then
             return
         end
         nextLook = now + LOOK_S
+        local _, pawn = api.getPlayer1()
+        local ep = FindFirstOf("EventPipelineManager")
+        local loaded = valid(ep) and select(2, pcall(function() return ep.LoadComplete end))
+        if not (valid(pawn) and loaded ~= false) then
+            return              -- (mid-load: an empty read made a baseline of nothing, and then sent the whole world)
+        end
         local cur = read()
         if not cur then
             return
@@ -93,24 +126,43 @@ return function(api)
         if flow.told == nil or (game.inPrologue and game.inPrologue()) then
             -- What was there at the link (the story table's rows cover a guest behind on that), and nothing of the prologue:
             -- marked done on a guest before they ran, its steps never ran there, the one giving back the gear among them.
-            flow.told = cur
+            flow.told, flow.seen = cur, nil
             return
         end
+        local new, count = {}, 0
         for _, kind in ipairs({ "t", "n", "b" }) do
-            local new = {}
+            new[kind] = {}
             for item in pairs(cur[kind]) do
                 if not flow.told[kind][item] then
-                    flow.told[kind][item] = true
-                    new[#new + 1] = item
+                    new[kind][item] = true
+                    count = count + 1
                 end
             end
-            if #new > 0 then
-                table.sort(new)
-                send(kind, new)
-                log(string.format("Story flow: %d new %s here, told the others.", #new,
+        end
+        if count > FLOOD then
+            flow.told, flow.seen = cur, nil
+            log(string.format("Story flow: %d new at once (a load?): taken as this world's state, nothing sent.", count))
+            return
+        end
+        local seen = flow.seen or { t = {}, n = {}, b = {} }
+        for _, kind in ipairs({ "t", "n", "b" }) do
+            local out = {}
+            for item in pairs(new[kind]) do
+                -- (Nodes and bells don't go back: sent at once. A tag, only if it was there last look too.)
+                if kind ~= "t" or seen.t[item] then
+                    flow.told[kind][item] = true
+                    out[#out + 1] = item
+                    flow.sent[#flow.sent + 1] = { kind = kind, item = item }
+                end
+            end
+            if #out > 0 then
+                table.sort(out)
+                send(kind, out)
+                log(string.format("Story flow: %d new %s here, told the others.", #out,
                     kind == "t" and "flags" or kind == "n" and "flow steps" or "bells"))
             end
         end
+        flow.seen = new
     end
 
     -- Guest: what the host's flow added, applied here when it's quiet.
@@ -118,8 +170,8 @@ return function(api)
         if from ~= nil or coop.isHost() or type(rest) ~= "string" or #rest > CHUNK + 20 then
             return
         end
-        if api.story and api.story.follow == false then
-            return
+        if api.story and (api.story.follow == false or api.story.mismatch) then
+            return          -- (not following, or another story table: another game version's flags aren't this one's)
         end
         local kind, items = rest:match("^([tnb]) (.+)$")
         if not kind then
@@ -134,8 +186,9 @@ return function(api)
 
     local function calm()
         local _, pawn = api.getPlayer1()
-        return valid(pawn) and not game.isDead(pawn) and not game.inCutscene() and not game.bossFightActive()
-            and not (game.inDialogue and game.inDialogue())
+        return valid(pawn) and not game.isDead(pawn) and not (game.sequenceOn or game.inCutscene)()
+            and not game.bossFightActive() and not (game.inDialogue and game.inDialogue())
+            and not (api.story and api.story.isBusy and api.story.isBusy())
     end
 
     local function guestTick()
@@ -183,7 +236,7 @@ return function(api)
     local function tick()
         local now = os.clock()
         if not (coop.net and coop.net.enabled) then
-            flow.told = nil
+            flow.told, flow.sent, flow.seen, flow.linkedN = nil, {}, nil, 0
             return
         end
         if coop.isHost() then
