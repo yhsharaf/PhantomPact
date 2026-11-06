@@ -200,6 +200,18 @@ return function(api)
         end
     end
 
+    -- A copy whose bullets have all ended here by their own timers: done, but a particle bullet's look is the level's and
+    -- stays where it was until turned off (a Wild Oriole Sword's sword energy, stuck in place: a player report, 11-06).
+    -- Ended now, not when the sender's end comes, which may be lost or never come.
+    local function allOver(c)
+        for _, made in ipairs(c.made or {}) do
+            if not game.bulletOver(made) then
+                return false
+            end
+        end
+        return true
+    end
+
     -- Copies whose end never came (the sender left, say): over after COPY_MAX_S. And ends kept for a shot that never came.
     local function ageCopies(now)
         if now < copiesAt then
@@ -207,7 +219,7 @@ return function(api)
         end
         copiesAt = now + 1
         for key, c in pairs(copies) do
-            if now - c.at > COPY_MAX_S then
+            if now - c.at > COPY_MAX_S or (game.bulletOver and allOver(c)) then
                 endCopy(key)
             end
         end

@@ -1389,7 +1389,11 @@ return function(api)
             -- Its "push" off: on, a thing new to this player put up the game's full-screen card, as a weapon's "equip it now?"
             -- did, in a game that isn't paused for it, and on a window that wasn't in front no key could close it.
             local before = game.itemCount(bp, itemId)
-            pcall(function() bp:AddPropsToBackPack(count, FName(itemId), false) end)
+            -- The card, for a thing new to this player or a quest item (notes and keys aren't counted: always new): the other
+            -- player saw nothing of what their partner found (a player report, 11-06). Counted things they have already
+            -- (herbs, dust-like loot) stay quiet, as a catch-up does. game.granting keeps the card's own report from going back.
+            local card = not quiet and (before == 0 or game.isNarrative(itemId))
+            pcall(function() bp:AddPropsToBackPack(count, FName(itemId), card) end)
             local after = game.itemCount(bp, itemId)
             -- (Not when quiet: GiveItem is the player blueprint's own helper, with no way to keep its card down.)
             if after <= before and not itemId:find("^[RI]_%d") and not quiet then
@@ -1953,7 +1957,22 @@ return function(api)
         end
     end
 
-    -- An effect the partner's item showed on their body (FX), on the ghost's: the same system, on the same socket.
+    -- An effect the partner's item showed on their body (FX), on the ghost's: the same system, on the same socket. Some loop
+    -- (the gourd's green glow): on the partner the drink's own effect ends them, which a ghost hasn't got, so each drink's
+    -- stayed on for good, stacking, the frame rate lower with each (a player report, 11-06). Each now goes after
+    -- itemFx.GHOST_S, and a new one of the same system takes the old one's place.
+    -- (On itemFx, not locals: this function is at the 200 Lua allows.)
+    itemFx.GHOST_S, itemFx.onGhost = 8, {}      -- ghost address .. path -> { comp, name }
+    function itemFx.endOnGhost(key)
+        local f = itemFx.onGhost[key]
+        itemFx.onGhost[key] = nil
+        pcall(function()
+            if f and valid(f.comp) and f.comp:GetFName():ToString() == f.name then
+                f.comp:Deactivate()
+                f.comp:K2_DestroyComponent(f.comp)
+            end
+        end)
+    end
     function game.ghostEffect(ghost, path, socket)
         if not (path:match("^/[%w_/%-]+%.[%w_%-]+$") and #path <= 200 and socket:match("^[%w_]+$")) then
             return false
@@ -1964,11 +1983,23 @@ return function(api)
             pcall(LoadAsset, path)
             sys = StaticFindObject(path)
         end
+        local key = tostring(ghost:GetAddress()) .. path
+        itemFx.endOnGhost(key)
         return (pcall(function()
             if valid(sys) and sys:IsA(StaticFindObject("/Script/Niagara.NiagaraSystem"))
                 and ghost:IsA(StaticFindObject("/Script/Engine.Character")) then
-                StaticFindObject("/Script/Niagara.Default__NiagaraFunctionLibrary"):SpawnSystemAttached(sys, ghost.Mesh,
-                    FName(socket), { X = 0.0, Y = 0.0, Z = 0.0 }, { Pitch = 0.0, Yaw = 0.0, Roll = 0.0 }, 0, true, true, 0, true)
+                local comp = StaticFindObject("/Script/Niagara.Default__NiagaraFunctionLibrary"):SpawnSystemAttached(sys,
+                    ghost.Mesh, FName(socket), { X = 0.0, Y = 0.0, Z = 0.0 }, { Pitch = 0.0, Yaw = 0.0, Roll = 0.0 }, 0, true, true,
+                    0, true)
+                if valid(comp) then
+                    local f = { comp = comp, name = comp:GetFName():ToString() }
+                    itemFx.onGhost[key] = f
+                    game.after(itemFx.GHOST_S, function()
+                        if itemFx.onGhost[key] == f then
+                            itemFx.endOnGhost(key)
+                        end
+                    end)
+                end
             end
         end))
     end
@@ -3249,6 +3280,7 @@ return function(api)
 
     -- The game's own spawner, on its default object: it holds nothing of a shot's. It only makes the bullet: starting it is the
     -- step that puts it in the world. No ability, as a ghost hasn't got one. Returns true and what it made, as { bullet, name }.
+    local PARTICLE_BULLET = "/Script/PBZCombatAsset.PBZ_ParticleBullet"
     function game.fireBullet(owner, data, x, y, z, pitch, yaw, roll)
         local fired = {}
         local ok = pcall(function()
@@ -3263,7 +3295,16 @@ return function(api)
             pcall(function()
                 local b = fired[i]:get()
                 b:Start()
-                made[#made + 1] = { bullet = b, name = b:GetFName():ToString() }
+                local m = { bullet = b, name = b:GetFName():ToString() }
+                -- (A particle bullet's look, kept with its name: the bullet can end by its own timer before its end comes from
+                -- the sender, and its look, the level's, stayed where it was for good: a Wild Oriole Sword's sword energy.)
+                pcall(function()
+                    local cls = lib(PARTICLE_BULLET)
+                    if valid(cls) and b:IsA(cls) and valid(b.ParticleComponent) then
+                        m.fx, m.fxName = b.ParticleComponent, b.ParticleComponent:GetFName():ToString()
+                    end
+                end)
+                made[#made + 1] = m
             end)
         end
         return true, made
@@ -3273,7 +3314,6 @@ return function(api)
     -- so its name has to match too. A particle bullet's look is a system of its own in the world (the level owns it, not the
     -- bullet), which the ability that fired it turns off: turned off here first, to fade as it does there, or a lion head's
     -- fire burned on with nothing left to end it. (Its field is only asked of a particle bullet.)
-    local PARTICLE_BULLET = "/Script/PBZCombatAsset.PBZ_ParticleBullet"
     function game.endBullet(made)
         local ok = false
         pcall(function()
@@ -3292,7 +3332,24 @@ return function(api)
                 ok = true
             end
         end)
+        -- The bullet gone already (its own timer): its look may not be. Turned off, if it's still that one.
+        pcall(function()
+            local fx = made.fx
+            if valid(fx) and fx:GetFName():ToString() == made.fxName and fx:IsActive() then
+                fx:Deactivate()
+                ok = true
+            end
+        end)
         return ok
+    end
+
+    -- True once a copy's bullet is over here (gone, or its address another's), its look left on maybe.
+    function game.bulletOver(made)
+        local ok, over = pcall(function()
+            local b = made.bullet
+            return not (valid(b) and b:GetFName():ToString() == made.name)
+        end)
+        return ok and over
     end
 
     ------------------------------------------------------------------ currency (dust)
@@ -3395,7 +3452,7 @@ return function(api)
                 -- (Only loot known to be loot: a pickup whose item couldn't be read, or read before the item table was, went
                 -- out as loot, and the partner's copy of a quest item (the Snake Tongue, a token half) vanished with nothing
                 -- given, their quest stuck: issue #15.)
-                local quest = game.isNarrative(info.itemId)
+                local quest = game.keptApart(info.itemId)
                 if not quest and info.itemId ~= "?" and info.itemId ~= "None" and game.narrative ~= nil then
                     report(name, info.itemId)
                 end
@@ -3419,7 +3476,7 @@ return function(api)
         end
         -- A quest item stays for this player to pick up. (A ground pickup comes as "?", only that it's gone: the sender
         -- tells loot alone, see watchPickups.)
-        if itemId and itemId ~= "?" and game.isNarrative(itemId) then
+        if itemId and itemId ~= "?" and game.keptApart(itemId) then
             log("The other player took " .. name .. " (" .. tostring(itemId) .. "): a quest item, left here for you to take.")
             return
         end
@@ -3501,7 +3558,7 @@ return function(api)
     local giftsHooked = false
 
     local function given(id, count, kind, send)
-        if game.granting or os.clock() < ownUntil or id == "None" or count < 1 or game.isNarrative(id) then
+        if game.granting or os.clock() < ownUntil or id == "None" or count < 1 or game.keptApart(id) then
             return
         end
         givenHere[id .. "x" .. count] = os.clock()
@@ -3591,8 +3648,8 @@ return function(api)
 
     -- from: who it came from, with more than two players: two partners given the same thing in a moment are one thing too.
     function game.receiveGift(pawn, id, count, kind, from)
-        if game.isNarrative(id) then
-            return          -- (a quest item: each player picks up their own, see game.isNarrative)
+        if game.keptApart(id) then
+            return          -- (a quest item, with the old rule: each player picks up their own, see game.keptApart)
         end
         local key = id .. "x" .. count
         local here = givenHere[key]
@@ -3636,7 +3693,7 @@ return function(api)
             bp.Inventories:ForEach(function(k, v)
                 local n = v:get().CurrentAmount
                 local id = k:get():ToString()
-                if type(n) == "number" and n > 0 and not game.isNarrative(id) then
+                if type(n) == "number" and n > 0 and not game.keptApart(id) then
                     out[#out + 1] = "p:" .. id .. ":" .. math.floor(n)
                 end
             end)
@@ -3690,6 +3747,15 @@ return function(api)
             end
         end
         return game.narrative[id] == true
+    end
+
+    -- Quest items are shared now (a player report, 11-06: letters, notes, the Black and Orange Stones, keys "just disappear
+    -- for the other player with no notification"). Since flowsync.lua the host's story steps reach everyone, and a quest
+    -- item's pickup is often a step of its own: the partner's copy vanished with the step, and nothing given. So a quest
+    -- item comes to everyone like any find, with its card. game.shareQuestItems = false is the old rule (each their own).
+    game.shareQuestItems = true
+    function game.keptApart(id)
+        return not game.shareQuestItems and game.isNarrative(id)
     end
 
     -- A dialogue is open: a talk with an NPC (a hand-in too). Story steps, and a partner's scene skip, wait for it.
@@ -4057,7 +4123,7 @@ return function(api)
             pcall(function() id = c["Item ID"]:ToString() end)
         end
         local item = type(id) == "string" and id:match("([^%.]+)$") or nil
-        return item ~= nil and item ~= "None" and game.isNarrative(item), item
+        return item ~= nil and item ~= "None" and game.keptApart(item), item
     end
 
     function game.partnerOpened(name)
