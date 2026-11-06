@@ -1209,6 +1209,33 @@ local function targets()
         .. table.concat(changes, " ") .. ")")
     allErrors(s)
 
+    -- A drink from the gourd draws its eye (the owner's word, after a design a friend sent: "punish healing"). Nobody
+    -- hitting, both near it, it on the host: the guest drinks, and it turns to the guest. A drink right after a turn doesn't
+    -- turn it back (the hold comes first, so drinking can't spin it); one after the hold does.
+    s = targetSession(2)
+    local hh = s.pcs[1]
+    local thug = Session.enemyOn(hh, "ring")
+    Session.moveTo(hh, 150, 0)
+    Session.moveTo(s.pcs[2], -250, 0)
+    s:run(14)
+    check(field(thug, "target") == hh.pawn, "nobody hitting, the host nearer: it's on the host")
+    local function drink(pc)
+        Fake.running(pc, pc.pawn, "GA_Medicine_Common_Additive_C", true)
+        s:run(1.2)
+        Fake.running(pc, pc.pawn, "GA_Medicine_Common_Additive_C", false)
+    end
+    drink(s.pcs[2])
+    s:run(1.5)
+    check(field(thug, "target") == figureOn(hh, 2), "the guest drinks from the gourd: it turns to the guest")
+    drink(hh)
+    s:run(2.5)
+    check(field(thug, "target") == figureOn(hh, 2), "the host drinks right after: it stays on the guest (its hold)")
+    s:run(4)
+    drink(hh)
+    s:run(1.5)
+    check(field(thug, "target") == hh.pawn, "the host drinks after the hold: it turns to the host")
+    allErrors(s)
+
     -- A boss whose target can only chip at it while the other hits freely: it turns to the one hitting, never sooner than
     -- 10 s after its last turn.
     s = targetSession(2, true)
@@ -1257,6 +1284,19 @@ local function targetsInParties()
             .. table.concat(changes, " ") .. ")")
         allErrors(s)
     end
+    -- A guest's drink in a party: player 3 drinks, nobody hitting, everyone round it: it turns to player 3, and on another
+    -- guest's PC the drink (passed on by the relay) changes nothing.
+    local s = targetSession(4)
+    aroundIt(250)(s, 0)
+    s:run(14)
+    local h = s.pcs[1]
+    local e = Session.enemyOn(h, "ring")
+    Fake.running(s.pcs[3], s.pcs[3].pawn, "GA_Medicine_Common_Additive_C", true)
+    s:run(1.2)
+    Fake.running(s.pcs[3], s.pcs[3].pawn, "GA_Medicine_Common_Additive_C", false)
+    s:run(1.5)
+    check(field(e, "target") == figureOn(h, 3), "4 players: player 3 drinks from the gourd, and it turns to player 3")
+    allErrors(s)
 end
 
 local function aiming()

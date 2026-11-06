@@ -1837,19 +1837,22 @@ return function(api)
         return on
     end
 
-    -- Ten times a second, co-op or PvP: an item coming into use, and the effects it puts on the body for a while.
+    -- Ten times a second, co-op or PvP: an item coming into use, and the effects it puts on the body for a while. True as a
+    -- drink from the gourd starts.
     function game.watchItemFx(pawn, sendEvent)
         local asc = abilitySystem(pawn)
         if not asc then
-            return
+            return false
         end
-        local using = false
+        local using, drink = false, false
         forEachSpec(asc, function(spec)
             if not using and (tonumber(spec.ActiveCount) or 0) > 0 then
                 local ok, name = pcall(function() return spec.Ability:GetClass():GetFName():ToString() end)
                 using = ok and itemFx.isUse(name)
+                drink = using and name:find("^GA_Medicine") ~= nil
             end
         end)
+        local drinkStarts = drink and not itemFx.using
         if using and not itemFx.using then
             itemFx.seen, itemFx.untilAt = {}, os.clock() + itemFx.FOR_S
             itemFx.scan(pawn, nil)          -- (what's on the body already isn't the item's)
@@ -1857,6 +1860,7 @@ return function(api)
             itemFx.scan(pawn, sendEvent)
         end
         itemFx.using = using
+        return drinkStarts
     end
 
     -- Replays the remote player's move on the ghost. Gives the ability first if the ghost lacks it.
@@ -2507,6 +2511,8 @@ return function(api)
     --            proportion, and less for everyone while nobody has taken FIRST_HITS of the biggest hit on it lately (so a
     --            first hit isn't "the most damage", whatever its health: a floor of 3% of it meant 10000 on a boss of 333180,
     --            and in the real game a guest hitting it for a minute was never noticed)
+    --   healing  HEAL_W while they drink from the gourd, for HEAL_S from the start: a drink draws its eye (the owner's
+    --            word), within the same hold and wait as any turn
     -- It turns only to someone MARGIN ahead of whoever it's after, once it has held them HOLD_S (a boss BOSS_HOLD_S), and not
     -- in the middle of one of its moves (it waits up to MOVE_WAIT_S for one to end). Someone who goes past REACH_CM isn't held
     -- to. Its own picker is held off meanwhile, its wait GAME_HOLD_S and its last change put at now each turn: left to look
@@ -2517,6 +2523,8 @@ return function(api)
         CLOSE_CM = 300,
         HALF_S = 12.0,
         FIRST_HITS = 2.5,
+        HEAL_W = 1.0,               -- as much as having done the most damage
+        HEAL_S = 4.0,               -- a turn's look each second, and a move's end waited for up to 2 s, fit in it
         MARGIN = 0.5,
         HOLD_S = 6.0,
         BOSS_HOLD_S = 10.0,
@@ -2527,6 +2535,7 @@ return function(api)
         LOOK_S = 2.5,               -- and the look before was this recent (over a longer gap it says nothing of who)
         steered = {},               -- enemy address -> { picker, actor, fname, orig, slot, since, wantSince }
         dmg = {},                   -- enemy address -> { at, hp, seen, taken, big, [slot] = health taken lately }
+        healAt = {},                -- slot -> os.clock() of that player's last drink
     }
     game.aim = aim                  -- (for tests, and a look from the console)
 
@@ -2640,6 +2649,11 @@ return function(api)
         d.taken = d.taken + taken       -- (what this player's turn sees it lost isn't theirs for that much)
     end
 
+    -- Host: a player started a drink from the gourd (theirs by HEAL, this player's own by watchItemFx). slot: 1 for the host.
+    function game.playerHealed(slot)
+        aim.healAt[slot or 2] = os.clock()
+    end
+
     -- An enemy no longer steered: its picker's own wait back, if it's still that enemy (address and name). It looks again at
     -- its next chance, as it would have.
     function aim.release(addr)
@@ -2661,7 +2675,7 @@ return function(api)
         for addr in pairs(aim.steered) do
             aim.release(addr)
         end
-        aim.steered, aim.dmg = {}, {}
+        aim.steered, aim.dmg, aim.healAt = {}, {}, {}
     end
 
     -- One enemy done with (dead, or nobody near it): its wait back, its damage forgotten.
@@ -2703,9 +2717,11 @@ return function(api)
             top = math.max(top, d[who.slot] or 0)
         end
         top = math.max(top, 1)
+        local now = os.clock()
         for _, who in ipairs(near) do
             who.score = math.max(0, math.min(1, (aim.REACH_CM - who.dist) / (aim.REACH_CM - aim.CLOSE_CM)))
                 + (d[who.slot] or 0) / top
+                + (now - (aim.healAt[who.slot] or -1e9) < aim.HEAL_S and aim.HEAL_W or 0)
         end
         local best = on or near[1]
         for _, who in ipairs(near) do

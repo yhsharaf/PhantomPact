@@ -24,6 +24,8 @@
 --     only worth showing now (dropped if late):
 --       U, M, A              a montage or ability of the partner or an enemy (moves.lua, puppets.lua)
 --       H <hit state tag>    the sender's player started a hit reaction; their ghost plays the same one
+--       HEAL                 guest -> host: the sender started a drink from the gourd; the host's enemies near them look
+--                            their way (game.steerTarget). An older host has no handler and leaves it
 --
 -- Roles: the host's world is the truth for enemies (positions, health, deaths); the client mirrors it and
 -- reports its own hits. Each side shows the other's player as a "ghost" Hun steered by movement input.
@@ -228,7 +230,7 @@ return function(api)
     -- These are only worth showing now: a move two seconds late is worse than none, and must never hold up a death.
     -- (NQ: an enemy's number again, as N, on this lane too. Its lines count only once its name is known, and with the sure
     -- N held up by one lost packet the copy waited about 1.5 round trips without following.)
-    local QUICK = { U = true, M = true, A = true, H = true, Z = true, SHOT = true, NQ = true }
+    local QUICK = { U = true, M = true, A = true, H = true, Z = true, SHOT = true, NQ = true, HEAL = true }
 
     local hostWorld = os.time()   -- host: stands for the world as loaded, new with each start and load from the title (see handlers.Y)
 
@@ -2415,6 +2417,14 @@ return function(api)
         end
     end
 
+    -- Host: a guest started a drink from the gourd. Its enemies near them look their way for a while (game.steerTarget). (A
+    -- guest hearing another guest's, passed on, does nothing: only the host's enemies choose.)
+    handlers.HEAL = function(_, from)
+        if isHost() and game.playerHealed and not net.pvp then
+            game.playerHealed(from or 2)
+        end
+    end
+
     -- An effect another player's item showed on their body (a drink from the gourd): on their figure here too.
     handlers.FX = function(rest, from)
         local path, socket = (rest or ""):match("^(%S+) (%S+)$")
@@ -3314,7 +3324,14 @@ return function(api)
         end
         if game.watchItemFx and now >= (slow.itemFxAt or 0) then
             slow.itemFxAt = now + SLOW_S
-            game.watchItemFx(pawn, sendEvent)
+            -- A drink from the gourd draws the eye of the host's enemies near this player (game.steerTarget).
+            if game.watchItemFx(pawn, sendEvent) and not net.pvp then
+                if isHost() then
+                    game.playerHealed(net.slot or 1)
+                else
+                    sendEvent("HEAL")
+                end
+            end
         end
         -- (The game takes the bars down for a cutscene: put back at once, they'd flicker through it.)
         if next(net.partnerBosses) and game.keepBossBar and now >= (slow.barsAt or 0) and not game.inCutscene() then
