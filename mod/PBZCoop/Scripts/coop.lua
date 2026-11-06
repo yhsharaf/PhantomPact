@@ -3858,9 +3858,11 @@ return function(api)
     -- actors being torn down, and touching one crashed the game inside UE4SS, where no pcall catches it (three times on the
     -- bench, each just after a trip; the trace named the chains-and-levers job). They wait till it's over.
     net.QUIET_AFTER_LOAD_S = 5
+    net.SETTLE_S = 30               -- (how long after a load a hitch still counts as loading in)
     pcall(function()
         RegisterLoadMapPostHook(function()
             net.quietUntil = os.clock() + net.QUIET_AFTER_LOAD_S
+            net.settleUntil = os.clock() + net.SETTLE_S
         end)
     end)
     pcall(function()
@@ -4440,8 +4442,14 @@ return function(api)
             return
         end
         local now = link.now()
-        if lastFrame and now - lastFrame > 0.5 then
+        local gap = lastFrame and now - lastFrame or 0
+        if gap > 0.5 then
             -- A stall (a load, a trip on the same map, the world streaming in): the world searches wait a while after it.
+            net.quietUntil = math.max(net.quietUntil or 0, os.clock() + net.QUIET_AFTER_LOAD_S)
+            net.settleUntil = os.clock() + net.SETTLE_S
+        elseif gap > 0.15 and os.clock() < (net.settleUntil or 0) then
+            -- Still loading in after it (a 16 s load streamed on for 5 s more and the host crashed in the chains job 0.7 s
+            -- after the quiet ended): each hitch keeps them waiting, till the world has run smoothly a while.
             net.quietUntil = math.max(net.quietUntil or 0, os.clock() + net.QUIET_AFTER_LOAD_S)
         end
         frameNow, frameDt = now, lastFrame and math.min(now - lastFrame, 0.1) or 0.016
