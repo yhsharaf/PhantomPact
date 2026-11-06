@@ -379,6 +379,7 @@ return function(api)
         local t = p.target
         p.ghost:K2_SetActorLocationAndRotation({ X = t.X, Y = t.Y, Z = t.Z },
             { Pitch = 0.0, Yaw = t.Yaw, Roll = 0.0 }, false, {}, true)
+        p.ghostBornAt = os.clock()
         log("Remote player ghost spawned.")
     end
 
@@ -422,7 +423,19 @@ return function(api)
                 end
             end)
             if api.moves then
-                pcall(api.moves.hideGear, p.ghost, hide)      -- its weapon is an actor of its own
+                -- (Its weapon is an actor of its own. Not in the frame the ghost was made, its weapons not set up yet: a
+                -- guest crashed in that frame on the bench, a ghost made and hidden at once after a trip. Done a moment later.)
+                local ghost = p.ghost
+                local wait = 2 - (os.clock() - (p.ghostBornAt or -9))
+                if wait > 0 then
+                    game.after(wait, function()
+                        if valid(ghost) and ghost == p.ghost and p.ghostHidden == hide then
+                            pcall(api.moves.hideGear, ghost, hide)
+                        end
+                    end)
+                else
+                    pcall(api.moves.hideGear, ghost, hide)
+                end
             end
             if isHost() then
                 game.ghostInFight(p.ghost, not hide, (game.enemiesSoFar()))
