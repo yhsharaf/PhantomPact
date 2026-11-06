@@ -1351,6 +1351,10 @@ return function(api)
             -- (No "equip it now?": that's a full screen, and with a partner linked the game doesn't pause for it.)
             pcall(function() bp:AddWeaponItem(FName(itemId), kind == "weapon", false, false, false) end)
             log("Shared loot: weapon " .. itemId)
+        elseif kind == "medicine" and itemId == "Hulu" then
+            -- (Never the starting healing gourd: the game hands it out itself as the prologue ends, equipped. Pushed in from
+            -- the partner beforehand, unequipped, a new game's player had it in the bag and none to drink from.)
+            return
         elseif kind == "medicine" then
             pcall(function() bp:PushMedicineToInventory(FName(itemId), false, true) end)
             log("Shared loot: medicine " .. itemId)
@@ -2934,6 +2938,42 @@ return function(api)
         return found
     end
 
+    -- gourd: a player who came out of a new game's prologue with no healing gourd to drink from gets it back, equipped and full.
+    -- (Players of 1.6.3 lost it in co-op: see game.inPrologue.) Says what it found.
+    if game.commands then
+        game.commands.gourd = function()
+            local _, pawn = api.getPlayer1()
+            local bp = valid(pawn) and game.backpackOf(pawn)
+            if not bp then
+                log("Gourd: no player or bag yet.")
+                return
+            end
+            local bottom, has = "?", false
+            pcall(function() bottom = bp.BottomMedicineID:ToString() end)
+            pcall(function()
+                bp.MedicineInfos:ForEach(function(k)
+                    if k:get():ToString() == "Hulu" then
+                        has = true
+                    end
+                end)
+            end)
+            if has and bottom == "Hulu" then
+                log("Gourd: equipped already.")
+            else
+                local ok = pcall(function() bp:PushMedicineToInventory(FName("Hulu"), true, true) end)
+                pcall(function() bottom = bp.BottomMedicineID:ToString() end)
+                log("Gourd: given back " .. (ok and "" or "(the game wouldn't) ") .. "and equipped as " .. tostring(bottom) .. ".")
+            end
+            local g = game.gourdInfo(pawn)
+            if g then
+                pcall(function()
+                    g:SetCurrentTime(g.MaxTime)
+                    g:SetDisplayTime(g.MaxTime)
+                end)
+            end
+        end
+    end
+
     -- Sitting at a bell heals, fills the gourd and saves, and runs no Refresh Monster. RestoreHealth is the step every sit has,
     -- the first ring included. It works on player 1 from any bell, however far: a partner's sit rests this player with it.
     local SIT_FN = "/Script/ProjectPBZ.MelodiousBell:RestoreHealth"
@@ -4099,6 +4139,20 @@ return function(api)
     function game.mapName(contextActor)
         local ok, name = pcall(function() return api.gs():GetCurrentLevelName(contextActor, true):ToString() end)
         return ok and name or "?"
+    end
+
+    -- The prologue (ZhuLinGuWu, the bamboo grove of a new game): its own stripped loadout, and the starting gear, the healing
+    -- gourd among it, handed out as it ends. Co-op keeps its hands off there (a new game's players both lost the gourd).
+    game.prologueAt, game.prologueSeen = -1e9, false
+    function game.inPrologue()
+        local now = os.clock()
+        if now - game.prologueAt >= 2 then
+            game.prologueAt = now
+            local _, pawn = api.getPlayer1()
+            local name = valid(pawn) and game.mapName(pawn) or "?"
+            game.prologueSeen = name:find("ZhuLinGuWu", 1, true) ~= nil or name:find("ZLGW", 1, true) ~= nil
+        end
+        return game.prologueSeen
     end
 
     -- A level the game's own map table lists: a name from the network is never loaded on its word alone.

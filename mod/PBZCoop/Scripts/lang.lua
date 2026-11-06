@@ -45,6 +45,7 @@ return function()
             "没能及时传送到队友身边。可在 F5 的“更多”里开启传送到队友。",
         ["no partner to go to yet."] = "还没有可以传送的队友。",
         ["not now."] = "现在不能传送。",
+        ["finish the prologue first."] = "请先完成序章。",
         ["your partner can't be joined right now."] = "现在无法传送到队友身边。",
         ["your partner's position looks wrong."] = "队友的位置不正常。",
         ["your partner's map isn't known yet."] = "还不知道队友在哪张地图。",

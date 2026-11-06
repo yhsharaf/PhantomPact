@@ -310,7 +310,9 @@ return function(api)
 
     local function spawnGhost(p)
         local ghostClass
-        if net.ghostMode == "clone" then
+        -- (Not a clone in the prologue: a body of the player's own class bound itself to the backpack the game was still
+        -- filling, and both players of a new game came out of the tutorial without the healing gourd.)
+        if net.ghostMode == "clone" and not (game.inPrologue and game.inPrologue()) then
             local _, pawn = getPlayer1()
             ghostClass = valid(pawn) and pawn:GetClass() or nil
         end
@@ -2991,6 +2993,11 @@ return function(api)
             or api.gs():IsGamePaused(controller) or api.localcoop.bellMenuUp() or api.localcoop.screenUp() then
             return "not now."
         end
+        -- (Not out of the prologue: a guest taken from it to the host skipped the end that gives back the starting gear,
+        -- the healing gourd among it.)
+        if game.inPrologue and game.inPrologue() then
+            return "finish the prologue first."
+        end
         if t.Hp == nil or t.Hp <= 0 or t.Cine then
             return "your partner can't be joined right now."
         end
@@ -3152,6 +3159,12 @@ return function(api)
                 name = id
                 break
             end
+        end
+        -- (Not known by its spawner yet, just spawned: the ids are read again first. Told by its actor name, the other
+        -- player's game had no such enemy and never showed the fight: AHua on the bench.)
+        if not name:find("^sp:") and game.refreshEnemyIds then
+            game.refreshEnemyIds(true)
+            name = enemyName(actor, addr)
         end
         if isClient() and net.hostKilled[name] then
             -- The host has beaten this boss: this copy came back with our own respawn. It stays dead, and no fight starts.

@@ -2097,6 +2097,29 @@ local function playerReports()
         allErrors(s)
     end
     do
+        -- A new game's players both came out of the prologue without the healing gourd: co-op keeps its hands off there.
+        local s, h, g = pair()
+        s:run(2)
+        g.map = "PBZ_WP_ZhuLinGuWu"
+        g.env.PBZ.game.prologueAt = -1e9
+        check(g.env.PBZ.game.inPrologue() == true, "(the guest is in the prologue)")
+        local pushed = 0
+        local bp = g.env.PBZ.game.backpackOf(g.pawn)
+        if bp then
+            local real = rawget(bp, "__fields").PushMedicineToInventory
+            Fake.put(bp, "PushMedicineToInventory", function() pushed = pushed + 1 end)
+            g.env.PBZ.game.grantLoot(g.pawn, "Hulu", "medicine")
+            Fake.put(bp, "PushMedicineToInventory", real)
+        end
+        check(pushed == 0, "the starting healing gourd is never handed out by the mod")
+        check(g.env.PBZ.coop.joinPartner ~= nil and g.env.PBZ.coop.joinPartner() == "finish the prologue first.",
+            "no trip to the partner out of the prologue")
+        table.insert(h.globalTags, "zlgw.intro.done")
+        s:run(6)
+        check(not g.storyMarks["zlgw.intro.done"], "and nothing of the host's flow comes into it")
+        allErrors(s)
+    end
+    do
         -- Reports 7 and 8: the host broke the chains (its flow raised a flag), the scene after the boss ran a flow step and
         -- woke a bell; the guest, who was in neither, could neither start the boss nor rest at its bell, even after a reconnect.
         local s, h, g = pair()

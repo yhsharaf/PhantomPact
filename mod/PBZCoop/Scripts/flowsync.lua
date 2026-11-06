@@ -90,8 +90,10 @@ return function(api)
         if not cur then
             return
         end
-        if flow.told == nil then
-            flow.told = cur         -- what was there at the link: the story table's rows cover a guest behind on that
+        if flow.told == nil or (game.inPrologue and game.inPrologue()) then
+            -- What was there at the link (the story table's rows cover a guest behind on that), and nothing of the prologue:
+            -- marked done on a guest before they ran, its steps never ran there, the one giving back the gear among them.
+            flow.told = cur
             return
         end
         for _, kind in ipairs({ "t", "n", "b" }) do
@@ -137,6 +139,10 @@ return function(api)
     end
 
     local function guestTick()
+        if #flow.queue > 0 and game.inPrologue and game.inPrologue() then
+            flow.queue = {}         -- (nothing of the host's into this player's prologue: see hostTick)
+            return
+        end
         if #flow.queue == 0 or not calm() then
             return
         end
