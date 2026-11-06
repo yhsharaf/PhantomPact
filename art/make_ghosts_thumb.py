@@ -1,7 +1,7 @@
-"""The 1.7.0 "Ghosts Update" thumbnail, in the 1.6.0 one's design (the user's pick): six players seen low from behind,
+"""The 1.6.5 "Ghosts Update" thumbnail, in the 1.6.0 one's design (the user's pick): six players seen low from behind,
 facing Peng Meng and his cyan ghost twin under two boss bars, the online co-op panel thrown in at the bottom left with
 a red/cyan glitch echo, sword slashes and ink, and the release lettered above in the style of make_art.py.
-Re-run:  python -I art/make_ghosts_thumb.py   ->  art/thumbnail/PhantomPact-1.7.0-thumbnail.png
+Re-run:  python -I art/make_ghosts_thumb.py   ->  art/thumbnail/PhantomPact-1.6.5-thumbnail.png
 """
 import math
 import os
@@ -16,7 +16,7 @@ from make_art import BOLD, card_text, credit_line, font, red_rule  # noqa: E402
 
 SRC = os.path.join(HERE, "screenshots", "ghosts-update-1.7.0.png")
 PANEL = os.path.join(HERE, "nexus", "guide", "install-4-f5-panel.png")
-OUT = os.path.join(HERE, "thumbnail", "PhantomPact-1.7.0-thumbnail.png")
+OUT = os.path.join(HERE, "thumbnail", "PhantomPact-1.6.5-thumbnail.png")
 
 
 def panel_image():
@@ -176,7 +176,7 @@ def make_thumb(src):
     cx = W / 2
     items = [
         # (Below the boss bars, which end about y 72.)
-        (cx, 84, "PHANTOM PACT  •  1.7.0", font(BOLD, 36), 3, "gold"),
+        (cx, 84, "PHANTOM PACT  •  1.6.5", font(BOLD, 36), 3, "gold"),
         (cx, 148, "GHOSTS UPDATE", font(BOLD, 80), 3, "hero"),
         (cx, 240, "5-6 PLAYERS CO-OP", font(BOLD, 50), 4, "gold"),
     ]
