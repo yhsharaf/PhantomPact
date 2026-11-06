@@ -231,7 +231,7 @@ decide one, so nothing changed; a dying pose held till `K` comes is for the real
 **Steam's route.** When Steam relays the connection, the player is told once a game that it adds delay and that SteamDirect = On
 on both PCs gives a direct one where routers allow (`status.lua`). Relay against direct ping needs two real accounts.
 
-## What goes with the place, and what the lanes carry (1.6.4)
+## What goes with the place, and what the lanes carry (1.6.5)
 
 Measured in the Lua sim (`luasim four` checks, each one failing on the code before) and, for the sure lane, through real sockets
 and netem. Frames are 60 FPS frames.

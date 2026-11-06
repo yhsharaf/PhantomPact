@@ -1,6 +1,6 @@
 # Who an enemy goes for
 
-A player's report on 1.6.4: "Co-op aggro is very dumb. Switching the lock every 15 s is worse than deciding by distance
+A player's report on 1.6.3: "Co-op aggro is very dumb. Switching the lock every 15 s is worse than deciding by distance
 and by who deals the most damage." And the owner's warning from earlier: a boss that switched quickly between players
 walked in a weird way, turning back and forth. So the rule has to go by distance and damage, and never flip.
 
@@ -10,7 +10,7 @@ The game's `AIScript_TargetSelector` takes the nearest player on the enemy's hat
 end of its behaviour tree, on a state change and on `Ability.Action`, once `SwitchTargetCooldown` (1.5 s) has passed, or at
 once if it can't sense its target. With two players near an enemy the nearest changes all the time, and so did its target.
 
-From 1.5.0 to 1.6.4 an enemy near two players held one for 15 s (its cooldown made 15 s), then turned to whoever had hit it
+From 1.5.0 to 1.6.3 an enemy near two players held one for 15 s (its cooldown made 15 s), then turned to whoever had hit it
 last. Every turn came by the clock: in the sim, 4 a minute in every fight tried, with 2, 4 or 6 players, and in a party
 a third of the fight on a player who only chipped at it now and then. The game's own picker also had a say every 15 s, and took
 the nearest: an enemy on the player dealing the damage turned to a nearer one, then back.
@@ -39,7 +39,7 @@ The host, once a second, for each enemy near two players or more (within 25 m), 
 - While steered its own picker is held off: its wait is 15 s and its last change is put at now every turn, so it never
   turns to the nearest by itself. Near one player or none, it's the game's own again: its wait goes back. A rest or sync
   off gives every wait back. (Not a longer wait: with a day's, a real boss turned to the guest and started no attack in
-  the next minute, where 1.6.4 with the same swings started 24.)
+  the next minute, where 1.6.3 with the same swings started 24.)
 - The turn is the game's own, as before: the others near come off its list for that moment, its picker looks, they go
   back on.
 
@@ -68,7 +68,7 @@ dealing the damage, the others not) still gets it as soon as the hold allows, an
 ## Measured
 
 The sim, the mod's own scripts on stand-ins for the game, the host's enemy noticing the host as the game's do: changes of
-target in a minute, 1.6.4's rule (58cdfc7) then this one. Each fight starts with everyone 2.5 m from it, hits of 0.4% of
+target in a minute, 1.6.3's rule (58cdfc7) then this one. Each fight starts with everyone 2.5 m from it, hits of 0.4% of
 its health, healed every 10 s so it lives.
 
 | Fight | 2 players | 4 players | 6 players |
@@ -83,10 +83,10 @@ its health, healed every 10 s so it lives.
   time between them grows to 20-22 s as the fight goes on (7, 14, 21, 22, 20 s with 4 players). Six players taking turns
   of 3 s each hit it only one sixth of the time, so whoever hits now has done the most lately: it follows them, 9-12 s
   apart.
-- On the player dealing the damage: 59 s of 60 with 4 or 6 players (1.6.4: 32 s, and 21 s on the one who only chipped).
-- The guest dealing the damage from 6 m, the host 1 m off and only chipping: 1 turn, to the guest, then none (1.6.4: 4, the
+- On the player dealing the damage: 59 s of 60 with 4 or 6 players (1.6.3: 32 s, and 21 s on the one who only chipped).
+- The guest dealing the damage from 6 m, the host 1 m off and only chipping: 1 turn, to the guest, then none (1.6.3: 4, the
   game's own picker taking the nearest every 15 s and the old rule turning it back).
-- Its target walks off to 22 m, nobody hitting: it turns to the one beside it in 0.5 s (1.6.4: 11.6 s, when its own picker
+- Its target walks off to 22 m, nobody hitting: it turns to the one beside it in 0.5 s (1.6.3: 11.6 s, when its own picker
   looked again).
 - The host hits it 10 s and stops, the guest goes on: it turns to the guest 11 s later; with the host chipping on, 19 s.
 
@@ -98,7 +98,7 @@ on one side, the guest 4.5 m on the other, a minute each, both players' health k
 second (`AGGRO.watch`), what it does ten times a second on the host's PC (attacking, flinching, running, standing), its
 turns on each PC (`TWITCH.sample`).
 
-| Fight | 1.6.4 (58cdfc7) | Now |
+| Fight | 1.6.3 (58cdfc7) | Now |
 |---|---|---|
 | Nobody hitting | 0 changes, 28 attacks started, longest with none 1.8 s | 0 changes, 24 attacks, 4.6 s |
 | The guest hitting | 3 changes (to the guest, back, to the guest), 24 attacks, 5.1 s | 1 change, to the guest 8 s in (its 10 s hold), 21 attacks, 7.0 s |
@@ -107,10 +107,10 @@ turns on each PC (`TWITCH.sample`).
 - Turns back and forth on the host's PC (over 60 s): 9, 2, 6 then 6, 3, 8. On the guest's copy 4-37 in every run, either
   build: that copy follows the host's lines, and the guest jumped beside it before every swing.
 - The first build, with the 3% floor, never turned to the guest at all in two minutes of the guest hitting: what the owner
-  saw. It also stood more, at times (16% of a minute against 7%), but its attacks started were 25, 24, 23 against 1.6.4's
+  saw. It also stood more, at times (16% of a minute against 7%), but its attacks started were 25, 24, 23 against 1.6.3's
   28, 24, 22.
 - A turn to the guest takes the host off the boss's list for that moment, and its bar goes down and up in the same frame
-  ("Boss fight over", "Boss fight", 6 ms apart, nothing of it on the guest's PC): 1.6.4's turns do the same.
+  ("Boss fight over", "Boss fight", 6 ms apart, nothing of it on the guest's PC): 1.6.3's turns do the same.
 - A boss whose target stands inside its reach (the guest's figure 1 m off, not moving) stood there without attacking, held
   or not; at 4.5 m it attacked again. Real players move, the bench's guest didn't.
 
