@@ -2492,7 +2492,9 @@ return function(api)
     -- for whoever scores most, the same with 2, 4 or 6:
     --   near     1 within CLOSE_CM, 0 at REACH_CM, in a line between
     --   damage   the health they took from it lately (halving every HALF_S): 1 for whoever took most, the others in
-    --            proportion, and less for everyone while nobody has taken FLOOR of its health
+    --            proportion, and less for everyone while nobody has taken FIRST_HITS of the biggest hit on it lately (so a
+    --            first hit isn't "the most damage", whatever its health: a floor of 3% of it meant 10000 on a boss of 333180,
+    --            and in the real game a guest hitting it for a minute was never noticed)
     -- It turns only to someone MARGIN ahead of whoever it's after, once it has held them HOLD_S (a boss BOSS_HOLD_S), and not
     -- in the middle of one of its moves (it waits up to MOVE_WAIT_S for one to end). Someone who goes past REACH_CM isn't held
     -- to. Its own picker is held off meanwhile, its wait GAME_HOLD_S and its last change put at now each turn: left to look
@@ -2502,17 +2504,17 @@ return function(api)
         REACH_CM = GHOST_AGGRO_CM,  -- farther off than this a player isn't in this fight
         CLOSE_CM = 300,
         HALF_S = 12.0,
-        FLOOR = 0.03,               -- of its max health
+        FIRST_HITS = 2.5,
         MARGIN = 0.5,
         HOLD_S = 6.0,
         BOSS_HOLD_S = 10.0,
         MOVE_WAIT_S = 2.0,
-        GAME_HOLD_S = 15.0,
+        GAME_HOLD_S = 15.0,         -- (not longer: with a day's wait a real boss turned to a guest, then no attack in a minute)
         GAME_WAIT_S = 1.5,          -- its picker's own wait, given back when the one it had was already ours
         OWN_HIT_S = 2.0,            -- health it lost is this player's hit if they started a move this recently
         LOOK_S = 2.5,               -- and the look before was this recent (over a longer gap it says nothing of who)
         steered = {},               -- enemy address -> { picker, actor, fname, orig, slot, since, wantSince }
-        dmg = {},                   -- enemy address -> { at, hp, seen, taken, [slot] = health taken lately }
+        dmg = {},                   -- enemy address -> { at, hp, seen, taken, big, [slot] = health taken lately }
     }
     game.aim = aim                  -- (for tests, and a look from the console)
 
@@ -2611,6 +2613,7 @@ return function(api)
                 d[slot] = v * keep
             end
         end
+        d.big = (d.big or 0) * keep     -- the biggest single hit lately
         d.at = now
         return d
     end
@@ -2621,6 +2624,7 @@ return function(api)
         taken = math.max(0, tonumber(taken) or 0)
         slot = slot or 2
         d[slot] = (d[slot] or 0) + taken
+        d.big = math.max(d.big, taken)
         d.taken = d.taken + taken       -- (what this player's turn sees it lost isn't theirs for that much)
     end
 
@@ -2681,8 +2685,8 @@ return function(api)
     end
 
     -- Who of those near scores most, and by how much over `on` (nil: over nobody). A tie stays with `on`.
-    function aim.best(d, near, on, maxhp)
-        local top = aim.FLOOR * (maxhp or 0)
+    function aim.best(d, near, on)
+        local top = aim.FIRST_HITS * (d.big or 0)
         for _, who in ipairs(near) do
             top = math.max(top, d[who.slot] or 0)
         end
@@ -2728,7 +2732,7 @@ return function(api)
     -- Host, an enemy's aggro turn, with any number of players. players: { body, addr, at, slot, mine } for each one up and
     -- here (mine: this PC's own player, whose hits show only as health it lost). boss: it holds longer. busy: it's in one of
     -- its moves now.
-    function game.steerTarget(actor, addr, x, y, z, hp, maxhp, players, boss, busy)
+    function game.steerTarget(actor, addr, x, y, z, hp, players, boss, busy)
         if not x then
             return
         end
@@ -2750,6 +2754,7 @@ return function(api)
             for _, who in ipairs(near) do
                 if who.mine and own > 0.5 then
                     d[who.slot] = (d[who.slot] or 0) + own
+                    d.big = math.max(d.big, own)
                 end
             end
         end
@@ -2774,7 +2779,7 @@ return function(api)
         if f == nil then
             return
         end
-        local best, lead = aim.best(d, near, on, maxhp)
+        local best, lead = aim.best(d, near, on)
         if on == nil then
             -- Who it was after has gone past REACH_CM: not held to. (Tried again only after MOVE_WAIT_S: a turn its picker
             -- won't make, with something else nearer on its list, isn't asked for every second.)

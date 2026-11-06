@@ -22,8 +22,10 @@ The host, once a second, for each enemy near two players or more (within 25 m), 
 
 - **Near**: 1 within 3 m, 0 at 25 m, in a line between.
 - **Damage**: the health that player took from it lately, counting half after 12 s. 1 for whoever took the most, the others
-  in proportion. While nobody has taken 3% of its health, everyone's counts that much less, so a first chip isn't "the
-  most damage".
+  in proportion. While nobody has taken two and a half of the biggest single hit on it lately, everyone's counts that much
+  less, so a first hit isn't "the most damage", and two or three are, whatever its health. (A floor of 3% of its health
+  was 10,000 points on the bench's boss: a guest hitting it for a minute never counted, and the owner saw it "totally
+  ignores the one that is hitting him".)
 - **Score** = near + damage. It goes for the highest, and turns from its target only when all of these hold:
   - someone else is 0.5 ahead: at the same distance, twice the damage; on distance alone, about 11 m nearer;
   - it has held its target 6 s (a boss 10 s);
@@ -32,7 +34,8 @@ The host, once a second, for each enemy near two players or more (within 25 m), 
   on another map or gone is already off every list (`game.ghostInFight`).
 - While steered its own picker is held off: its wait is 15 s and its last change is put at now every turn, so it never
   turns to the nearest by itself. Near one player or none, it's the game's own again: its wait goes back. A rest or sync
-  off gives every wait back.
+  off gives every wait back. (Not a longer wait: with a day's, a real boss turned to the guest and started no attack in
+  the next minute, where 1.6.4 with the same swings started 24.)
 - The turn is the game's own, as before: the others near come off its list for that moment, its picker looks, they go
   back on.
 
@@ -83,8 +86,31 @@ its health, healed every 10 s so it lives.
   looked again).
 - The host hits it 10 s and stops, the guest goes on: it turns to the guest 11 s later; with the host chipping on, 19 s.
 
+## In the real game
+
+Two copies on the bench, host and guest, by the forest's last boss (YuCong, 333,180 health with co-op's 150%): the host 3 m
+on one side, the guest 4.5 m on the other, a minute each, both players' health kept up. The guest's swings are real ones
+(`REAL.fight`), each from 1.7 m after a jump to its side. Changes of target counted from its blackboard four times a
+second (`AGGRO.watch`), what it does ten times a second on the host's PC (attacking, flinching, running, standing), its
+turns on each PC (`TWITCH.sample`).
+
+| Fight | 1.6.4 (58cdfc7) | Now |
+|---|---|---|
+| Nobody hitting | 0 changes, 28 attacks started, longest with none 1.8 s | 0 changes, 24 attacks, 4.6 s |
+| The guest hitting | 3 changes (to the guest, back, to the guest), 24 attacks, 5.1 s | 1 change, to the guest 8 s in (its 10 s hold), 21 attacks, 7.0 s |
+| Both hitting | 3 changes, 22 attacks, 5.1 s | 1 change, 23 attacks, 2.7 s |
+
+- Turns back and forth on the host's PC (over 60 s): 9, 2, 6 then 6, 3, 8. On the guest's copy 4-37 in every run, either
+  build: that copy follows the host's lines, and the guest jumped beside it before every swing.
+- The first build, with the 3% floor, never turned to the guest at all in two minutes of the guest hitting: what the owner
+  saw. It also stood more, at times (16% of a minute against 7%), but its attacks started were 25, 24, 23 against 1.6.4's
+  28, 24, 22.
+- A turn to the guest takes the host off the boss's list for that moment, and its bar goes down and up in the same frame
+  ("Boss fight over", "Boss fight", 6 ms apart, nothing of it on the guest's PC): 1.6.4's turns do the same.
+- A boss whose target stands inside its reach (the guest's figure 1 m off, not moving) stood there without attacking, held
+  or not; at 4.5 m it attacked again. Real players move, the bench's guest didn't.
+
 ## Not checked
 
-Only in the sim so far. Not on the bench copies or between real players: the walk of an enemy that turns once in 20 s, a
-real boss's moves against the 2 s wait, and whether the game's picker ever looks again by itself while its last change is
-kept at now (if it does, the rule still turns it back, but no sooner than the hold).
+Real players on two PCs, regular enemies (the bench save had only this boss loaded), and four or six real players: those
+are the sim's.

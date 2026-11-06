@@ -1197,6 +1197,18 @@ local function targets()
         .. tostring(held) .. " s steered, " .. tostring(field(field(e, "picker"), "SwitchTargetCooldown")) .. " s after)")
     allErrors(s)
 
+    -- A boss with a great deal of health (YuCong had 333180 on the real bench): the host stands beside it doing nothing, the
+    -- guest hits it from 4 m, a little at a time. It turns to the guest. (With a floor of 3% of its health, more than a
+    -- minute of the guest's hits, it stayed on the host for good: "totally ignores the one that is hitting him".)
+    s = targetSession(2, true)
+    changes, on = targetFight(s, 40, function(s)
+        Session.moveTo(s.pcs[1], 100, 0)
+        Session.moveTo(s.pcs[2], -400, 0)
+    end, hitsEvery(1.1, function() return { [2] = 0.25 } end))
+    check(on == 2 and #changes == 1, "a boss of great health, the host idle beside it, the guest's small hits from 4 m: it turns to the guest ("
+        .. table.concat(changes, " ") .. ")")
+    allErrors(s)
+
     -- A boss whose target can only chip at it while the other hits freely: it turns to the one hitting, never sooner than
     -- 10 s after its last turn.
     s = targetSession(2, true)

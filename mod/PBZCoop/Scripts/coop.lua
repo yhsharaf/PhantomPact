@@ -807,7 +807,7 @@ return function(api)
     -- The host, an enemy's aggro turn: every ghost here goes on its hatred list, and who it goes for is steered among the
     -- players near it (game.steerTarget). Their ghosts' places are what the relay last said: no calls into the game for each
     -- of them. With two players the partner is net, in slot 2. In PvP the partner is the one to fight: hated, never steered.
-    local function aggroParty(actor, addr, x, y, z, hp, maxhp, name)
+    local function aggroParty(actor, addr, x, y, z, hp, name)
         local here = {}
         for _, p in ipairs(partners()) do
             if valid(p.ghost) and not p.ghostHidden and not p.silent and p.target then
@@ -821,7 +821,7 @@ return function(api)
         end
         -- (Also with one player near, or none: an enemy steered till now gets its own picker back.)
         if #here > 0 and not net.pvp and game.steerTarget then
-            game.steerTarget(actor, addr, x, y, z, hp, maxhp, here, game.isBoss and game.isBoss(actor, addr),
+            game.steerTarget(actor, addr, x, y, z, hp, here, game.isBoss and game.isBoss(actor, addr),
                 api.puppets and api.puppets.inMove(name))
         end
     end
@@ -1000,7 +1000,7 @@ return function(api)
                     posture ~= nil and string.format("%.1f", posture) or "-"))
             end
             if aggro and game.hateGhost then
-                aggroParty(actor, addr, x, y, z, hp, maxhp, name)
+                aggroParty(actor, addr, x, y, z, hp, name)
             end
         end
     end
