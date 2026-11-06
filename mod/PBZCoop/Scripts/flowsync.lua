@@ -127,6 +127,21 @@ return function(api)
             -- What was there at the link (the story table's rows cover a guest behind on that), and nothing of the prologue:
             -- marked done on a guest before they ran, its steps never ran there, the one giving back the gear among them.
             flow.told, flow.seen = cur, nil
+            -- The bells this world has woken go out all the same, once, and to anyone who links later: a guest linked after
+            -- the scene that woke one never had it (report 8). (Not the flags and flow steps: thousands, and a mark for a
+            -- part of a level not yet played there skips its setting up.)
+            if not (game.inPrologue and game.inPrologue()) then
+                local bells = {}
+                for id in pairs(cur.b) do
+                    bells[#bells + 1] = id
+                    flow.sent[#flow.sent + 1] = { kind = "b", item = id }
+                end
+                if #bells > 0 then
+                    table.sort(bells)
+                    send("b", bells)
+                    log(string.format("Story flow: the %d bells woken here told to the others.", #bells))
+                end
+            end
             return
         end
         local new, count = {}, 0

@@ -1164,15 +1164,24 @@ return function(api)
             end
         end
         -- Remember the pairings. One whose id skipped this snapshot stays while its actor is still loaded.
+        -- (Not for good: a pairing outlived its lines with no end, a body's too, and the actor, never this world's own again,
+        -- was never asked about nor put aside. 10 s with no line, a death on the host, or a body, and it's let go.)
         local sticky = {}
+        net.stickySeen = net.stickySeen or {}
+        local clock = os.clock()
         for id, addr in pairs(net.matchSticky) do
-            if byAddr[addr] and net.remoteEnemies[id] == nil then
+            local e = byAddr[addr]
+            if e and net.remoteEnemies[id] == nil and not net.hostKilled[id] and not isDead(e.actor)
+                and clock - (net.stickySeen[id] or clock) < 10 then
                 sticky[id] = addr
+            elseif not e or net.remoteEnemies[id] == nil then
+                net.stickySeen[id] = nil
             end
         end
         for _, id in ipairs(ids) do
             if matched[id] then
                 sticky[id] = matched[id]:GetAddress()
+                net.stickySeen[id] = clock
             end
         end
         net.matchSticky = sticky

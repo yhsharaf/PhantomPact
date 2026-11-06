@@ -2302,6 +2302,15 @@ local function playerReports()
         allErrors(s)
     end
     do
+        -- The bug hunt (report 8): a guest who linked after the host's scene woke a bell never had that bell.
+        local s, h, g = pair(nil, function(h)
+            table.insert(h.bellIds, "Bell_YXZR_009")
+        end)
+        s:run(15)
+        check(g.storyMarks["Bell_YXZR_009"], "a bell the host woke before the guest linked is woken on the guest too")
+        allErrors(s)
+    end
+    do
         -- A new game's players both came out of the prologue without the healing gourd: co-op keeps its hands off there.
         local s, h, g = pair()
         s:run(2)
