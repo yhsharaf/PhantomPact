@@ -263,9 +263,12 @@ return function(api)
     if role ~= "local" and (settings.onlinepanel or "on"):lower() == "on" then
         api.onlinepanel.start()
     end
-    -- Also with Role = Off: the panel can start co-op later, and F3 only acts once connected.
+    -- Also with Role = Off: the panel can start co-op later, and F3 only acts once connected. F6: PvP's page (arena.lua).
     if role ~= "local" then
         api.partner.start()
+        if api.pvppanel then
+            api.pvppanel.start()
+        end
     end
 
     local c, why = connection(settings, role)

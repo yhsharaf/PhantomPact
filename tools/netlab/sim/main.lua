@@ -18,10 +18,13 @@ elseif SIM_MODE == "chaos" then
     out("chaos, parties of 3, 4 and 6:")
     local a, b = SIM_OLD:match("^(%d+)%-(%d+)$")
     passed = dofile(SIM_DIR .. "/chaos.lua")(out, scripts, a and { tonumber(a), tonumber(b) } or (tonumber(SIM_OLD) or 6), tonumber(SIM_STEPS) or 40)
+elseif SIM_MODE == "pvp" then
+    out("a PvP match:")
+    passed = dofile(SIM_DIR .. "/pvp.lua")(out, scripts)
 elseif SIM_MODE == "scen" then
     passed = dofile(SIM_OLD)(out, scripts)
 else
-    error("two <old Scripts>, four or chaos [seeds]")
+    error("two <old Scripts>, four, pvp or chaos [seeds]")
 end
 out(passed and "all passed" or "FAILED")
 return passed and "pass" or "fail"

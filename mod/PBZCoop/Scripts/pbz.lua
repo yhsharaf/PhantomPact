@@ -30,11 +30,12 @@ return function(api)
     local ghostBusyUntil = 0
     local busyGhosts = {}         -- with more than two players: ghost address -> the same, as each has moves of its own
 
-    local function holdGhost(ghost)
+    local function holdGhost(ghost, seconds)
+        local till = os.clock() + (seconds or GHOST_BUSY_S)
         if api.coop and api.coop.net.party then
-            busyGhosts[ghost:GetAddress()] = os.clock() + GHOST_BUSY_S
+            busyGhosts[ghost:GetAddress()] = math.max(busyGhosts[ghost:GetAddress()] or 0, till)
         else
-            ghostBusyUntil = os.clock() + GHOST_BUSY_S
+            ghostBusyUntil = math.max(ghostBusyUntil, till)
         end
     end
 
@@ -1787,9 +1788,10 @@ return function(api)
     end
 
     -- The ghost started one of the partner's moves some other way (a montage, moves.lua): don't steer it while
-    -- the move's own motion plays, and count it for the hit attribution above.
-    function game.noteGhostMove(ghost)
-        holdGhost(ghost)
+    -- the move's own motion plays, and count it for the hit attribution above. seconds: how long it isn't steered (a
+    -- PvP finishing move: all of it).
+    function game.noteGhostMove(ghost, seconds)
+        holdGhost(ghost, seconds)
         ghostMoveAt = os.clock()
     end
 

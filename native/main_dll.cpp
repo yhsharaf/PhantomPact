@@ -103,7 +103,7 @@ DWORD WINAPI pads_thread(void*) {
                 relay::write_atomic(mod_dir + L"\\mouse.txt",
                                     std::to_string(cursor.x) + " " + std::to_string(cursor.y) + " "
                                         + (down(VK_LBUTTON) ? "1 " : "0 ") + (down(VK_ESCAPE) ? "1 " : "0 ")
-                                        + ((down(VK_F4) || down(VK_F5)) ? "1 " : "0 ")
+                                        + ((down(VK_F4) || down(VK_F5) || down(VK_F6)) ? "1 " : "0 ")   // F6: PvP's page
                                         + (focus ? "1\n" : "0\n"));   // this game has the focus
             Sleep(PADS_MS);
         } else {

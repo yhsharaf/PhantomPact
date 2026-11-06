@@ -3806,7 +3806,7 @@ return function(api)
         log("More than two players (beta): up to " .. players .. ", and you're number " .. slot .. ".")
         if api.pvp and api.pvp.on then
             api.pvp.set(false)
-            api.status.notify("pvp", "PvP is off with more than two players.")
+            api.status.notify("pvp", "PvPvE is off with more than two players (F6 PvP has teams).")
         end
     end
 

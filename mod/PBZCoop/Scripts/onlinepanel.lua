@@ -125,14 +125,14 @@ return function(api)
         elseif row == "pvp" then
             if on and api.coop.net.party then
                 options[row] = "off"        -- (false matched neither button: the row showed nothing chosen)
-                api.status.notify("pvp", "PvP is off with more than two players.")
+                api.status.notify("pvp", "PvPvE is off with more than two players (F6 PvP has teams).")
                 return
             end
             save({ PvP = word })
             api.pvp.command(on and "on" or "off")
             local net = api.coop.net
             if on and net.enabled and not net.partnerGone and net.target then
-                api.status.notify("pvp", "your partner needs PvP on too, or their moves won't show here.")
+                api.status.notify("pvp", "your partner needs PvPvE on too, or their moves won't show here.")
             end
         elseif row == "compass" then
             save({ PartnerCompass = word })

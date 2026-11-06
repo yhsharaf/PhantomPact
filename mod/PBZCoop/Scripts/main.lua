@@ -1,7 +1,7 @@
 -- PBZCoop: co-op proof of concept for Phantom Blade Zero (UE4SS Lua mod).
 -- Written to be game-agnostic so it can be tested on any UE4/UE5 game first.
 --
--- F6  print info about player 1's character
+-- F6  PvP's page (pvppanel.lua); the "info" command prints player 1's character
 -- F7  list characters near player 1 (finds enemy classes)
 -- F8  spawn player 2: a second local player + a copy of player 1's character (F8-F11 need PBZCOOP_DEBUG=1)
 -- F9  remove player 2
@@ -386,7 +386,6 @@ end
 -- F8-F11 spawn test pawns into the world: developer builds only (PBZCOOP_DEBUG=1), so a player can't hit one by accident.
 local DEV_KEYS = os.getenv("PBZCOOP_DEBUG") == "1"
 if DEV_KEYS then
-    RegisterKeyBind(Key.F6, onGameThread(dumpPlayer, "F6"))
     RegisterKeyBind(Key.F7, onGameThread(listNearby, "F7"))
     RegisterKeyBind(Key.F8, onGameThread(spawnPlayer2Clone, "F8"))
     RegisterKeyBind(Key.F9, onGameThread(removePlayer2, "F9"))
@@ -558,6 +557,7 @@ api.revive = dofile(SCRIPT_DIR .. "revive.lua")(api)
 api.pvp = dofile(SCRIPT_DIR .. "pvp.lua")(api)
 api.arenaData = dofile(SCRIPT_DIR .. "arenas.lua")
 api.arena = dofile(SCRIPT_DIR .. "arena.lua")(api)
+api.arenaui = dofile(SCRIPT_DIR .. "arenaui.lua")(api)
 api.scaling = dofile(SCRIPT_DIR .. "scaling.lua")(api)
 api.twins = dofile(SCRIPT_DIR .. "twins.lua")(api)
 api.storyData = select(2, pcall(dofile, SCRIPT_DIR .. "storydata.lua"))     -- (our copy of the game's story table)
@@ -570,6 +570,7 @@ api.units = dofile(SCRIPT_DIR .. "units.lua")(api)
 api.localcoop = dofile(SCRIPT_DIR .. "localcoop.lua")(api)
 api.panel = dofile(SCRIPT_DIR .. "panel.lua")(api)
 api.onlinepanel = dofile(SCRIPT_DIR .. "onlinepanel.lua")(api)
+api.pvppanel = dofile(SCRIPT_DIR .. "pvppanel.lua")(api)
 api.mapfog = dofile(SCRIPT_DIR .. "mapfog.lua")(api)
 api.freetravel = dofile(SCRIPT_DIR .. "freetravel.lua")(api)
 api.blockers = dofile(SCRIPT_DIR .. "blockers.lua")(api)
@@ -649,6 +650,7 @@ COMMANDS.units = api.units.command
 COMMANDS.localcoop = api.localcoop.command
 COMMANDS.panel = api.panel.command
 COMMANDS.onlinepanel = api.onlinepanel.command
+COMMANDS.pvppanel = api.pvppanel.command
 
 local function readCommandFile()
     local path = modDir() .. "cmd.txt"
@@ -716,7 +718,7 @@ LoopInGameThreadWithDelay(500, function()
     return false
 end)
 
-log("Loaded (instance " .. INSTANCE .. ", v" .. VERSION .. ", files in " .. modDir() .. "). F6 info | F7 nearby" .. (DEV_KEYS and " | F8 P2 clone | F9 remove P2 | F10 P2 controller only | F11 P2 plain pawn" or "") .. " | cmd.txt enabled")
+log("Loaded (instance " .. INSTANCE .. ", v" .. VERSION .. ", files in " .. modDir() .. "). F6 PvP" .. (DEV_KEYS and " | F7 nearby | F8 P2 clone | F9 remove P2 | F10 P2 controller only | F11 P2 plain pawn" or "") .. " | cmd.txt enabled")
 
 -- PhantomPact.ini: start the relay and turn co-op on by itself (Role = Host/Guest; Off leaves it to neton).
 local okAuto, errAuto = pcall(function() dofile(SCRIPT_DIR .. "autostart.lua")(api) end)

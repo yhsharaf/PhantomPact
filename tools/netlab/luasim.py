@@ -5,6 +5,7 @@ nothing that differs), or name one in PP_LUA_DLL. Nothing here touches the game.
   python -I tools/netlab/luasim.py four                        the rules with four players
   python -I tools/netlab/luasim.py four <folder of old Scripts>  the same rules on old scripts: what a new test catches
   python -I tools/netlab/luasim.py two <folder of old Scripts>  two players, old against new: every call must match
+  python -I tools/netlab/luasim.py pvp                         a whole PvP match (F6), two players
 """
 import ctypes
 import os

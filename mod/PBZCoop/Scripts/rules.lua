@@ -68,7 +68,7 @@ return function(api)
         local h = rules.host
         if not h or h.freetravel ~= got.freetravel or h.teleport ~= got.teleport or h.pvp ~= got.pvp
             or h.compass ~= got.compass or h.mapicon ~= got.mapicon then
-            log(string.format("The host's rules: Free Bell Travel %s, TP > Partner %s, PvP %s, Partner Compass %s, "
+            log(string.format("The host's rules: Free Bell Travel %s, TP > Partner %s, PvPvE %s, Partner Compass %s, "
                 .. "Partner On The Map %s.", onOff(got.freetravel), onOff(got.teleport), onOff(got.pvp),
                 onOff(got.compass), onOff(got.mapicon)))
         end

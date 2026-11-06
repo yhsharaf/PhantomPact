@@ -59,6 +59,14 @@ Step 'lua, four players' {
     if ($code -ne 0 -and ($out -notmatch 'No Lua DLL')) { [void]$failed.Add('lua, four players') }
 }
 
+Step 'lua, a PvP match' {
+    $out = python -I (Join-Path $PSScriptRoot 'luasim.py') pvp
+    $code = $LASTEXITCODE
+    $out | Where-Object { $_ -match 'FAIL|No Lua DLL' } | ForEach-Object { "  $_" }
+    "  $(($out | Where-Object { $_ -match '^\s+ok ' }).Count) checks passed"
+    if ($code -ne 0 -and ($out -notmatch 'No Lua DLL')) { [void]$failed.Add('lua, a PvP match') }
+}
+
 Step 'relay_cli test' {
     $out = & $cli test --port ($Port + 30)
     $code = $LASTEXITCODE

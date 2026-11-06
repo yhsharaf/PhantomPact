@@ -143,6 +143,17 @@ data.edges = {
 -- A loadout to start from: the game's first weapons.
 data.DEFAULT = { main = { "Tang", "PoJun" }, edge = { "ShachiHook", "TigerCannon" } }
 
+-- The finishing moves: bosses' moves the game keeps for the player's own body (each played whole on a player on the
+-- bench, 11-06). hit: seconds in, when the blow lands (the slow beat, the body thrown). One is picked for each finish.
+data.FINISHERS = {
+    { key = "club",                 -- a leap and a two-handed slam: the club bosses' ultimate
+        path = "/HuaShira/Characters/Hero/Hero_Hun/Animation/Retarget/Club/A/Hun_Club_SpecialAttack_08_Ultimate_Montage."
+            .. "Hun_Club_SpecialAttack_08_Ultimate_Montage", len = 5.77, hit = 2.6 },
+    { key = "bow",                  -- the archer Du Yan's point-blank shot
+        path = "/HuaShira/Characters/Hero/Hero_Hun/Animation/ShaChi_Weapon/Bow/Anim/Retarget/ArrowMan_DuYan_SpecialAttack_03_C_Montage."
+            .. "ArrowMan_DuYan_SpecialAttack_03_C_Montage", len = 4.0, hit = 2.0 },
+}
+
 local function byId(list, id)
     for i, w in ipairs(list) do
         if w.id == id then

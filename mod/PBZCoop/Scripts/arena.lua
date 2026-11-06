@@ -7,14 +7,16 @@
 --
 -- One event kind, AR, so older versions ignore all of it:
 --   AR lobby <mode> <timer> <place> <slot>:<team>:<ready>:<arenas> ...   host: the lobby as it stands
---   AR pick <team> <ready> <arenas> <version>                          a player: their team, ready, the arenas they have
---   AR start <id> <mode> <timer> <place> <x> <y> <z> <yaw> <map> <slot>:<team>:<spot> ...   host: go (the middle for "here")
+--   AR pick <team> <ready> <arenas> <version> <loadout>                a player: their team, ready, arenas, loadout
+--   AR start <id> <mode> <timer> <place> <x> <y> <z> <yaw> <map> <slot>:<team>:<spot>:<loadout> ...   host: go
+--                                                                      (the middle is the host's spot, for "here")
 --   AR here <id> <what>                                                a player: there (in the arena, set up) | home
 --   AR count <id> <round>                                              host: the countdown starts
 --   AR down <id> <round> <by>                                          a player: down this round (by: who struck last)
 --   AR round <id> <round> <winner> <crimson> <azure>                   host: a round's result (winner 0: a draw)
 --   AR end <id> <winner> <crimson> <azure>                             host: the match's result
---   AR fin <id> <victim>                                               a player: the finishing blow on a fallen player
+--   AR fin <id> <victim> <move> <x> <y> <z> <yaw>                     a winner: the finishing blow on a fallen player
+--                                                                      (move: arenas.lua's FINISHERS; where they stand)
 --   AR home <id>                                                       host: everyone goes back
 --   AR quit <id> <why>                                                 anyone: leaving, or called off
 
@@ -158,6 +160,19 @@ return function(api)
         return out
     end
 
+    local function presetText(p)
+        p = p or arena.preset or data.DEFAULT
+        return table.concat({ p.main[1], p.main[2], p.edge[1], p.edge[2] }, ",")
+    end
+
+    local function presetFrom(text)
+        local a, b, c, d = (text or ""):match("^([%w_]+),([%w_]+),([%w_]+),([%w_]+)$")
+        if not a then
+            return nil
+        end
+        return cleanPreset({ main = { a, b }, edge = { c, d } })
+    end
+
     function arena.loadPreset()
         local p = { main = {}, edge = {} }
         local f = io.open(presetPath(), "r")
@@ -244,6 +259,7 @@ return function(api)
         p.ready = true                  -- the host is ready by starting
         p.arenas = arenasText()
         p.version = api.version
+        p.preset = presetText()
         arena.picks[mySlot()] = p
         return p
     end
@@ -372,7 +388,7 @@ return function(api)
         if coop.isHost() then
             arena.sendLobby()
         elseif net.enabled then
-            coop.sendEvent("AR", "pick", arena.pick.team or 0, arena.pick.ready and 1 or 0, arenasText(), api.version)
+            coop.sendEvent("AR", "pick", arena.pick.team or 0, arena.pick.ready and 1 or 0, arenasText(), api.version, presetText())
         end
     end
 
@@ -496,9 +512,21 @@ return function(api)
             end
         end)
         game.after(LAND_S, function()
-            if valid(pawn) then
-                pcall(function() pawn.CharacterMovement:SetMovementMode(1, 0) end)
+            if not valid(pawn) then
+                return
             end
+            pcall(function() pawn.CharacterMovement:SetMovementMode(1, 0) end)
+            -- A short step the way it faces: set by hand, the body kept showing the old way till it moved (the bench, a guest
+            -- turned round for its side: its front to its own camera).
+            local yaw, n = math.rad(spot.Yaw or 0), 0
+            local function step()
+                n = n + 1
+                if n <= 8 and valid(pawn) then
+                    pcall(function() pawn:AddMovementInput({ X = math.cos(yaw), Y = math.sin(yaw), Z = 0 }, 0.6, false) end)
+                    game.after(0.03, step)
+                end
+            end
+            step()
         end)
     end
 
@@ -586,8 +614,8 @@ return function(api)
         os.remove(api.modDir() .. "pvp_restore.txt")
     end
 
-    -- Everything the match changes, noted first; then the loadout, every skill node, the gourd.
-    local function setup(pawn)
+    -- Everything the match changes, noted first; then the weapons, the loadout, every skill node, the gourd.
+    local function setup(pawn, m)
         setVeto(true)
         local bp = game.backpackOf(pawn)
         saved.mainOwned, saved.edgeOwned = {}, {}
@@ -604,7 +632,41 @@ return function(api)
             log("PvP: this game's bag can't be read: the loadout stays as it is.")
             bp = nil
         end
+        saved.levels, saved.loans = {}, {}
         if bp then
+            -- Every weapon anyone fights with, at the top level in this world. The blows this player takes are worked out here,
+            -- from this world's own level of the weapon that lands them (the bench: a defender whose Tang was at level 11 took
+            -- twice the damage of one at level 1, 256 to 128): so all at one level, everywhere. One this player doesn't own is
+            -- lent for the match. (UpgradeWeapon and ResetWeaponToLevel only set the level: no dust, nothing in the bag.)
+            local want = {}
+            local function add(pr)
+                for i = 1, 2 do
+                    want["main:" .. pr.main[i]] = true
+                    want["edge:" .. pr.edge[i]] = true
+                end
+            end
+            add(p)
+            for _, pr in pairs(m and m.presets or {}) do
+                add(pr)
+            end
+            for key in pairs(want) do
+                local kind, id = key:match("^(%a+):(.+)$")
+                local main = kind == "main"
+                local owned = (main and saved.mainOwned or saved.edgeOwned)[id]
+                pcall(function()
+                    if not owned then
+                        bp:AddWeaponItem(FName(id), main, false, true, false)
+                        saved.loans[#saved.loans + 1] = key
+                    end
+                    local level = bp:GetWeaponLevel(FName(id), main)
+                    if owned then
+                        saved.levels[key] = level
+                    end
+                    if level and level > 0 and level < data.WEAPON_LEVEL then
+                        bp:UpgradeWeapon(FName(id), main, data.WEAPON_LEVEL - level)
+                    end
+                end)
+            end
             local main, edge = {}, {}
             for i = 1, 2 do
                 main[i] = FName(p.main[i])
@@ -643,18 +705,13 @@ return function(api)
                 saved.attrs[name] = at.BaseValue
             end
         end
-        local loans = {}
-        for i = 1, 2 do
-            if not saved.mainOwned[p.main[i]] then
-                loans[#loans + 1] = "main:" .. p.main[i]
-            end
-            if not saved.edgeOwned[p.edge[i]] then
-                loans[#loans + 1] = "edge:" .. p.edge[i]
-            end
+        local levels = {}
+        for key, level in pairs(saved.levels) do
+            levels[#levels + 1] = key .. "=" .. tostring(level)
         end
-        saved.loans = loans
         journal({ map = saved.map, at = string.format("%.0f %.0f %.0f %.0f", saved.at.X, saved.at.Y, saved.at.Z, saved.yaw or 0),
-            loans = #loans > 0 and table.concat(loans, ",") or "-", nodes = table.concat(saved.nodes or {}, ",") })
+            loans = #saved.loans > 0 and table.concat(saved.loans, ",") or "-",
+            levels = #levels > 0 and table.concat(levels, ",") or "-", nodes = table.concat(saved.nodes or {}, ",") })
         -- The drinks once the gourd is the match's: a moment later (the game writes the count as it swaps).
         game.after(0.5, function()
             local g = valid(pawn) and game.gourdInfo(pawn)
@@ -678,6 +735,10 @@ return function(api)
         if bp then
             if s.pushed then
                 pcall(function() bp:PopEquippedWeapons() end)
+            end
+            for key, level in pairs(s.levels or {}) do
+                local kind, id = key:match("^(%a+):(.+)$")
+                pcall(function() bp:ResetWeaponToLevel(FName(id), kind == "main", level, {}, {}) end)
             end
             for _, loan in ipairs(s.loans or {}) do
                 local kind, id = loan:match("^(%a+):(.+)$")
@@ -771,9 +832,10 @@ return function(api)
 
     ------------------------------------------------------------------ the match: everyone
 
-    local function newMatch(id, mode, timer, place, middle, teams, spots)
+    local function newMatch(id, mode, timer, place, middle, teams, spots, presets)
         return {
             id = id, mode = mode, timer = timer, place = place, middle = middle,
+            presets = presets or {},    -- slot -> loadout, everyone's: each world sets their weapons' level
             teams = teams,              -- slot -> 1 | 2
             spots = spots,              -- slot -> spot number on its side
             phase = "going",
@@ -880,7 +942,7 @@ return function(api)
         end
         shield(pawn, true)
         hold(pawn, true)
-        setup(pawn)
+        setup(pawn, m)
         parkEnemies(middleOf(m))
         game.setBossFog(middleOf(m), true)
         coop.sendEvent("AR", "here", m.id, "there")
@@ -1044,9 +1106,6 @@ return function(api)
                 coop.sendEvent("AR", "count", m.id, m.round + 1)
                 startRound(m, m.round + 1)
             end
-        elseif m.phase == "finish" and now >= (m.finishUntil or 0) then
-            arena.showResult(m)
-            m.homeAt = now + RESULT_S
         elseif m.phase == "result" and now >= (m.homeAt or 0) then
             coop.sendEvent("AR", "home", m.id)
             arena.goHome("the match is over")
@@ -1055,7 +1114,11 @@ return function(api)
 
     ------------------------------------------------------------------ the match: everyone, each frame
 
-    local function timeAtOne(pawn)
+    -- (Not while a finishing blow lands: its slow beat is the one slowing allowed.)
+    local function timeAtOne(pawn, m)
+        if os.clock() < (m.slowUntil or 0) then
+            return
+        end
         pcall(function()
             local gs = api.gs()
             if math.abs(gs:GetGlobalTimeDilation(pawn) - 1.0) > 0.01 then
@@ -1089,7 +1152,7 @@ return function(api)
             return
         end
         if m.phase ~= "going" then
-            timeAtOne(pawn)
+            timeAtOne(pawn, m)
             if now >= areaAt then
                 areaAt = now + AREA_S
                 parkEnemies(middleOf(m))
@@ -1117,6 +1180,11 @@ return function(api)
             elseif l and mid.Z and l.Z < mid.Z - FALL_CM then
                 goDown(m, pawn, "fell")
             end
+        end
+        -- Each player's own clock, the finishing window put back by a finishing move.
+        if m.phase == "finish" and now >= (m.finishUntil or 0) then
+            arena.showResult(m)
+            m.homeAt = now + RESULT_S
         end
         if ui() then
             ui().frame(m, mySlot())
@@ -1154,6 +1222,14 @@ return function(api)
         m.score = { s1, s2 }
         m.phase = "finish"
         m.finishUntil = os.clock() + FINISH_S
+        -- The losers wait for it where they are (a round the clock ended leaves them standing).
+        if myTeam() ~= winner then
+            local _, pawn = pawnNow()
+            if valid(pawn) then
+                hold(pawn, true)
+                shield(pawn, true)
+            end
+        end
         log(string.format("PvP: the match goes to %s, %d - %d.", teamName(winner), s1, s2))
         if ui() then
             ui().matchOver(myTeam() == winner, m)
@@ -1171,9 +1247,120 @@ return function(api)
         end
     end
 
-    -- The finishing blow, from the winner on a fallen enemy (F in a match, or a command): the move plays on the winner, and
-    -- the fallen one's world shows it landing.
-    function arena.finish(victim)
+    -- The finishing blow, from the winner on a fallen enemy (F in the finishing window, or a command): a boss's move
+    -- (arenas.lua's FINISHERS) on the winner, who steps in before the fallen body and faces it. Every world plays it: the
+    -- winner's on their own body, the others' on the winner's ghost (in PvP a ghost plays no sent montages, moves.lua, so
+    -- it's told here); as it lands the game slows a beat and the body is thrown.
+    local FINISH_REACH_CM = 900
+    local FINISH_RISE_CM = 400      -- a body this far below or above can't be reached (one that fell off the arena)
+    local FINISH_GAP_CM = 140       -- the winner stands this far from the fallen body
+    local SLOW_DILATION = 0.3
+    local SLOW_S = 0.6              -- (real seconds)
+    local THROW_CM_S = 700          -- the body thrown away from the blow, and up
+    local THROW_UP_CM_S = 450
+
+    -- Where a body lies: a fallen one's mesh (loose on its own), else the body.
+    local function lyingAt(body)
+        local l
+        pcall(function()
+            local mesh = body.Mesh
+            if mesh:IsSimulatingPhysics(FName("None")) then
+                l = mesh:K2_GetComponentLocation()
+            end
+        end)
+        return l or locOf(body)
+    end
+
+    local function finisherMove(n)
+        local f = data.FINISHERS[n]
+        if not f then
+            return nil
+        end
+        local m = api.moves and api.moves.montage and api.moves.montage(f.path)
+        if not valid(m) then
+            m = StaticFindObject(f.path)
+            if not valid(m) and type(LoadAsset) == "function" then
+                pcall(LoadAsset, f.path)
+                m = StaticFindObject(f.path)
+            end
+        end
+        return valid(m) and m or nil, f
+    end
+
+    local function slowBeat(m)
+        m.slowUntil = os.clock() + SLOW_S
+        local _, pawn = pawnNow()
+        if valid(pawn) then
+            pcall(function() api.gs():SetGlobalTimeDilation(pawn, SLOW_DILATION) end)
+        end
+    end
+
+    local function throw(body, from)
+        local at = lyingAt(body)
+        if not (at and from) then
+            return
+        end
+        local dx, dy = at.X - from.X, at.Y - from.Y
+        local d = math.max(1, math.sqrt(dx * dx + dy * dy))
+        local v = { X = dx / d * THROW_CM_S, Y = dy / d * THROW_CM_S, Z = THROW_UP_CM_S }
+        pcall(function() body.Mesh:SetAllPhysicsLinearVelocity(v, true) end)
+    end
+
+    -- The move, in this world. by: the winner's slot; spot: where they stand for it (their own world works it out).
+    local function finisherPlays(m, by, victim, n, spot)
+        local montage, f = finisherMove(n)
+        local mine = by == mySlot()
+        local winner = coop.playerBody and coop.playerBody(by)
+        local len = f and f.len or 4.0
+        if valid(winner) and montage then
+            pcall(function()
+                if spot then
+                    winner:K2_SetActorLocationAndRotation({ X = spot.X, Y = spot.Y, Z = spot.Z },
+                        { Pitch = 0, Yaw = spot.Yaw, Roll = 0 }, false, {}, true)
+                end
+                if mine then
+                    local pc = pawnNow()
+                    if valid(pc) and spot then
+                        pc:SetControlRotation({ Pitch = -10, Yaw = spot.Yaw, Roll = 0 })
+                    end
+                    len = winner:PlayAnimMontage(montage, 1.0, FName("None")) or len
+                else
+                    if game.noteGhostMove then
+                        game.noteGhostMove(winner, len + 0.5)
+                    end
+                    winner.Mesh:GetAnimInstance():Montage_Play(montage, 1.0, 0, 0.0, true)
+                end
+            end)
+        end
+        if victim == mySlot() then
+            local _, pawn = pawnNow()
+            if valid(pawn) then
+                hold(pawn, true)
+                shield(pawn, true)
+            end
+        end
+        m.finishUntil = math.max(m.finishUntil or 0, os.clock() + len + 1.2)
+        game.after(f and f.hit or len * 0.5, function()
+            if arena.match ~= m then
+                return
+            end
+            local body = coop.playerBody and coop.playerBody(victim)
+            local w = coop.playerBody and coop.playerBody(by)
+            if valid(body) then
+                if not m.down[victim] then
+                    arena.fall(body, true)          -- (still standing: the clock ended it)
+                end
+                throw(body, valid(w) and locOf(w) or nil)
+            end
+            slowBeat(m)
+        end)
+        log(string.format("PvP: %s finishes %s (%s).", playerName(by), playerName(victim), f and f.key or "?"))
+        if ui() and ui().finisher then
+            ui().finisher(victim, by, mine)
+        end
+    end
+
+    function arena.finish(victim, n)
         local m = arena.match
         if not (m and m.phase == "finish" and myTeam() == m.winner and not m.finished) then
             return false
@@ -1181,12 +1368,56 @@ return function(api)
         if not (victim and m.teams[victim] and m.teams[victim] ~= myTeam()) then
             return false
         end
-        m.finished = victim
-        coop.sendEvent("AR", "fin", m.id, victim)
-        if ui() and ui().finisher then
-            ui().finisher(victim, mySlot(), true)
+        -- In front of the body, on the side the winner came from, facing it (a body not found here: where they stand).
+        local _, pawn = pawnNow()
+        local body = coop.playerBody and coop.playerBody(victim)
+        local at, me = valid(body) and lyingAt(body), valid(pawn) and locOf(pawn)
+        local spot, where = nil, { "-", "-", "-", "-" }
+        if at and me then
+            local dx, dy = me.X - at.X, me.Y - at.Y
+            local d = math.sqrt(dx * dx + dy * dy)
+            if d < 1 then
+                dx, dy, d = 1, 0, 1
+            end
+            spot = { X = at.X + dx / d * FINISH_GAP_CM, Y = at.Y + dy / d * FINISH_GAP_CM, Z = math.max(me.Z, at.Z + 90),
+                Yaw = math.deg((math.atan2 or math.atan)(-dy, -dx)) }
+            where = { string.format("%.0f", spot.X), string.format("%.0f", spot.Y), string.format("%.0f", spot.Z),
+                string.format("%.1f", spot.Yaw) }
         end
+        n = n or math.random(#data.FINISHERS)
+        m.finished = victim
+        coop.sendEvent("AR", "fin", m.id, victim, n, where[1], where[2], where[3], where[4])
+        finisherPlays(m, mySlot(), victim, n, spot)
         return true
+    end
+
+    -- F in the finishing window: the fallen foe nearest this player, within reach.
+    function arena.finishNearest()
+        local m = arena.match
+        if not (m and m.phase == "finish" and myTeam() == m.winner and not m.finished) then
+            return false
+        end
+        local _, pawn = pawnNow()
+        local me = valid(pawn) and locOf(pawn)
+        if not me then
+            return false
+        end
+        local best, bestD = nil, FINISH_REACH_CM
+        for slot, team in pairs(m.teams) do
+            if team ~= myTeam() then
+                local body = coop.playerBody and coop.playerBody(slot)
+                local l = valid(body) and lyingAt(body)
+                local d = l and math.abs(l.Z - me.Z) <= FINISH_RISE_CM and flatDist(l, me)
+                if d and d <= bestD then
+                    best, bestD = slot, d
+                end
+            end
+        end
+        if not best then
+            tip("get closer to a fallen foe to finish them.")
+            return false
+        end
+        return arena.finish(best)
     end
 
     -- Back where they were, with what they had. said: why, for the tip.
@@ -1205,6 +1436,7 @@ return function(api)
             arena.fall(pawn, false)
             hold(pawn, false)
             shield(pawn, false)
+            pcall(function() api.gs():SetGlobalTimeDilation(pawn, 1.0) end)
         end
         for _, p in ipairs(coop.partners()) do
             if valid(p.ghost) then
@@ -1299,18 +1531,20 @@ return function(api)
             return false
         end
         local id = math.random(100000, 999999)
-        local teams, spots, n = {}, {}, { 0, 0 }
+        local teams, spots, presets, n = {}, {}, {}, { 0, 0 }
         local parts = {}
         for _, s in ipairs(everyone()) do
             local team = arena.picks[s].team
             n[team] = n[team] + 1
             teams[s], spots[s] = team, n[team]
-            parts[#parts + 1] = string.format("%d:%d:%d", s, team, n[team])
+            local loadout = arena.picks[s].preset or presetText(data.DEFAULT)
+            presets[s] = presetFrom(loadout)
+            parts[#parts + 1] = string.format("%d:%d:%d:%s", s, team, n[team], loadout)
         end
         local l = locOf(pawn)
         local yaw = pawn:K2_GetActorRotation().Yaw
         local middle = { X = l.X, Y = l.Y, Z = l.Z, Yaw = yaw, map = game.mapName(pawn) }
-        local m = newMatch(id, arena.mode, arena.timer, arena.place, middle, teams, spots)
+        local m = newMatch(id, arena.mode, arena.timer, arena.place, middle, teams, spots, presets)
         coop.sendEvent("AR", "start", id, m.mode, m.timer, m.place, string.format("%.0f %.0f %.0f %.0f %s", l.X, l.Y, l.Z, yaw,
             middle.map), table.concat(parts, " "))
         begin(m)
@@ -1349,7 +1583,7 @@ return function(api)
         if not coop.isHost() then
             return
         end
-        local team, ready, have, version = rest:match("^(%d) ([01]) (%S+) (%S+)")
+        local team, ready, have, version, loadout = rest:match("^(%d) ([01]) (%S+) (%S+)%s*(%S*)")
         if not team then
             return
         end
@@ -1358,6 +1592,7 @@ return function(api)
         p.ready = ready == "1"
         p.arenas = have
         p.version = version
+        p.preset = loadout ~= "" and loadout or p.preset
         arena.picks[slot] = p
         arena.sendLobby()
     end
@@ -1371,9 +1606,10 @@ return function(api)
         if not (id and MODES[mode]) then
             return
         end
-        local teams, spots = {}, {}
-        for s, team, spot in (list or ""):gmatch("(%d):(%d):(%d)") do
+        local teams, spots, presets = {}, {}, {}
+        for s, team, spot, loadout in (list or ""):gmatch("(%d):(%d):(%d):?(%S*)") do
             teams[tonumber(s)], spots[tonumber(s)] = tonumber(team), tonumber(spot)
+            presets[tonumber(s)] = presetFrom(loadout)
         end
         if not teams[mySlot()] then
             return                  -- (not in this one)
@@ -1382,7 +1618,7 @@ return function(api)
         if not (middle.X and middle.Y and middle.Z) then
             return
         end
-        begin(newMatch(tonumber(id), mode, tonumber(timer), tonumber(place), middle, teams, spots))
+        begin(newMatch(tonumber(id), mode, tonumber(timer), tonumber(place), middle, teams, spots, presets))
     end
 
     function AR.here(rest, slot)
@@ -1431,24 +1667,18 @@ return function(api)
         local m = sameMatch(id)
         if m then
             arena.onEnd(m, tonumber(winner), tonumber(s1), tonumber(s2))
-            game.after(FINISH_S, function()
-                if arena.match == m and m.phase == "finish" then
-                    arena.showResult(m)
-                end
-            end)
         end
     end
 
     function AR.fin(rest, slot)
-        local id, victim = rest:match("^(%d+) (%d)")
+        local id, victim, n, x, y, z, yaw = rest:match("^(%d+) (%d) (%d+) (%S+) (%S+) (%S+) (%S+)")
         local m = sameMatch(id)
-        if not m then
+        if not m or m.finished or m.teams[slot] ~= m.winner then
             return
         end
         m.finished = tonumber(victim)
-        if ui() and ui().finisher then
-            ui().finisher(m.finished, slot, false)
-        end
+        local spot = tonumber(yaw) and { X = tonumber(x), Y = tonumber(y), Z = tonumber(z), Yaw = tonumber(yaw) } or nil
+        finisherPlays(m, slot, m.finished, tonumber(n) or 1, spot)
     end
 
     function AR.home(rest, slot)
@@ -1540,6 +1770,9 @@ return function(api)
                     bp:PopEquippedWeapons()
                 end
             end)
+            for kind, id, level in (j.levels or ""):gmatch("(%a+):([^,=]+)=(%d+)") do
+                pcall(function() bp:ResetWeaponToLevel(FName(id), kind == "main", tonumber(level), {}, {}) end)
+            end
             for kind, id in (j.loans or ""):gmatch("(%a+):([^,]+)") do
                 pcall(function() bp:DisposeWeapon(FName(id), kind == "main") end)
             end
@@ -1573,7 +1806,7 @@ return function(api)
     end
 
     -- arena status | start | mode duel|death | timer 0|60|90|120 | place 0-4 | team 1|2 | ready [off] | leave | down |
-    -- finish <slot> | preset <main1> <main2> <edge1> <edge2> | unlocked
+    -- finish <slot> [move] | preset <main1> <main2> <edge1> <edge2> | unlocked
     function arena.command(args)
         local cmd, a1, a2, a3, a4 = (args or ""):match("^%s*(%S*)%s*(%S*)%s*(%S*)%s*(%S*)%s*(%S*)")
         if cmd == "start" then
@@ -1593,7 +1826,7 @@ return function(api)
                 goDown(m, pawn, "test")
             end
         elseif cmd == "finish" then
-            log("PvP finish: " .. tostring(arena.finish(tonumber(a1))))
+            log("PvP finish: " .. tostring(arena.finish(tonumber(a1), data.FINISHERS[tonumber(a2) or 0] and tonumber(a2))))
         elseif cmd == "preset" and a1 ~= "" then
             arena.savePreset({ main = { a1, a2 }, edge = { a3, a4 } })
             log("PvP loadout: " .. table.concat(arena.preset.main, ", ") .. " | " .. table.concat(arena.preset.edge, ", "))
