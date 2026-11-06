@@ -32,7 +32,9 @@ return function(api)
     local COUNT_S = 3.0             -- the countdown before each round: 3, 2, 1
     local FIGHT_SHOW_S = 0.9        -- then 斗 on screen this long, the fight already on
     local BETWEEN_S = 3.5           -- a round's result on screen before the next countdown
-    local FINISH_S = 6.0            -- the winners' time to finish a fallen enemy
+    local FINISH_S = 7.0            -- the finishing window: the winners' time to finish a fallen enemy...
+    local FINISH_LATE_S = 1.5       -- ...but for its end, so their move reaches everyone before the window closes there
+                                    -- (the bench: a move 5.5 s in found the loser's screen already on its death card)
     local RESULT_S = 6.0            -- the golden screen, the death card
     local SILENT_S = 8.0            -- a player not heard this long: the match is off
     local TRAVEL_S = 120            -- the longest a trip to the arena may take
@@ -53,7 +55,7 @@ return function(api)
     local arena = {
         mode = "duel",              -- the host's choices
         timer = 0,
-        place = 3,                  -- data.arenas index, 0 = here
+        place = 0,                  -- data.arenas index, 0 = here (every save has it)
         lobby = nil,                -- what the host said last (a guest): { mode, timer, place, players = { [slot] = pick } }
         picks = {},                 -- host: slot -> { team, ready, arenas, version }
         pick = { team = nil, ready = false },     -- this player's own
@@ -657,13 +659,8 @@ return function(api)
                     if not owned then
                         bp:AddWeaponItem(FName(id), main, false, true, false)
                         saved.loans[#saved.loans + 1] = key
-                    end
-                    local level = bp:GetWeaponLevel(FName(id), main)
-                    if owned then
-                        saved.levels[key] = level
-                    end
-                    if level and level > 0 and level < data.WEAPON_LEVEL then
-                        bp:UpgradeWeapon(FName(id), main, data.WEAPON_LEVEL - level)
+                    else
+                        saved.levels[key] = bp:GetWeaponLevel(FName(id), main)
                     end
                 end)
             end
@@ -673,6 +670,30 @@ return function(api)
                 edge[i] = FName(p.edge[i])
             end
             saved.pushed = pcall(function() bp:PushEquippedWeapons(main, edge, 0, 0) end)
+            -- Up to the top level now, and again in a moment: one just lent reads level 0 till the game has it in the bag
+            -- (the bench: lent ones stayed at 1 when raised in the same breath as the lending).
+            local function raise(b)
+                for key in pairs(want) do
+                    local kind, id = key:match("^(%a+):(.+)$")
+                    local isMain = kind == "main"
+                    pcall(function()
+                        local level = b:GetWeaponLevel(FName(id), isMain)
+                        if level and level > 0 and level < data.WEAPON_LEVEL then
+                            b:UpgradeWeapon(FName(id), isMain, data.WEAPON_LEVEL - level)
+                        end
+                    end)
+                end
+            end
+            raise(bp)
+            for _, later in ipairs({ 0.5, 1.5 }) do
+                game.after(later, function()
+                    local _, now = pawnNow()        -- (the body asked for again: nothing kept across frames)
+                    local b = valid(now) and game.backpackOf(now)
+                    if b and saved then
+                        raise(b)
+                    end
+                end)
+            end
             -- The gourd: the healing one, the same for everyone, and only its drinks; the other bottle off for the match.
             pcall(function() saved.bottom = bp.BottomMedicineID:ToString() end)
             pcall(function() saved.top = bp.TopMedicineID:ToString() end)
@@ -884,7 +905,7 @@ return function(api)
     local function fightOn(on)
         net.arena = on and true or nil
         if api.pvp and api.pvp.arenaTeams then
-            api.pvp.arenaTeams(on and arena.match and arena.match.teams or nil, mySlot())
+            api.pvp.arenaTeams(on and arena.match and arena.match.teams or nil, mySlot(), data.DAMAGE)
         end
     end
 
@@ -963,6 +984,9 @@ return function(api)
         if api.pvp then
             api.pvp.lastHitBy = nil
         end
+        if round == 1 and arena.preloadFinishers then
+            arena.preloadFinishers()        -- (loaded now, in the countdown, not as the blow starts)
+        end
         if valid(pawn) then
             arena.fall(pawn, false)
             if m.downSelf then
@@ -997,6 +1021,7 @@ return function(api)
         end
         m.down[mySlot()] = true
         m.downSelf = true
+        m.downAt = os.clock()
         m.phase = "out"
         hold(pawn, true)
         shield(pawn, true)
@@ -1127,6 +1152,46 @@ return function(api)
         end)
     end
 
+    -- Down, after a moment the camera follows someone still up (the game's spectating, pbz.lua): a teammate fighting on, or
+    -- else a foe. A team that lost the match watches the winners come for them, the finishing move and all. Back on this
+    -- player when they're up again. (Down, the camera stayed on the body's own capsule: on the bench, buried in its hair.)
+    -- net.arenaWatching keeps coop.lua's own death watch from taking it back.
+    local WATCH_AFTER_S = 1.2
+    local function watchedBody(m, now)
+        local me = mySlot()
+        local down = m.down[me] and (m.phase == "out" or m.phase == "between") and now - (m.downAt or now) >= WATCH_AFTER_S
+        local lost = m.winner and m.winner ~= myTeam() and (m.phase == "finish" or m.phase == "result")
+        if not (down or lost) then
+            return nil
+        end
+        for _, mate in ipairs(lost and { false, true } or { true, false }) do      -- (lost: the winners first)
+            for slot, team in pairs(m.teams) do
+                if slot ~= me and (team == myTeam()) == mate and not m.down[slot] then
+                    local body = coop.playerBody and coop.playerBody(slot)
+                    if valid(body) then
+                        return body
+                    end
+                end
+            end
+        end
+        return nil
+    end
+
+    local function watchTeam(m, now)
+        local want = watchedBody(m, now)
+        if not game.spectate or (want == nil and not m.watching) then
+            return
+        end
+        local at = game.spectatingAt and game.spectatingAt()
+        if want and at ~= want:GetAddress() then
+            m.watching = game.spectate(want) and true or nil
+            net.arenaWatching = m.watching
+        elseif not want then
+            game.spectate(nil)
+            net.arenaWatching, m.watching = nil, nil
+        end
+    end
+
     local areaAt, keepAt = 0, 0
     local function tick()
         local m = arena.match
@@ -1181,6 +1246,7 @@ return function(api)
                 goDown(m, pawn, "fell")
             end
         end
+        watchTeam(m, now)
         -- Each player's own clock, the finishing window put back by a finishing move.
         if m.phase == "finish" and now >= (m.finishUntil or 0) then
             arena.showResult(m)
@@ -1222,6 +1288,7 @@ return function(api)
         m.score = { s1, s2 }
         m.phase = "finish"
         m.finishUntil = os.clock() + FINISH_S
+        m.finishBy = m.finishUntil - FINISH_LATE_S
         -- The losers wait for it where they are (a round the clock ended leaves them standing).
         if myTeam() ~= winner then
             local _, pawn = pawnNow()
@@ -1276,15 +1343,21 @@ return function(api)
         if not f then
             return nil
         end
-        local m = api.moves and api.moves.montage and api.moves.montage(f.path)
-        if not valid(m) then
+        local m = StaticFindObject(f.path)
+        if not valid(m) and type(LoadAsset) == "function" then
+            pcall(LoadAsset, (f.path:gsub("%.[^.]*$", "")))     -- (the package, as the game's own textures load)
             m = StaticFindObject(f.path)
-            if not valid(m) and type(LoadAsset) == "function" then
-                pcall(LoadAsset, f.path)
-                m = StaticFindObject(f.path)
-            end
+        end
+        if not valid(m) and api.moves and api.moves.montage then
+            m = api.moves.montage(f.path)
         end
         return valid(m) and m or nil, f
+    end
+
+    function arena.preloadFinishers()
+        for i = 1, #data.FINISHERS do
+            finisherMove(i)
+        end
     end
 
     local function slowBeat(m)
@@ -1368,6 +1441,10 @@ return function(api)
         if not (victim and m.teams[victim] and m.teams[victim] ~= myTeam()) then
             return false
         end
+        if os.clock() > (m.finishBy or math.huge) then
+            tip("too late to finish them: the match is over.")
+            return false
+        end
         -- In front of the body, on the side the winner came from, facing it (a body not found here: where they stand).
         local _, pawn = pawnNow()
         local body = coop.playerBody and coop.playerBody(victim)
@@ -1432,6 +1509,10 @@ return function(api)
         if ui() then
             ui().clear()
         end
+        if m.watching and game.spectate then
+            game.spectate(nil)
+        end
+        net.arenaWatching = nil
         if valid(pawn) then
             arena.fall(pawn, false)
             hold(pawn, false)

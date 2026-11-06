@@ -4,28 +4,40 @@ Two ways to fight each other:
 
 - **PvPvE** (F5 > MORE): the old PvP switch, renamed. Partners can hurt each other in the open world, enemies and all. Death
   decides, as before. The ini key stays `PvP` so old ini files keep working.
-- **PvP** (F6): a match in one of four boss arenas, with nothing else in it. This file is about this one.
+- **PvP** (F6): a match in one of four boss arenas, or where the host stands, with nothing else in it. This file is about this one.
 
 ## What a match is
 
 | | |
 |---|---|
-| Players | 2 to 6, everyone linked. 2 players: a duel. More: two teams (Crimson, Azure), each player picks one |
-| Modes | **Duel**: best of three rounds, health refilled each round. **Death**: one life, last team standing |
-| Timer | Off, 60, 90 or 120 s a round. At zero the team with more health left (as a share) wins the round; equal is a draw |
-| Arenas | YuCong's Crimson Forest, Hua Qianxiao's grove, the Gold-Masked One's ruins (Xigu), Mu Xiaokui's yard (LuJiaCun): the game's own places, with their boss fog walls up and no monsters |
-| Fair start | everyone: the same health, attack and posture; weapons as at level 30; no accessories; exactly 3 drinks from the same gourd (Hulu) for the whole match |
-| Loadout | a preset of your own, kept between matches: two weapons and two Phantom Edge weapons, any in the game |
-| Start | the host picks mode, timer and arena on the F6 page; everyone picks a team and presses READY; the host starts |
-| Countdown | 3, 2, 1 in brush strokes (三 二 一), then 斗: nobody moves till then |
-| End of a round | your health can't go below 1: at 1 you're down, out of the round. A team with nobody up loses it |
-| End of the match | the winners can finish a fallen enemy within 6 s (F): a finishing move, the game's own execution. Winners get the golden screen, the fallen the game's death card. Then everyone goes back where they were, with what they had |
-| Leaving | F6, then LEAVE twice. A player silent for 8 s ends the match for everyone |
+| Players | 2 to 6, everyone linked, on the same version. 2 players: a duel. More: two teams (Crimson, Azure), each player picks one |
+| Modes | **Duel**: best of three rounds, everyone back up each round. **Death**: one life, last team standing |
+| Clock | None, 60, 90 or 120 s a round. At zero the team with more health left (as a share) wins the round; equal is a draw |
+| Arenas | YuCong's Crimson Forest, Hua Qianxiao's stage, the Gold-Masked One's gorge, Mu Xiaokui's meadow: the game's own places, with their boss fog walls up and no monsters. Or **Here**: where the host stands |
+| Fair start | everyone a Soul at the top of the game: every skill node on (the game's own `ActivateAllNodes`), 1360 health, 160 attack, 640 Phantom Edge energy, held there all match; every weapon in the match at level 30; 3 drinks of the same gourd for the whole match |
+| Damage | every blow at half the game's own (`DAMAGE` in `arenas.lua`): at the top of the game a Sanguine blow took 499 of 1360 on the bench, three to fall; at half, about six. A parry costs the attacker 60 posture. Each player's own `PvPDamage` and `PvPParryPosture` count only in PvPvE: in a match they'd let a player take less |
+| Loadout | a preset of your own, kept between matches (`pvp_preset.txt`): two weapons and two Phantom Edges, any of the game's 20 and 20, owned or not |
+| Start | the host picks the mode, the clock and the arena on the F6 page; everyone picks a team and presses READY; the host presses START |
+| Countdown | 三 二 一 in brush strokes, then 斗: nobody moves till then |
+| Down | health can't go below 1: at 1 you fall, out of the round. So does a fall from the arena, and a rest at a bell. A team with nobody up loses the round. Down, the camera follows a teammate still up, or else a foe; a team that lost the match watches the winners come for them |
+| The end | the winners get about 5 s to finish a fallen foe: F near them plays a boss's move (below). Then the winners get the golden VICTORY, the losers the game's death card, and everyone goes back where they were, with what they had |
+| Leaving | F6, then LEAVE twice. A player not heard from for 8 s ends the match for everyone |
+
+## The finishing move
+
+A winner who presses F within 9 m of a fallen foe in the finishing window (7 s, F taken till 1.5 s before its end, so the move reaches every screen in time) steps in before the body, facing it, and plays one of
+the bosses' moves the game keeps for the player's own body (`FINISHERS` in `arenas.lua`): the club bosses' leap and two-handed
+slam, or the archer Du Yan's point-blank shot. As it lands the game slows to 0.3 for 0.6 s and the body is thrown. Every player
+sees it: the winner's world plays it on the winner, every other world on the winner's figure (`AR fin` says which move and where
+they stood). The result waits until the move is over.
+
+The Phantom Edge moves were tried too: a bare Dread Axe release leaves its red chains lying on the ground for good, so none of
+those are used.
 
 ## Who decides what
 
-The host runs the match: the rounds, the score, the timer and the result. Each player's own game decides the hits that land on
-them, as in PvPvE: the partner's figure in your world swings for real, and the game's own combat judges it (block, deflect,
+The host runs the match: the rounds, the score, the clock and the result. Each player's own game decides the hits that land on
+them, as in PvPvE: the others' figures in your world swing for real, and the game's own combat judges it (block, deflect,
 perfect dodge, posture). So nobody gets hit by a swing they saw miss.
 
 A player who is down says so (`AR down`); the host counts.
@@ -33,69 +45,75 @@ A player who is down says so (`AR down`); the host counts.
 ## On the wire
 
 One sure-lane event kind, `AR <what> ...`, so older versions ignore all of it. A match only starts when every player runs the
-same version (the lobby says who doesn't).
+same version (the F6 page says who doesn't).
 
 | Event | From | Meaning |
 |---|---|---|
-| `AR lobby <id> <mode> <timer> <arena> <slot>:<team>:<ready> ...` | host | the lobby as it stands, sent on any change |
-| `AR pick <team> <ready>` | player | this player's team and ready |
-| `AR start <id> <mode> <timer> <arena> <slot>:<team>:<spot> ...` | host | the match begins: everyone goes |
-| `AR here <id> <phase>` | player | `there` (in the arena, set up), `home` (back) |
-| `AR count <id> <round> <ms>` | host | the countdown starts, the fight in `ms` |
+| `AR lobby <mode> <timer> <place> <slot>:<team>:<ready>:<arenas> ...` | host | the lobby as it stands, sent on any change |
+| `AR pick <team> <ready> <arenas> <version> <loadout>` | player | this player's team, ready, the arenas their save opens, their version and loadout |
+| `AR start <id> <mode> <timer> <place> <x> <y> <z> <yaw> <map> <slot>:<team>:<spot>:<loadout> ...` | host | the match begins (the middle is the host's spot, for Here) |
+| `AR here <id> there\|home` | player | in the arena and set up; back home |
+| `AR count <id> <round>` | host | a round's countdown starts |
 | `AR down <id> <round> <by>` | player | down this round (`by`: who struck last, or 0) |
 | `AR round <id> <round> <winner> <crimson> <azure>` | host | a round's result and the score (`winner` 0 = draw) |
 | `AR end <id> <winner> <crimson> <azure>` | host | the match's result; the finishing window opens |
-| `AR fin <id> <victim> <move>` | player | a finishing move started on a fallen player |
+| `AR fin <id> <victim> <move> <x> <y> <z> <yaw>` | winner | a finishing move on a fallen player, and where the winner stands for it |
 | `AR home <id>` | host | everyone goes back |
-| `AR quit <id> <reason>` | anyone | leaves, or the host calls it off |
+| `AR quit <id> <why>` | anyone | leaves, or the host calls it off |
 
 Health goes with the position (the state sample), which is how the bars move at 125 a second.
 
 ## The network during a match
 
 There are no enemies, so none of their traffic goes: no enemy lines, no `A`/`D`/`K`/`N`, twins, scaling, story, flow, loot,
-bells, chests, blockers or map fog. `net.arena` turns all of that off. What's left is the players: positions (125 a second, as
-before), the moves they start, hit reactions, weapons and the match's own events.
+bells, chests, blockers or map fog. `net.arena` turns all of that off (`net.ARENA_SKIPS` in `coop.lua`). What's left is the
+players: positions (125 a second, as before), the moves they start, hit reactions, weapons and the match's own events.
 
 Moves start sooner: outside a match a player's new move was noticed 10 times a second, so up to 100 ms after it began; in a
 match every frame. That's most of a swing's lead on a parry.
 
 A perfect dodge's slow motion slows only the dodger's game: in a match the game's time runs at 1 for everyone, every frame
-(from GitHub issue #13).
+(from GitHub issue #13). The finishing move's slow beat is the one exception.
 
 ## Fair play, and putting it all back
 
 Before anything changes, the game's own save veto goes up (`EnterSaveVeto`, reasons 0 and 2: the bench showed reason 0 stops the
-quiet autosave and 2 stops bells, trips and triggers). Nothing about a match is ever saved. Then each player's world notes what it
-will change, in memory and in `pvp_restore.txt` next to the mod (so a crash mid-match is put right on the next start):
+quiet autosave and the manual save, 2 stops bells, trips and triggers). Nothing about a match is ever saved. Then each player's
+world notes what it will change, in memory and in `pvp_restore.txt` next to the mod (so a crash mid-match is put right on the next
+start):
 
-- where they stood (map and place), their health;
-- their weapons: the game's own `PushEquippedWeapons` puts the preset on and `PopEquippedWeapons` takes it off; a weapon the
+- where they stood (map and place);
+- their weapons: the game's own `PushEquippedWeapons` puts the loadout on and `PopEquippedWeapons` takes it off; a weapon the
   player didn't own goes back with `DisposeWeapon`;
+- every weapon's level that the match raised (`ResetWeaponToLevel` puts it back: no dust, nothing given);
 - their gourd: which one, how many drinks;
-- the attributes a match sets.
+- their skill nodes (`DeactivateAllNodes`, then their own again).
 
-Weapons as at level 30: a level-30 weapon hits 3.9 times as hard as a level-1 one (`GetMainWeaponLevelData`), so a player's
-levels can't count. Damage you take is worked out in your world, from your partner's figure: its weapon there is put to the same
-strength for everyone.
+Weapon levels: a blow's damage in the defender's world goes by the defender's own level of the attacker's weapon. On the bench a
+guest's Sanguine blow took 128 from the host at the host's Sanguine level 1, 256 at level 11. So in every world every weapon
+anyone in the match fights with goes to level 30 (`UpgradeWeapon`, lent first if not owned), and the loadouts travel with the
+start so every world knows them.
 
 ## Arenas
 
-| Arena | Map | Centre | Walls |
+| Arena | Map | Middle | Opens when |
 |---|---|---|---|
-| YuCong, the Crimson Forest | PBZ_Fujizhilin_WP | 17200, 153900 | two, at 15879, 155671 |
-| Hua Qianxiao | PBZ_Fujizhilin_WP | -132100, 170700 | two |
-| The Gold-Masked One | PBZ_Xigu_WP | -20700, 291400 | two |
-| Mu Xiaokui | PBZ_Zhengdaodaying_WP | -68000, 77400 | one |
+| YuCong, the Crimson Forest | PBZ_Fujizhilin_WP | 17300, 153100 | YuCong is beaten |
+| Hua Qianxiao's stage | PBZ_Fujizhilin_WP | -132300, 170800 | Hua Qianxiao is beaten |
+| The Gold-Masked One's gorge | PBZ_Xigu_WP | -20900, 291300 | the Gold-Masked One is beaten |
+| Mu Xiaokui's meadow | PBZ_Zhengdaodaying_WP | -68100, 77200 | Mu Xiaokui is beaten |
 
-(Coordinates from the boss-wall survey on the bench, `bench/bosswalls.ps1`; spawn spots are set out round each centre.)
-
-A boss still alive in a player's save is moved aside for the match and put back after. Every enemy near the arena is too.
+A boss arena is offered only when every player's own save has its boss beaten (the game's `SpawnerSaveData`): going there before
+plays the boss's story (seen on the bench: Mu Xiaokui's scene, the forest's). Any enemy near the arena is moved aside for the match
+and put back after; the boss's fog walls go up. Spots: three a side, 8 m from the middle, facing each other.
 
 ## Files
 
-- `arena.lua`: the match (host's state machine, each player's own side, the events).
-- `arenaui.lua`: the countdown, banners, health bars, round marks and timer.
+- `arena.lua`: the match (the host's side, each player's own side, the events, putting things back).
+- `arenas.lua`: the arenas, the weapon lists, the stats, the finishing moves.
+- `arenaui.lua`: the countdown, banners, health bars, score, clock and death card.
 - `pvppanel.lua`: the F6 page (lobby and loadout).
-- `arenas.lua`: the arenas and the weapon lists.
-- `pvp.lua`: the fight itself, for PvPvE and the arena: hostile figures, parries, health shown.
+- `pvp.lua`: the fight itself, for PvPvE and the arena: hostile figures, parries, teams.
+- `art/make_pvp_art.py`: every picture above.
+- `tools/netlab/sim/pvp.lua`: in the simulator, a whole duel with the finishing move, a guest leaving a match, and three
+  players in two teams, a fallen one watching their teammate (`python -I tools/netlab/luasim.py pvp`; `all.ps1` runs it).

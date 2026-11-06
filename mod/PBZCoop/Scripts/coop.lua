@@ -4436,7 +4436,8 @@ return function(api)
             if game.bossFightActive() then
                 net.fightSeenAt = os.clock()
             end
-            if game.isSpectating and game.isSpectating() and not net.watchingFight then
+            -- (Not while a PvP match has the camera on a teammate: arena.lua's, down at 1 health, not dead.)
+            if game.isSpectating and game.isSpectating() and not net.watchingFight and not net.arenaWatching then
                 game.spectate(nil)
                 net.watched = nil
                 log("Back on your feet: camera back on you.")
@@ -4555,10 +4556,16 @@ return function(api)
         players = PLAYERS,
         nearestPartner = nearestPartner,
         watchParty = watchParty,
-        -- The body standing for that slot on this PC: this player's own, or a ghost.
+        -- The body standing for that slot on this PC: this player's own, or a ghost. (With two players there's no
+        -- net.slot: the host is 1, the guest 2, and the other one is net.ghost. The bench's PvP finisher found the host's
+        -- own slot giving the guest's ghost.)
         playerBody = function(slot)
-            if slot == net.slot then
+            local me = net.slot or (isHost() and 1 or 2)
+            if slot == me then
                 return select(2, getPlayer1())
+            end
+            if not net.party then
+                return (slot == 1 or slot == 2) and net.ghost or nil
             end
             local p = slot == 1 and net or net.peers[slot]
             return p and p.ghost

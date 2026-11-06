@@ -23,7 +23,12 @@ share loot and dust, and rest at bells together. The host's world leads, and you
 - Shared loot and dust: what either player picks up or earns goes to both
 - Shared resting: sit at a bell and your partner is rested too, and comes to you if they're dead, down or watching a fight
 - Elden Ring–style co-op difficulty: enemies and bosses get more health and posture while you play together
-- PvP duels (`PvP = On`): the game's own block, parry and dodge; parries stagger the attacker; the loser dies
+- PvP matches (F6, new in 1.7.0): duels (best of three) and death matches, one on one or two teams of up to six, in four
+  of the game's own boss arenas or where the host stands. Fair for everyone: the same body and level-30 weapons of your own
+  choosing, three drinks of one gourd, a brush-stroke countdown, health bars, a clock or none, and a boss's move to finish
+  the loser. Nothing is saved, and everything goes back after ([docs/PVP.md](docs/PVP.md))
+- PvPvE (MORE > PvPvE): fight your partner in the open world, enemies and all: the game's own block, parry and dodge;
+  parries stagger the attacker; the loser dies
 - A partner compass in the game's ink style, your partner on the map in jade, partner tips, and spectating your
   partner while you're down
 - Optional `Secret` that signs every packet; works over Tailscale, Hamachi, Radmin, ZeroTier, UU Accelerator, and
@@ -77,6 +82,7 @@ plug in two pads (`Role = Local` in the ini does the same): see [docs/LOCAL_COOP
 | [docs/COOP_GUIDE.md](docs/COOP_GUIDE.md) | What syncs and how: enemy matching, tests and results |
 | [docs/RECON_NOTES.md](docs/RECON_NOTES.md) | Classes, functions and data tables found in the game |
 | [docs/LOCAL_COOP.md](docs/LOCAL_COOP.md) | Local co-op: setup, player 2's controls, what the game hardwires to player 1 and how the mod bridges it |
+| [docs/PVP.md](docs/PVP.md) | PvP matches (F6): the rules, who decides what, the `AR` events, the network in a match, fair play and putting it all back (`arena.lua`, `arenas.lua`, `arenaui.lua`, `pvppanel.lua`) |
 | [tools/localcoop/](tools/localcoop/) | Local co-op test tools: launcher, command runner, Lua probes for enemies and fight areas, soak |
 
 ## Credits

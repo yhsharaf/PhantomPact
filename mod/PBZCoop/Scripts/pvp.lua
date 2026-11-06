@@ -25,6 +25,9 @@ return function(api)
     local PARRY_REACH_CM = 350      -- a swing from further away can't have been parried (it missed)
     local STAGGER_TAG = "CharacterState.Hitreact.State.Normal.Heavy"
     local RESTAT_S = 2.0            -- a hostile ghost's stats copied again this often in a match (ours change as it sets up)
+    -- In a match each world works out the damage its own player takes, so a player's own PvPDamage and PvPParryPosture
+    -- would make it unfair: there the match's own numbers count for everyone (arena.lua says the damage).
+    local MATCH_PARRY_POSTURE = 60
 
     local pvp = {
         on = false,
@@ -87,9 +90,14 @@ return function(api)
                 end
             end)
         end)
+        local scale = pvp.teams and (pvp.matchDamage or 1) or pvp.damage
         local atk = attr(pawn, "Attack")
         if atk then
-            setAttr(ghost, "Attack", atk.CurrentValue * pvp.damage)
+            setAttr(ghost, "Attack", atk.CurrentValue * scale)
+        end
+        local edge = pvp.teams and attr(pawn, "ShachiAttack")
+        if edge then
+            setAttr(ghost, "ShachiAttack", edge.CurrentValue * scale)    -- (Phantom Edges hit by this one)
         end
         setAttr(ghost, "Health_Min", 1)
     end
@@ -226,15 +234,16 @@ return function(api)
         if swing and not attacking then
             local near = api.distance(pawn:K2_GetActorLocation(), ghost:K2_GetActorLocation()) <= PARRY_REACH_CM
             if swing.guarded and not swing.spoiled and near then
+                local cost = pvp.teams and MATCH_PARRY_POSTURE or pvp.parryPosture
                 if net.party then
-                    coop.sendEvent("V", "parry", string.format("%.0f", pvp.parryPosture), slot)
+                    coop.sendEvent("V", "parry", string.format("%.0f", cost), slot)
                 else
-                    coop.sendEvent("V", "parry", string.format("%.0f", pvp.parryPosture))
+                    coop.sendEvent("V", "parry", string.format("%.0f", cost))
                 end
                 if game.playHitReaction then
                     game.playHitReaction(ghost, STAGGER_TAG)
                 end
-                log(string.format("PvP: PARRIED! Your partner staggers (-%.0f posture).", pvp.parryPosture))
+                log(string.format("PvP: PARRIED! Your partner staggers (-%.0f posture).", cost))
             end
             swings[slot] = nil
         end
@@ -358,8 +367,8 @@ return function(api)
             -- Our swing was parried: stagger and lose posture, like a boss whose attack you deflected.
             -- (Off the wire: "nan" emptied this player's posture, a huge negative overfilled it.)
             local a = tonumber(arg)
-            if not a or a ~= a or a < 0 then
-                a = pvp.parryPosture
+            if not a or a ~= a or a < 0 or pvp.teams then
+                a = pvp.teams and MATCH_PARRY_POSTURE or pvp.parryPosture
             end
             local amount = math.min(a, 400)
             local _, pawn = getPlayer1()
@@ -392,10 +401,12 @@ return function(api)
     end
 
     -- A match's teams (slot -> team) and this player's slot, or nil when it ends: who's a foe (arena.lua).
-    function pvp.arenaTeams(teams, me)
+    -- damage: the match's scale on every blow, the same in every world.
+    function pvp.arenaTeams(teams, me, damage)
         pvp.teams, pvp.me = teams, teams and me or nil
+        pvp.matchDamage = teams and damage or nil
         pvp.lastHitBy = nil
-        swings = {}
+        swings = {}             -- (a foe's stats, with the match's scale, are given again every RESTAT_S)
         net.pvp = pvp.on or teams ~= nil
     end
 

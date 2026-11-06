@@ -1,4 +1,4 @@
-# Phantom Pact 1.6.6: online co-op for Phantom Blade Zero
+# Phantom Pact 1.7.0: online co-op for Phantom Blade Zero
 
 Play the campaign with a friend: you see each other as a second Soul, fight the same enemies and bosses, and
 share loot, dust and bell rests. The host's world decides enemies, bosses and deaths; the guest's world follows.
@@ -52,7 +52,7 @@ a home network; Other Network is for ZeroTier and UU Accelerator. If you want a 
 password on both PCs before you connect. English and 中文 at the top of the panel switch the language of the panel
 and the co-op messages. Your choices are kept for the next start.
 
-**MORE** opens the settings: TP > Partner, PvP, your partner on the map and Steam Direct, each ON or
+**MORE** opens the settings: TP > Partner, PvPvE, your partner on the map and Steam Direct, each ON or
 OFF, Players (2, 4 or 6), and Mode: MULTIPLAYER, or LOCAL for two players on this PC. Mode works from the next time you start the
 game. **Skip Prologue** is red while you're in the prologue: the game skips it itself, when you start a New Game and
 choose its skip. A player who did that gets the healing gourd from the host on joining. It's green once you're past the
@@ -89,7 +89,7 @@ With more than two players:
 - If a guest drops out the others play on. If the host leaves, it's over for everyone.
 - Enemies are shared near the host, and near a guest up to 120 m from the host. Further off the host's game leaves them
   asleep, so each guest out there fights a copy of their own, and the first kill counts for everyone.
-- PvP and Revive stay off.
+- PvPvE and Revive stay off. PvP matches (F6) work with up to six, in two teams.
 - The host sends about 50-100 KB/s with three guests, so a slow upload will show.
 
 - **Updating:** both players update. Extract the new version over the old one, then set `Role` / `HostAddress` again.
@@ -150,9 +150,36 @@ You play in the host's world, so the host's story point counts for both of you:
 
 Each of you sees the other in the clothes they're wearing, outfit, hat and face, and changes show at once.
 
-## PvP (duels)
+## PvP matches (F6)
 
-Both players set `PvP = On` in `PhantomPact.ini`. Your partner becomes an opponent you can fight:
+New in 1.7.0: real matches, fair for everyone, in the game's own boss arenas. Everyone linked presses **F6** in the game:
+
+1. **The host** picks the mode (**Duel**: best of three rounds; **Death**: one life), the clock (none, 60, 90 or 120 s a
+   round) and the arena: the Crimson Forest (YuCong), Hua Qianxiao's stage, the Gold-Masked One's gorge, Mu Xiaokui's
+   meadow, or **Here**, where the host stands. A boss's arena opens once every player's own save has that boss beaten.
+2. **Everyone** picks a loadout (two weapons and two Phantom Edges, any in the game, owned or not: click a slot), a team
+   if there are more than two of you (Crimson or Azure), and presses **READY**.
+3. The host presses **START**. Everyone goes to the arena, the fog walls go up, there are no monsters, and after
+   三 二 一 斗 the fight is on.
+
+Everyone fights with the same body: every skill node on, the same health and attack, every weapon at level 30, and three
+drinks from the same gourd for the whole match. Every blow does half the game's usual damage, so it takes about six clean
+hits to bring someone down: room for parries and reads. Health can't go below 1: at 1 you fall, and you're out of the round. So is
+a player who falls from the arena or rests at a bell. With a clock, when it runs out the team with more health left wins
+the round.
+
+When the match is won, the winners have about five seconds: walk to a fallen foe and press **F** for a finishing move, one of the
+bosses' own. Then the winners get the golden VICTORY and the losers the game's death card, and everyone goes back where
+they were, with their own weapons, levels, gourd and skills. Nothing in a match is saved: the game's saving is off for
+it. If the game crashes in the middle, the mod puts it all back on the next start.
+
+To leave a match, press F6, then LEAVE twice. A player who drops out for 8 seconds ends it for everyone. Everyone needs
+the same Phantom Pact version. Up to six players, so in a party of 4 or 6 it's teams of your choosing.
+
+## PvPvE (fights in the open world)
+
+The old PvP switch, now called PvPvE: you fight each other where you are, enemies and all. Both players turn on PvPvE
+under MORE in the F5 panel (or set `PvP = On` in `PhantomPact.ini`). Your partner becomes an opponent you can fight:
 
 - Their attacks hit you through the game's own combat: **block** (hold the guard button) costs posture,
   a well-timed **parry** (tap guard just before the hit) costs nothing, and dodges work as usual.
@@ -164,7 +191,7 @@ Both players set `PvP = On` in `PhantomPact.ini`. Your partner becomes an oppone
 - Both players fight with the same strength (your partner's ghost uses your stats), so skill decides.
   `PvPDamage` scales the damage you take (100 = normal).
 
-Not in PvP yet: executions (posture break only staggers).
+Not in PvPvE yet: executions (posture break only staggers). It's for two players.
 
 ## Good to know
 

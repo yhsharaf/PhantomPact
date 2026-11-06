@@ -90,6 +90,9 @@ data.DRINKS = 3
 -- which the bench read as these (850 / 100 / 400 / 100 without them).
 data.STATS = { Health_Max = 1360, Attack = 160, Shachi_Max = 640, ShachiAttack = 160 }
 data.WEAPON_LEVEL = 30
+-- Every blow in a match at this share of the game's own (each world's, the same for all): at the top of the game a
+-- Sanguine blow took 499 of 1360, three to fall (the bench, 11-06); at half, six or so, room for parries and reads.
+data.DAMAGE = 0.5
 
 -- Weapons a loadout can hold: the backpack's own ids (PBZBackPackSubsystem), with the game's English names (its own
 -- localization, read on the bench) and Chinese ones (its weapon table's rows). kind: blade, twin, great.

@@ -270,7 +270,7 @@ def banners():
         "death": ("ONE LIFE", "一命定胜负"),
         "round_won": ("ROUND TAKEN", "本回合胜"), "round_lost": ("ROUND LOST", "本回合负"), "round_draw": ("DRAW", "平局"),
         "down": ("YOU'RE DOWN", "你倒下了"), "fell": ("YOU FELL", "你坠落了"),
-        "finish": ("FINISH THEM   F", "处决   F"), "finished": ("FINISHED", "已处决"),
+        "finish": ("PRESS F TO FINISH", "按 F 处决"), "finished": ("FINISHED", "已处决"),
         "won": ("YOUR TEAM WINS", "你的队伍获胜"), "lost": ("YOUR TEAM FALLS", "你的队伍落败"),
         "timeup": ("TIME", "时间到"),
     }

@@ -197,9 +197,9 @@ return function(api)
     end
 
     function ui.matchOver(won, m)
-        showBanner(won and "won" or "lost", 3.0)
+        showBanner(won and "won" or "lost", 2.2)
         if won then
-            api.arena.finishHint = os.clock() + 3.0
+            api.arena.finishHint = os.clock() + 2.2      -- (then "PRESS F TO FINISH" till F stops working)
         end
     end
 
@@ -424,7 +424,7 @@ return function(api)
             drawCount(now)
             if api.arena.finishHint and now >= api.arena.finishHint and m.phase == "finish" and not m.finished
                 and m.teams[me] == m.winner and not banner then
-                showBanner("finish", math.max(0.5, (m.finishUntil or now) - now))
+                showBanner("finish", math.max(0.5, (m.finishBy or m.finishUntil or now) - now))
             end
             drawBanner(now)
             drawDeath(now)

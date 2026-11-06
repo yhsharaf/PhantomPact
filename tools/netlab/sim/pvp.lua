@@ -122,13 +122,17 @@ return function(out, scripts)
     check(ha.match == nil and ga.match == nil, "the guest left: both home")
     s:run(5)
 
-    local errors = 0
-    for _, pc in ipairs(s.pcs) do
-        for _, e in ipairs(pc.errors) do
-            errors = errors + 1
-            if errors <= 6 then out("  error " .. tostring(pc.name or pc.id) .. ": " .. e) end
+    local function errorsIn(sess, label)
+        local n = 0
+        for _, pc in ipairs(sess.pcs) do
+            for _, e in ipairs(pc.errors) do
+                n = n + 1
+                if n <= 6 then out("  error " .. label .. " " .. tostring(pc.name or pc.id) .. ": " .. e) end
+            end
         end
+        return n
     end
+    local errors = errorsIn(s, "duel")
     for _, pc in ipairs(s.pcs) do
         for _, l in ipairs(pc.logs) do
             if l:find("arena:") or l:find("PvP") then
@@ -136,6 +140,48 @@ return function(out, scripts)
             end
         end
     end
+
+    out("three players, teams: the host alone against two guests:")
+    local t = Session.new(scripts, { "Host", "Guest", "Guest" }, 3,
+        { { "near", "BP_Monster_MaleThug_Sword_Blue_C", 300.0, 0.0, 100.0, 850, 400, false } }, nil)
+    local p1, p2, p3 = t.pcs[1], t.pcs[2], t.pcs[3]
+    t:run(5)
+    Session.moveTo(p1, 0, 0)
+    Session.moveTo(p2, 400, 0)
+    Session.moveTo(p3, 0, 400)
+    t:run(3)
+    local a1, a2, a3 = p1.env.PBZ.arena, p2.env.PBZ.arena, p3.env.PBZ.arena
+    Session.command(p1, "arena place 0")
+    Session.command(p1, "arena team 1")
+    Session.command(p2, "arena team 2")
+    Session.command(p3, "arena team 2")
+    Session.command(p2, "arena ready")
+    Session.command(p3, "arena ready")
+    t:run(2)
+    check(a1.blocker() == nil, "three ready, two teams: nothing stops the start: " .. tostring(a1.blocker()))
+    Session.command(p1, "arena start")
+    t:run(9)
+    local m1, m2, m3 = a1.match, a2.match, a3.match
+    check(m1 and m2 and m3 and m1.phase == "fight" and m2.phase == "fight" and m3.phase == "fight",
+        "all three fight: " .. tostring(m1 and m1.phase) .. "/" .. tostring(m2 and m2.phase) .. "/" .. tostring(m3 and m3.phase))
+    check(m1 and m1.teams[1] == 1 and m1.teams[2] == 2 and m1.teams[3] == 2, "the teams as picked")
+    Session.command(p2, "arena down")
+    t:run(3)
+    check(m1 and m1.phase == "fight" and m1.down[2], "one Azure down, the other fights on: " .. tostring(m1 and m1.phase))
+    check(m2 and m2.phase == "out", "the fallen guest is out of the round: " .. tostring(m2 and m2.phase))
+    check(m2 and m2.watching == true and p2.env.PBZ.net.arenaWatching == true,
+        "the fallen guest's camera is on its teammate: " .. tostring(m2 and m2.watching))
+    Session.command(p3, "arena down")
+    t:run(1.5)
+    check(m1 and m1.score[1] == 1 and m1.score[2] == 0, "both Azure down: the round to Crimson, 1 - 0: " ..
+        tostring(m1 and m1.score[1]) .. " - " .. tostring(m1 and m1.score[2]))
+    t:run(6)
+    check(m2 and m2.round == 2 and not m2.watching and not p2.env.PBZ.net.arenaWatching,
+        "round 2: everyone up, the camera back: round " .. tostring(m2 and m2.round))
+    Session.command(p1, "arena leave")
+    t:run(3)
+    check(a1.match == nil and a2.match == nil and a3.match == nil, "the host left: all three home")
+    errors = errors + errorsIn(t, "teams")
     check(errors == 0, "no script errors: " .. errors)
     out(failed == 0 and "PASS" or ("FAILED " .. failed))
     return failed == 0
