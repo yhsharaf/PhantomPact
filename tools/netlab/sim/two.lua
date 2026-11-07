@@ -192,7 +192,7 @@ local function chinese(out, oldScripts, newScripts)
         "partner connected.", "high ping (300 ms).", "high ping (300 ms). On Tailscale, run \"tailscale ping\": via DERP means relayed.",
         "Looking for 10.0.0.1...", "Host address set to 10.0.0.1.", "Couldn't start: nope", "co-op couldn't start: nope",
         "settings differ from your partner's: pvp, revive", "your partner is on Phantom Pact 1.4.1 and you're on 1.4.2: use the same version, or enemies won't stay in step.",
-        "your partner's Phantom Pact (1.4.1-or-older) can't connect to 1.6.7: both PCs need the same version." }
+        "your partner's Phantom Pact (1.4.1-or-older) can't connect to 1.6.8: both PCs need the same version." }
     for _, name in ipairs({ "autostart", "coop", "hud", "lang", "main", "mapicon", "moves", "onlinepanel", "panel", "partner", "pbz", "puppets", "pvp", "revive", "scaling", "status" }) do
         local f = assert(io.open(oldScripts .. "/" .. name .. ".lua", "rb"))
         local text = f:read("a")
