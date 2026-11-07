@@ -1083,6 +1083,9 @@ return function(api)
             if api.puppets then
                 api.puppets.watchHost(name, actor, addr)
             end
+            if game.refillEmptied then
+                posture = game.refillEmptied(actor, addr, posture)     -- (a bar a partner emptied, never filled again)
+            end
             if yaw == yaw and x == x and y == y and z == z then
                 local boss = game.isBoss and game.isBoss(actor, addr) and 1 or 0
                 -- "-" = unknown posture; the client leaves its own alone instead of zeroing it.
@@ -1506,9 +1509,14 @@ return function(api)
                 else
                     net.healTicks[name] = nil
                 end
-                if game.setPosture and r.Posture ~= nil and posture ~= nil and r.Posture < posture - 0.5 then
+                -- (Never down to an empty bar: the host's 0 is a break, its or ours, that fills again. Pulled to 0 after
+                -- this game's own break had filled it, every hit of this player's broke the boss again, for good.)
+                if game.setPosture and r.Posture ~= nil and posture ~= nil and r.Posture < posture - 0.5
+                    and r.Posture > (game.POSTURE_EMPTY or 1.5) then
                     game.setPosture(actor, r.Posture)
                     posture = r.Posture
+                    net.postureTicks[name] = nil
+                elseif game.setPosture and r.Posture ~= nil and r.Posture <= (game.POSTURE_EMPTY or 1.5) then
                     net.postureTicks[name] = nil
                 elseif game.setPosture and r.Posture ~= nil and posture ~= nil and r.Posture > posture + 0.5 then
                     -- (And back up, a few turns on: after the boss's break the bar refills on the host, and here it stayed

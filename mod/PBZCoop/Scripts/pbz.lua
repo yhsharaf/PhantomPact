@@ -1329,6 +1329,33 @@ return function(api)
         syncing = false
     end
 
+    -- A bar a partner's hit emptied (player report 11-07): written to 0 here, the game's own break never ran, so nothing
+    -- ever filled it again. The boss stood at 0 for good, the guest's copy followed it there, and every guest hit
+    -- staggered it. So a bar a partner emptied that is still empty POSTURE_BREAK_S on (no break of the game's own
+    -- filled it) is filled to its max here, as the game's break does. Keyed by address, no actor kept.
+    game.POSTURE_EMPTY, game.POSTURE_BREAK_S, game.postureEmptied = 1.5, 6, {}   -- (empty: the game holds an emptied bar at 1)
+    function game.refillEmptied(actor, addr, posture)
+        local at = game.postureEmptied[addr]
+        if not at or posture == nil then
+            return posture
+        end
+        if posture > game.POSTURE_EMPTY then
+            game.postureEmptied[addr] = nil       -- (filled already: the game's own break ran)
+            return posture
+        end
+        if os.clock() - at < game.POSTURE_BREAK_S then
+            return posture
+        end
+        game.postureEmptied[addr] = nil
+        local ok, max = pcall(function() return actor.AttributeSetBase.Shachi_Max.CurrentValue end)
+        if not (ok and type(max) == "number" and max > game.POSTURE_EMPTY) then
+            return posture
+        end
+        game.setPosture(actor, max)
+        log(string.format("Posture bar a partner emptied was still empty after %d s: filled to %.0f.", game.POSTURE_BREAK_S, max))
+        return max
+    end
+
     -- Host: the client's player hit this enemy. Lower its health and posture; at zero health, let the game run
     -- its death. real: through the game's own kill effect, the whole death as from this player's own blow, so this world
     -- pays its player and a boss's story goes on (its scene after the fight, its reward). Kill() skips all that: a boss
@@ -1341,6 +1368,9 @@ return function(api)
         local posture = game.getPosture(actor)
         if posture and postureDamage and postureDamage > 0 then
             game.setPosture(actor, math.max(0, posture - postureDamage))
+            if posture > game.POSTURE_EMPTY and posture - postureDamage <= game.POSTURE_EMPTY then
+                game.postureEmptied[actor:GetAddress()] = os.clock()
+            end
         end
         local left = math.max(0, hp - amount)
         -- A floor the game set on its own (a boss whose phase ends in a scene: the forest's last boss, YuCong): not crossed by
