@@ -531,8 +531,28 @@ return function(api)
         end)
         if saved and beaten == false then
             log("Beaten in this world too: " .. enemyId .. ".")
+            game.wroteBeaten = game.wroteBeaten or {}
+            game.wroteBeaten[enemyId] = true        -- (this session's own write: see unmarkBeaten)
         end
         return saved
+    end
+
+    -- A boss written beaten at a fall it got up from (Xiaoxue's, in the same fight): alive in this world's record again.
+    -- Only a write of this session's markBeaten is undone, never the save's own.
+    function game.unmarkBeaten(enemyId)
+        if not (game.wroteBeaten and game.wroteBeaten[enemyId]) then
+            return false
+        end
+        local s = spawnerOf(enemyId)
+        local ok = s ~= nil and pcall(function()
+            s.ShouldSpawn = true
+            s:Save()
+        end)
+        if ok then
+            game.wroteBeaten[enemyId] = nil
+            log("Up again after its fall: not beaten in this world after all: " .. enemyId .. ".")
+        end
+        return ok
     end
 
     -- True when this world has the boss beaten, false when it hasn't, nil when its spawner isn't loaded here.
@@ -688,6 +708,24 @@ return function(api)
         pcall(game.hideBossBar, ours)
         pcall(function() ours:K2_DestroyActor() end)
         return true
+    end
+
+    -- One spawned here for the partner's fight (spawnBoss's { addr, fname, class }), that fight over without it dying (the
+    -- partner walked out, died or rested): it goes, with no death, as one the scene replaced does. Left, it stood with its
+    -- own AI by the arena, the bells near it said "in combat", and a host who met it later fought a boss outside any
+    -- encounter. True if it went.
+    function game.dropStandIn(mine)
+        for _, a in pairs(game.listEnemies() or {}) do
+            if valid(a) and not game.isDead(a) and a:GetAddress() == mine.addr then
+                local ok, fname = pcall(function() return a:GetFName():ToString() end)
+                if ok and fname == mine.fname then
+                    pcall(game.hideBossBar, a)
+                    pcall(function() a:K2_DestroyActor() end)
+                    return true
+                end
+            end
+        end
+        return false
     end
 
     -- The host's enemy, in this world too: kills last for good in a save, so a guest who has played further has the early
@@ -1124,10 +1162,13 @@ return function(api)
         end)
         local addr, name = actor:GetAddress(), actor:GetFName():ToString()
         game.after(DISSOLVE.HIDE_S, function()
-            -- (And by name: one respawned at that address in the meantime was hidden for good.)
-            if valid(actor) and actor:GetAddress() == addr and actor:GetFName():ToString() == name then
-                for _, mesh in ipairs(DISSOLVE.meshes(actor)) do
-                    pcall(function() mesh:SetVisibility(false, true) end)
+            -- (And by name: one respawned at that address in the meantime was hidden for good. Found again in a fresh list,
+            -- not the actor of 1.6 s ago: one the game had cleared away could read as valid.)
+            for _, a in pairs(game.listEnemies() or {}) do
+                if valid(a) and a:GetAddress() == addr and select(2, pcall(function() return a:GetFName():ToString() end)) == name then
+                    for _, mesh in ipairs(DISSOLVE.meshes(a)) do
+                        pcall(function() mesh:SetVisibility(false, true) end)
+                    end
                 end
             end
         end)
@@ -1226,7 +1267,43 @@ return function(api)
             return false
         end
         forgetBoss(actor)
-        game.kill(actor)
+        -- (Refused: tried once more a moment on, the copy found again by address and name, then the quiet kill with the
+        -- death's dissolve, the body out of reach. The quiet kill alone stood frozen and still took blows till the game
+        -- cleared it some 10 s on: "after P2 empties a mob's bar it can still be hit, and the model vanishes seconds
+        -- later" (1.6.3's report 1). Said once a kind of enemy, with what might have stopped it.)
+        local addr = actor:GetAddress()
+        local fname = select(2, pcall(function() return actor:GetFName():ToString() end))
+        DISSOLVE.refused = DISSOLVE.refused or {}
+        local kind = tostring(className(actor))
+        if not DISSOLVE.refused[kind] then
+            DISSOLVE.refused[kind] = true
+            log(string.format("The game refused a %s's death here (health %s, hit state %s): tried again, then dissolved.",
+                kind, tostring(hp), tostring(game.hitStateOf and select(1, game.hitStateOf(actor)))))
+        end
+        if game.stopAI then
+            game.stopAI(actor)
+        end
+        game.after(0.35, function()
+            local again = nil
+            for _, a in pairs(game.listEnemies() or {}) do
+                if valid(a) and a:GetAddress() == addr
+                    and select(2, pcall(function() return a:GetFName():ToString() end)) == fname then
+                    again = a
+                end
+            end
+            if not again or game.isDead(again) then
+                return              -- (gone, or dead by now: a blow of this player's own, say)
+            end
+            game.setMinHealth(again, 0)
+            syncing = true
+            local ok2 = applyKillEffect(again)
+            syncing = false
+            local hp2 = game.getHealth(again)
+            if not (ok2 and hp2 ~= nil and hp2 <= 0) then
+                game.dissolveKill(again)
+                pcall(function() again:SetActorEnableCollision(false) end)
+            end
+        end)
         return false
     end
 
@@ -3395,8 +3472,15 @@ return function(api)
         return { Pitch = math.deg(math.atan(dz, math.sqrt(dx * dx + dy * dy))), Yaw = math.deg(math.atan(dy, dx)), Roll = 0.0 }
     end
 
-    local function followFrame()
+    -- One step, every frame while it follows: coop's frameTicks.spectate, called with nothing. (On game.after's 16 ms loop it
+    -- moved every second or third frame at a high frame rate, a judder; the review of 1.7.0.) loop: the timer's way, only
+    -- with no coop ticks to run on.
+    local function followFrame(loop)
         if not (spectating and valid(spectating) and valid(spectateCam)) then
+            local ticks = api.coop and api.coop.frameTicks
+            if ticks then
+                ticks.spectate = nil
+            end
             return
         end
         local want, at = camSpot(spectating)
@@ -3404,7 +3488,9 @@ return function(api)
         local a = CAM_FOLLOW
         local pos = { X = cur.X + (want.X - cur.X) * a, Y = cur.Y + (want.Y - cur.Y) * a, Z = cur.Z + (want.Z - cur.Z) * a }
         spectateCam:K2_SetActorLocationAndRotation(pos, aim(pos, at), false, {}, true)
-        game.after(0.016, followFrame)
+        if loop then
+            game.after(0.016, function() followFrame(true) end)
+        end
     end
 
     function game.spectate(target)
@@ -3448,7 +3534,12 @@ return function(api)
         local wasFollowing = spectating ~= nil
         spectating = (ok and follow) or nil
         if spectating and not wasFollowing then
-            game.after(0.016, followFrame)
+            local ticks = api.coop and api.coop.frameTicks
+            if ticks then
+                ticks.spectate = followFrame
+            else
+                game.after(0.016, function() followFrame(true) end)
+            end
         end
         return ok
     end

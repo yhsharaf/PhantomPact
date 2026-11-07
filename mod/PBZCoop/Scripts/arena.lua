@@ -2314,6 +2314,10 @@ return function(api)
             if m.phase == "count" then
                 pcall(startFight, m)
             end
+            -- (And what moves on the match screen, every frame: see arenaui's animate.)
+            if ui() and ui().animate then
+                ui().animate(m, mySlot())
+            end
         end
     end
 

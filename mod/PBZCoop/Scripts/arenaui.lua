@@ -48,10 +48,14 @@ return function(api)
         return zh() and ("zh_" .. tex) or tex
     end
 
+    -- The screen's size, asked again once a second (a window resized), not at every tick and frame.
     local function measure()
         local pc = api.getPlayer1()
         if not valid(pc) then
             return false
+        end
+        if os.clock() - (screen.at or -1e9) < 1.0 then
+            return true
         end
         local ok = pcall(function()
             local lib = StaticFindObject("/Script/UMG.Default__WidgetLayoutLibrary")
@@ -59,6 +63,9 @@ return function(api)
             screen.w, screen.h = size.X / scale, size.Y / scale
             screen.s = screen.h / 1080
         end)
+        if ok then
+            screen.at = os.clock()
+        end
         return ok
     end
 
@@ -82,8 +89,12 @@ return function(api)
     -- A picture by name: made once (again after a map change, when the old widget has gone), then placed and shown each frame.
     local function part(name, tex, w, h, z)
         local p = parts[name]
-        if p and (p.map ~= coop.net.localMap or not (api.status and api.status.onScreen(p.widget))) then
+        -- (Whether it's still on the screen asked twice a second, not at every frame: the map is checked every time.)
+        if p and (p.map ~= coop.net.localMap or (os.clock() - (p.seenAt or -1e9) >= 0.5
+            and not (api.status and api.status.onScreen(p.widget)))) then
             parts[name], p = nil, nil
+        elseif p and os.clock() - (p.seenAt or -1e9) >= 0.5 then
+            p.seenAt = os.clock()
         end
         if not p then
             local widget = hud.newImage(tex, w, h, Z + (z or 0))
@@ -98,22 +109,45 @@ return function(api)
         return p
     end
 
-    -- Centred at x, y (screen units, 1080 high), drawn w x h, at opacity a and size k (1: as drawn).
+    -- Centred at x, y (screen units, 1080 high), drawn w x h, at opacity a and size k (1: as drawn). Each call made only when
+    -- what it sets has moved (under half a pixel, or 0.005 of opacity, is nothing): five calls a picture at every tick were
+    -- most of the match screen's cost, now it's drawn every frame. (A picture made again starts with nothing known.)
     local function put(p, x, y, w, h, a, k)
         if not p then
             return
         end
         local s = screen.s * (k or 1)
-        pcall(function()
-            p.widget:SetPositionInViewport({ X = x * screen.s, Y = y * screen.s }, false)
-            p.widget:SetRenderOpacity(a or 1)
-        end)
+        local px, py, op = x * screen.s, y * screen.s, a or 1
+        local last = p.last or {}
+        p.last = last
+        if not last.x or math.abs(px - last.x) >= 0.5 or math.abs(py - last.y) >= 0.5 then
+            if pcall(function() p.widget:SetPositionInViewport({ X = px, Y = py }, false) end) then
+                last.x, last.y = px, py
+            end
+        end
+        if not last.a or math.abs(op - last.a) >= 0.005 then
+            if pcall(function() p.widget:SetRenderOpacity(op) end) then
+                last.a = op
+            end
+        end
         -- Shown only once sized: a new one isn't laid out yet in its first frame and drew at its own size (on the bench, a
-        -- guest's countdown opened on a huge "PLAYER 1" over a red block). Hidden, not collapsed, so it gets laid out.
-        if hud.fit(p.widget, (w or p.w) * s, (h or p.h) * s) then
-            hud.show(p.widget, (a or 1) > 0.01)
-        else
+        -- guest's countdown opened on a huge "PLAYER 1" over a red block). Hidden, not collapsed, so it gets laid out. (Its
+        -- render scale set again only for a new size: its own layout size doesn't change once it has one.)
+        local fw, fh = (w or p.w) * s, (h or p.h) * s
+        local fitted = last.fitted and math.abs(fw - last.fw) < 0.5 and math.abs(fh - last.fh) < 0.5
+        if not fitted then
+            fitted = hud.fit(p.widget, fw, fh)
+            last.fitted, last.fw, last.fh = fitted, fw, fh
+        end
+        if fitted then
+            local on = op > 0.01
+            if last.shown ~= on then
+                hud.show(p.widget, on)
+                last.shown = on
+            end
+        elseif last.shown ~= false then
             pcall(function() p.widget:SetVisibility(2) end)
+            last.shown = false
         end
     end
 
@@ -123,10 +157,16 @@ return function(api)
         return p.map == coop.net.localMap and api.status ~= nil and api.status.onScreen(p.widget)
     end
 
+    -- (Nothing called for one hidden already: four of these ran a valid() and a SetVisibility at every tick of a fight.)
     local function hide(name)
         local p = parts[name]
+        if p and p.last and p.last.shown == false and p.map == coop.net.localMap then
+            return
+        end
         if p and usable(p) then
             hud.show(p.widget, false)
+            p.last = p.last or {}
+            p.last.shown = false
         elseif p then
             parts[name] = nil
         end
@@ -137,6 +177,8 @@ return function(api)
             if not prefix or name:sub(1, #prefix) == prefix then
                 if usable(p) then
                     hud.show(p.widget, false)
+                    p.last = p.last or {}
+                    p.last.shown = false
                 else
                     parts[name] = nil
                 end
@@ -444,14 +486,27 @@ return function(api)
         local W = screen.w / screen.s
         for _, d in ipairs(death.widgets) do
             local a = math.min(1, (now - death.since) / d.fade)
-            pcall(function()
-                d.widget:SetPositionInViewport({ X = W / 2 * screen.s, Y = (540 + 1080 * d.dy) * screen.s }, false)
-            end)
+            -- (Each call only when what it sets moved, as put() does: drawn every frame now.)
+            local px, py = W / 2 * screen.s, (540 + 1080 * d.dy) * screen.s
+            if not d.x or math.abs(px - d.x) >= 0.5 or math.abs(py - d.y) >= 0.5 then
+                if pcall(function() d.widget:SetPositionInViewport({ X = px, Y = py }, false) end) then
+                    d.x, d.y = px, py
+                end
+            end
             -- (Seen only once sized: a new one isn't laid out in its first frame and drew at its own size, as put() says.)
-            local fitted = hud.fit(d.widget, d.w * screen.s, d.h * screen.s)
-            pcall(function() d.widget:SetRenderOpacity(fitted and a or 0) end)
-            if fitted then
+            local fw, fh = d.w * screen.s, d.h * screen.s
+            if not (d.fitted and d.fw == fw and d.fh == fh) then
+                d.fitted, d.fw, d.fh = hud.fit(d.widget, fw, fh), fw, fh
+            end
+            local op = d.fitted and a or 0
+            if not d.a or math.abs(op - d.a) >= 0.005 then
+                if pcall(function() d.widget:SetRenderOpacity(op) end) then
+                    d.a = op
+                end
+            end
+            if d.fitted and not d.shown then
                 hud.show(d.widget, true)
+                d.shown = true
             end
         end
     end
@@ -467,6 +522,7 @@ return function(api)
 
     ------------------------------------------------------------------ each frame, and away
 
+    -- At the arena's tick: the foes' bars, and what says when the finishing hint comes.
     function ui.frame(m, me)
         if not measure() then
             return
@@ -481,11 +537,26 @@ return function(api)
                     hideFoeBar(slot)
                 end
             end
-            drawCount(now)
             if api.arena.finishHint and now >= api.arena.finishHint and m.phase == "finish" and not m.finished
                 and m.teams[me] == m.winner and not m.down[me] and not banner then
                 showBanner("finish", math.max(0.5, (m.finishBy or m.finishUntil or now) - now))
             end
+        end)
+        if not ok and err ~= ui.lastError then
+            ui.lastError = err
+            log("arena screen: " .. tostring(err))
+        end
+    end
+
+    -- Every frame (arena.lua's frameTicks.arenaTime): what moves, the countdown, the banners and the last screens. (At the
+    -- arena's tick they moved 30 times a second at 60 FPS, a stutter in the eases; put() makes no call that changes nothing.)
+    function ui.animate(m, me)
+        if not (count or fightAt or banner or death) or not measure() then
+            return
+        end
+        local now = os.clock()
+        local ok, err = pcall(function()
+            drawCount(now)
             drawBanner(now)
             drawDeath(now)
         end)

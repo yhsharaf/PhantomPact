@@ -27,7 +27,25 @@ Not posted. For the user to edit and post, on GitHub and Nexus.
 **PvPvE.** The old PvP switch under MORE is now called PvPvE: fighting each other in the open world, enemies and all. It
 works as before.
 
-Both players need 1.7.0. Thanks to shilover (Rakka) for the ideas in issue #13.
+**Co-op fixes, from your reports:**
+
+- Bosses fight back: a partner's hits no longer stun-lock a boss. It flinches only when its posture breaks, never in the
+  middle of its own attack, and the guest is in danger again
+- Bells: joining a host further along no longer lights every bell they have (Pangzhen's all lit, fast travel everywhere).
+  A host's bell lights for you when you walk up to it
+- Dying in a boss fight while your partner fights on: you stay down until it's over, and the boss is no longer reset to
+  full health a few seconds later (the host's death ended the guest's copy of the fight). A boss's phase scene or an
+  execution no longer ends the wait either
+- Joining while the host is in a boss fight: F3 takes you in right away, and after 30 s (was 3 minutes) you're free to move
+  anyway. No more standing there with no control
+- Story bosses: a boss your partner started first stays your fight when your own scene brings it in; Xiaoxue getting up
+  again no longer vanishes for the guest; a leftover copy no longer blocks the bell by the arena ("in combat")
+- Enemies that turned invisible after a teleport or a bell come back, and a mob emptied by the guest no longer stands
+  frozen and hittable for seconds, or now and then can't be killed at all
+- A teammate's drink glow and other copied effects end when they should
+- In PvP, a match no longer resets your skill tree (it could take your nodes and lock talisman slots)
+
+Both players need 1.7.0. Thanks to shilover (Rakka) for the ideas in issue #13, and to everyone who sent reports and logs.
 
 ## 中文
 
@@ -46,4 +64,15 @@ Both players need 1.7.0. Thanks to shilover (Rakka) for the ideas in issue #13.
 
 **PvPvE。** “更多”里原来的 PvP 开关现在叫 PvPvE:在开放世界交手,敌人照样在场,玩法不变。
 
-双方都需要 1.7.0。感谢 shilover(Rakka)在 issue #13 中提出的想法。
+**合作修复(来自大家的反馈):**
+
+- 首领会还手了:队友的攻击不会再让首领一直被打断。只有架势被打破时才会硬直,不会在它自己出招时被打断,客人也重新面临危险
+- 钟:加入进度更靠前的房主时,不会再点亮房主所有的钟(庞镇全部点亮、到处都能传送)。房主点亮的钟要等你走到旁边才会为你点亮
+- 队友还在首领战中时你倒下:你会一直等到战斗结束,首领不会再在几秒后回满血(房主的死亡曾结束客人那边的战斗)。首领的转阶段动画或处决也不会结束等待
+- 房主在首领战中时加入:按 F3 可立即加入,30 秒后(原来是 3 分钟)无论如何都可以自由行动,不会再站着无法操作
+- 剧情首领:队友先开始的首领战,在你自己的剧情把首领带出来时仍然是你的战斗;小雪重新站起来后不会在客人那边消失;残留的复制体不会再挡住场地旁的钟(“战斗中”)
+- 传送或坐火后隐身的敌人会回来;客人打空血条的小怪不会再僵在原地几秒还能被打,也不会偶尔怎么都打不死
+- 队友喝药的光效等复制的特效会按时结束
+- PvP 比赛不会再重置你的技能树(之前可能让你失去节点并锁住护符槽)
+
+双方都需要 1.7.0。感谢 shilover(Rakka)在 issue #13 中提出的想法,也感谢所有提交反馈和日志的玩家。

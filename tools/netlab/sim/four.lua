@@ -2327,6 +2327,39 @@ local function playerReports()
         allErrors(s)
     end
     do
+        -- The boss spawned on the host for a guest's fight, that fight over without its death (the guest walked out): it
+        -- stood on with its own AI, the bells by it "in combat", and a host who met it later fought it outside its encounter.
+        local list = {}
+        for _, e in ipairs(ENEMIES) do
+            list[#list + 1] = e
+        end
+        list[#list + 1] = { "ChiLian_Seq034", "BP_Monster_Boss_C", 3000.0, 3400.0, 100.0, 5000, 400, true }
+        local s = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, list)
+        local sh, sg = s.pcs[1], s.pcs[2]
+        local hi = Session.indexOf(sh, "ChiLian_Seq034")
+        local hsp = sh.spawners[hi]
+        Fake.put(hsp, "SpawnedAI", nil)
+        table.remove(sh.enemies, hi)
+        local stand = nil
+        Fake.put(hsp, "ClaimSeqSpawn", function(self)       -- (the game's spawn: a boss of its own on the host)
+            stand = Fake.enemy(sh, "standin", "BP_Monster_Boss_C", 3000.0, 3400.0, 100.0, 5000, 400, true)
+            table.remove(sh.spawners, Session.indexOf(sh, "standin"))
+            Fake.put(self, "SpawnedAI", stand)
+        end)
+        s:run(4)
+        Session.moveTo(sh, 3000, 3000)
+        Session.moveTo(sg, 3000, 3200)
+        s:run(2)
+        sg.hudLayout:RegisterBossHPBar(Session.enemyOn(sg, "ChiLian_Seq034"))
+        s:run(3)
+        check(stand ~= nil and rawget(stand, "__alive") ~= false, "(spawned on the host for the guest's fight)")
+        sg.hudLayout:UnRegisterBossHPBar(Session.enemyOn(sg, "ChiLian_Seq034"))     -- (the guest walks out)
+        s:run(8)
+        check(stand and rawget(stand, "__alive") == false and field(stand, "realDeath") ~= true,
+            "that fight over without its death: the boss spawned for it goes, with no death")
+        allErrors(s)
+    end
+    do
         -- Report 9 and the bench's sweep: Xiaoxue fell, both worlds ran her death, then she was up again on the host and the
         -- guest's copy stayed dead: the boss "vanished" for the guest, the host's alone to finish and be paid for.
         local s, h, g = pair()
@@ -2420,6 +2453,38 @@ local function playerReports()
             whole = whole or g.logs[i]:find("its death runs here too", 1, true) ~= nil
         end
         check(whole, "and its death at the host's kill is the whole death there")
+        allErrors(s)
+    end
+    do
+        -- 乱葬岗 vs 小雪 (a Nexus report, 11-05): she falls in the host's fight and gets up again in it. The host took its own
+        -- bar down and opened its walls at the fall, and the guest's world, raising her by its own script, killed her
+        -- quietly as the host's old kill and wrote her beaten: she vanished for the guest, the reward the host's alone.
+        local s, h, g = pair()
+        Session.moveTo(h, 3000, 2800)
+        Session.moveTo(g, 3000, 2700)
+        s:run(3)
+        bossStart(s)
+        s:run(4)
+        local downs = 0
+        local realDown = rawget(h.hudLayout, "__fields").UnRegisterBossHPBar
+        Fake.put(h.hudLayout, "UnRegisterBossHPBar", function(self, b)
+            downs = downs + 1
+            return realDown(self, b)
+        end)
+        local boss = Session.enemyOn(h, "boss")
+        Fake.setHealth(boss, 0)
+        Fake.put(boss, "dead", true)
+        s:run(2)
+        check(downs == 0, "she falls: the host's own bar is the game's to take down, not the mod's")
+        Fake.put(boss, "dead", false)
+        Fake.setHealth(boss, 3000)
+        local gc = Session.enemyOn(g, "boss")
+        Fake.put(gc, "dead", false)
+        Fake.setHealth(gc, 3000)
+        g.hudLayout:RegisterBossHPBar(gc)            -- (the guest's own world raises her, her bar with her)
+        s:run(3)
+        check(field(gc, "dead") ~= true, "up again on the guest by its own script: not killed as the host's old kill")
+        check(h.env.PBZ.game.isBeaten("sp:boss") ~= true, "and on the host her record isn't left beaten")
         allErrors(s)
     end
     do
@@ -2607,6 +2672,32 @@ local function playerReports()
         o:run(20)
         check(not og.storyMarks["zddy.chain.broken"], "FollowHostStory = Off: the guest's flow stays its own")
         allErrors(o)
+    end
+    do
+        -- 1.6.3's report 1: "after P2 empties a mob's bar it can still be hit, and the model vanishes seconds later". The
+        -- game refused the copy's death at the host's K (a state just after the killing blow): the quiet kill alone stood
+        -- frozen and still took blows till the game cleared it. Tried again a moment on, then dissolved, out of reach.
+        local s, h, g = pair()
+        s:run(2)
+        local copy = Session.enemyOn(g, "near")
+        Fake.put(copy, "locked", true)              -- (the game won't let it die just now)
+        local theirs = Session.enemyOn(h, "near")
+        Fake.setHealth(theirs, 0)
+        Fake.put(theirs, "dead", true)
+        s:run(0.2)
+        Fake.put(copy, "locked", false)             -- (and lets it a moment on)
+        s:run(1)
+        check(field(copy, "realDeath") == true, "a copy whose death the game refused dies its whole death when tried again")
+        local copy2 = Session.enemyOn(g, "thug1")
+        Fake.put(copy2, "locked", true)             -- (refused for good)
+        Fake.put(copy2, "SetActorEnableCollision", function(self, on) Fake.put(self, "collides", on) end)
+        local theirs2 = Session.enemyOn(h, "thug1")
+        Fake.setHealth(theirs2, 0)
+        Fake.put(theirs2, "dead", true)
+        s:run(2)
+        check(field(copy2, "dead") == true and field(copy2, "collides") == false, "refused again: dissolved, out of reach")
+        check(count(g.logs, "refused a ") >= 1, "and said in the log, with what may have stopped it")
+        allErrors(s)
     end
     do
         -- Report 3: "small enemies go invisible; teleporting to the player or sitting at a bell sets it off".

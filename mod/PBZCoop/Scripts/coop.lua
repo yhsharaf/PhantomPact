@@ -800,6 +800,15 @@ return function(api)
         if at and game.setBossFog then
             game.setBossFog(at, false)
         end
+        -- (The stand-in this PC spawned for that fight, if it's still standing: the fight over without its death. See
+        -- game.dropStandIn. One that died, the host's kill, is dead already and stays.)
+        local stand = net.spawnedFor and net.spawnedFor[name]
+        if stand then
+            net.spawnedFor[name] = nil
+            if game.dropStandIn and game.dropStandIn(stand) then
+                log("The boss spawned here for the other player's fight with " .. name .. " went with that fight.")
+            end
+        end
     end
 
     -- Those fights end here, with no word from the boss: their owner left, or stopped. whose: that player's number (nil for all).
@@ -1031,7 +1040,9 @@ return function(api)
                         log("Boss items for your partner too: " .. table.concat(paid, ", ") .. ".")
                     end
                 end
-                if boss then
+                -- (A copy of another's fight only: this game's own fight is its own to end, its bar and walls the game's. At
+                -- Xiaoxue's fall, which she gets up from, the host's bar was taken down and its walls opened mid-fight.)
+                if net.partnerBosses[name] or net.pendingBosses[name] or (game.isMirrorBar and game.isMirrorBar(actor)) then
                     endBossFight(name, actor)
                 end
             end
@@ -1048,6 +1059,11 @@ return function(api)
             if net.deadSent[name] and net.fellInFight and net.fellInFight[name] then
                 local fell = net.fellInFight[name]
                 net.fellInFight[name] = nil
+                -- (Its record written beaten at the fall: alive again, or this world's B answered every guest "beaten" and
+                -- their copy was killed on sight: "the boss vanishes for the guest and only the host gets the reward".)
+                if game.unmarkBeaten then
+                    game.unmarkBeaten(name)
+                end
                 if os.clock() - fell < 600 and game.trackBoss and game.trackBoss(actor) then
                     log("Boss " .. name .. " is up again here after its fall: still a fight.")
                     net.ownFightOn(actor)
@@ -2218,8 +2234,11 @@ return function(api)
                     -- The game's own death, at level 0 so it pays nothing here: the quiet kill skipped what listens for
                     -- deaths, and a quest waiting for the monsters to be dealt with (Fierce Axe) never moved, not even after
                     -- a reload.
-                    game.killForReal(actor)
-                    log("Host says " .. name .. " died; it dies here too.")
+                    if game.killForReal(actor) then
+                        log("Host says " .. name .. " died; it dies here too.")
+                    else
+                        log("Host says " .. name .. " died; its death was refused here: tried again, then dissolved.")
+                    end
                 elseif game.kill then
                     game.kill(actor)
                     log("Host says " .. name .. " died; killed it here.")
@@ -3025,6 +3044,15 @@ return function(api)
         log("The other player's " .. name .. " is beaten here: telling them.")
     end
 
+    -- A boss that fell in a fight here a moment ago: maybe one that gets up again in the same fight (Xiaoxue). Not said to be
+    -- beaten meanwhile (HAS, B): the guest's copy was killed on sight and the boss vanished there for good. (Host, its own
+    -- clock: os.clock.)
+    net.FALL_GRACE_S = 90
+    function net.fellLately(name)
+        local at = net.fellInFight and net.fellInFight[name]
+        return at ~= nil and os.clock() - at < net.FALL_GRACE_S
+    end
+
     -- A guest asks after an enemy of its own. Anything loaded here counts, however far from this player: only "no" is sent.
     handlers.HAS = function(name, from)
         if not isHost() then
@@ -3049,6 +3077,9 @@ return function(api)
             if valid(actor) and enemyName(actor, addrs[i]) == name and not game.isDead(actor) then
                 return
             end
+        end
+        if net.fellLately(name) then
+            return          -- (down a moment, maybe getting up: nothing said; the guest asks again)
         end
         if game.isBeaten and game.isBeaten(name) then
             tellBeaten(name, from)
@@ -3113,6 +3144,9 @@ return function(api)
             spawned.untilAt = os.clock() + 120
             net.extraBossWatch = net.extraBossWatch or {}
             net.extraBossWatch[name] = spawned
+            -- (And kept for the whole fight: one still standing when that fight ends without its death goes, endBossFight.)
+            net.spawnedFor = net.spawnedFor or {}
+            net.spawnedFor[name] = { addr = spawned.addr, fname = spawned.fname, class = spawned.class }
         end
         if turned and isClient() then
             -- (Written alive in this save for the host's fight: dead again when the session ends, unless the host's kill
@@ -3421,7 +3455,8 @@ return function(api)
     end
 
     handlers.B = function(name, from)
-        if isHost() and game.isBeaten and game.isBeaten(name) then
+        -- (Not one that fell here a moment ago: see net.fellLately. Up again, its record is alive again: game.unmarkBeaten.)
+        if isHost() and game.isBeaten and game.isBeaten(name) and not net.fellLately(name) then
             tellBeaten(name, nil)       -- (to everyone: the relay gave the other guests this fight too)
             return
         end
@@ -3478,6 +3513,22 @@ return function(api)
             name = enemyName(actor, addr)
         end
         if isClient() and net.hostKilled[name] then
+            -- (Unless it fell in a fight a moment ago: a boss that gets up again in it (Xiaoxue), raised here by this world's
+            -- own script. Killed quietly 0.1 s on and written beaten, it vanished for the guest, and only the host's world
+            -- gave the story's reward. It's the host's fight again here, as bring.missing makes it.)
+            local fell = net.bossFell and net.bossFell[name]
+            if fell and (net.frameNow or link.now()) - fell < net.FALL_GRACE_S then
+                net.hostKilled[name], net.pendingDeaths[name] = nil, nil
+                local hostFights = net.party and peerOf(nil).fights or (not net.party and net.partnerFighting)
+                if hostFights then
+                    net.partnerBosses[name], net.hostBosses[name], net.pendingBosses[name] = true, true, true
+                    if net.party then
+                        net.fightOf[name] = 1
+                    end
+                end
+                log("Boss " .. name .. " is up again here after its fall: the host's fight again, not killed.")
+                return
+            end
             -- The host has beaten this boss: this copy came back with our own respawn. It stays dead, and no fight starts.
             game.after(0.1, function()
                 if valid(actor) then
@@ -4042,6 +4093,7 @@ return function(api)
             net.notOnHost, net.aside = {}, {}
             net.parkedClones = {}       -- (the world takes them with it)
             net.bossFell, net.extraBossWatch, net.lethalPending = {}, {}, {}     -- (this world's actors go with the load: nothing to bring back down)
+            net.spawnedFor = {}
             -- Enemies this world brought back for the host go back to dead in it before it's saved and left: put back at the
             -- end of the session, they'd be put back in whatever world is loaded then.
             pcall(bring.putBackAll)
