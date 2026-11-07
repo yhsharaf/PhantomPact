@@ -1024,6 +1024,51 @@ return function(api)
     end
     arena.middleOf = middleOf
 
+    -- "Here": the line the two sides stand on (the host's start sends it with the middle). From the host's facing, then round
+    -- in 30-degree steps, the first whose two first spots have floor within 1.5 m of the host's feet and a clear view of each
+    -- other at chest height (the game's visibility channel, every player left out). None: the host's facing, as before. (The
+    -- bench, 11-07: on a river bank the guest began each round behind a tree, its camera in the branches.)
+    function arena.hereYaw(pawn, l, yaw)
+        local ksl = StaticFindObject("/Script/Engine.Default__KismetSystemLibrary")
+        if not valid(ksl) then
+            return yaw
+        end
+        local skip, none = {}, { R = 0, G = 0, B = 0, A = 0 }
+        for _, p in ipairs(coop.partners()) do
+            if valid(p.ghost) then
+                skip[#skip + 1] = p.ghost
+            end
+        end
+        local function hitOf(from, to)
+            local hit = {}
+            local ok, got = pcall(function()
+                return ksl:LineTraceSingle(pawn, from, to, 0, false, skip, 0, hit, true, none, none, 0)
+            end)
+            return ok and got and hit or nil
+        end
+        local feet = l.Z - 90
+        local function floorAt(s)
+            local hit = hitOf({ X = s.X, Y = s.Y, Z = feet + 250 }, { X = s.X, Y = s.Y, Z = feet - 400 })
+            local z = hit and hit.Location and tonumber(hit.Location.Z)
+            return z and math.abs(z - feet) <= 150 and z or nil
+        end
+        for i = 0, 11 do
+            local y = (yaw + (i % 2 == 1 and 1 or -1) * math.ceil(i / 2) * 30) % 360
+            local list = data.spots(l, 800, y)
+            local a, b = list[1][1], list[2][1]
+            local fa, fb = floorAt(a), floorAt(b)
+            if fa and fb and not hitOf({ X = a.X, Y = a.Y, Z = fa + 120 }, { X = b.X, Y = b.Y, Z = fb + 120 }) then
+                if i > 0 then
+                    log(string.format("PvP: here, the sides stand %d degrees round from the host's facing: a clear line.",
+                        math.floor((y - yaw) % 360 + 0.5)))
+                end
+                return y
+            end
+        end
+        log("PvP: here, no line round the host with floor and a clear view at both ends: the host's facing.")
+        return yaw
+    end
+
     local function mapOf(m)
         if m.place == 0 then
             return m.middle.map
@@ -2028,6 +2073,10 @@ return function(api)
         end
         local l = locOf(pawn)
         local yaw = pawn:K2_GetActorRotation().Yaw
+        if arena.place == 0 then
+            local ok, y = pcall(arena.hereYaw, pawn, l, yaw)
+            yaw = ok and y or yaw
+        end
         local middle = { X = l.X, Y = l.Y, Z = l.Z, Yaw = yaw, map = game.mapName(pawn) }
         local m = newMatch(id, arena.mode, arena.timer, arena.place, middle, teams, spots, presets)
         coop.sendEvent("AR", "start", id, m.mode, m.timer, m.place, string.format("%.0f %.0f %.0f %.0f %s", l.X, l.Y, l.Z, yaw,
