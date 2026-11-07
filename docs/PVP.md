@@ -41,7 +41,8 @@ round the foe 30 degrees at a time. With no room anywhere, a move that won't loa
 winner steps in close and plays the game's own execution of the Infernal Rouge, `Hun_HeiMoShang_EXE_F_04`, a spinning grab and
 an overhead cut. (The club bosses' leap and slam came first, and Du Yan's point-blank shot; the user found the leap wrong and the
 shot poor, so both went, and no finishing move leaves the ground. A few bosses also have a grab whose victim half is made for
-the player's body, Hua Qianxiao's `Skill_04` with `Skill_03_Hun`; lining the two up is untried.) Each was played in a real
+the player's body, Hua Qianxiao's `Skill_04` with `Skill_03_Hun`, the same 5.6 s; tried on the bench 11-07 they make no pair:
+her half is a backflip that leaves the ground and lands 8 m away, the victim's slides 2.4 m back and comes forward again.) Each was played in a real
 match on the bench, both screens: the run, the blow, the fall. Every screen cuts to a camera beside the two, low, turning round them from the
 winner's face to the beaten's as the move plays, as a fighting game shows its finishing moves. It keeps clear of rock and wall
 as the game's own camera arm does: the line from the two to it is traced each frame and it comes in before anything on it, and
@@ -60,6 +61,10 @@ two whip components, the blade, the other players' figures, the world's lasting 
 cable. With every player's actors hidden at once one line still stood: something of the world's that follows the player, not
 found yet. `ResetAnimInstanceDynamics` on the body's parts hung the game thread, so don't call that; this build ignores
 `show` flags, so they can't sort it either. The Dread Axe's release left the same lines, which first looked like its chains.
+Close up they're two thin strands side by side, like a chain; the Hunter's Chain Sickle's own actors (`BP_Weapon_ShachiHook_L/R`)
+don't exist until it's used, so not those. They go with the outfit: every sighting was on the starting outfit (the red cape and
+headband); the late-game save's (a straw hat, a dark coat) showed none through four arena matches, their trips and finishing
+moves, the same night.
 
 ## Who decides what
 
@@ -229,10 +234,11 @@ fell 110 m and lost round 1.
   spawner's own `SpawnerSaveInfo.IsAlive = false` and `SetShouldNotSpawnAfterDead = true`, then its `Save()` (that writes a
   record the save lacks; one it has already is changed in place, through `SpawnerSaveData`'s value), and a trip for the game
   to save it. Without `SetShouldNotSpawnAfterDead` a record comes back alive after a death or a trip home, and the host's
-  arena check then refuses that arena, as it should. Matches in the real arenas, 11-07: the game's own trip there (3 to 24 s),
-  both players at their spots 8 m from the middle, the gorge's fog wall closed (by its own collision, 28 m from the middle),
-  the fight, F pressed for real and the arena's boss's move, the cards, the trip home: Hua Qianxiao's stage, the Gold-Masked
-  Gorge, Mu Xiaokui's meadow. The Crimson Forest could not be tried: on that save YuCong's fight was left half done by the
-  test itself (killed in phase one, then the records written), so arriving started his second phase's prison scene and it
-  killed the guest; the match ended cleanly on both copies ("you died", "player 2 left"). A save where YuCong was beaten in a
-  real fight has no such scene.
+  arena check then refuses that arena, as it should. Write the records without starting the fights (the bench's
+  `pvpbeaten.ps1` stops at each boss's arena and writes them there, its bar never up): the first try killed YuCong's first
+  phase before writing his, and arriving later started his second phase's prison scene, which killed the guest (the match
+  ended cleanly on both copies, "you died", "player 2 left"). Matches in all four arenas, one after another, 11-07 late: the
+  game's own trip there (3 to 27 s), both players at their spots 8 m from the middle, the arena's fog wall closed (by its own
+  collision, 21 to 40 m from the middle), the fight, F pressed for real and the arena's boss's own move run in from its start
+  (the body's sweep by the pawn profile working in the game), the cards, the trip home: the Crimson Forest (YuCong), Hua
+  Qianxiao's stage, the Gold-Masked Gorge, Mu Xiaokui's meadow.
