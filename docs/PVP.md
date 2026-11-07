@@ -25,10 +25,21 @@ Two ways to fight each other:
 
 ## The finishing move
 
-A winner who presses F within 9 m of a dazed foe in the finishing window (7 s, F taken till 1.5 s before its end, so the move reaches every screen in time) steps in before them, facing them, and plays an execution
-the game keeps for the player's own body (`FINISHERS` in `arenas.lua`): the Infernal Rouge's, `Hun_HeiMoShang_EXE_F_04`, a
-spinning grab and an overhead cut. (The club bosses' leap and slam came first, and Du Yan's point-blank shot; the user found
-the leap wrong and the shot poor, so both went.) Every screen cuts to a camera beside the two, low, turning round them from the
+A winner who presses F within 9 m of a dazed foe in the finishing window (7 s, F taken till 1.5 s before its end, so the move
+reaches every screen in time) plays the arena's boss's own move on them (`FINISHERS` in `arenas.lua`): in the Crimson Forest
+YuCong's blade form, a step back and the lunge (`YuCong_Bing_Skill_04`); on Hua Qianxiao's stage her drunken slide and rising
+cut (`HuaQianXiao_Attack_04`); in the Gold-Masked One's gorge his lunge and upward cut (`GoldMaskMan_AtkCombo_A01`); in Mu
+Xiaokui's meadow her twin blades' turning dash (`MuXiaoKui_SpecialAttack_05`); "here", one of the four drawn. The bosses' moves
+play on a player's body: the game marks their skeletons alike with the player's, and on the bench each played whole, the body
+carried the way the boss's is, 2 to 5 m. So the winner steps to where the move's run starts, facing the foe, and its blow lands
+on them: `lead` is how far the move has carried the body by the blow (read from its path, frame by frame, on the bench), and
+`arena.runUp` wants floor within 60 cm of the foe's, nothing between (a rock or a tree would stop the run), and room behind for
+a move that steps back first, trying round the foe 30 degrees at a time. With no room anywhere, or a move that won't load, the
+winner steps in close and plays the game's own execution of the Infernal Rouge, `Hun_HeiMoShang_EXE_F_04`, a spinning grab and
+an overhead cut. (The club bosses' leap and slam came first, and Du Yan's point-blank shot; the user found the leap wrong and the
+shot poor, so both went, and no finishing move leaves the ground. A few bosses also have a grab whose victim half is made for
+the player's body, Hua Qianxiao's `Skill_04` with `Skill_03_Hun`; lining the two up is untried.) Each was played in a real
+match on the bench, both screens: the run, the blow, the fall. Every screen cuts to a camera beside the two, low, turning round them from the
 winner's face to the beaten's as the move plays, as a fighting game shows its finishing moves. It keeps clear of rock and wall
 as the game's own camera arm does: the line from the two to it is traced each frame and it comes in before anything on it, and
 when it starts it takes the side of the pair (or a higher view) whose line stays clearest through the move. (The bench, 11-07:
@@ -38,10 +49,14 @@ sounds, and the beaten dies as the game shows a player's death (`DEATH`, its own
 everyone goes home). Every player sees it: the winner's world plays it on the winner, every other world on the winner's figure
 (`AR fin` says which move and where they stood). The result waits until the move is over.
 
-Known, not fixed: after the step-in and the leap, thin red lines can hang from the winner back to where they stood, for good.
-They're simulated cords left behind: the Sanguine's tassel (hiding the blade took one away) and one on the body. The body's
-cloth reset (`ForceNextUpdateTeleportAndReset`) didn't clear them, and `ResetAnimInstanceDynamics` on the body's parts hung
-the game thread, so don't call that. The Dread Axe's release left the same lines, which first looked like its chains.
+Known, not fixed: after a player is moved by hand (the arrival, a round's start, the finishing move's step), thin red lines
+can hang from them back towards where they stood, for good. What they aren't, tried on the bench 11-07: the body, its four
+Chaos cloth parts and every cloth reset (`ForceClothNextUpdateTeleportAndReset` on each mesh, `ForceNextUpdateTeleportAndReset`
+on the Chaos cloth), the band's streamers (`ABP_Hun_PostProcess`'s rigid body, `Hun_Cloth_Streamer_Physics`, off and on), the
+two whip components, the blade, the other players' figures, the world's lasting debug lines (flushed, no change), and any
+cable. With every player's actors hidden at once one line still stood: something of the world's that follows the player, not
+found yet. `ResetAnimInstanceDynamics` on the body's parts hung the game thread, so don't call that; this build ignores
+`show` flags, so they can't sort it either. The Dread Axe's release left the same lines, which first looked like its chains.
 
 ## Who decides what
 
@@ -189,3 +204,10 @@ fell 110 m and lost round 1.
 - `art/make_pvp_art.py`: every picture above.
 - `tools/netlab/sim/pvp.lua`: in the simulator, a whole duel with the finishing move, a guest leaving a match, and three
   players in two teams, a fallen one watching their teammate (`python -I tools/netlab/luasim.py pvp`; `all.ps1` runs it).
+- Three players in the real game with two copies on one PC: `relay_cli bot client --say <file> --heard <file>` joins a host
+  with `PartySize = 4` as one more player and speaks the match's own words (a line added to the say file goes out as an event:
+  `AR pick 2 1 - 1.7.0 Tang,PoJun,ShachiHook,TigerCannon`, `AR here <id> there`, `AR down <id> <round> <by>`; `!at x y z yaw`
+  stands it, `!hp now max` is the health it shows), and writes every event it hears to the heard file. On the bench, 11-07:
+  one against two (a duel of three rounds) and two against one (Death), real blows: the lobby's three rows and its checks, a
+  team out only when all of it is down, no blow landing on a teammate, both copies finishing the bot's figure, the gold card
+  for both winners, everyone home with their own.

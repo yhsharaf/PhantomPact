@@ -166,15 +166,44 @@ data.DAZED = "/PBZCombatAsset/ActorData/Players/Hun/Montage/LongBlade/Deflect/AM
 -- the game does it"), seen on the bench: a stagger and a fall, held on its last frame.
 data.DEATH = "/PBZCombatAsset/ActorData/Players/Hun/Montage/Hit/AM_Hun_Dead_F.AM_Hun_Dead_F"
 
--- The finishing moves: the game's own executions for the player's body, on the ground (each played whole on the bench,
--- 11-07). hit: seconds in, when the blow lands (the slow beat, the death). One is picked for each finish.
--- (The club bosses' leap and slam was the first: the user, 11-07, "the one you go up then down is wrong". The archer
--- Du Yan's point-blank shot went with it.)
+-- The finishing moves. Each arena's is its boss's own move, played by the winner on their own body (the game marks the
+-- bosses' skeletons alike with the player's: played on the bench 11-07, whole, the body carried the way the boss goes);
+-- "here" draws one of the four. hit: seconds in, when the blow lands (the slow beat, the death). lead: where the move has
+-- carried the body by then, cm ahead and cm to the right (and the room it needs behind its start, if it steps back first),
+-- so the winner starts that far back and the blow lands on the beaten (the body's path read frame by frame on the bench;
+-- each played in a real match there, both screens, 11-07). The Infernal Rouge's execution is the one for when a boss's
+-- move can't load or has no room to run; it stays first, the number older worlds also know.
+-- (The club bosses' leap and slam was the first: the user, 11-07, "the one you go up then down is wrong", so no move here
+-- leaves the ground: Mu Xiaokui's skill that does was left out. The archer Du Yan's point-blank shot went with it.)
 data.FINISHERS = {
     { key = "rouge",                -- the Infernal Rouge's execution: a spinning grab, the cut, the winner over the body
         path = "/PBZCombatAsset/ActorData/Players/Hun/Montage/HeiMoShang/ExE/Hun_HeiMoShang_EXE_F_04_Montage."
             .. "Hun_HeiMoShang_EXE_F_04_Montage", len = 4.07, hit = 2.3 },     -- (the overhead cut: film, 11-07)
+    { key = "yucong", boss = "yucong",          -- YuCong's blade form: a step back, then the lunge
+        path = "/HuaShira/Characters/Boss/YuCong/Anim/YuCong_Bing/YuCong_Bing_Skill_04_Montage."
+            .. "YuCong_Bing_Skill_04_Montage", len = 3.20, hit = 2.05, lead = { 10, 0, 110 } },  -- (105 cm back first)
+    { key = "huaqianxiao", boss = "huaqianxiao", -- Hua Qianxiao's drunken slide and rising cut
+        path = "/HuaShira/Characters/EliteMonster/HuaQianXiao/Anim/Montage/HuaQianXiao_Attack_04_Montage."
+            .. "HuaQianXiao_Attack_04_Montage", len = 5.77, hit = 2.5, lead = { 351, -11 } },
+    { key = "goldmask", boss = "goldmask",      -- the Gold-Masked One's lunge and upward cut
+        path = "/PBZCombatAsset/ActorData/Mobs/006_GoldMaskMan/Montage/Attack/GoldMaskMan_AtkCombo_A01_Montage."
+            .. "GoldMaskMan_AtkCombo_A01_Montage", len = 3.00, hit = 1.35, lead = { 335, 10 } },
+    { key = "muxiaokui", boss = "muxiaokui",    -- Mu Xiaokui's twin blades: the turning dash
+        path = "/HuaShira/Characters/EliteBoss/MuXiaoKui/Anim/Montage/MuXiaoKui_SpecialAttack_05_Montage."
+            .. "MuXiaoKui_SpecialAttack_05_Montage", len = 2.67, hit = 1.3, lead = { 311, 203 } },
 }
+
+-- The finishing move for a match in this place (0: here): its boss's own; here, one of the bosses' drawn at random.
+function data.finisherFor(place)
+    local a = place and place > 0 and data.arenas[place]
+    local list = {}
+    for i, f in ipairs(data.FINISHERS) do
+        if f.boss and (not a or f.boss == a.key) then
+            list[#list + 1] = i
+        end
+    end
+    return #list > 0 and list[math.random(#list)] or 1
+end
 
 local function byId(list, id)
     for i, w in ipairs(list) do

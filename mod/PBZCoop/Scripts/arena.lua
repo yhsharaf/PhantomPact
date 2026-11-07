@@ -1563,6 +1563,10 @@ return function(api)
         if not move then
             return
         end
+        -- The finishing moves in memory now, in every world: a boss's move first loaded when F came stalled the frame.
+        for _, f in ipairs(data.FINISHERS) do
+            loadMontage(f.path)
+        end
         pcall(function()
             if slot == mySlot() then
                 body:PlayAnimMontage(move, 1.0, FName("None"))
@@ -1686,15 +1690,16 @@ return function(api)
         end
     end
 
-    -- The finishing blow, from the winner on a beaten enemy (F in the finishing window, or a command): a boss's move
-    -- (arenas.lua's FINISHERS) on the winner, who steps in before the dazed body and faces it. Every world plays it: the
+    -- The finishing blow, from the winner on a beaten enemy (F in the finishing window, or a command): the arena's boss's
+    -- own move (arenas.lua's FINISHERS) on the winner, who steps to where its run starts (runUp), facing the dazed body, so
+    -- its blow lands on them (the close-in execution steps in before the body). Every world plays it: the
     -- winner's on their own body, the others' on the winner's ghost (in PvP a ghost plays no sent montages, moves.lua, so
     -- it's told here). Shown as a fighting game shows its finishing moves (the user: "like mortal kombat execution"): every
     -- screen cuts to a camera beside the two, turning round them as the move plays; as it lands the game slows nearly to a
     -- stop, the game's own musical hit sounds, and the beaten dies as the game shows a player's death (dies).
     local FINISH_REACH_CM = 900
     local FINISH_RISE_CM = 400      -- a body this far below or above can't be reached (one that fell off the arena)
-    local FINISH_GAP_CM = 140       -- the winner stands this far from the beaten body
+    local FINISH_GAP_CM = 140       -- the winner stands this far from the beaten body (a boss's move: as its blow lands)
     local SLOW_DILATION = 0.2
     local SLOW_S = 1.0              -- (real seconds)
     local THROW_CM_S = 700          -- the body thrown away from the blow, and up
@@ -1849,6 +1854,60 @@ return function(api)
         end
     end
 
+    -- Where the winner starts a boss's move so its blow lands on the beaten (lead: how far the move has carried the body by
+    -- then, ahead and to the right): back from them along the way the winner faces, on floor, nothing in between (a rock or
+    -- a tree would stop the run on it). The way the winner came first, then round the body 30 degrees a try. nil: no room.
+    -- z: the beaten's middle, 90 cm over their feet.
+    function arena.runUp(pawn, body, at, z, yaw, lead)
+        local ksl = StaticFindObject("/Script/Engine.Default__KismetSystemLibrary")
+        if not valid(ksl) then
+            return nil
+        end
+        local skip, none = { body }, { R = 0, G = 0, B = 0, A = 0 }
+        for _, p in ipairs(coop.partners()) do
+            if valid(p.ghost) then
+                skip[#skip + 1] = p.ghost
+            end
+        end
+        local function hitOf(from, to)
+            local hit = {}
+            local ok, got = pcall(function()
+                return ksl:LineTraceSingle(pawn, from, to, 0, false, skip, 0, hit, true, none, none, 0)
+            end)
+            return ok and got and hit or nil
+        end
+        -- (Floor within 60 cm of the beaten's: on the bench a 120 cm leeway started YuCong's run on top of a fallen log.
+        -- lead[3]: room a move needs behind its start, a step back first.)
+        local function floorAt(s)
+            local down = hitOf({ X = s.X, Y = s.Y, Z = z + 160 }, { X = s.X, Y = s.Y, Z = z - 490 })
+            local floor = down and down.Location and tonumber(down.Location.Z)
+            return floor and math.abs(floor - (z - 90)) <= 60 and floor or nil
+        end
+        local feet, back, room = z - 90, FINISH_GAP_CM + lead[1], lead[3] or 0
+        for i = 0, 11 do
+            local y = (yaw + (i % 2 == 1 and 1 or -1) * math.ceil(i / 2) * 30) % 360
+            local r = math.rad(y)
+            local ux, uy, vx, vy = math.cos(r), math.sin(r), -math.sin(r), math.cos(r)
+            local s = { X = at.X - ux * back - vx * lead[2], Y = at.Y - uy * back - vy * lead[2] }
+            local b = { X = s.X - ux * room, Y = s.Y - uy * room }
+            local floor = floorAt(s)
+            local floorB = floor
+            if room > 0 and floor then
+                floorB = floorAt(b)
+            end
+            if floor and floorB and not hitOf({ X = s.X, Y = s.Y, Z = floor + 60 }, { X = at.X, Y = at.Y, Z = feet + 60 })
+                and (room <= 0 or not hitOf({ X = s.X, Y = s.Y, Z = floor + 60 }, { X = b.X, Y = b.Y, Z = floorB + 60 })) then
+                if i > 0 then
+                    log(string.format("PvP: the finishing run starts %d degrees round from the winner's way in: clear.",
+                        math.floor((y - yaw) % 360 + 0.5)))
+                end
+                return { X = s.X, Y = s.Y, Z = floor + 95, Yaw = y }
+            end
+        end
+        log("PvP: no clear run for the boss's move round the beaten: the close-in execution.")
+        return nil
+    end
+
     function arena.finish(victim, n)
         local m = arena.match
         -- (A winner down on the ground doesn't: it played on a body lying loose, and the teammate standing lost it.)
@@ -1871,6 +1930,12 @@ return function(api)
         end
         local me = valid(pawn) and locOf(pawn)
         local spot, where = nil, { "-", "-", "-", "-" }
+        -- The arena's boss's move (here: one drawn), the Rouge's execution when it won't load.
+        n = n or data.finisherFor(m.place)
+        local f = data.FINISHERS[n]
+        if not (f and loadMontage(f.path)) then
+            n, f = 1, data.FINISHERS[1]
+        end
         if at and me then
             local dx, dy = me.X - at.X, me.Y - at.Y
             local d = math.sqrt(dx * dx + dy * dy)
@@ -1878,12 +1943,17 @@ return function(api)
                 dx, dy, d = 1, 0, 1
             end
             -- (A loose body's mesh lies on the ground, a standing one's middle is the body's own height: 90 cm up.)
-            spot = { X = at.X + dx / d * FINISH_GAP_CM, Y = at.Y + dy / d * FINISH_GAP_CM,
-                Z = math.max(me.Z, at.Z + (loose and 90 or 0)), Yaw = math.deg((math.atan2 or math.atan)(-dy, -dx)) }
+            local z, yaw = math.max(me.Z, at.Z + (loose and 90 or 0)), math.deg((math.atan2 or math.atan)(-dy, -dx))
+            if f.lead then
+                spot = arena.runUp(pawn, body, at, at.Z + (loose and 90 or 0), yaw, f.lead)     -- (the beaten's own height)
+                if not spot then
+                    n, f = 1, data.FINISHERS[1]     -- (no room for the boss's run here: the Rouge's, close in)
+                end
+            end
+            spot = spot or { X = at.X + dx / d * FINISH_GAP_CM, Y = at.Y + dy / d * FINISH_GAP_CM, Z = z, Yaw = yaw }
             where = { string.format("%.0f", spot.X), string.format("%.0f", spot.Y), string.format("%.0f", spot.Z),
                 string.format("%.1f", spot.Yaw) }
         end
-        n = n or math.random(#data.FINISHERS)
         m.finished = victim
         coop.sendEvent("AR", "fin", m.id, victim, n, where[1], where[2], where[3], where[4])
         finisherPlays(m, mySlot(), victim, n, spot)

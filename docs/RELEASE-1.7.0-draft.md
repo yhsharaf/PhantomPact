@@ -24,9 +24,10 @@ or 0, nor with Resistance_Poise at 9999; whether a boss's armour in its attacks 
   foe staggers and loses posture, and they see your blade turn theirs aside. A guard already held only blocks. Your guard
   and your dodges show on the other screens as you make them: a blow into your guard no longer looks like it landed there
 - The blow that wins the match plays in slow motion and leaves the losers on their feet, dazed. The winners then have about
-  five seconds to finish them with F: every screen cuts to a camera beside the two that keeps clear of rocks and walls, the
-  winner executes them with the game's own execution, the moment it lands slows nearly to a stop, and the loser dies the
-  way the game shows a death
+  five seconds to finish them with F: every screen cuts to a camera beside the two that keeps clear of rocks and walls, and
+  the winner finishes them with the arena's boss's own move (YuCong's lunge, Hua Qianxiao's drunken slide and cut, the
+  Gold-Masked One's lunge and upward cut, Mu Xiaokui's twin-blade dash; Here draws one of the four), run in from where its
+  blow lands on them. The moment it lands slows nearly to a stop, and the loser dies the way the game shows a death
 - The winners get a golden 生还, the losers the game's red 殒命, both shown the same way, and everyone goes back where they
   were with their own weapons, levels, gourd and skills. Nothing in a match is saved
 - The network carries only the players in a match (no enemy traffic), moves are sent the frame they start, and a perfect

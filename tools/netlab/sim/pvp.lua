@@ -22,6 +22,26 @@ return function(out, scripts)
         end
         return "-"
     end
+
+    out("the finishing move a place gets (arenas.lua):")
+    do
+        local data = dofile(scripts .. "/arenas.lua")
+        for place, a in ipairs(data.arenas) do
+            local f = data.FINISHERS[data.finisherFor(place)]
+            check(f and f.boss == a.key, a.name .. ": its boss's own move (" .. tostring(f and f.key) .. ")")
+        end
+        local seen, rouge = {}, 0
+        for _ = 1, 60 do
+            local f = data.FINISHERS[data.finisherFor(0)]
+            seen[f.key] = true
+            rouge = rouge + (f.boss and 0 or 1)
+        end
+        local kinds = 0
+        for _ in pairs(seen) do kinds = kinds + 1 end
+        check(rouge == 0 and kinds >= 3, "here: one of the bosses' moves drawn (" .. kinds .. " of 4 in 60 draws, never the Rouge's)")
+        check(data.FINISHERS[1].key == "rouge" and not data.FINISHERS[1].lead, "the Rouge's close-in execution stays first")
+    end
+
     local s = Session.new(scripts, { "Host", "Guest" }, false,
         { { "near", "BP_Monster_MaleThug_Sword_Blue_C", 300.0, 0.0, 100.0, 850, 400, false } }, nil)
     local h, g = s.pcs[1], s.pcs[2]
