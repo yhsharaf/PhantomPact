@@ -170,7 +170,10 @@ return function(api)
     local swings = {}               -- slot -> { at, hp, posture, low, done, yaw }
     local SWING_S = 1.2             -- open this long at least (a light blow lands about 0.3 s into its move: the bench, 11-07)
     local SWING_MAX_S = 3.0         -- and on while their figure still plays its move: a slow one's blow comes late
-    local WINDUP_S = 0.15           -- no blow lands sooner after its move starts: a younger swing isn't what our guard met
+    -- A swing younger than WINDUP_S at our guard's answer isn't what it met; of those older, the one whose age is nearest
+    -- BLOW_S is (the bench, 11-07: the game turned a light blow aside 0.10 to 0.12 s after its move came here, as soon as
+    -- its hit window opened; 0.15 s here threw out every real parry).
+    local WINDUP_S, BLOW_S = 0.05, 0.25
     local FACING_DEG = 70           -- their move aimed within this of us (its yaw comes with their M), or it wasn't at us
     local BLOCK_POSTURE = 20        -- our guard's answer that cost more posture than this, in a tick, was a block
     local GUARD_LEAD_S = 0.15       -- a guard raised this long before their attack came still met it (a read of it)
@@ -267,8 +270,9 @@ return function(api)
     -- costs nothing either, so the game turns aside every blow into a held guard, and a stagger for each made holding it the
     -- whole match's answer; a swing that never reached us plays none, guard or not). A new answer of our guard settles the
     -- swing whose blow it met: of those open, in reach, aimed at us (FACING_DEG) and old enough for a blow to have come
-    -- (WINDUP_S), the latest begun. (The review: the nearest open one was taken, a blow that hadn't come yet or one at a
-    -- teammate; and in PvPvE an enemy's blow turned aside staggered a partner who was only swinging near us.) Raised after
+    -- (WINDUP_S), the one whose age is nearest a blow's (BLOW_S). (The review: the nearest open one was taken, a blow that
+    -- hadn't come yet or one at a teammate; and in PvPvE an enemy's blow turned aside staggered a partner who was only
+    -- swinging near us.) Raised after
     -- their attack came (GUARD_LEAD_S), nothing lost: our foe staggers and loses posture ("V parry", at once), and their
     -- figure here staggers too. Held from before, or costing posture in a tick: the game's block alone.
     -- open: slot -> that foe's figure, this tick's (none kept).
@@ -281,10 +285,11 @@ return function(api)
             return
         end
         local at, met = pawn:K2_GetActorLocation(), now - pos
-        local best, bestAt = nil, -math.huge
+        local best, bestOff = nil, math.huge
         for slot, ghost in pairs(open) do
             local s = swings[slot]
-            if s and not s.done and met - s.at >= WINDUP_S and s.at > bestAt then
+            local age = s and met - s.at
+            if s and not s.done and age >= WINDUP_S and math.abs(age - BLOW_S) < bestOff then
                 local g = ghost:K2_GetActorLocation()
                 local aimed = true
                 if s.yaw then
@@ -292,7 +297,7 @@ return function(api)
                     aimed = math.abs((to - s.yaw + 540) % 360 - 180) <= FACING_DEG
                 end
                 if aimed and api.distance(at, g) <= PARRY_REACH_CM then
-                    best, bestAt = slot, s.at
+                    best, bestOff = slot, math.abs(age - BLOW_S)
                 end
             end
         end
