@@ -800,8 +800,10 @@ return function(api)
             return
         end
         local t = coop.net.target
+        -- (Not while a QTE runs here: the host passing its own QTE ended its scene early, and the guest's same scene was sent
+        -- to its end in the middle of theirs, leaving them stuck in it: 沐小葵's third phase, a Nexus report on 1.6.6.)
         if name ~= ended and hostSkipped[name] and now - hostSkipped[name] <= LATE_S and t and t.Map == coop.net.localMap
-            and not (game.inDialogue and game.inDialogue()) and game.skipScene() then
+            and not (game.inDialogue and game.inDialogue()) and not (api.qte and api.qte.active) and game.skipScene() then
             ended = name                        -- (until it takes: the scene's player can be found a moment after it starts)
             log("The host skipped " .. name .. ": skipped here too.")
         end

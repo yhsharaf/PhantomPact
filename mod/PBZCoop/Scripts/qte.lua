@@ -12,7 +12,9 @@ return function(api)
     local log, valid, game = api.log, api.valid, api.game
     local net = api.coop.net
 
-    local qte = { STUCK_S = 12, LOOK_MS = 1000, since = nil, freed = 0 }
+    -- (SCENE_STUCK_S: inside a scene. One that held the player through a scene was never let go, the watch blind there; a
+    -- real QTE can run inside a long scene, so it's given longer. active: a QTE is running here, for story.lua's skips.)
+    local qte = { STUCK_S = 12, SCENE_STUCK_S = 30, LOOK_MS = 1000, since = nil, freed = 0, active = false }
 
     -- The controller's running QTEs: { objects } (the map's values that are objects; its keys too, for the log).
     local function running(pc)
@@ -54,29 +56,31 @@ return function(api)
         pcall(function() pawn:EnableInput(pc) end)
         qte.freed = qte.freed + 1
         local active = game.activeAbility and game.activeAbility(pawn, function() return false end)
-        log(string.format("A QTE ran %d s with no end (%s): ended (%d), your controls given back. Running: %s.", qte.STUCK_S,
-            table.concat(names, ", "), ended, tostring(active)))
+        log(string.format("A QTE ran %d s with no end (%s): ended (%d), your controls given back. Running: %s.",
+            math.floor((qte.ran or qte.STUCK_S) + 0.5), table.concat(names, ", "), ended, tostring(active)))
     end
 
     local function look()
         if not (net.enabled and api.coop.isHost and not api.coop.isHost()) then
-            qte.since = nil
+            qte.since, qte.active = nil, false
             return
         end
         local pc, pawn = api.getPlayer1()
-        if not (valid(pc) and valid(pawn)) or game.isDead(pawn) or (game.inCutscene and game.inCutscene()) then
-            qte.since = nil
+        if not (valid(pc) and valid(pawn)) or game.isDead(pawn) then
+            qte.since, qte.active = nil, false
             return
         end
         local objs, names = running(pc)
         if #objs == 0 and #names == 0 then
-            qte.since = nil
+            qte.since, qte.active = nil, false
             return
         end
+        qte.active = true
         local now = os.clock()
         qte.since = qte.since or now
-        if now - qte.since >= qte.STUCK_S then
-            qte.since = nil
+        local inScene = game.inCutscene and game.inCutscene()
+        if now - qte.since >= (inScene and qte.SCENE_STUCK_S or qte.STUCK_S) then
+            qte.ran, qte.since = now - qte.since, nil
             free(pc, pawn, objs, names)
         end
     end

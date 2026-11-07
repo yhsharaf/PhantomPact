@@ -4564,6 +4564,18 @@ local function stuckQte()
     s:run(15)
     check(hq.active and hq.finished == 0, "never on the host, whose boss runs its own grab to the end")
     allErrors(s)
+    -- (Inside a scene the watch was blind, and one that held the player through a scene was never let go. A real one can run
+    -- in a long scene, so there it's given 30 s.)
+    local t, _, tg = pair()
+    t:run(2)
+    local tq = grab(tg)
+    Session.scene(tg, true, "Seq_QTE")
+    t:run(15)
+    check(tq.active and tq.finished == 0, "in a scene, a QTE isn't ended at 12 s")
+    t:run(18)
+    check(not tq.active and tq.finished == 1, "but one that runs on there is, at 30 s")
+    Session.scene(tg, false)
+    allErrors(t)
 end
 
 local function leaving()
