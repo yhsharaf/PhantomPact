@@ -2052,6 +2052,7 @@ int run_bot(int argc, wchar_t** argv) {
     const std::wstring say_path = opt_text(argc, argv, L"--say", L""), heard_path = opt_text(argc, argv, L"--heard", L"");
     FILE* heard = heard_path.empty() ? nullptr : _wfsopen(heard_path.c_str(), L"ab", _SH_DENYWR);
     long said = 0;
+    std::string said_end;     // (the last bytes taken, up to 64: still there unless a script emptied or rewrote it)
     double next_say = 0;
     bool still = false;
     double still_x = 0, still_y = 0, still_z = 0, still_yaw = 0;
@@ -2059,16 +2060,29 @@ int run_bot(int argc, wchar_t** argv) {
     const auto read_say = [&] {
         FILE* f = say_path.empty() ? nullptr : _wfsopen(say_path.c_str(), L"rb", _SH_DENYNO);
         if (!f) return;
+        const size_t back = said_end.size();
         std::string text;
-        if (std::fseek(f, said, SEEK_SET) == 0) {
+        if (std::fseek(f, said - static_cast<long>(back), SEEK_SET) == 0) {
             char buf[4096];
             for (size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) text.append(buf, n);
         }
         std::fclose(f);
+        // (A script may empty the file or write it again from the top: it's shorter, or other bytes are where the last
+        // ones taken were, and all of it is new. The size alone misses one rewritten longer at once, read on mid-line.)
+        if (text.compare(0, back, said_end) != 0) {
+            said = 0;
+            said_end.clear();
+            return;          // (from the top next time)
+        }
         const size_t last = text.rfind('\n');
-        if (last == std::string::npos) return;          // (a line still being written waits for its end)
-        said += static_cast<long>(last + 1);
-        for (size_t at = 0; at <= last;) {
+        if (last == std::string::npos || last < back) return;          // (a line still being written waits for its end)
+        size_t at = back;
+        // (past a BOM, which PowerShell 5.1's -Encoding UTF8 puts first: a "!" line after it went out as an event)
+        if (said == 0 && text.rfind("\xEF\xBB\xBF", 0) == 0) at = 3;
+        said += static_cast<long>(last + 1 - back);
+        const size_t keep = std::min<size_t>(last + 1, 64);
+        said_end = text.substr(last + 1 - keep, keep);
+        while (at <= last) {
             size_t end = text.find('\n', at);
             std::string line = text.substr(at, end - at);
             at = end + 1;

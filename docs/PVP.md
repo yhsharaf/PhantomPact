@@ -33,8 +33,11 @@ Xiaokui's meadow her twin blades' turning dash (`MuXiaoKui_SpecialAttack_05`); "
 play on a player's body: the game marks their skeletons alike with the player's, and on the bench each played whole, the body
 carried the way the boss's is, 2 to 5 m. So the winner steps to where the move's run starts, facing the foe, and its blow lands
 on them: `lead` is how far the move has carried the body by the blow (read from its path, frame by frame, on the bench), and
-`arena.runUp` wants floor within 60 cm of the foe's, nothing between (a rock or a tree would stop the run), and room behind for
-a move that steps back first, trying round the foe 30 degrees at a time. With no room anywhere, or a move that won't load, the
+`arena.runUp` wants floor within 60 cm of the foe's at the start, a quarter, half and three quarters of the way, and behind a
+move that steps back first, and sweeps a ball the body's size (35 cm, at its middle) along the run by the pawn's own collision
+profile, the figures and the two players' weapons left out (a rock, a tree or an invisible wall would stop the run), trying
+round the foe 30 degrees at a time. With no room anywhere, a move that won't load, or one that won't play on the winner's body
+(tried on it before the move is sent), the
 winner steps in close and plays the game's own execution of the Infernal Rouge, `Hun_HeiMoShang_EXE_F_04`, a spinning grab and
 an overhead cut. (The club bosses' leap and slam came first, and Du Yan's point-blank shot; the user found the leap wrong and the
 shot poor, so both went, and no finishing move leaves the ground. A few bosses also have a grab whose victim half is made for

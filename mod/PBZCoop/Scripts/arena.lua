@@ -1563,10 +1563,6 @@ return function(api)
         if not move then
             return
         end
-        -- The finishing moves in memory now, in every world: a boss's move first loaded when F came stalled the frame.
-        for _, f in ipairs(data.FINISHERS) do
-            loadMontage(f.path)
-        end
         pcall(function()
             if slot == mySlot() then
                 body:PlayAnimMontage(move, 1.0, FName("None"))
@@ -1615,7 +1611,8 @@ return function(api)
 
     -- The blow that decides the match, on every screen (the user: wins and losses worth it): the kill cam, slowed nearly to
     -- a stop; the game's musical hit; the beaten's bars breaking on the winners' screens, as a boss's posture does; and the
-    -- beaten up again, dazed, waiting for the end to the game's own near-death heartbeat.
+    -- beaten up again, dazed, waiting for the end to the game's own near-death heartbeat. The finishing moves the match can
+    -- have go into memory here, once in every world (a boss's move first loaded when F came stalled the frame).
     local KILL_DILATION, KILL_S = 0.2, 1.4
     local function decided(m, winner)
         m.decidedFor = winner       -- (the tip to drink goes for its losers: tick)
@@ -1623,6 +1620,16 @@ return function(api)
         sound("decided")
         if ui() and ui().decided then
             ui().decided(m, winner, mySlot())
+        end
+        -- (A boss's arena: its boss's move and the Rouge's, all a finish there can pick; here, every one. The review: in
+        -- dazed it was skipped when dazed stopped short, and a boss's arena loaded every boss's move.)
+        if (m.place or 0) > 0 then
+            loadMontage(data.FINISHERS[data.finisherFor(m.place)].path)
+            loadMontage(data.FINISHERS[1].path)
+        else
+            for _, f in ipairs(data.FINISHERS) do
+                loadMontage(f.path)
+            end
         end
         local swayAfter = KILL_S + math.max(0, DAZED_IN_S - KILL_S * KILL_DILATION)
         for slot, team in pairs(m.teams) do
@@ -1800,7 +1807,12 @@ return function(api)
                         pc:SetControlRotation({ Pitch = -10, Yaw = spot.Yaw, Roll = 0 })
                     end
                     hold(winner, true)              -- (played whole: a button pressed in it cut it short)
-                    len = winner:PlayAnimMontage(montage, 1.0, FName("None")) or len
+                    -- (Its own length as it plays, else the listed one: a move that won't play gives 0, true in Lua, and
+                    -- taken that timed the move at nothing, the review.)
+                    local played = winner:PlayAnimMontage(montage, 1.0, FName("None"))
+                    if (tonumber(played) or 0) > 0 then
+                        len = played
+                    end
                 else
                     if game.noteGhostMove then
                         game.noteGhostMove(winner, len + SLOW_S * (1 - SLOW_DILATION) + 0.5)
@@ -1855,9 +1867,14 @@ return function(api)
     end
 
     -- Where the winner starts a boss's move so its blow lands on the beaten (lead: how far the move has carried the body by
-    -- then, ahead and to the right): back from them along the way the winner faces, on floor, nothing in between (a rock or
-    -- a tree would stop the run on it). The way the winner came first, then round the body 30 degrees a try. nil: no room.
-    -- z: the beaten's middle, 90 cm over their feet.
+    -- then, ahead and to the right): back from them along the way the winner faces, floor under the start, along the run
+    -- and behind a step back, and the winner's body swept along it (a rock or a tree would stop the run on it). The way
+    -- the winner came first, then round the body 30 degrees a try. nil: no room. z: the beaten's middle, 90 cm over their
+    -- feet. (Floor is looked at in five places, not everywhere: a ditch narrower than a quarter of the run still passes.)
+    -- (The review: thin lines let a tree 30 cm off the run or a start 20 cm from a rock pass, and a ditch between the start
+    -- and the beaten. The body, 35 to 40 cm in radius, is set down at the start with no sweep and carried by the move, so
+    -- it's swept here: a ball its size at its middle, from the start to where it is at the blow (FINISH_GAP_CM short of the
+    -- beaten) and over the room behind; and floor under it a quarter, half and three quarters of the way.)
     function arena.runUp(pawn, body, at, z, yaw, lead)
         local ksl = StaticFindObject("/Script/Engine.Default__KismetSystemLibrary")
         if not valid(ksl) then
@@ -1876,6 +1893,45 @@ return function(api)
             end)
             return ok and got and hit or nil
         end
+        -- The body swept from one point to another, by the pawn's own collision profile (what really stops a capsule: a
+        -- rock, a wall, the game's invisible walls; a sweep by the visibility channel missed those and met things a body
+        -- walks through), the visibility channel if that call can't be made. In the way unless the sweep ran and met
+        -- nothing (one that can't be made at all is said, once a run). Left out: the winner (the sweep's own), the beaten,
+        -- every figure (their capsules let a player through, coop.lua: the second review of 1.7.0) and the two players'
+        -- weapons, actors of their own. One that starts inside a rock or a tree meets it at once.
+        local only, said = {}, false
+        for _, a in ipairs(skip) do
+            only[#only + 1] = a
+        end
+        for _, who in ipairs({ pawn, body }) do
+            local arr = {}
+            pcall(function() who:GetAttachedActors(arr, true, true) end)
+            for i = 1, #arr do
+                local a = arr[i]
+                a = a.get and a:get() or a
+                if valid(a) then
+                    only[#only + 1] = a
+                end
+            end
+        end
+        local pawnProfile = FName("Pawn")
+        local function blocked(from, to)
+            local hit = {}
+            local ok, got = pcall(function()
+                return ksl:SphereTraceSingleByProfile(pawn, from, to, 35, pawnProfile, false, only, 0, hit, true, none, none, 0)
+            end)
+            if not ok then
+                hit = {}
+                ok, got = pcall(function()
+                    return ksl:SphereTraceSingle(pawn, from, to, 35, 0, false, only, 0, hit, true, none, none, 0)
+                end)
+            end
+            if not ok and not said then
+                said = true
+                log("PvP: the finishing run's sweep failed: " .. tostring(got))
+            end
+            return not (ok and got == false)
+        end
         -- (Floor within 60 cm of the beaten's: on the bench a 120 cm leeway started YuCong's run on top of a fallen log.
         -- lead[3]: room a move needs behind its start, a step back first.)
         local function floorAt(s)
@@ -1889,14 +1945,20 @@ return function(api)
             local r = math.rad(y)
             local ux, uy, vx, vy = math.cos(r), math.sin(r), -math.sin(r), math.cos(r)
             local s = { X = at.X - ux * back - vx * lead[2], Y = at.Y - uy * back - vy * lead[2] }
+            local e = { X = at.X - ux * FINISH_GAP_CM, Y = at.Y - uy * FINISH_GAP_CM }     -- (the body at the blow)
             local b = { X = s.X - ux * room, Y = s.Y - uy * room }
             local floor = floorAt(s)
             local floorB = floor
             if room > 0 and floor then
                 floorB = floorAt(b)
             end
-            if floor and floorB and not hitOf({ X = s.X, Y = s.Y, Z = floor + 60 }, { X = at.X, Y = at.Y, Z = feet + 60 })
-                and (room <= 0 or not hitOf({ X = s.X, Y = s.Y, Z = floor + 60 }, { X = b.X, Y = b.Y, Z = floorB + 60 })) then
+            local ground = floor and floorB
+            for k = 1, 3 do
+                ground = ground and floorAt({ X = s.X + (e.X - s.X) * k / 4, Y = s.Y + (e.Y - s.Y) * k / 4 })
+            end
+            local from = ground and { X = s.X, Y = s.Y, Z = floor + 90 }       -- (the body's middle at the start)
+            if from and not blocked(from, { X = e.X, Y = e.Y, Z = feet + 90 })
+                and (room <= 0 or not blocked(from, { X = b.X, Y = b.Y, Z = floorB + 90 })) then
                 if i > 0 then
                     log(string.format("PvP: the finishing run starts %d degrees round from the winner's way in: clear.",
                         math.floor((y - yaw) % 360 + 0.5)))
@@ -1929,7 +1991,7 @@ return function(api)
             at, loose = lyingAt(body)
         end
         local me = valid(pawn) and locOf(pawn)
-        local spot, where = nil, { "-", "-", "-", "-" }
+        local spot, close, where = nil, nil, { "-", "-", "-", "-" }
         -- The arena's boss's move (here: one drawn), the Rouge's execution when it won't load.
         n = n or data.finisherFor(m.place)
         local f = data.FINISHERS[n]
@@ -1944,13 +2006,36 @@ return function(api)
             end
             -- (A loose body's mesh lies on the ground, a standing one's middle is the body's own height: 90 cm up.)
             local z, yaw = math.max(me.Z, at.Z + (loose and 90 or 0)), math.deg((math.atan2 or math.atan)(-dy, -dx))
+            close = { X = at.X + dx / d * FINISH_GAP_CM, Y = at.Y + dy / d * FINISH_GAP_CM, Z = z, Yaw = yaw }
             if f.lead then
                 spot = arena.runUp(pawn, body, at, at.Z + (loose and 90 or 0), yaw, f.lead)     -- (the beaten's own height)
                 if not spot then
                     n, f = 1, data.FINISHERS[1]     -- (no room for the boss's run here: the Rouge's, close in)
                 end
             end
-            spot = spot or { X = at.X + dx / d * FINISH_GAP_CM, Y = at.Y + dy / d * FINISH_GAP_CM, Z = z, Yaw = yaw }
+        end
+        -- A boss's move tried on the winner's own body before it's said (the review: one that loads but won't play there
+        -- left the winner standing while the others' worlds played it): played, and stopped at once if it plays
+        -- (finisherPlays starts it again from the top); if it won't, the Rouge's, close in. (Loaded by its path here, not
+        -- kept.)
+        if f.lead then
+            local played = 0
+            pcall(function()
+                local move = valid(pawn) and loadMontage(f.path)
+                if move then
+                    played = pawn:PlayAnimMontage(move, 1.0, FName("None"))
+                    if (tonumber(played) or 0) > 0 then
+                        pawn:StopAnimMontage(move)
+                    end
+                end
+            end)
+            if not ((tonumber(played) or 0) > 0) then
+                log("PvP: the boss's move won't play on the winner's body: the close-in execution.")
+                n, f, spot = 1, data.FINISHERS[1], nil
+            end
+        end
+        spot = spot or close
+        if spot then
             where = { string.format("%.0f", spot.X), string.format("%.0f", spot.Y), string.format("%.0f", spot.Z),
                 string.format("%.1f", spot.Yaw) }
         end

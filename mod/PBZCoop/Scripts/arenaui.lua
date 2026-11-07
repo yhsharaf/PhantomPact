@@ -172,16 +172,12 @@ return function(api)
         end
     end
 
+    -- (Each by hide(), so one hidden already costs nothing: every teammate's four parts ran a valid(), an IsInViewport and
+    -- a SetVisibility at every tick of the result's 6 s; the review of 1.7.0.)
     local function hideAll(prefix)
-        for name, p in pairs(parts) do
+        for name in pairs(parts) do
             if not prefix or name:sub(1, #prefix) == prefix then
-                if usable(p) then
-                    hud.show(p.widget, false)
-                    p.last = p.last or {}
-                    p.last.shown = false
-                else
-                    parts[name] = nil
-                end
+                hide(name)
             end
         end
     end
@@ -328,11 +324,21 @@ return function(api)
                 hp, maxhp = api.game.getHealth(pawn)
             end
         else
-            local body = coop.playerBody and coop.playerBody(slot)
-            for _, p in ipairs(coop.partners()) do
-                if p.ghost == body and p.target then
-                    hp, maxhp = p.target.Hp, p.target.MaxHp
-                end
+            -- The slot's own record, found as coop.playerBody finds its body (with two players the other one is net; in a
+            -- party the host is net on a guest, the rest net.peers): health comes with the position, a body here or not.
+            -- (Matched by its ghost, a missing body matched every partner with none and read someone else's health, a foe's
+            -- too; then only a body that was there, and a ghost made again froze the bar: the reviews of 1.7.0.) No record
+            -- yet: nil, health not known.
+            local net = coop.net
+            local p
+            if not net.party then
+                p = (slot == 1 or slot == 2) and net or nil
+            else
+                p = slot == 1 and net or net.peers[slot]
+            end
+            local t = p and p.target
+            if t then
+                hp, maxhp = t.Hp, t.MaxHp
             end
         end
         if hp and maxhp and maxhp > 0 then
@@ -387,7 +393,7 @@ return function(api)
         table.sort(foes)
         -- Foes on the game's own boss bar (the user: health bars in the game's own design, not ours): put up once, its
         -- health moved by the game's own ForSeq_UpdateHealth, its words by its own name text, put up again if the HUD
-        -- drops it. (Teammates get no bar: the game's player bar only follows its own player, and ours isn't the game's.)
+        -- drops it. (Teammates aren't here: the game's player bar only follows its own player, so theirs are ours, drawMates.)
         -- The HUD is found once for this tick's bar calls, and only if one is made (each FindFirstOf is a search of every
         -- object); never kept past it. A call that failed (a bar the HUD didn't make) waits half a second: it was two
         -- searches a foe at every tick.
@@ -452,21 +458,30 @@ return function(api)
         for i, slot in ipairs(list) do
             local y = MATE.y - (i - 1) * MATE.step
             local down = m.down[slot]
-            local frac = down and 0 or (healthOf(slot, me) or 1)
-            local st = mates[slot] or { lag = frac }
-            mates[slot] = st
-            if frac < (st.shown or frac) - 0.001 then
-                st.lagAt = now + MATE.lagS          -- (a blow: what it took holds a moment)
+            -- Health not known this tick (healthOf's nil: nothing heard from them yet): the bar as last shown and its state
+            -- left as it was, full before they're first heard. (The review of 1.7.0: read off no body the bar went full,
+            -- and its drop back to the real health was taken for a blow, a chunk drained that nobody had lost.) Down is the
+            -- match's word, not the body's: an empty bar all the same.
+            local frac = down and 0 or healthOf(slot, me)
+            local st = mates[slot]
+            if frac then
+                st = st or { lag = frac }
+                mates[slot] = st
+                if frac < (st.shown or frac) - 0.001 then
+                    st.lagAt = now + MATE.lagS      -- (a blow: what it took holds a moment)
+                end
+                st.shown = frac
+                if frac >= st.lag then
+                    st.lag = frac
+                elseif now >= (st.lagAt or 0) then
+                    st.lag = math.max(frac, st.lag - (now - (st.lagLast or now)) * MATE.drain)
+                end
             end
-            st.shown = frac
-            if frac >= st.lag then
-                st.lag = frac
-            elseif now >= (st.lagAt or 0) then
-                st.lag = math.max(frac, st.lag - (now - (st.lagLast or now)) * MATE.drain)
+            if st then
+                st.lagLast = now                    -- (the chunk waits with them, not drained in one go when they're back)
             end
-            st.lagLast = now
             local a = down and 0.55 or 1
-            local lagW, fillW = MATE.fw * st.lag, MATE.fw * frac
+            local lagW, fillW = MATE.fw * (st and st.lag or 1), MATE.fw * (st and st.shown or 1)
             put(part("mate_frame_" .. slot, "pvp/mate_frame.png", MATE.w, MATE.h, 1), MATE.x + MATE.w / 2, y, MATE.w,
                 MATE.h, a)
             put(part("mate_lag_" .. slot, "pvp/mate_lag.png", MATE.fw, MATE.fh, 2), MATE.x + 3 + lagW / 2, y,
