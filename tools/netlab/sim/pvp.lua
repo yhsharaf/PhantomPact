@@ -31,6 +31,25 @@ return function(out, scripts)
     s:run(2)
     local ha, ga = h.env.PBZ.arena, g.env.PBZ.arena
     check(ha ~= nil and ga ~= nil, "both have the arena module")
+    -- Their skill trees, as the game has them: the host bought three nodes, one of them a talisman slot's; the guest none.
+    local OWN = "HeiShi1,HeiShi2,MemoryFlower1"
+    local all = #Fake.tree(h, { "HeiShi1", "HeiShi2", "MemoryFlower1" })
+    Fake.tree(g, {})
+    local function onNodes(pc)
+        local ids = {}
+        for id in pairs(pc.treeOn) do
+            ids[#ids + 1] = id
+        end
+        table.sort(ids)
+        return table.concat(ids, ",")
+    end
+    local function onCount(pc)
+        local n = 0
+        for _ in pairs(pc.treeOn) do
+            n = n + 1
+        end
+        return n
+    end
 
     out("lobby:")
     Session.command(h, "arena place 0")
@@ -57,6 +76,7 @@ return function(out, scripts)
     s:run(3.5)
     check(hm and hm.phase == "fight" and gm.phase == "fight", "the fight is on: " .. tostring(hm and hm.phase) .. "/" ..
         tostring(gm and gm.phase))
+    check(onCount(h) == all and onCount(g) == all, "every skill node on for both: " .. onCount(h) .. "/" .. onCount(g))
     local enemyEvents = 0
     for i = sentBefore + 1, #h.sent do
         local line = h.sent[i]
@@ -110,6 +130,11 @@ return function(out, scripts)
     s:run(5)
     check(not h.env.PBZ.net.arena and not g.env.PBZ.net.arena, "the network is whole again")
     check(not h.env.PBZ.net.pvp and not g.env.PBZ.net.pvp, "nobody fights after it")
+    -- (The game's DeactivateAllNodes took a player's own nodes too, and nothing put them back: the next save kept that.)
+    check(onNodes(h) == OWN and h.slots.HeiShi == true, "home: the host's own three nodes on, its talisman slot open: " .. onNodes(h))
+    check(onNodes(g) == "", "the guest's tree as it was, nothing on: " .. onNodes(g))
+    check(count(h.treeCalls, "AllNodes") == 0 and count(g.treeCalls, "AllNodes") == 0
+        and count(h.treeCalls, "^DeactivateNode HeiShi1$") == 0, "the whole tree never switched, nor a node of the player's own")
 
     out("a guest leaving ends it:")
     Session.command(g, "arena ready")

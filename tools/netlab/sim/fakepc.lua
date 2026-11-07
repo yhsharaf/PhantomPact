@@ -282,6 +282,69 @@ Fake.ITEMS = {
     { "I_KEY_9", "NarrativeItem" },
 }
 
+-- The player's skill tree (PBZAbilityNodesComponent), as the bench measured it on 11-07: 32 nodes; ActivateNode by its
+-- buy way (bActivateByInit false) puts any one on alone, for nothing; by init it does nothing; each talisman slot is one
+-- node's. pc.treeCalls: every call; pc.slots: the slot tags open. own: the ids this player bought.
+Fake.SLOT_NODES = { HeiShi2 = "HeiShi", ShaChiHuPo5 = "HuPo", MemoryFlower7 = "MemoryFlower", TopRongShuZhiXin4 = "RongShu" }
+function Fake.tree(pc, own)
+    local ids = {}
+    for _, family in ipairs({ "HeiShi", "ShaChiHuPo", "MemoryFlower" }) do
+        for i = 1, 8 do
+            ids[#ids + 1] = family .. i
+        end
+    end
+    for _, side in ipairs({ "Top", "Bottom" }) do
+        for i = 1, 4 do
+            ids[#ids + 1] = side .. "RongShuZhiXin" .. i
+        end
+    end
+    pc.treeOn, pc.treeCalls, pc.slots = {}, {}, {}
+    local function set(id, on)
+        pc.treeOn[id] = on or nil
+        if Fake.SLOT_NODES[id] then
+            pc.slots[Fake.SLOT_NODES[id]] = on or nil
+        end
+    end
+    for _, id in ipairs(own or {}) do
+        set(id, true)
+    end
+    local tree = object(pc, "PBZAbilityNodesComponent", { AbilityNodeMap = { ForEach = function(_, fn)
+        for _, id in ipairs(ids) do
+            fn({ get = function() return pc.env.FName(id) end }, { get = function() return {} end })
+        end
+    end } })
+    local function call(what)
+        pc.treeCalls[#pc.treeCalls + 1] = what
+    end
+    put(tree, "GetOwner", function() return pc.pawn end)
+    put(tree, "IsActivateAbilityNode", function(_, id) return pc.treeOn[id:ToString()] == true end)
+    put(tree, "ActivateNode", function(_, id, _, byInit)
+        call("ActivateNode " .. id:ToString() .. (byInit and " init" or ""))
+        if not byInit then
+            set(id:ToString(), true)
+        end
+    end)
+    put(tree, "DeactivateNode", function(_, id)
+        call("DeactivateNode " .. id:ToString())
+        set(id:ToString(), false)
+    end)
+    put(tree, "ActivateAllNodes", function()
+        call("ActivateAllNodes")
+        for _, id in ipairs(ids) do
+            set(id, true)
+        end
+    end)
+    put(tree, "DeactivateAllNodes", function()
+        call("DeactivateAllNodes")
+        for _, id in ipairs(ids) do
+            set(id, false)
+        end
+    end)
+    put(tree, "InitNodeStateByCharacter", function() call("InitNodeStateByCharacter") end)
+    pc.tree = tree
+    return ids
+end
+
 -- The game's bell table (DT_BellData): BellID, MapID, and where a trip to it puts you, as the real one gives them.
 Fake.BELLS = {
     { "Bell_YXZR_005", "YXZR", 30000.0, 0.0, 100.0 },
@@ -1769,6 +1832,8 @@ function Fake.new(id, scripts, ini, link)
             return pc.proxies
         elseif class == "PBZFlowInteractActorBase" then
             return pc.flows
+        elseif class == "PBZAbilityNodesComponent" then
+            return pc.tree and { pc.tree } or {}
         end
         -- Anything spawned, by its class's name (a clone ghost's: the player's class).
         local out = {}

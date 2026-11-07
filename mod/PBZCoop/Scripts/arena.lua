@@ -749,11 +749,32 @@ return function(api)
                 end)
             end
         end
+        -- Each skill node this player hasn't is put on for the match, one at a time, the game's way of buying one (called on
+        -- the tree it costs nothing and needs no node before it; the bench, 11-07). Never the whole tree on and off: the
+        -- game's DeactivateAllNodes took the player's own nodes too, their levels with them, and none of its ways back
+        -- (ActivateNode by init, InitNodeStateByCharacter) put one on again. A match took a player's whole tree, and the next
+        -- save kept that (the review of the talisman-slot reports). Each talisman slot is one node's (HeiShi2, ShaChiHuPo5,
+        -- MemoryFlower7, TopRongShuZhiXin4): the match's own, off after it, never close one of the player's.
         local nodes = componentOf(pawn, "PBZAbilityNodesComponent")
         local a = asc(pawn)
         if valid(nodes) and a then
-            saved.nodes = activeNodes(nodes)
-            pcall(function() nodes:ActivateAllNodes(a, true) end)
+            saved.nodes, saved.added = activeNodes(nodes), {}
+            local own, ids = {}, {}
+            for _, id in ipairs(saved.nodes) do
+                own[id] = true
+            end
+            pcall(function()
+                nodes.AbilityNodeMap:ForEach(function(k)
+                    ids[#ids + 1] = k:get():ToString()
+                end)
+            end)
+            table.sort(ids)
+            for _, id in ipairs(ids) do
+                if not own[id] then
+                    saved.added[#saved.added + 1] = id
+                    pcall(function() nodes:ActivateNode(FName(id), a, false, true) end)
+                end
+            end
         end
         saved.attrs = {}
         for name in pairs(data.STATS) do
@@ -768,7 +789,8 @@ return function(api)
         end
         journal({ map = saved.map, at = string.format("%.0f %.0f %.0f %.0f", saved.at.X, saved.at.Y, saved.at.Z, saved.yaw or 0),
             loans = #saved.loans > 0 and table.concat(saved.loans, ",") or "-", arena = saved.arenaAt,
-            levels = #levels > 0 and table.concat(levels, ",") or "-", nodes = table.concat(saved.nodes or {}, ",") })
+            levels = #levels > 0 and table.concat(levels, ",") or "-", nodes = table.concat(saved.nodes or {}, ","),
+            added = #(saved.added or {}) > 0 and table.concat(saved.added, ",") or "-" })
         -- The drinks once the gourd is the match's: a moment later (the game writes the count as it swaps).
         game.after(0.5, function()
             local _, now = pawnNow()
@@ -782,9 +804,8 @@ return function(api)
         end)
     end
 
-    -- All of it back, in the order it went on (the nodes off, a moment for the game, then the old ones on again). Only what
-    -- setup changed: a match called off before this player was set up (on the way there) leaves the skill tree alone (the
-    -- review: all of it was switched off then, nothing to switch back on, and the next save kept that). The timers ask for
+    -- All of it back (the match's skill nodes off, a moment for the game, then the health). Only what setup changed: a
+    -- match called off before this player was set up (on the way there) leaves the skill tree alone. The timer asks for
     -- the body and its parts again: nothing kept across frames.
     local function restore(pawn, done)
         if not saved then
@@ -820,25 +841,44 @@ return function(api)
                 pcall(function() at.BaseValue = base end)
             end
         end
-        -- (The health floor stays at 1 till the health is back, below: let go at once, a loser lay at 1 health for the 3.6 s
+        -- (The health floor stays at 1 till the health is back, below: let go at once, a loser lay at 1 health for the time
         -- the skill tree takes, and an enemy back at its post or a PvPvE partner's blow was a real death; the review.)
-        local nodesSet = s.nodes ~= nil         -- (setup reached the skill tree)
-        local nodes = nodesSet and valid(pawn) and componentOf(pawn, "PBZAbilityNodesComponent")
-        local a = nodesSet and valid(pawn) and asc(pawn)
+        -- Only the nodes the match put on go off, those still on: the player's own were never touched. (None if setup never
+        -- reached the tree: a match called off on the way there.)
+        local added = s.added or {}
+        local nodes = #added > 0 and valid(pawn) and componentOf(pawn, "PBZAbilityNodesComponent")
+        local a = nodes and asc(pawn)
         if valid(nodes) and a then
-            pcall(function() nodes:DeactivateAllNodes(a) end)
-        end
-        game.after(SETTLE_S, function()
-            local _, now = pawnNow()
-            local n2 = nodesSet and valid(now) and componentOf(now, "PBZAbilityNodesComponent")
-            local a2 = nodesSet and valid(now) and asc(now)
-            if valid(n2) and a2 then
-                for _, id in ipairs(s.nodes or {}) do
-                    pcall(function() n2:ActivateNode(FName(id), a2, true, false) end)
-                end
+            for i = #added, 1, -1 do
+                local id = FName(added[i])
+                pcall(function()
+                    if nodes:IsActivateAbilityNode(id) then
+                        nodes:DeactivateNode(id, a)
+                    end
+                end)
             end
+        end
+        do
             game.after(SETTLE_S, function()
                 local _, p = pawnNow()
+                -- (Checked once the game has it: the player's own nodes all on, the match's all off. Said if not.)
+                local n2 = s.nodes and valid(p) and componentOf(p, "PBZAbilityNodesComponent")
+                if valid(n2) then
+                    local wrong = {}
+                    for _, id in ipairs(s.nodes) do
+                        if select(2, pcall(function() return n2:IsActivateAbilityNode(FName(id)) end)) ~= true then
+                            wrong[#wrong + 1] = id .. " off"
+                        end
+                    end
+                    for _, id in ipairs(added) do
+                        if select(2, pcall(function() return n2:IsActivateAbilityNode(FName(id)) end)) == true then
+                            wrong[#wrong + 1] = id .. " still on"
+                        end
+                    end
+                    if #wrong > 0 then
+                        log("PvP: the skill tree isn't as it was before the match: " .. table.concat(wrong, ", ") .. ".")
+                    end
+                end
                 if valid(p) and s.attrs then
                     local _, maxhp = game.getHealth(p)
                     if maxhp then
@@ -869,7 +909,7 @@ return function(api)
                 setVeto(false)
                 if done then done() end
             end)
-        end)
+        end
     end
 
     ------------------------------------------------------------------ this player's world: the arena itself
@@ -2123,7 +2163,8 @@ return function(api)
     ------------------------------------------------------------------ a crash in the middle
 
     -- pvp_restore.txt from a match the game didn't end: a weapon lent then is taken back, and the player is taken home (where
-    -- they stood when it began). The skill nodes and the stats were never saved: the veto was up.
+    -- they stood when it began). The stats were never saved: the veto was up. (The match's skill nodes go off if a save
+    -- kept them.)
     local function readJournal()
         local f = io.open(api.modDir() .. "pvp_restore.txt", "r")
         if not f then
@@ -2184,6 +2225,17 @@ return function(api)
             end
             for kind, id in (j.loans or ""):gmatch("(%a+):([^,]+)") do
                 pcall(function() bp:DisposeWeapon(FName(id), kind == "main") end)
+            end
+        end
+        -- (The skill nodes the match put on too, those a save in it kept: only them, never the player's own.)
+        local nodes, a = componentOf(pawn, "PBZAbilityNodesComponent"), asc(pawn)
+        if valid(nodes) and a then
+            for id in (j.added or ""):gmatch("[^,%-]+") do
+                pcall(function()
+                    if nodes:IsActivateAbilityNode(FName(id)) then
+                        nodes:DeactivateNode(FName(id), a)
+                    end
+                end)
             end
         end
         local x, y, z = (j.at or ""):match("^(%S+) (%S+) (%S+)")

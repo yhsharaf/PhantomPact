@@ -14,7 +14,7 @@ Two ways to fight each other:
 | Modes | **Duel**: best of three rounds, everyone back up each round. **Death**: one life, last team standing |
 | Clock | None, 60, 90 or 120 s a round. At zero the team with more health left (as a share) wins the round; equal is a draw |
 | Arenas | YuCong's Crimson Forest, Hua Qianxiao's stage, the Gold-Masked One's gorge, Mu Xiaokui's meadow: the game's own places, with their boss fog walls up and no monsters. Or **Here**: where the host stands |
-| Fair start | everyone a Soul at the top of the game: every skill node on (the game's own `ActivateAllNodes`), 1360 health, 160 attack, 640 Phantom Edge energy, held there all match; every weapon in the match at level 30; 3 drinks of the same gourd for the whole match |
+| Fair start | everyone a Soul at the top of the game: every skill node on (each one the player hasn't, for the match only), 1360 health, 160 attack, 640 Phantom Edge energy, held there all match; every weapon in the match at level 30; 3 drinks of the same gourd for the whole match |
 | Damage | every blow at half the game's own (`DAMAGE` in `arenas.lua`): at the top of the game a Sanguine blow took 499 of 1360 on the bench, three to fall; at half, about six. A parry costs the attacker 60 posture. Each player's own `PvPDamage` and `PvPParryPosture` count only in PvPvE: in a match they'd let a player take less |
 | Loadout | a preset of your own, kept between matches (`pvp_preset.txt`): two weapons and two Phantom Edges, any of the game's 20 and 20, owned or not |
 | Start | the host picks the mode, the clock and the arena on the F6 page; everyone picks a team and presses READY; the host presses START |
@@ -101,7 +101,11 @@ start):
   player didn't own goes back with `DisposeWeapon`;
 - every weapon's level that the match raised (`ResetWeaponToLevel` puts it back: no dust, nothing given);
 - their gourd: which one, how many drinks;
-- their skill nodes (`DeactivateAllNodes`, then their own again).
+- their skill nodes: each one the player hasn't goes on for the match, one at a time (`ActivateNode`, the game's buy, which
+  costs nothing called on the tree), and only those go off after it (`DeactivateNode`). The player's own nodes are never
+  touched. (The bench, 11-07: the game's `DeactivateAllNodes` takes the player's own nodes and their levels too, and neither
+  `ActivateNode` by init nor `InitNodeStateByCharacter` puts one back. Each talisman slot is one node's: HeiShi2, ShaChiHuPo5,
+  MemoryFlower7, TopRongShuZhiXin4.)
 
 Weapon levels: a blow's damage in the defender's world goes by the defender's own level of the attacker's weapon. On the bench a
 guest's Sanguine blow took 128 from the host at the host's Sanguine level 1, 256 at level 11. So in every world every weapon
