@@ -1521,6 +1521,12 @@ return function(api)
         log(ok and ("Showing boss bar for " .. boss:GetFName():ToString()) or ("Boss bar failed: " .. tostring(err)))
     end
 
+    -- Whether this boss's bar is only the one shown here for another player's fight: the game's own bar on it (the hook
+    -- above) makes it this game's fight too.
+    function game.isMirrorBar(boss)
+        return valid(boss) and mirroredAt[boss:GetAddress()] == true
+    end
+
     -- A PvP foe's health on the game's own boss bar (arena.lua: the bars are the game's, not ours). Never a boss to the
     -- mod: kept out of bosses and bossActors, so nothing that walks the bosses (the host telling its fights, fog walls,
     -- scaling, the arena putting the real boss's bar away) sees it. name: what the bar says over it, or nil for the game's.
@@ -3340,21 +3346,31 @@ return function(api)
         return (ok and valid(w)) and w or nil
     end
 
-    -- The death screen's tick is what leads to the respawn: stopped, the player waits, and it goes on from there.
-    local heldScreen = nil
+    -- The death screen's tick is what leads to the respawn: stopped, the player waits, and it goes on from there. (The
+    -- screen is found on the player each time and known by its address: a widget kept from an earlier frame can read as
+    -- valid after it's gone, and a write to it crashed.)
+    local heldScreenAt = nil
     function game.holdRespawn(pawn, on)
         if on then
             local w = valid(pawn) and deathScreen(pawn)
-            if w and heldScreen ~= w then
-                w.NotTick = true
-                heldScreen = w
+            if w then
+                if w.NotTick ~= true then
+                    w.NotTick = true
+                end
+                heldScreenAt = w:GetAddress()
             end
-            return heldScreen ~= nil
+            return heldScreenAt ~= nil
         end
-        if valid(heldScreen) then
-            pcall(function() heldScreen.NotTick = false end)
+        if heldScreenAt ~= nil then
+            if not valid(pawn) then
+                pawn = select(2, api.getPlayer1())
+            end
+            local w = valid(pawn) and deathScreen(pawn)
+            if w and w:GetAddress() == heldScreenAt then
+                pcall(function() w.NotTick = false end)
+            end
         end
-        heldScreen = nil
+        heldScreenAt = nil
         return false
     end
 
@@ -4541,7 +4557,10 @@ return function(api)
             local pc, pawn = api.getPlayer1()
             if valid(pc) and valid(pawn) then
                 local vt = pc:GetViewTarget()
-                onPlayer = valid(vt) and vt:GetAddress() == pawn:GetAddress()
+                -- (This mod's spectating camera is the player's own view, not a scene: a dead player watching in such an
+                -- arena read as in one, their partner's figure hidden and the camera jumping every few seconds.)
+                onPlayer = valid(vt) and (vt:GetAddress() == pawn:GetAddress()
+                    or (valid(spectateCam) and vt:GetAddress() == spectateCam:GetAddress()))
             end
         end)
         return not onPlayer

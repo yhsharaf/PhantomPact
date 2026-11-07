@@ -61,6 +61,10 @@ return function(api)
         if os.clock() < (api.coop.net.quietUntil or 0) then
             return
         end
+        -- (Nor in a PvP match: its loads and its search of every object were a hitch in a fight. Still due after it.)
+        if api.coop.net.arena then
+            return
+        end
         local _, pawn = api.getPlayer1()
         if not valid(pawn) or (api.game.inCutscene and api.game.inCutscene()) then
             return

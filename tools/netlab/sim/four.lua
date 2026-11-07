@@ -1396,12 +1396,21 @@ local function bossEnd(s)
     h.hudLayout:UnRegisterBossHPBar(boss)
 end
 
+-- Each guest lands a hit on its copy of the host's boss: it's in that fight (net.fightingHere), not only shown it.
+local function guestsHit(s)
+    for i = 2, #s.pcs do
+        local c = Session.enemyOn(s.pcs[i], "boss")
+        swing(s.pcs[i], c, select(1, Fake.health(c)) - 10)
+    end
+end
+
 local function holding()
     part("dying in a boss fight")
     local s = party()
     spread(s)
     s:run(2)
     bossStart(s)
+    guestsHit(s)
     check(everyone(s, function(pc) return pc.env.PBZ.game.bossFightActive() end), "a boss fight shows on all four")
     s:run(5)
     Session.die(s.pcs[3])
@@ -1429,6 +1438,7 @@ local function holding()
     spread(t)
     t:run(2)
     bossStart(t)
+    guestsHit(t)
     t:run(5)
     Session.die(t.pcs[2])
     t:run(5)
@@ -1648,6 +1658,80 @@ local function pair(extraIni, before)
     Session.moveTo(s.pcs[2], 500, 0)
     s:run(2)
     return s, s.pcs[1], s.pcs[2]
+end
+
+-- Two players, as the report "After my teammate died, he instantly respawned, and the boss's HP was restored to full" (1.6.6)
+-- had it. The game takes a player's bar down as they die (Session.die doesn't: it's done here), and the F 0 that followed
+-- ended the partner's copy of the fight, whose own F 0 then let the held respawn go.
+local function holdingForTwo()
+    part("dying in a boss fight, two players")
+    local s, h, g = pair()
+    bossStart(s)
+    local copy = Session.enemyOn(g, "boss")
+    swing(g, copy, select(1, Fake.health(copy)) - 50)      -- (the guest is in it: a hit of its own on the boss)
+    s:run(5)
+    Session.die(h)
+    h.hudLayout:UnRegisterBossHPBar(Session.enemyOn(h, "boss"))     -- (the game takes the bar down as the player dies)
+    s:run(15)
+    check(field(h.deathWidget, "NotTick") == true, "the host dies, the guest fights on: the host's respawn waits")
+    check(g.env.PBZ.game.bossFightActive() and count(g.logs, "is over there: over here too") == 0,
+        "and the guest's fight goes on, its bar up")
+    check(net(h).toldFighting == true, "the host, down and held, still says the fight is on")
+    Session.die(g)
+    s:run(8)
+    check(field(h.deathWidget, "NotTick") == false and field(g.deathWidget, "NotTick") == false,
+        "the guest dies too: both respawns go on")
+    allErrors(s)
+
+    -- A scene on the survivor's side (a boss's phase, an execution) hid their figure after 3 s, and the wait let go at once.
+    local t, th, tg = pair()
+    bossStart(t)
+    local tcopy = Session.enemyOn(tg, "boss")
+    swing(tg, tcopy, select(1, Fake.health(tcopy)) - 50)
+    t:run(5)
+    Session.die(tg)
+    t:run(6)
+    check(field(tg.deathWidget, "NotTick") == true, "a guest down in the host's fight waits")
+    Session.scene(th, true, "Seq023")
+    t:run(10)
+    check(field(tg.deathWidget, "NotTick") == true, "a scene on the host's side (a boss's phase) doesn't end the wait")
+    Session.scene(th, false)
+    t:run(4)
+    check(field(tg.deathWidget, "NotTick") == true, "nor after it")
+    allErrors(t)
+
+    -- An arena whose sequence runs on through the fight, the camera on the player (Bai Chilian's): the dead player's own
+    -- watching camera read as a scene, their partner's figure was hidden and the camera jumped every few seconds.
+    local u, uh, ug = pair()
+    bossStart(u)
+    local ucopy = Session.enemyOn(ug, "boss")
+    swing(ug, ucopy, select(1, Fake.health(ucopy)) - 50)
+    Session.scene(ug, true, "Seq_Arena")
+    Fake.put(ug.controller, "viewTarget", nil)
+    u:run(5)
+    Session.die(ug)
+    u:run(12)
+    check(ug.env.PBZ.game.isSpectating() and field(ug.deathWidget, "NotTick") == true,
+        "down in an arena whose sequence runs on: the guest watches the host, and waits")
+    check(peer(ug, 1).ghostHidden ~= true, "the host's figure stays: watching isn't a scene")
+    allErrors(u)
+
+    -- The guest's own fight, the host outside with only the copy's bar: the guest down in it waits for nobody.
+    local v, vh, vg = pair()
+    Session.moveTo(vg, 3000, 2900)
+    Session.moveTo(vh, -1500, 3000)        -- (outside, 45 m off the boss: in the host's rounds, so it's shown the copy)
+    v:run(1)
+    vg.hudLayout:RegisterBossHPBar(Session.enemyOn(vg, "boss"))
+    v:run(3)
+    check(vh.env.PBZ.game.bossFightActive(), "the host outside is shown the guest's fight")
+    check(net(vh).toldFighting ~= true, "but it isn't in it: it says no fight")
+    Session.die(vg)
+    vg.hudLayout:UnRegisterBossHPBar(Session.enemyOn(vg, "boss"))
+    v:run(4)
+    check(field(vg.deathWidget, "NotTick") ~= true, "the guest dies alone in it, the host outside with only the copy: no wait")
+    v:run(12)
+    check(field(vg.deathWidget, "NotTick") ~= true, "nor later")
+    allErrors(v)
 end
 
 -- A guest's hit that makes their copy flinch: the host's enemy itself flinches the same way, and its next move doesn't cut the
@@ -2404,12 +2488,22 @@ local function playerReports()
         allErrors(s)
     end
     do
-        -- The bug hunt (report 8): a guest who linked after the host's scene woke a bell never had that bell.
+        -- The bug hunt (report 8): a guest who linked after the host's scene woke a bell never had that bell. And the
+        -- Nexus report on 1.6.6: "When we reached Pangzhen, we found that all the bells were already unlocked": every bell
+        -- the host had was lit at the link, wherever the guest was. Now a host's bell is lit when the guest comes to it.
         local s, h, g = pair(nil, function(h)
             table.insert(h.bellIds, "Bell_YXZR_009")
         end)
         s:run(15)
-        check(g.storyMarks["Bell_YXZR_009"], "a bell the host woke before the guest linked is woken on the guest too")
+        check(not g.storyMarks["Bell_YXZR_009"], "a bell the host woke before the guest linked isn't lit far from the guest")
+        Session.moveTo(g, 20000 - 1200, 900)
+        s:run(3)
+        check(g.storyMarks["Bell_YXZR_009"], "it's lit when the guest comes to it")
+        check(count(g.logs, "lit here, as you came to it") == 1, "once")
+        Session.moveTo(g, 500, 0)
+        local reads = g.bellReads
+        s:run(5)
+        check(reads == 1 and g.bellReads == 1, "the game's bell table is read once")
         allErrors(s)
     end
     do
@@ -2474,8 +2568,13 @@ local function playerReports()
         s:run(4)
         table.insert(h.globalTags, "Combat.InFight")
         s:run(20)
-        check(g.storyMarks["zddy.chain.broken"] and g.storyGuids["ABCDEF0123456789ABCDEF0123456789"]
-            and g.storyMarks["Bell_YXZR_005"], "what the host's flow did while linked (a flag, a flow step, a bell) is done on the guest too")
+        check(g.storyMarks["zddy.chain.broken"] and g.storyGuids["ABCDEF0123456789ABCDEF0123456789"],
+            "what the host's flow did while linked (a flag, a flow step) is done on the guest too")
+        check(not g.storyMarks["Bell_YXZR_005"], "and its new bell waits for the guest to come to it")
+        Session.moveTo(g, 30000, 2000)
+        s:run(3)
+        check(g.storyMarks["Bell_YXZR_005"], "then it's lit there")
+        Session.moveTo(g, 500, 0)
         check(not g.storyMarks["GameMode.NewGamePlus"], "but never the game's mode")
         check(not h.storyMarks["zddy.chain.broken"], "and nothing goes the other way")
         check(not g.storyMarks["Combat.InFight"], "nor the state of a moment (a fight's)")
@@ -5262,6 +5361,7 @@ return function(print_, scripts)
     targetsInParties()
     aiming()
     holding()
+    holdingForTwo()
     lateJoiner()
     lateJoinerGuestFight()
     toldOnChange()

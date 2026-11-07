@@ -282,6 +282,12 @@ Fake.ITEMS = {
     { "I_KEY_9", "NarrativeItem" },
 }
 
+-- The game's bell table (DT_BellData): BellID, MapID, and where a trip to it puts you, as the real one gives them.
+Fake.BELLS = {
+    { "Bell_YXZR_005", "YXZR", 30000.0, 0.0, 100.0 },
+    { "Bell_YXZR_009", "YXZR", 20000.0, 0.0, 100.0 },
+}
+
 -- A blocker (iron chains a Phantom Edge breaks), named alike on every PC. Its success step breaks it.
 function Fake.blocker(pc, id, x, y, z)
     local b = object(pc, "BP_GameplayBlocker_Base_C", { bBroken = false })
@@ -616,6 +622,18 @@ function Fake.story(pc)
     local OTHER = { AddTags = "tags", ActiveBellMaps = "maps", ActivateUITags = "ui", AddItems = "items" }
     local levelLoot = object(pc, "DataTable")
     local itemTable = object(pc, "DataTable")
+    local bellTable = object(pc, "DataTable")
+    local function bellColumn(c, r)
+        if c == "BellID" then
+            return r[1]
+        elseif c == "MapID" then
+            return r[2]
+        elseif c == "TeleportTransform" then
+            return string.format("(Rotation=(X=0.000000,Y=0.000000,Z=0.000000,W=1.000000),Translation=(X=%f,Y=%f,Z=%f),"
+                .. "Scale3D=(X=1.000000,Y=1.000000,Z=1.000000))", r[3], r[4], r[5])
+        end
+        return ""
+    end
     defs(pc, tables, {
         GetDataTableRowNames = function(_, t, out)
             if t == levelLoot then
@@ -639,6 +657,15 @@ function Fake.story(pc)
             if t == levelLoot then
                 for i, r in ipairs(Fake.LEVEL_LOOT) do
                     out[i] = { get = function() return name(c == "EntryDatas" and r[2] or "") end }
+                end
+                return out
+            end
+            if t == bellTable then
+                for i, r in ipairs(Fake.BELLS) do
+                    out[i] = { get = function() return name(bellColumn(c, r)) end }
+                end
+                if c == "BellID" then
+                    pc.bellReads = (pc.bellReads or 0) + 1      -- (one read of the table: its ids first)
                 end
                 return out
             end
@@ -743,6 +770,7 @@ function Fake.story(pc)
     found["/Script/ProjectPBZ.Default__PBZDebugFlowEventLibrary"] = lib
     found["/Game/PBZContent/DataTable/DT_LevelLootDataTable.DT_LevelLootDataTable"] = levelLoot
     found["/Game/PBZContent/DataTable/Item/DT_InventoryData.DT_InventoryData"] = itemTable
+    found["/Game/PBZContent/DataTable/UI/DT_BellData.DT_BellData"] = bellTable
     return found
 end
 

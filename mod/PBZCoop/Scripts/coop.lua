@@ -771,6 +771,7 @@ return function(api)
         net.foggedBosses[name] = nil
         net.partnerBosses[name] = nil
         net.pendingBosses[name] = nil
+        net.struck[name] = nil
         if net.joinedBoss == name then
             net.joinedBoss = nil
             if net.joinedFar then
@@ -1090,6 +1091,10 @@ return function(api)
             net.stats.hitsReported = (net.stats.hitsReported or 0) + 1
             if isClient() and hpDamage > 0 then
                 net.hitHere[id] = true      -- (see GK in syncEnemy)
+            end
+            -- (A guest in that boss's fight: see net.fightingHere. Any hit, a parry's posture too.)
+            if isClient() and (net.partnerBosses[id] or (game.isBoss and game.isBoss(enemy))) then
+                net.struck[id] = true
             end
         end
     end
@@ -2652,6 +2657,7 @@ return function(api)
         endFights(nil)      -- (their mirrored bars go too: with elsewhere no resetBosses ran, and a bar stayed up for good)
         net.pendingBosses = {}
         net.partnerBosses = {}
+        net.struck = {}
         net.hostBosses = {}
         net.hitHere = {}
         net.fightOf = {}
@@ -2715,6 +2721,7 @@ return function(api)
                 net.hostBosses[name] = nil
             end
             net.ownAnnounced = {}
+            net.struck = {}         -- (out of every fight it was in: see net.fightingHere)
             -- (A fight this player had walked into is theirs to walk into again: still marked joined, E at the wall did
             -- nothing until the boss died, and an arena apart took them back to the partner after it.)
             net.joinedBoss, net.joinedWith, net.joinedFar, net.bossOverAt = nil, nil, nil, nil
@@ -2907,6 +2914,12 @@ return function(api)
             if api.arena and api.arena.restDuring then     -- (a bell in a PvP match heals nobody else: it's a forfeit)
                 api.arena.restDuring("sit")
             end
+            return
+        end
+        -- (Not a bell's rest that came with this player's respawn: told as a sit, it put the host's boss back at full health
+        -- (handlers.SIT). The review of the report "After my teammate died, he instantly respawned" on 1.6.6.)
+        if net.deadSince ~= nil or os.clock() - (net.upAt or -1e9) < 3 then
+            log("A bell's rest came with this player's respawn: not told as a sit.")
             return
         end
         restEvent("sit")
@@ -3967,6 +3980,7 @@ return function(api)
         net.enabled = false
         net.partnerFighting, net.toldFighting = false, nil
         game.holdRespawn(nil, false)
+        net.holdLooking, net.holdWanted, net.respawnHeld, net.deadSince, net.struck = false, false, false, nil, {}
         watchFight(false)
         if net.arriveUntil then
             -- (The hold's end is watched by the tick that's stopping here.)
@@ -4218,7 +4232,13 @@ return function(api)
                 theirs = theirs or whose == nil or net.fightOf[name] == whose
             end
         end
-        if (was or theirs) and on ~= "1" then
+        -- (Not from a partner who's down while this player is still in that fight: their game takes the bar down as they die,
+        -- and ending the fight here let their held respawn go, its R death putting the boss back at full health (the report
+        -- "After my teammate died, he instantly respawned, and the boss's HP was restored to full" on 1.6.6). One on 1.7.0
+        -- says F 1 while held; this is for one on 1.6.7 or older.)
+        local t = p.target
+        local down = t ~= nil and t.MaxHp ~= nil and t.MaxHp > 0 and t.Hp ~= nil and t.Hp <= 0
+        if (was or theirs) and on ~= "1" and not (down and net.fightingHere(localPawn())) then
             if from == nil and isClient() then
                 -- (The host's fights are all over: none comes back at this player's death. Only those the host told of:
                 -- this player's own, announced to the host, stay theirs, and its kill still runs the boss's real death.)
@@ -4270,8 +4290,37 @@ return function(api)
         end)
     end
 
+    -- In a boss fight here, as F tells it: one of this game's own (its bar, not one shown for a partner), or a partner's this
+    -- player is in: walked into (E at the black wall, F3), or, on a guest, struck since their last respawn and still near it.
+    -- A copy's bar alone isn't being in it: at the black wall, at a bell by the arena or far off, its F 1 kept a dead player
+    -- waiting on nobody, while that player's own F 1 kept the copy up. Never a joiner's watch.
+    net.FIGHT_NEAR_CM = 10000
+    net.struck = net.struck or {}         -- boss id -> true: this guest hit it in this fight
+    function net.fightingHere(pawn)
+        if net.watchingFight then
+            return false
+        end
+        for _, boss in ipairs(game.bossActors()) do
+            if not (game.isMirrorBar and game.isMirrorBar(boss)) then
+                return true
+            end
+            local addr = boss:GetAddress()
+            for name in pairs(net.partnerBosses) do
+                local e = enemyByName[name]
+                if valid(e) and e:GetAddress() == addr and (net.joinedBoss == name or (net.struck[name] and valid(pawn)
+                    and gap3d(pawn:K2_GetActorLocation(), boss:K2_GetActorLocation()) <= net.FIGHT_NEAR_CM)) then
+                    return true
+                end
+            end
+        end
+        return false
+    end
+
     local function tellFight(now)
-        if game.bossFightActive() or (net.toldFighting and game.inCutscene()) then
+        -- (In a fight here, or down in one with the respawn held for it or still deciding. The game takes the bar down as
+        -- the player dies; the F 0 that followed ended the partner's copy, whose own F 0 let this respawn go.)
+        if net.fightingHere(localPawn()) or net.holdWanted
+            or (net.toldFighting and (game.inCutscene() or net.holdLooking)) then
             net.fightHereAt = now
         end
         local fighting = now - (net.fightHereAt or -FIGHT_GAP_S) < FIGHT_GAP_S
@@ -4407,22 +4456,59 @@ return function(api)
         return fighter or first, fighter
     end
 
-    local function holdForFight(pawn, partnerUp, fighting)
+    -- A partner a dead player's respawn can wait for: linked, on this map, up (a second at 0 health is down, as for the
+    -- figure). Not "their figure is shown": one hidden for a scene (a boss's phase, an execution, on either side) let the
+    -- respawn go with them still fighting.
+    function net.upHere(p)
+        local t = p.target
+        if t == nil or p.partnerGone or not sameMap(t) then
+            return false
+        end
+        local zero = t.MaxHp ~= nil and t.MaxHp > 0 and t.Hp ~= nil and t.Hp <= 0
+        return not (zero and (p.zeroSince == nil or os.clock() - p.zeroSince >= 1.0))
+    end
+
+    local function holdForFight(pawn)
+        if not net.holdLooking then
+            return
+        end
         local now = os.clock()
-        if not net.holdLooking or now < (net.holdLookAt or 0) then
+        if net.holdWanted and not net.respawnHeld then
+            net.respawnHeld = game.holdRespawn(pawn, true)    -- (looked for each turn till held: the screen goes on by itself)
+        end
+        if now < (net.holdLookAt or 0) then
             return
         end
         net.holdLookAt = now + HOLD_LOOK_S
-        local mayWait = partnerUp and not net.pvp and now - net.deadSince < HOLD_MAX_S
-        if mayWait and fighting then
-            if game.holdRespawn(pawn, true) and not net.holdTold then
+        local up, who = false, nil
+        for _, p in ipairs(partners()) do
+            if net.upHere(p) then
+                up = true
+                local fights = (net.party and p.fights) or (not net.party and net.partnerFighting)
+                if fights == true and who == nil then
+                    who = p
+                end
+            end
+        end
+        local waited = now - net.deadSince
+        if who and not net.pvp and waited < HOLD_MAX_S then
+            if not net.holdWanted then
+                net.holdWanted = true
+                log("Down in a boss fight " .. (net.party and PLAYERS[who.number or 1].name or "your partner")
+                    .. " is still in: your respawn waits, and the boss keeps its health.")
+            end
+            net.respawnHeld = game.holdRespawn(pawn, true)
+            if net.respawnHeld and not net.holdTold then
                 net.holdTold = true
                 if api.status then
                     api.status.notify("hold", "you're down: you'll be back when the fight is over.")
                 end
             end
-        elseif not mayWait or now - net.deadSince >= HOLD_GRACE_S then
-            net.holdLooking = false
+        elseif not up or net.pvp or waited >= HOLD_MAX_S or waited >= HOLD_GRACE_S then
+            if net.holdWanted then
+                log("The fight is over for you (the boss is down, or nobody's left in it): your respawn goes on.")
+            end
+            net.holdLooking, net.holdWanted, net.respawnHeld = false, false, false
             game.holdRespawn(pawn, false)
         end
     end
@@ -4435,8 +4521,9 @@ return function(api)
         if game.isDead(pawn) then
             if net.deadSince == nil then
                 net.deadSince = os.clock()
-                net.holdLooking = net.deadSince - (net.fightSeenAt or -1e9) <= IN_FIGHT_S
-                net.holdTold = false
+                -- (Or F 1 still told: a bar the game took down for a scene, a boss's grab say, more than 3 s before.)
+                net.holdLooking = net.toldFighting == true or net.deadSince - (net.fightSeenAt or -1e9) <= IN_FIGHT_S
+                net.holdTold, net.holdWanted, net.respawnHeld = false, false, false
                 if game.hideAliveScreen then
                     game.hideAliveScreen()
                 end
@@ -4444,12 +4531,8 @@ return function(api)
             if not game.spectate then
                 return
             end
-            local up, fighter = upPartner()
-            local fighting = net.partnerFighting
-            if net.party then
-                fighting = fighter ~= nil   -- (someone who's down or elsewhere is no reason to wait)
-            end
-            holdForFight(pawn, up ~= nil, fighting)
+            holdForFight(pawn)
+            local up = upPartner()      -- (whom the camera follows: a figure that's shown)
             if up and os.clock() - net.deadSince >= SPECTATE_AFTER_S and not game.isSpectating() then
                 if game.spectate(up.ghost) then
                     net.watched = net.party and up or nil
@@ -4464,7 +4547,14 @@ return function(api)
                 log("The other player is down or gone too: camera back on you.")
             end
         else
+            if net.deadSince ~= nil then
+                net.upAt = os.clock()       -- (see onLocalSit)
+            end
             net.deadSince = nil
+            if net.holdLooking then
+                net.holdLooking, net.holdWanted, net.respawnHeld = false, false, false
+                game.holdRespawn(nil, false)
+            end
             if game.bossFightActive() then
                 net.fightSeenAt = os.clock()
             end
