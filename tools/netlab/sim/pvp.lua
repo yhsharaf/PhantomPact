@@ -267,6 +267,31 @@ return function(out, scripts)
     check(count(h.treeCalls, "AllNodes") == 0 and count(g.treeCalls, "AllNodes") == 0
         and count(h.treeCalls, "^DeactivateNode HeiShi1$") == 0, "the whole tree never switched, nor a node of the player's own")
 
+    out("Death, a 60 s clock, decided by the clock:")
+    Session.command(h, "arena mode death")
+    Session.command(h, "arena timer 60")
+    Session.command(g, "arena ready")
+    s:run(1.5)
+    Session.command(h, "arena start")
+    s:run(7)
+    local dm, dg = ha.match, ga.match
+    check(dm and dg and dm.mode == "death" and dm.timer == 60 and dm.phase == "fight" and dg.phase == "fight",
+        "a Death match with a 60 s clock is on: " .. tostring(dm and dm.mode) .. " " .. tostring(dm and dm.timer))
+    local fins = count(h.sent, "^E AR fin")
+    Fake.setHealth(g.pawn, 700)         -- (the guest behind on health as the clock runs out)
+    s:run(30)
+    check(dm.phase == "fight", "half way, still on: " .. tostring(dm.phase))
+    s:run(33)
+    check(dm.score[1] == 1 and dm.winner == 1 and dm.phase == "finish",
+        string.format("at zero the clock gives it to the host, ahead on health: %d - %d, %s", dm.score[1], dm.score[2], dm.phase))
+    check(dg.phase == "finish" and dg.winner == 1, "the guest's world has the same end: " .. tostring(dg.phase))
+    Session.command(h, "arena finish 2 1")
+    s:run(1)
+    check(count(h.sent, "^E AR fin") == fins + 1 and dg.finished == 2, "the host finishes the guest, one life, no more rounds")
+    s:run(16)
+    check(ha.match == nil and ga.match == nil, "both home after the results")
+    s:run(5)
+
     out("a guest leaving ends it:")
     Session.command(g, "arena ready")
     s:run(1.5)
