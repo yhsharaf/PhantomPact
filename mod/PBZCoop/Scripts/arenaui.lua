@@ -11,6 +11,7 @@ return function(api)
     local COUNT_SIZE = 300          -- the countdown's picture, against a screen 1080 high
     local BANNER_W, BANNER_H = 900, 150
     local BANNER_S = 2.6            -- a banner on screen this long
+    local TIME_S = 1.4              -- TIME, when the clock ended a round, before what the round came to
     -- The match's last screens, the winners' and the losers' made and played the same way (the user, 11-07: "Make both
     -- victory and defeat play same way", "without that black background and same size", "Make sure it doesn't stretch or
     -- expands"): the game's own dark edge over the scene, then the calligraphy fading in, each picture at its own shape and
@@ -209,6 +210,7 @@ return function(api)
 
     function ui.fight(seconds)
         fightAt = os.clock()
+        ui.fightFor = seconds or 1.0          -- (arena.lua's FIGHT_SHOW_S: 斗 on screen this long)
         count = nil
     end
 
@@ -233,9 +235,9 @@ return function(api)
             else
                 hide("round")
             end
-        elseif fightAt and now - fightAt < 1.0 then
-            local t = now - fightAt
-            local a = t < 0.5 and 1 or 1 - ease((t - 0.5) / 0.5)
+        elseif fightAt and now - fightAt < (ui.fightFor or 1.0) then
+            local t, half = now - fightAt, (ui.fightFor or 1.0) / 2
+            local a = t < half and 1 or 1 - ease((t - half) / half)
             local k = 1.6 - 0.6 * ease(math.min(1, t / 0.16))
             put(part("count", "pvp/count_fight.png", COUNT_SIZE, COUNT_SIZE, 2), cx, cy, COUNT_SIZE, COUNT_SIZE, a, k)
             put(part("count_words", "pvp/" .. worded("count_fight_words") .. ".png", 260, 56, 3), cx, cy + COUNT_SIZE * 0.52,
@@ -250,11 +252,16 @@ return function(api)
 
     ------------------------------------------------------------------ banners
 
-    local function showBanner(key, seconds)
-        banner = { tex = "pvp/" .. worded("banner_" .. key) .. ".png", at = os.clock(), till = os.clock() + (seconds or BANNER_S) }
+    -- after: the banner that follows this one (TIME, then what the round came to).
+    local function showBanner(key, seconds, after)
+        banner = { tex = "pvp/" .. worded("banner_" .. key) .. ".png", at = os.clock(), till = os.clock() + (seconds or BANNER_S),
+            after = after }
     end
 
     local function drawBanner(now)
+        if banner and now >= banner.till and banner.after then
+            showBanner(banner.after)
+        end
         if not banner or now >= banner.till then
             hide("banner")
             banner = nil
@@ -266,13 +273,18 @@ return function(api)
         put(part("banner", banner.tex, BANNER_W, BANNER_H, 4), W / 2, 300, BANNER_W, BANNER_H, a, 1.06 - 0.06 * ease(t / 0.3))
     end
 
-    function ui.roundOver(round, winner, mine, s1, s2, m)
+    -- byClock: the clock ended the round (the host says so): TIME first, then what it came to.
+    function ui.roundOver(round, winner, mine, s1, s2, m, byClock)
+        local key = nil
         if winner == 0 then
-            showBanner("round_draw")
-        elseif m and m.mode == "death" then
-            -- (One life: the match's end says it.)
-        else
-            showBanner(winner == mine and "round_won" or "round_lost")
+            key = "round_draw"
+        elseif not (m and m.mode == "death") then       -- (one life: the match's end says it)
+            key = winner == mine and "round_won" or "round_lost"
+        end
+        if byClock then
+            showBanner("timeup", TIME_S, key)
+        elseif key then
+            showBanner(key)
         end
     end
 

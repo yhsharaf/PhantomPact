@@ -375,6 +375,10 @@ return function(api)
         if count[1] == 0 or count[2] == 0 then
             return "Both teams need someone."
         end
+        -- (Each arena has three spots a side, each surveyed flat: a fourth on a side began on top of the first.)
+        if count[1] > data.PER_SIDE or count[2] > data.PER_SIDE then
+            return "Three a side at most: someone needs to change team."
+        end
         local a = data.arena(arena.place)
         if arena.place > 0 then
             for _, s in ipairs(slots) do
@@ -647,9 +651,56 @@ return function(api)
         os.remove(api.modDir() .. "pvp_restore.txt")
     end
 
+    -- The match's gourd's record in this player's bag, by name: the bottom slot may hold another bottle till the swap.
+    function arena.gourdOf(pawn)
+        local bp = game.backpackOf(pawn)
+        local found = nil
+        pcall(function()
+            bp.MedicineInfos:ForEach(function(k, v)
+                if k:get():ToString() == data.GOURD then
+                    found = v:get()
+                end
+            end)
+        end)
+        return found
+    end
+
+    -- The match's drinks, held (looked at every second): the 3 are for the whole match, so a refill is taken back (a bell's
+    -- sit in a "here" match gives up the round, and the game's sit fills the gourd), and its level and size stay the
+    -- match's. From the moment setup's timer set them (m.drinksLeft).
+    function arena.holdDrinks(m)
+        if not m.drinksLeft then
+            return
+        end
+        local _, pawn = pawnNow()
+        local g = valid(pawn) and arena.gourdOf(pawn)
+        if not g then
+            return
+        end
+        pcall(function()
+            local n = g.CurrentTime
+            if n < m.drinksLeft then
+                m.drinksLeft = n
+            elseif n > m.drinksLeft then
+                g:SetCurrentTime(m.drinksLeft)
+                g:SetDisplayTime(m.drinksLeft)
+            end
+        end)
+        pcall(function()
+            if g.CurrentLevel ~= data.GOURD_LEVEL then
+                g.CurrentLevel = data.GOURD_LEVEL
+            end
+            if g.MaxTime ~= data.DRINKS then
+                g:SetMaxTime(data.DRINKS)
+            end
+        end)
+    end
+
     -- Everything the match changes, noted first; then the weapons, the loadout, every skill node, the gourd.
     local function setup(pawn, m)
         setVeto(true)
+        -- (The health as it is, given back at home: a match is no free heal.)
+        saved.hp = select(1, game.getHealth(pawn))
         -- (Each of the match's stats as it is now, before anything of the match: see restore.)
         saved.cur = {}
         for name in pairs(data.STATS) do
@@ -745,8 +796,6 @@ return function(api)
             if saved.bottom and saved.bottom ~= data.GOURD and saved.bottom ~= "None" then
                 pcall(function() bp:ReplaceMedicineByIndex(0, FName(data.GOURD), true) end)
             end
-            local g = game.gourdInfo(pawn)
-            pcall(function() saved.drinks = g.CurrentTime end)
             if saved.top and saved.top ~= "None" then
                 pcall(function()
                     bp.MedicineInfos:ForEach(function(k, v)
@@ -757,6 +806,14 @@ return function(api)
                     bp:TakeOffMedicineByIndex(1)
                 end)
             end
+        end
+        -- The match's gourd's own record as it was, by name (the bottom slot held another bottle till the swap): its drinks,
+        -- size and level, all put back at home. Read even when the bag's weapons can't be: the drinks are set all the same.
+        local g = arena.gourdOf(pawn)
+        if g then
+            pcall(function() saved.drinks = g.CurrentTime end)
+            pcall(function() saved.gourdMax = g.MaxTime end)
+            pcall(function() saved.gourdLevel = g.CurrentLevel end)
         end
         -- Each skill node this player hasn't is put on for the match, one at a time, the game's way of buying one (called on
         -- the tree it costs nothing and needs no node before it; the bench, 11-07). Never the whole tree on and off: the
@@ -799,16 +856,21 @@ return function(api)
         journal({ map = saved.map, at = string.format("%.0f %.0f %.0f %.0f", saved.at.X, saved.at.Y, saved.at.Z, saved.yaw or 0),
             loans = #saved.loans > 0 and table.concat(saved.loans, ",") or "-", arena = saved.arenaAt,
             levels = #levels > 0 and table.concat(levels, ",") or "-", nodes = table.concat(saved.nodes or {}, ","),
-            added = #(saved.added or {}) > 0 and table.concat(saved.added, ",") or "-" })
-        -- The drinks once the gourd is the match's: a moment later (the game writes the count as it swaps).
+            added = #(saved.added or {}) > 0 and table.concat(saved.added, ",") or "-",
+            gourd = saved.gourdLevel and string.format("%d %d %d", saved.gourdLevel, saved.gourdMax or 0, saved.drinks or 0) or "-" })
+        -- The drinks once the gourd is the match's: a moment later (the game writes the count as it swaps). Its level and its
+        -- size too, each on its own, and from then held (holdDrinks).
         game.after(0.5, function()
             local _, now = pawnNow()
-            local g = arena.match == m and valid(now) and game.gourdInfo(now)
+            local g = arena.match == m and valid(now) and arena.gourdOf(now)
             if g then
+                pcall(function() g.CurrentLevel = data.GOURD_LEVEL end)
+                pcall(function() g:SetMaxTime(data.DRINKS) end)
                 pcall(function()
                     g:SetCurrentTime(data.DRINKS)
                     g:SetDisplayTime(data.DRINKS)
                 end)
+                m.drinksLeft = data.DRINKS
             end
         end)
     end
@@ -906,10 +968,17 @@ return function(api)
                 if valid(p) and s.attrs then
                     local _, maxhp = game.getHealth(p)
                     if maxhp then
-                        game.setHealth(p, maxhp)
+                        game.setHealth(p, s.hp and math.max(1, math.min(s.hp, maxhp)) or maxhp)
                     end
-                    local g = game.gourdInfo(p)
+                    -- (The match's gourd by name: its level, its size, then its drinks, as they were.)
+                    local g = arena.gourdOf(p)
                     if g and s.drinks then
+                        if s.gourdLevel then
+                            pcall(function() g.CurrentLevel = s.gourdLevel end)
+                        end
+                        if s.gourdMax then
+                            pcall(function() g:SetMaxTime(s.gourdMax) end)
+                        end
                         pcall(function()
                             g:SetCurrentTime(s.drinks)
                             g:SetDisplayTime(s.drinks)
@@ -1181,8 +1250,10 @@ return function(api)
             hold(pawn, true)
             shield(pawn, true)
             keepFair(pawn)
-            local _, maxhp = game.getHealth(pawn)
-            if m.mode == "duel" or round == 1 then
+            -- (Death: one life, so another round only follows a draw, and its health goes on as it was; but one who fell in
+            -- it, both sides down at once, starts up: at the floor's 1 they were down again at once, a draw each round.)
+            local hp, maxhp = game.getHealth(pawn)
+            if m.mode == "duel" or round == 1 or (hp or 0) <= DOWN_HP then
                 game.setHealth(pawn, maxhp or data.STATS.Health_Max)
                 if game.setPosture then
                     game.setPosture(pawn, data.STATS.Shachi_Max)
@@ -1263,12 +1334,13 @@ return function(api)
     end
     arena.teamHealth = teamHealth
 
-    local function hostRound(m, winner)
+    -- byClock: the clock ended it (everyone shows TIME first).
+    local function hostRound(m, winner, byClock)
         if winner > 0 then
             m.score[winner] = m.score[winner] + 1
         end
-        coop.sendEvent("AR", "round", m.id, m.round, winner, m.score[1], m.score[2])
-        arena.onRound(m, m.round, winner, m.score[1], m.score[2])
+        coop.sendEvent("AR", "round", m.id, m.round, winner, m.score[1], m.score[2], byClock and 1 or 0)
+        arena.onRound(m, m.round, winner, m.score[1], m.score[2], byClock)
         m.nextAt = os.clock() + BETWEEN_S
         -- (A draw ends nothing: in Death it's fought again, where it gave the match to Crimson; the review of 1.7.0.)
         if (m.mode == "death" and winner > 0) or m.score[1] >= DUEL_WINS or m.score[2] >= DUEL_WINS then
@@ -1312,7 +1384,7 @@ return function(api)
                 hostRound(m, up1 and 1 or (up2 and 2 or 0))
             elseif m.endsAt and now >= m.endsAt then
                 local h1, h2 = teamHealth(m, 1), teamHealth(m, 2)
-                hostRound(m, (h1 > h2 + 0.001) and 1 or ((h2 > h1 + 0.001) and 2 or 0))
+                hostRound(m, (h1 > h2 + 0.001) and 1 or ((h2 > h1 + 0.001) and 2 or 0), true)
             end
         elseif m.phase == "between" and now >= (m.nextAt or 0) then
             if m.winner then
@@ -1439,6 +1511,7 @@ return function(api)
             elseif m.fogAt and now >= m.fogAt then
                 m.fogAt = nil
                 game.setBossFog(middleOf(m), true, true)        -- (said once, as they first close: arrive)
+                arena.holdDrinks(m)
                 if now >= (m.guidesAt or 0) then
                     m.guidesAt = now + 5.0
                     arena.bellGuides(true)
@@ -1651,7 +1724,7 @@ return function(api)
         end
     end
 
-    function arena.onRound(m, round, winner, s1, s2)
+    function arena.onRound(m, round, winner, s1, s2, byClock)
         m.score = { s1, s2 }
         m.phase = "between"
         if (m.mode == "death" and winner > 0) or s1 >= DUEL_WINS or s2 >= DUEL_WINS then
@@ -1660,7 +1733,7 @@ return function(api)
         log(string.format("PvP: round %d to %s. %s %d - %d %s.", round, winner == 0 and "nobody (a draw)" or teamName(winner),
             teamName(1), s1, s2, teamName(2)))
         if ui() then
-            ui().roundOver(round, winner, myTeam(), s1, s2, m)
+            ui().roundOver(round, winner, myTeam(), s1, s2, m, byClock)
         end
     end
 
@@ -2373,10 +2446,10 @@ return function(api)
         if coop.isHost() or slot ~= 1 then
             return
         end
-        local id, round, winner, s1, s2 = rest:match("^(%d+) (%d+) (%d) (%d+) (%d+)")
+        local id, round, winner, s1, s2, clock = rest:match("^(%d+) (%d+) (%d) (%d+) (%d+) ?(%d?)")
         local m = sameMatch(id)
         if m then
-            arena.onRound(m, tonumber(round), tonumber(winner), tonumber(s1), tonumber(s2))
+            arena.onRound(m, tonumber(round), tonumber(winner), tonumber(s1), tonumber(s2), clock == "1")
         end
     end
 
@@ -2522,6 +2595,19 @@ return function(api)
             for kind, id in (j.loans or ""):gmatch("(%a+):([^,]+)") do
                 pcall(function() bp:DisposeWeapon(FName(id), kind == "main") end)
             end
+        end
+        -- (The gourd's level, size and drinks as they were, if a save in the match kept the match's.)
+        local gl, gm, gd = (j.gourd or ""):match("^(%d+) (%d+) (%d+)$")
+        local g = gl and arena.gourdOf(pawn)
+        if g then
+            pcall(function() g.CurrentLevel = tonumber(gl) end)
+            if tonumber(gm) > 0 then
+                pcall(function() g:SetMaxTime(tonumber(gm)) end)
+            end
+            pcall(function()
+                g:SetCurrentTime(tonumber(gd))
+                g:SetDisplayTime(tonumber(gd))
+            end)
         end
         -- (The skill nodes the match put on too, those a save in it kept: only them, never the player's own.)
         local nodes, a = componentOf(pawn, "PBZAbilityNodesComponent"), asc(pawn)

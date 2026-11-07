@@ -543,7 +543,7 @@ return function(api)
         if valid(pawn) and not pvp.teams then
             setAttr(pawn, "Health_Min", 0)     -- (1.1.0 duels held health at 1; deaths are real now)
         end
-        log("PvP " .. (on and string.format("ON (damage %d%%). Score %d - %d.", math.floor(pvp.damage * 100 + 0.5), pvp.wins, pvp.losses) or "off."))
+        log("PvPvE " .. (on and string.format("on (damage %d%%). Score %d - %d.", math.floor(pvp.damage * 100 + 0.5), pvp.wins, pvp.losses) or "off."))
     end
 
     -- A match's teams (slot -> team) and this player's slot, or nil when it ends: who's a foe (arena.lua).
@@ -580,9 +580,9 @@ return function(api)
             for _, h in pairs(hostile) do
                 h.restat = true
             end
-            log(string.format("PvP damage %d%%.", math.floor(pvp.damage * 100 + 0.5)))
+            log(string.format("PvPvE damage %d%%.", math.floor(pvp.damage * 100 + 0.5)))
         else
-            log(string.format("PvP %s, damage %d%%, score %d - %d. Usage: pvp on|off|damage <percent>",
+            log(string.format("PvPvE %s, damage %d%%, score %d - %d. Usage: pvp on|off|damage <percent>",
                 pvp.on and "on" or "off", math.floor(pvp.damage * 100 + 0.5), pvp.wins, pvp.losses))
         end
     end

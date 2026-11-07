@@ -25,6 +25,7 @@ local function spots(c, r, yaw)
 end
 
 local data = { spots = spots }
+data.PER_SIDE = 3               -- players a side at most: the spots above
 
 -- unlock: spawner save keys (map name and spawner object, as the game's SpawnerSaveData has them): any one dead opens it.
 data.arenas = {
@@ -85,6 +86,9 @@ data.HERE = { key = "here", name = "Here", zh = "此地", reach = 2500 }
 -- The healing gourd everyone gets in a match: the game's own, the same for all, this many drinks for the whole match.
 data.GOURD = "Hulu"
 data.DRINKS = 3
+-- ...at its top level for everyone: a drink heals by the gourd's level (the bench, 11-08: 40% of the health at level 0, 45%
+-- at 3, 50% at 6), and the gourd is made to hold just the match's drinks.
+data.GOURD_LEVEL = 6
 
 -- Everyone fights as a Soul at the top of the game: every skill node on (the game's own ActivateAllNodes, max level),
 -- which the bench read as these (850 / 100 / 400 / 100 without them).

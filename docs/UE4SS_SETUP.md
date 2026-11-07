@@ -75,7 +75,7 @@ Then restart the game. Our mod's keys:
 
 | Key | What it does |
 |---|---|
-| F6 | Print info about your character: class, location, components |
+| F6 | The PvP page (1.7.0): the lobby, the loadout, READY and START (`docs/PVP.md`). Character info moved to the `info` command |
 | F7 | List all characters near you (finds the enemy classes) |
 | F8 | Spawn player 2: second local player + a copy of your character |
 | F9 | Remove player 2 |

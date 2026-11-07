@@ -460,10 +460,11 @@ return function(api)
             panel.show()
         end
         wasKey = key
-        -- F in a match's finishing window: the blow on the nearest fallen foe.
+        -- F in a match's finishing window: the blow on the nearest fallen foe. On a pad, the game's own use button (B, or
+        -- Circle: what player 2 uses with in split screen), so a pad player needn't reach for the keyboard.
         local m = arena.match
         if m and m.phase == "finish" and not panel.open then
-            local f = controller:IsInputKeyDown(kit.key("F"))
+            local f = controller:IsInputKeyDown(kit.key("F")) or controller:IsInputKeyDown(kit.key("Gamepad_FaceButton_Right"))
             if f and not panel.wasF then
                 arena.finishNearest()
             end

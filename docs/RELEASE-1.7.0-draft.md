@@ -13,12 +13,12 @@ or 0, nor with Resistance_Poise at 9999; whether a boss's armour in its attacks 
 - Press F6: the host picks Duel (best of three rounds) or Death (one life), a clock (none, 60, 90 or 120 s a round) and
   the arena: the Crimson Forest (YuCong), Hua Qianxiao's stage, the Gold-Masked One's gorge, Mu Xiaokui's meadow, or Here,
   where the host stands. A boss's arena opens once every player has beaten that boss
-- Pick your loadout once and it's kept: two weapons and two Phantom Edges, any in the game, owned or not
-- One on one, or two teams of up to six (Crimson and Azure): everyone picks a team and presses READY
+- Pick your loadout once and it's kept: two weapons and two Phantom Edges, any of the game's 20 and 20, owned or not
+- One on one, or up to six players in two teams of up to three (Crimson and Azure): everyone picks a team and presses READY
 - Everyone fights with the same body: every skill node on, the same health and attack, every weapon at level 30, three
-  drinks from the same gourd for the whole match. Every blow does half the usual damage: about six clean hits to bring
+  drinks from the same gourd, at its top level, for the whole match. Every blow does half the usual damage: about six clean hits to bring
   someone down, so parries and reads decide it
-- The arena's fog walls go up and there are no monsters. A countdown in brush strokes, 三 二 一, then 斗
+- The arena's fog walls go up and there are no monsters. A countdown in brush strokes, 三 二 一, then 斗. When the clock runs out, TIME, then the round's result
 - Every foe on the game's own boss health bar, with their name, the score and the clock over it; round and match banners
 - In a team match your teammates' health shows over your own bar, in its look: the health a blow takes stays in red a moment
   and drains, and a fallen teammate's bar empties
@@ -26,12 +26,12 @@ or 0, nor with Resistance_Poise at 9999; whether a boss's armour in its attacks 
   foe staggers and loses posture, and they see your blade turn theirs aside. A guard already held only blocks. Your guard
   and your dodges show on the other screens as you make them: a blow into your guard no longer looks like it landed there
 - The blow that wins the match plays in slow motion and leaves the losers on their feet, dazed. The winners then have about
-  five seconds to finish them with F: every screen cuts to a camera beside the two that keeps clear of rocks and walls, and
+  five seconds to finish them with F (B or Circle on a pad): every screen cuts to a camera beside the two that keeps clear of rocks and walls, and
   the winner finishes them with the arena's boss's own move (YuCong's lunge, Hua Qianxiao's drunken slide and cut, the
   Gold-Masked One's lunge and upward cut, Mu Xiaokui's twin-blade dash; Here draws one of the four), run in from where its
   blow lands on them. The moment it lands slows nearly to a stop, and the loser dies the way the game shows a death
 - The winners get a golden 生还, the losers the game's red 殒命, both shown the same way, and everyone goes back where they
-  were with their own weapons, levels, gourd and skills. Nothing in a match is saved
+  were with their own weapons, levels, gourd, skills and health. Nothing in a match is saved
 - The network carries only the players in a match (no enemy traffic), moves are sent the frame they start, and a perfect
   dodge's slow motion is off in a match, so every game runs at the same speed
 
@@ -69,15 +69,15 @@ Both players need 1.7.0. Thanks to shilover (Rakka) for the ideas in issue #13, 
 
 - 按 F6:房主选择决斗(三局两胜)或死斗(只有一条命)、每局限时(不限时、60、90 或 120 秒)和场地:赤林(余聪)、花千笑之台、
   金面人之谷、木小葵之野,或者此地(房主所在的地方)。所有玩家都打败了该首领后,这个首领的场地才会开放
-- 配装选一次就会保存:两把武器和两件杀器,游戏里的任意一件,有没有都可以
-- 一对一,或最多六人分成赤队和青队:每个人选队伍,然后按准备
-- 所有人用同样的身体作战:技能全部点满,生命和攻击相同,所有武器都是 30 级,整场比赛同一个葫芦只能喝三口。每一击的伤害是平时的一半:大约六次干净的命中才能击倒对手,胜负取决于弹反和读招
-- 场地的雾墙升起,没有怪物。水墨笔触的倒数 三 二 一,然后 斗
+- 配装选一次就会保存:两把武器和两件杀器,从游戏的 20 把武器和 20 件杀器中任选,有没有都可以
+- 一对一,或最多六人分成赤队和青队(每队最多三人):每个人选队伍,然后按准备
+- 所有人用同样的身体作战:技能全部点满,生命和攻击相同,所有武器都是 30 级,整场比赛同一个葫芦(满级)只能喝三口。每一击的伤害是平时的一半:大约六次干净的命中才能击倒对手,胜负取决于弹反和读招
+- 场地的雾墙升起,没有怪物。水墨笔触的倒数 三 二 一,然后 斗。时间用完时先显示“时间到”,再显示本局结果
 - 每个对手都显示在游戏自己的首领血条上,上方写着名字、比分和时间;每局和整场的结果横幅
 - 组队比赛中,队友的血条显示在你自己的血条上方,样式相同:被打掉的血会以红色停留片刻再慢慢褪去,倒下的队友血条会清空
 - 弹反就是游戏自己的弹刀,讲究时机:在对方的攻击到来时举起架势,这一击就会被无损地弹开,对手会失衡并损失架势,对方也会看到你的刀弹开了他的刀。一直举着的架势只是格挡。你的架势和闪避会在你做出的那一刻显示在其他人的画面上:打在你架势上的攻击不会再看起来像是命中了
-- 决定胜负的一击会慢放,败者不会倒下,而是站着失去架势。胜者有大约五秒钟按 F 终结对手:所有画面切到两人身旁的镜头(镜头会避开岩石和墙壁),胜者用该场地首领自己的招式终结对手(余聪的突刺、花千笑的醉步滑行与斩击、金面人的突刺与上挑、木小葵的双刀冲刺;此地会从四招中抽一招),并从让这一招正好打中对手的位置出招。命中的一刻几乎静止,败者以游戏自己的死亡方式倒下
-- 胜者看到金色的“生还”,败者看到游戏自己的红色“殒命”,两者以同样的方式呈现,所有人回到原来的地方,武器、等级、葫芦和技能都会还原。比赛中的一切都不会存档
+- 决定胜负的一击会慢放,败者不会倒下,而是站着失去架势。胜者有大约五秒钟按 F(手柄按 B 或 ○)终结对手:所有画面切到两人身旁的镜头(镜头会避开岩石和墙壁),胜者用该场地首领自己的招式终结对手(余聪的突刺、花千笑的醉步滑行与斩击、金面人的突刺与上挑、木小葵的双刀冲刺;此地会从四招中抽一招),并从让这一招正好打中对手的位置出招。命中的一刻几乎静止,败者以游戏自己的死亡方式倒下
+- 胜者看到金色的“生还”,败者看到游戏自己的红色“殒命”,两者以同样的方式呈现,所有人回到原来的地方,武器、等级、葫芦、技能和生命都会还原。比赛中的一切都不会存档
 - 比赛中网络只传送玩家的数据(没有敌人的数据),招式在开始的那一帧就会发出;比赛中没有完美闪避的慢动作,所有人的游戏以同样的速度运行
 
 **PvPvE。** “更多”里原来的 PvP 开关现在叫 PvPvE:在开放世界交手,敌人照样在场,玩法不变。

@@ -1426,8 +1426,9 @@ function Fake.new(id, scripts, ini, link)
         GetBossHPBarInstances = function() return {} end,
     })
     pc.hudLayout = hudLayout
-    local gourd = object(pc, "Gourd", { CurrentTime = 2, MaxTime = 2 })
-    defs(pc, gourd, { SetCurrentTime = function(self, n) put(self, "CurrentTime", n) end, SetDisplayTime = false })
+    local gourd = object(pc, "Gourd", { CurrentTime = 2, MaxTime = 2, CurrentLevel = 0 })
+    defs(pc, gourd, { SetCurrentTime = function(self, n) put(self, "CurrentTime", n) end, SetDisplayTime = false,
+        SetMaxTime = function(self, n) put(self, "MaxTime", n) end })
     pc.gourd = gourd
     local gourds = { ForEach = function(_, fn) fn({ get = function() return name("Hulu") end }, { get = function() return gourd end }) end }
     local bag = object(pc, "Backpack", { MedicineInfos = gourds, BottomMedicineID = name("Hulu"), Accessories = list({}), items = {} })

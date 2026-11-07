@@ -4346,7 +4346,9 @@ return function(api)
                 p.retellAt = os.clock() + 2.0
             end
         end
-        if p.retellAt and os.clock() >= p.retellAt then
+        -- (Not in a PvP match: the dead and the bosses are the world's news, which a match goes without. It waits for the
+        -- end: a trip's loading screen is a gap, and the retell then sent every death since the start into the match.)
+        if p.retellAt and os.clock() >= p.retellAt and not net.arena then
             p.retellAt = nil
             if not p.partnerGone and not (p.syncAt and p.syncAt >= os.clock() - 3.0) then
                 local slot = net.party and p.number or nil

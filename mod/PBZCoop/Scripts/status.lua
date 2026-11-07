@@ -205,7 +205,9 @@ return function(api)
                 notify("clock", "your PC's clock and your partner's are over 2 minutes apart: set both to the right time.")
             end
             if rest ~= "" then
-                notify("mismatch", "settings differ from your partner's: " .. rest:gsub(",", ", "))
+                -- (The relay names the ini's keys: its PvP key is the switch called PvPvE since 1.7.0.)
+                local named = rest:gsub(",", ", "):gsub("%f[%a]pvp%f[%A]", "PvPvE")
+                notify("mismatch", "settings differ from your partner's: " .. named)
             end
         end
 

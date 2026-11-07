@@ -81,6 +81,7 @@ return function()
         ["The host starts the match."] = "由房主开始对决。",
         ["Nobody to fight: a partner needs to be linked."] = "没有对手:需要有队友联机。",
         ["Both teams need someone."] = "两支队伍都需要有人。",
+        ["Three a side at most: someone needs to change team."] = "每队最多三人:需要有人换队。",
         ["Everyone's ready: START when you are."] = "所有人都已准备:随时可以开始。",
         ["You're ready. The host starts the match."] = "你已准备。等待房主开始对决。",
         ["Set your loadout, pick a team, then READY."] = "设定配装、选择队伍,然后按“准备”。",

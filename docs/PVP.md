@@ -10,11 +10,11 @@ Two ways to fight each other:
 
 | | |
 |---|---|
-| Players | 2 to 6, everyone linked, on the same version. 2 players: a duel. More: two teams (Crimson, Azure), each player picks one |
+| Players | 2 to 6, everyone linked, on the same version. 2 players: a duel. More: two teams (Crimson, Azure), each player picks one, three a side at most (each arena has three spots a side) |
 | Modes | **Duel**: best of three rounds, everyone back up each round. **Death**: one life, last team standing |
-| Clock | None, 60, 90 or 120 s a round. At zero the team with more health left (as a share) wins the round; equal is a draw |
+| Clock | None, 60, 90 or 120 s a round. At zero the team with more health left (as a share) wins the round; equal is a draw. TIME shows on every screen first, then the round's result |
 | Arenas | YuCong's Crimson Forest, Hua Qianxiao's stage, the Gold-Masked One's gorge, Mu Xiaokui's meadow: the game's own places, with their boss fog walls up and no monsters. Or **Here**: where the host stands, the sides 8 m either way of them on the first line round from the host's facing (30-degree steps) with floor under both ends and a clear view between them at chest height (`arena.hereYaw`); none, the host's facing |
-| Fair start | everyone a Soul at the top of the game: every skill node on (each one the player hasn't, for the match only), 1360 health, 160 attack, 640 Phantom Edge energy, held there all match; every weapon in the match at level 30; 3 drinks of the same gourd for the whole match |
+| Fair start | everyone a Soul at the top of the game: every skill node on (each one the player hasn't, for the match only), 1360 health, 160 attack, 640 Phantom Edge energy, held there all match; every weapon in the match at level 30; 3 drinks of the same gourd at its top level for the whole match (a drink heals by the gourd's level: 40% of the health at level 0, 50% at 6, the bench 11-08), a refill in it (a bell's sit) taken back |
 | Damage | every blow at half the game's own (`DAMAGE` in `arenas.lua`): at the top of the game a Sanguine blow took 499 of 1360 on the bench, three to fall; at half, about six. A parry costs the attacker 60 posture. Each player's own `PvPDamage` and `PvPParryPosture` count only in PvPvE: in a match they'd let a player take less |
 | Loadout | a preset of your own, kept between matches (`pvp_preset.txt`): two weapons and two Phantom Edges, any of the game's 20 and 20, owned or not |
 | Start | the host picks the mode, the clock and the arena on the F6 page; everyone picks a team and presses READY; the host presses START |
@@ -25,7 +25,7 @@ Two ways to fight each other:
 
 ## The finishing move
 
-A winner who presses F within 9 m of a dazed foe in the finishing window (7 s, F taken till 1.5 s before its end, so the move
+A winner who presses F (on a pad, B or Circle: the game's use button) within 9 m of a dazed foe in the finishing window (7 s, F taken till 1.5 s before its end, so the move
 reaches every screen in time) plays the arena's boss's own move on them (`FINISHERS` in `arenas.lua`): in the Crimson Forest
 YuCong's blade form, a step back and the lunge (`YuCong_Bing_Skill_04`); on Hua Qianxiao's stage her drunken slide and rising
 cut (`HuaQianXiao_Attack_04`); in the Gold-Masked One's gorge his lunge and upward cut (`GoldMaskMan_AtkCombo_A01`); in Mu
@@ -74,6 +74,19 @@ perfect dodge, posture). So nobody gets hit by a swing they saw miss.
 
 A player who is down says so (`AR down`); the host counts.
 
+A foe's move plays whole on your screen, from its start, a moment after they began it (the network's delay): no catch-up that
+cuts its wind-up short. Your world judges the blows on you, so it's the swing you see that you parry or dodge, all of it.
+
+## Scope, decided
+
+- Online only: split screen (`Role = Local`) has no F6 page. Both players there share one world, where a foe is a figure of
+  someone else's world; that's a different fight, not built.
+- Everyone linked plays: the host's START waits for every linked player's READY. To sit a match out, leave the session first (F5, LEAVE).
+- The F6 page is clicked with the mouse, as the F5 page is. The finishing move takes F, or B / Circle on a pad.
+- One finishing move a match: the deciding blow's team finishes one of the fallen; the others get their 殒命 as they stand.
+- The rules (damage, stats, drinks, levels) are each player's own `arenas.lua`; a match needs everyone on the same version, and
+  so the same rules. A check of the rules' own text wouldn't stop an edited file: it would compute what it was edited to.
+
 ## On screen
 
 Each foe is on the game's own boss health bar (`PBZHUDLayout:RegisterBossHPBar`), white health over gold posture, at the
@@ -81,7 +94,8 @@ top, as a boss fight shows its boss. Its name text (`BossName`, the game's own f
 score (YOU 1 – 0) and the round's clock; its health is moved with the bar's own `ForSeq_UpdateHealth`. A player's figure on
 a boss bar gets no `Character` (the bench), so pbz.lua knows each bar by the widget the HUD made for it, and keeps it out of
 the mod's own boss lists (`bosses`, `bossActors`), so nothing that walks the bosses sees a player. The countdown and banners are
-ink-brush pictures of ours; the death card and the golden VICTORY are the game's own screens.
+ink-brush pictures of ours; TIME comes before the result of a round the clock ended. The last screens, the red 殒命 and the golden
+生还, are built from the game's own death screen pictures (`CARDS` in `arenaui.lua`).
 
 In a team match each teammate has a bar over the player's own, in its look (the game's player bar follows only its own
 player): the dark frame cut away at its right end, the bone fill, the name in the player's lobby colour (`art/pvp/mate_*`,
@@ -102,7 +116,7 @@ same version (the F6 page says who doesn't).
 | `AR here <id> there\|home` | player | in the arena and set up; back home |
 | `AR count <id> <round>` | host | a round's countdown starts |
 | `AR down <id> <round> <by>` | player | down this round (`by`: who struck last, or 0) |
-| `AR round <id> <round> <winner> <crimson> <azure>` | host | a round's result and the score (`winner` 0 = draw) |
+| `AR round <id> <round> <winner> <crimson> <azure> <clock>` | host | a round's result and the score (`winner` 0 = draw; `clock` 1: the clock ended it) |
 | `AR end <id> <winner> <crimson> <azure>` | host | the match's result; the finishing window opens |
 | `AR fin <id> <victim> <move> <x> <y> <z> <yaw>` | winner | a finishing move on a fallen player, and where the winner stands for it |
 | `AR home <id>` | host | everyone goes back |
@@ -114,7 +128,9 @@ Health goes with the position (the state sample), which is how the bars move at 
 
 There are no enemies, so none of their traffic goes: no enemy lines, no `A`/`D`/`K`/`N`, twins, scaling, story, flow, loot,
 bells, chests, blockers or map fog. `net.arena` turns all of that off (`net.ARENA_SKIPS` in `coop.lua`). What's left is the
-players: positions (125 a second, as before), the moves they start, hit reactions, weapons and the match's own events.
+players: positions (125 a second, as before), the moves they start, hit reactions, weapons and the match's own events. A
+partner's gap (a trip's loading screen is one) had the host tell every enemy death and boss again in the middle of a match:
+that retell waits for the match's end now (`watchOnePartner` in `coop.lua`; the sim's gap check).
 
 Moves start sooner: outside a match a player's new move was noticed 10 times a second, so up to 100 ms after it began; in a
 match every frame. That's most of a swing's lead on a parry.
@@ -133,7 +149,8 @@ start):
 - their weapons: the game's own `PushEquippedWeapons` puts the loadout on and `PopEquippedWeapons` takes it off; a weapon the
   player didn't own goes back with `DisposeWeapon`;
 - every weapon's level that the match raised (`ResetWeaponToLevel` puts it back: no dust, nothing given);
-- their gourd: which one, how many drinks;
+- their gourd: which one, how many drinks, its size and its level (the match's gourd known by name, `arena.gourdOf`);
+- their health: they come home with what they had, not full;
 - their skill nodes: each one the player hasn't goes on for the match, one at a time (`ActivateNode`, the game's buy, which
   costs nothing called on the tree), and only those go off after it (`DeactivateNode`). The player's own nodes are never
   touched. (The bench, 11-07: the game's `DeactivateAllNodes` takes the player's own nodes and their levels too, and neither
@@ -211,13 +228,15 @@ fell 110 m and lost round 1.
 - `arena.lua`: the match (the host's side, each player's own side, the events, putting things back).
 - `arenas.lua`: the arenas, the weapon lists, the stats, the finishing moves.
 - `arenaui.lua`: the countdown, banners, each foe on the game's own boss bar (its name text says who, the score and the
-  clock: the user wants the game's own bar design, so ours went), and the game's own death card. Teammates get no bar: the
-  game's player bar only follows its own player.
+  clock: the user wants the game's own bar design, so ours went), and the last screens; each teammate's bar over the player's own
+  (On screen, above).
 - `pvppanel.lua`: the F6 page (lobby and loadout).
 - `pvp.lua`: the fight itself, for PvPvE and the arena: hostile figures, parries, teams.
 - `art/make_pvp_art.py`: every picture above.
 - `tools/netlab/sim/pvp.lua`: in the simulator, a whole duel with the finishing move, a guest leaving a match, and three
-  players in two teams, a fallen one watching their teammate (`python -I tools/netlab/luasim.py pvp`; `all.ps1` runs it).
+  players in two teams, a fallen one watching their teammate; the gourd (3 of 3 at level 6, a refill taken back, all of it
+  back after), the health back as it was, a guest's 4 s gap in a match (no retell till the end), TIME on both screens when
+  the clock ends a round, and five players (four a side refused) (`python -I tools/netlab/luasim.py pvp`; `all.ps1` runs it).
 - Three players in the real game with two copies on one PC: `relay_cli bot client --say <file> --heard <file>` joins a host
   with `PartySize = 4` as one more player and speaks the match's own words (a line added to the say file goes out as an event:
   `AR pick 2 1 - 1.7.0 Tang,PoJun,ShachiHook,TigerCannon`, `AR here <id> there`, `AR down <id> <round> <by>`; `!at x y z yaw`

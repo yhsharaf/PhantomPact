@@ -22,6 +22,18 @@ return function(out, scripts)
         end
         return "-"
     end
+    local function countFrom(list, from, pattern)
+        local n = 0
+        for i = from + 1, #list do
+            if list[i]:find(pattern) then n = n + 1 end
+        end
+        return n
+    end
+    -- The match's gourd as the game has it: drinks/size and level.
+    local function gourd(pc)
+        local f = rawget(pc.gourd, "__fields")
+        return string.format("%s/%s level %s", tostring(f.CurrentTime), tostring(f.MaxTime), tostring(f.CurrentLevel))
+    end
 
     out("the finishing move a place gets (arenas.lua):")
     do
@@ -87,6 +99,8 @@ return function(out, scripts)
     check(ha.blocker() == nil, "nothing stops the start: " .. tostring(ha.blocker()))
 
     out("start:")
+    Fake.setHealth(h.pawn, 600)         -- (the host's health before the match: given back at home, no free heal)
+    local gourd0 = gourd(h)
     Session.command(h, "arena start")
     s:run(2)
     local sentBefore = #h.sent
@@ -116,6 +130,26 @@ return function(out, scripts)
             out("    enemy traffic: " .. line:sub(1, 120))
         end
     end
+
+    out("the gourd, the same for everyone:")
+    check(gourd(h) == "3/3 level 6" and gourd(g) == "3/3 level 6",
+        "3 drinks in a gourd of 3, at its top level, for both: " .. gourd(h) .. ", " .. gourd(g))
+    Fake.put(h.gourd, "CurrentTime", 2)         -- (the host drinks)
+    s:run(1.5)
+    Fake.put(h.gourd, "CurrentTime", 3)         -- (and the gourd fills again: a bell's sit does)
+    s:run(1.5)
+    check(gourd(h) == "2/3 level 6", "a drink stays drunk: a refill in the match is taken back: " .. gourd(h))
+
+    out("a gap in the match (a loading screen's worth): the world's news waits for the end:")
+    h.env.PBZ.net.deadSent["sp:dead1"] = true   -- (an enemy dead before the match, told then)
+    local sentGap = #h.sent
+    g.cut = true
+    s:run(4)
+    g.cut = false
+    s:run(4)
+    check(countFrom(h.sent, sentGap, "^E [KB] ") == 0,
+        "nothing of the dead or the bosses told again in the match: " .. countFrom(h.sent, sentGap, "^E [KB] "))
+    check(ha.match and ga.match and ha.match.phase == "fight", "and the match goes on after it")
 
     out("parries, judged by the game's own deflect:")
     -- The guest swings at the host beside it, and the host's game answers with its guard or doesn't. (The bench, 11-07: a
@@ -284,6 +318,10 @@ return function(out, scripts)
     check(onNodes(g) == "", "the guest's tree as it was, nothing on: " .. onNodes(g))
     check(math.abs(attack(h) - attack0) < 0.5, string.format("and its attack its own again, %.0f, not the match's: %.0f",
         attack0, attack(h)))
+    check(math.abs((Fake.health(h.pawn)) - 600) < 0.5, "and the health it had before, not a free heal: " .. tostring((Fake.health(h.pawn))))
+    check(gourd(h) == gourd0 and gourd(g) == gourd0, "the gourd as it was, its drinks, size and level: " .. gourd(h) .. ", " .. gourd(g))
+    check(countFrom(h.sent, sentGap, "^E K sp:dead1") >= 1, "the dead told again once the match is over")
+    check(count(h.trace, "banner_timeup") == 0, "no TIME in a match the clock didn't end")
     check(count(h.treeCalls, "AllNodes") == 0 and count(g.treeCalls, "AllNodes") == 0
         and count(h.treeCalls, "^DeactivateNode HeiShi1$") == 0, "the whole tree never switched, nor a node of the player's own")
 
@@ -305,6 +343,8 @@ return function(out, scripts)
     check(dm.score[1] == 1 and dm.winner == 1 and dm.phase == "finish",
         string.format("at zero the clock gives it to the host, ahead on health: %d - %d, %s", dm.score[1], dm.score[2], dm.phase))
     check(dg.phase == "finish" and dg.winner == 1, "the guest's world has the same end: " .. tostring(dg.phase))
+    check(last(h.sent, "^E AR round"):find(" 1$") ~= nil, "the host says the clock ended it: " .. last(h.sent, "^E AR round"))
+    check(count(h.trace, "banner_timeup") >= 1 and count(g.trace, "banner_timeup") >= 1, "TIME on both screens")
     Session.command(h, "arena finish 2 1")
     s:run(1)
     check(count(h.sent, "^E AR fin") == fins + 1 and dg.finished == 2, "the host finishes the guest, one life, no more rounds")
@@ -396,6 +436,29 @@ return function(out, scripts)
     t:run(3)
     check(a1.match == nil and a2.match == nil and a3.match == nil, "the host left: all three home")
     errors = errors + errorsIn(t, "teams")
+
+    out("five players: three a side at most (each arena has three spots a side):")
+    local f = Session.new(scripts, { "Host", "Guest", "Guest", "Guest", "Guest" }, 6,
+        { { "near", "BP_Monster_MaleThug_Sword_Blue_C", 300.0, 0.0, 100.0, 850, 400, false } }, nil)
+    f:run(8)
+    for i, pc in ipairs(f.pcs) do
+        Session.moveTo(pc, 300 * i, 0)
+    end
+    f:run(3)
+    local fa = f.pcs[1].env.PBZ.arena
+    Session.command(f.pcs[1], "arena place 0")
+    Session.command(f.pcs[1], "arena team 1")
+    for i = 2, 5 do
+        Session.command(f.pcs[i], "arena team 2")
+        Session.command(f.pcs[i], "arena ready")
+    end
+    f:run(2)
+    check(tostring(fa.blocker()):find("Three a side", 1, true) ~= nil, "four on one side: refused: " .. tostring(fa.blocker()))
+    Session.command(f.pcs[5], "arena team 1")
+    Session.command(f.pcs[5], "arena ready")
+    f:run(2)
+    check(fa.blocker() == nil, "two against three: nothing stops the start: " .. tostring(fa.blocker()))
+    errors = errors + errorsIn(f, "five")
     check(errors == 0, "no script errors: " .. errors)
     out(failed == 0 and "PASS" or ("FAILED " .. failed))
     return failed == 0
