@@ -146,8 +146,19 @@ or a blow that never came: the game's own block or nothing, no stagger. The rule
 the foe's figure, and every figure always runs a passive (`GA_Hun_ShachiHook_Passive_C`), so its swing never ended and not
 one parry was ever judged in a match.
 
-In a match the Defence move is the one montage sent (`U`): the game starts it itself, not as one of the player's abilities,
-so no `M` brought it, and the attacker saw their blow go home on a figure that had turned it aside.
+In a match the guard's montages are the only ones sent (`U`): the stance's enter and exit, and the Defence move. The game
+starts the Defence move itself, not as one of the player's abilities, and a figure can't start the stance's ability ("Ghost
+couldn't play GA_Hun_Tang_Stance_C", every time). Without them the attacker never saw a guard go up, and saw their blow go
+home on a figure that had turned it aside. A figure whose player still holds the guard after its Defence move goes back into
+the guard, as their own body does. While a player holds the guard, and for 0.6 s after their Defence move, their figure on
+the other screens is shielded (the game's own lying-down invulnerability, `GE_PBZLieInvulnerable_C`, one per figure), so a
+blow there doesn't make it flinch over the guard. Their own game decides every hit; the figure's flinch was only for show,
+and on the bench it came over the deflect.
+
+A dodge begun as the blow came was refused on the attacker's screen: their own blow had put the figure in a flinch (for
+show only, the defender's game decides), and a flinching figure can't start a move. A move from the player now clears that
+flinch first. On the bench the figure flinched for 20 to 90 ms, then back-stepped as the player had. A perfect dodge's slow
+motion stayed off in the match (time 1.00 throughout).
 
 ## Arenas
 

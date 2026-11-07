@@ -2053,6 +2053,13 @@ return function(api)
         return name ~= nil and name:find("Defence", 1, true) ~= nil and name:find("Stance", 1, true) == nil
     end
 
+    -- The guard's own montages: its answer to a blow (above) and the stance itself (AM_Hun_<weapon>_StanceEnter, _StanceExit).
+    -- A figure can't start the stance's ability ("Ghost couldn't play GA_Hun_Tang_Stance_C", every time on the bench), so in a
+    -- match these go as montages (moves.lua): before, a guard raised was never seen by the other side at all.
+    function game.isGuardMove(name)
+        return name ~= nil and (name:find("Defence", 1, true) ~= nil or name:find("Stance", 1, true) ~= nil)
+    end
+
     function game.watchLocalPlayer(pawn, sendEvent)
         local asc = abilitySystem(pawn)
         if not asc then
@@ -2214,9 +2221,26 @@ return function(api)
             pcall(function() asc:K2_GiveAbility(cls, 1, -1) end)
             ok, activated = pcall(function() return asc:TryActivateAbilityByClass(cls, true) end)
         end
+        -- Their own game let them move, so the figure's flinch from a blow here (for show only: theirs decides) goes first.
+        -- A dodge begun as the blow came was refused on a flinching figure, and the blow seemed to land (the bench, 11-07).
+        if not (ok and activated) and game.hitStateOf then
+            local state = game.hitStateOf(ghost)
+            if state and state ~= "None" then
+                game.clearHitState(ghost)
+                pcall(function()
+                    local ai = ghost.Mesh:GetAnimInstance()
+                    local cur = valid(ai) and ai:GetCurrentActiveMontage()
+                    if valid(cur) then
+                        ai:Montage_Stop(0.1, cur)
+                    end
+                end)
+                ok, activated = pcall(function() return asc:TryActivateAbilityByClass(cls, true) end)
+            end
+        end
         holdGhost(ghost)            -- (each ghost of a party its own: one timer for all held every other ghost too)
         ghostMoveAt = os.clock()
-        if not (ok and activated) then
+        if not (ok and activated) and not loadTried["refused " .. classPath] then
+            loadTried["refused " .. classPath] = true       -- (once a move: the guard's stance is refused every time)
             log("Ghost couldn't play " .. classPath:match("([^.]+)$"))
         end
     end

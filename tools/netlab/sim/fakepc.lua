@@ -1563,6 +1563,17 @@ function Fake.new(id, scripts, ini, link)
                 given[#given + 1] = class
                 rawset(actor, "__given", given)
             end)
+            if rawget(actor, "__class") == "BP_Renewal_Hun_C" then
+                -- A player's or a figure's: effects on it counted (a shield), each with a handle to take it off by.
+                put(asc, "BP_ApplyGameplayEffectToSelf", function()
+                    put(actor, "effects", (rawget(actor, "__fields").effects or 0) + 1)
+                    return { Handle = rawget(actor, "__fields").effects }
+                end)
+                put(asc, "RemoveActiveGameplayEffect", function()
+                    put(actor, "effects", math.max(0, (rawget(actor, "__fields").effects or 0) - 1))
+                    return true
+                end)
+            end
             if rawget(actor, "__class") ~= "BP_Renewal_Hun_C" then
                 -- An enemy's: the only effect ever applied to one is the game's kill, its whole death, paying this PC's
                 -- player as for their own blow.

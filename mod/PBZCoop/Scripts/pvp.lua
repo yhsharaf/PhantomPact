@@ -303,7 +303,31 @@ return function(api)
         return out
     end
 
-    local hostile = {}              -- ghost address -> { ghost, at (when its stats were given) }
+    local hostile = {}              -- ghost address -> { ghost, at (when its stats were given), guardShield }
+
+    -- A foe's figure while its player holds the guard (its bit with their place) or has just turned a blow aside (their
+    -- Defence move, moves.lua: p.guardAt): shielded, so our blows don't make it flinch over the guard they have up. Their game
+    -- decides every hit; ours on the figure are only for show. (The bench, 11-07: our blow's flinch came over their deflect.)
+    local GUARD_SHIELD_S = 0.6
+    local function guardShield(ghost, h, on)
+        if (h.guardShield ~= nil) == on then
+            return
+        end
+        pcall(function()
+            local bl = StaticFindObject("/Script/GameplayAbilities.Default__AbilitySystemBlueprintLibrary")
+            local asc = bl:GetAbilitySystemComponent(ghost)
+            if on then
+                local cls = FindObject("BlueprintGeneratedClass", "GE_PBZLieInvulnerable_C")
+                h.guardShield = asc:BP_ApplyGameplayEffectToSelf(cls, 1, asc:MakeEffectContext())
+            else
+                asc:RemoveActiveGameplayEffect(h.guardShield, -1)
+            end
+        end)
+        if not on then
+            h.guardShield = nil
+        end
+    end
+
     local function calm(pawn, ghost)
         setHostile(pawn, ghost, false)
         if game.setupGhost then
@@ -328,6 +352,7 @@ return function(api)
         for addr, h in pairs(hostile) do
             if not want[addr] and valid(pawn) then
                 if valid(h.ghost) then
+                    guardShield(h.ghost, h, false)
                     calm(pawn, h.ghost)
                 end
                 hostile[addr] = nil
@@ -367,6 +392,9 @@ return function(api)
                 -- written when it changed: a closure and two writes a tick for each foe.)
                 local t = p.target
                 h = hostile[addr]
+                if h then
+                    guardShield(ghost, h, p.stance == true or now - (p.guardAt or -1e9) < GUARD_SHIELD_S)
+                end
                 if t and t.Hp and t.MaxHp and t.MaxHp > 0 then
                     if not h or h.maxhp ~= t.MaxHp then
                         setAttr(ghost, "Health_Max", t.MaxHp)

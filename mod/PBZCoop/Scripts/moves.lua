@@ -144,9 +144,10 @@ return function(api)
             if api.revive then
                 api.revive.onLocalMontage(m:GetFName():ToString())
             end
-            -- (In a match only the guard's answer to a blow: the game starts that one itself, not one of the player's
-            -- abilities, so no M brings it, and the other side saw its blow go home on a figure that had turned it aside.)
-            if allowedPath(path) and (not net.arena or (game.isGuardReaction and game.isGuardReaction(path))) then
+            -- (In a match only the guard's moves: the game starts its answer to a blow itself, and a figure can't start the
+            -- stance's ability, so no M brings either. Without them the other side never saw a guard raised, and saw its
+            -- blow go home on a figure that had turned it aside.)
+            if allowedPath(path) and (not net.arena or (game.isGuardMove and game.isGuardMove(path))) then
                 coop.sendEvent("U", path, string.format("%.2f", pos))
                 moves.sent = moves.sent + 1
             end
@@ -238,8 +239,8 @@ return function(api)
             return
         end
         moves.partnerSends = true
-        -- (In PvP the figure plays their abilities, M, but for the guard's answer to a blow: see the sending side.)
-        if (net.pvp and not (game.isGuardReaction and game.isGuardReaction(path))) or not valid(p.ghost) or p.ghostHidden then
+        -- (In PvP the figure plays their abilities, M, but for the guard's moves: see the sending side.)
+        if (net.pvp and not (game.isGuardMove and game.isGuardMove(path))) or not valid(p.ghost) or p.ghostHidden then
             return
         end
         local m = montage(path)
@@ -249,12 +250,23 @@ return function(api)
             return
         end
         local start = pos + net.moveAge()
+        if game.isGuardReaction and game.isGuardReaction(path) then
+            -- Their guard turned a blow aside: a flinch our own blow left on the figure (for show only) goes first, and the
+            -- figure is shielded a moment (pvp.lua: p.guardAt) so a blow landing here after this doesn't flinch it again.
+            p.guardAt = os.clock()
+            if game.clearHitState then
+                game.clearHitState(p.ghost)
+            end
+        end
         local ok = pcall(function() ai:Montage_Play(m, 1.0, 0, start, true) end)
         if ok then
             moves.played = moves.played + 1
             p.ghostMontage, p.ghostPath, p.stanceHeld, p.ghostMoveAt = m, path, nil, os.clock()
             if path:find("StanceEnter", 1, true) then
+                p.stancePath = path
                 moves.holdStance(p, m, start)
+            elseif p.stance and game.isGuardReaction and game.isGuardReaction(path) then
+                moves.backToGuard(p, m)
             end
             if game.noteGhostMove then
                 game.noteGhostMove(p.ghost)
@@ -292,6 +304,31 @@ return function(api)
             end)
             if held then
                 p.stanceHeld = addr
+            end
+        end)
+    end
+
+    -- Their guard's answer to a blow (its Defence move) played on the figure while they still hold the guard: back into the
+    -- guard's pose after it, as their own body goes. (The bench, 11-07: the figure stood at ease after it with the guard still
+    -- up on their screen, and played the stance's exit from there.) Not over a move of theirs begun meanwhile.
+    function moves.backToGuard(p, m)
+        local path, addr, ghost = p.stancePath, m:GetAddress(), p.ghost
+        local len = 0.8
+        pcall(function() len = m:GetPlayLength() end)
+        game.after(math.max(0.1, (tonumber(len) or 0.8) - 0.25), function()
+            if not (p.stance and path and valid(ghost) and ghost == p.ghost and valid(p.ghostMontage)
+                and p.ghostMontage:GetAddress() == addr) then
+                return
+            end
+            local ai, now = animOf(ghost), nil
+            pcall(function() now = ai and ai:GetCurrentActiveMontage() end)
+            if valid(now) and now:GetAddress() ~= addr then
+                return
+            end
+            local enter = montage(path)
+            if enter then
+                p.ghostMontage, p.ghostPath, p.stanceHeld = enter, path, nil
+                moves.holdStance(p, enter, math.huge)
             end
         end)
     end

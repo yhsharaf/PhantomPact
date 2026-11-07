@@ -103,7 +103,15 @@ return function(out, scripts)
     -- same and costs nothing either; a blow that never reached, nothing. Every figure always runs
     -- GA_Hun_ShachiHook_Passive_C.)
     local DEFENCE = "/PBZCombatAsset/ActorData/Move/Hun_Tang_DefenceNormal_B_Montage.Hun_Tang_DefenceNormal_B_Montage"
+    local function figureMontage()
+        local ok, path = pcall(function()
+            return rawget(rawget(rawget(g.env.PBZ.net.ghost, "__fields").anim, "__fields").montage, "__path")
+        end)
+        return ok and path or "-"
+    end
     local STANCE = "GA_Hun_Tang_Stance_C"
+    local STANCE_ENTER = "/PBZCombatAsset/ActorData/Move/AM_Hun_Tang_StanceEnter.AM_Hun_Tang_StanceEnter"
+    local heldSeen = "-"            -- the host's figure, for the guest, as the held guard went up
     local hgame = h.env.PBZ.game
     local function beside(cm)
         local l = rawget(h.pawn, "__fields").loc
@@ -115,7 +123,9 @@ return function(out, scripts)
     local function blow(how)
         if how == "held" then
             Fake.running(h, h.pawn, STANCE, true)
+            Session.startMove(h, STANCE_ENTER)
             s:run(0.5)
+            heldSeen = figureMontage()
         end
         Fake.running(g, g.pawn, "GA_Hun_Tang_A_C", true)
         s:run(0.15)
@@ -138,12 +148,6 @@ return function(out, scripts)
     local function parries()
         return count(h.sent, "^E V parry")
     end
-    local function figureMontage()
-        local ok, path = pcall(function()
-            return rawget(rawget(rawget(g.env.PBZ.net.ghost, "__fields").anim, "__fields").montage, "__path")
-        end)
-        return ok and path or "-"
-    end
     Fake.running(g, g.pawn, "GA_Hun_ShachiHook_Passive_C", true)       -- (on for good, as the game's are)
     beside(150)
     blow("parry")
@@ -152,9 +156,38 @@ return function(out, scripts)
     check(count(h.sent, "^%u U .*DefenceNormal") >= 1, "the host's guard answer goes out in the match")
     check(tostring(figureMontage()):find("DefenceNormal", 1, true) ~= nil,
         "and the host's figure plays it for the guest: " .. tostring(figureMontage()))
-    check(count(h.sent, "^%u U ") == count(h.sent, "^%u U .*Defence"), "no other move goes out as U in a match")
     blow("held")
     check(parries() == 1, "a guard held from before the blow only blocks, no stagger: " .. parries())
+    check(tostring(heldSeen):find("StanceEnter", 1, true) ~= nil,
+        "the guard going up goes out in the match and the host's figure raises it for the guest: " .. tostring(heldSeen))
+    check(count(h.sent, "^%u U ") == count(h.sent, "^%u U .*Defence") + count(h.sent, "^%u U .*Stance"),
+        "no move but the guard's goes out as U in a match")
+    -- Held through the blow and on after it: the figure goes back into the guard, as the host's own body does.
+    local function figureShields()
+        return rawget(rawget(g.env.PBZ.net.ghost, "__fields"), "effects") or 0
+    end
+    local shieldsBefore = figureShields()
+    Fake.running(h, h.pawn, STANCE, true)
+    Session.startMove(h, STANCE_ENTER)
+    s:run(0.6)
+    local shieldsUp = figureShields()
+    Fake.running(g, g.pawn, "GA_Hun_Tang_A_C", true)
+    s:run(0.25)
+    Session.startMove(h, DEFENCE)
+    s:run(0.3)
+    local during = figureMontage()
+    Fake.running(g, g.pawn, "GA_Hun_Tang_A_C", false)
+    Session.endMove(h)
+    s:run(1.6)
+    local after = figureMontage()
+    Fake.running(h, h.pawn, STANCE, false)
+    s:run(1.5)
+    check(shieldsUp == shieldsBefore + 1 and figureShields() == shieldsBefore,
+        string.format("the host's figure shielded for the guest while the guard is up, so the guest's blows don't flinch it (%d, %d, %d)",
+            shieldsBefore, shieldsUp, figureShields()))
+    check(during:find("Defence", 1, true) ~= nil and after:find("StanceEnter", 1, true) ~= nil,
+        "a guard held on after its answer to a blow: the figure turns the blow aside, then stands in the guard again: "
+        .. during:match("[^.]+$") .. " then " .. after:match("[^.]+$"))
     blow("block")
     check(parries() == 1, "nor a guard answer that cost posture: " .. parries())
     blow("none")
