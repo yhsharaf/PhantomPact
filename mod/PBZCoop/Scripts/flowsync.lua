@@ -156,20 +156,25 @@ return function(api)
             log("Story flow: back from a match: taken as this world's state, nothing sent.")
             return
         end
-        local new, count = {}, 0
+        local new, count = {}, { t = 0, n = 0, b = 0 }
         for _, kind in ipairs({ "t", "n", "b" }) do
             new[kind] = {}
             for item in pairs(cur[kind]) do
                 if not flow.told[kind][item] then
                     new[kind][item] = true
-                    count = count + 1
+                    count[kind] = count[kind] + 1
                 end
             end
         end
-        if count > FLOOD then
-            flow.told, flow.seen = cur, nil
-            log(string.format("Story flow: %d new at once (a load?): taken as this world's state, nothing sent.", count))
-            return
+        -- (Each kind on its own, and never the bells: a scene after a boss that marked hundreds of flow steps took the bell it
+        -- woke down with them, and a reconnect never sent it. The bells are the world's list: a load doesn't flood them, and
+        -- a guest lights one only where it stands by it.)
+        for _, kind in ipairs({ "t", "n" }) do
+            if count[kind] > FLOOD then
+                flow.told[kind], new[kind] = cur[kind], {}
+                log(string.format("Story flow: %d new %s at once (a load?): taken as this world's state, not sent.",
+                    count[kind], kind == "t" and "flags" or "flow steps"))
+            end
         end
         local seen = flow.seen or { t = {}, n = {}, b = {} }
         for _, kind in ipairs({ "t", "n", "b" }) do

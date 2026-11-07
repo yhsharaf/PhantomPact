@@ -775,7 +775,7 @@ return function(api)
         if net.joinedBoss == name then
             net.joinedBoss = nil
             if net.joinedFar then
-                net.bossOverAt = os.clock() + BOSS_RETURN_S     -- (an arena apart from the map has no way back)
+                net.bossOverAt, net.bossOverFirst = os.clock() + BOSS_RETURN_S, nil     -- (an arena apart from the map has no way back)
             end
         end
         local shown = net.mirrorOn and net.mirrorOn[name]
@@ -1253,6 +1253,7 @@ return function(api)
         end
         local here = t ~= nil and not net.partnerGone and t.Map == net.localMap
         local kept, gone, bosses = {}, 0, {}
+        local settling = os.clock() < (net.hostSettleUntil or 0)      -- (no new asks: see heard. Those hidden are asked still)
         for _, e in ipairs(own) do
             local name = enemyName(e.actor, e.addr)
             -- (One out of the way waits up high (game.stepAside): where it stood is where it is, for this.)
@@ -1262,7 +1263,7 @@ return function(api)
             if near and game.isBoss(e.actor, e.addr) then
                 local a = net.bossAsk[name] or { since = now, askedAt = -1e9 }
                 bosses[name] = a
-                if now - a.since >= ASIDE_AFTER_S and now - a.askedAt >= ASK_AGAIN_S then
+                if not settling and now - a.since >= ASIDE_AFTER_S and now - a.askedAt >= ASK_AGAIN_S then
                     a.askedAt = now
                     sendEvent("HAS", name)
                 end
@@ -1301,7 +1302,7 @@ return function(api)
                     game.stepAside(e.actor, true, a.home)
                     a.brain = game.stopAI(e.actor)
                     gone = gone + 1
-                elseif now - a.since >= ASIDE_AFTER_S and now - a.askedAt >= ASK_AGAIN_S then
+                elseif not settling and now - a.since >= ASIDE_AFTER_S and now - a.askedAt >= ASK_AGAIN_S then
                     a.askedAt = now
                     sendEvent("HAS", name)
                 end
@@ -1430,6 +1431,7 @@ return function(api)
                     -- (No answer at all: lifted off the floor, so the next blow is a killing blow told again, not nothing.)
                     if game.setHealth and valid(actor) and not game.isDead(actor) then
                         game.setHealth(actor, HELD_HP + 1)
+                        hp = HELD_HP + 1        -- (this turn's reading as the copy is now: see seen[] below)
                     end
                 else
                     pending.at, pending.tries = os.clock(), pending.tries + 1
@@ -1446,6 +1448,14 @@ return function(api)
                     game.setMinHealth(actor, HELD_HP)
                 end
                 held[addr] = actor
+                -- (On its floor with no killing blow told: every blow after read as nothing, and it died only to the host's
+                -- hits, "sometimes it can never be killed" (report 1 on 1.6.3). Lifted a point: the bar still reads empty,
+                -- and the next blow is a fall onto the floor again, told as the killing blow.)
+                if hp and hp <= HELD_HP + 0.01 and net.heldAlive[addr] ~= nil and not net.lethalPending[name]
+                    and game.setHealth and not game.isDead(actor) then
+                    game.setHealth(actor, HELD_HP + 1)
+                    hp = HELD_HP + 1
+                end
                 if api.puppets then
                     api.puppets.follow(name, actor, r)
                 end
@@ -2174,7 +2184,11 @@ return function(api)
             net.hostBosses[name] = nil
             if wasBoss and not quiet then
                 net.bossFell = net.bossFell or {}
-                net.bossFell[name] = os.clock()     -- (fell in a fight: one up again on the host comes back, see bring.missing)
+                net.bossFell[name] = net.frameNow or link.now()     -- (fell in a fight: one up again on the host comes back, see bring.missing; its clock)
+                -- (And for the sweep as the host's fight ends, see handlers.F: its K comes first and takes the name off the
+                -- fights shown here, so after a host's win nothing was put down.)
+                net.endedInFight = net.endedInFight or {}
+                net.endedInFight[name] = os.clock()
             end
             if valid(actor) then
                 if api.puppets then
@@ -2275,7 +2289,10 @@ return function(api)
             rtag = nil
         end
         local function react(actor)
-            if rtag and api.puppets and not (game.isDead and game.isDead(actor)) then
+            -- (Once a hit: the figure's own token blow can have put the enemy in this very state, and playing it again
+            -- restarted that reaction, a jump, and set the hit state twice. Another state, a break or a knockdown, plays.)
+            if rtag and api.puppets and not (game.isDead and game.isDead(actor))
+                and not (game.hitStateOf and game.hitStateOf(actor) == rtag) then
                 api.puppets.react(name, actor, rpath, rpos, rtag)
             end
         end
@@ -2663,7 +2680,7 @@ return function(api)
         net.fightOf = {}
         net.notOnHost = {}
         net.bossAsk = {}
-        net.joinedBoss, net.joinedWith, net.farFight = nil, nil, nil
+        net.joinedBoss, net.joinedWith, net.farFight, net.lastFarFight = nil, nil, nil, nil
         reopenFog()
         if game.resetBosses and not elsewhere then
             game.resetBosses()
@@ -2725,6 +2742,11 @@ return function(api)
             -- (A fight this player had walked into is theirs to walk into again: still marked joined, E at the wall did
             -- nothing until the boss died, and an arena apart took them back to the partner after it.)
             net.joinedBoss, net.joinedWith, net.joinedFar, net.bossOverAt = nil, nil, nil, nil
+            -- (And F3 back into it, for an arena only a trip reaches: the way in was used up by the first one.)
+            local far = net.lastFarFight
+            if far and net.partnerBosses[far.name] then
+                net.farFight = far
+            end
             reopenFog()
             if game.resetBosses then
                 game.resetBosses()
@@ -2791,6 +2813,12 @@ return function(api)
             local mirrored = false
             for name in pairs(net.partnerBosses) do
                 mirrored = mirrored or enemyByName[name] == actor
+            end
+            -- (Or a bar this mod put up for a partner's fight, whatever actor it's on: a copy that lost its pairing, this
+            -- player more than 60 m off, kept its bar and read as a fight of this player's own. The game's own bar on it
+            -- makes it this game's: see pbz.lua's hook.)
+            if not mirrored and game.isMirrorBar and game.isMirrorBar(actor) then
+                mirrored = true
             end
             if not mirrored and valid(actor) and not game.isDead(actor) then
                 own[#own + 1] = actor
@@ -3031,7 +3059,9 @@ return function(api)
         if from ~= nil then
             return          -- (the host's word only: another guest's, passed on by the relay, is no host's)
         end
-        net.notOnHost[name] = os.clock()        -- (when: a "no" goes stale, see setAside)
+        -- (When, on setAside's clock, the link's: os.clock() counts from the game's start, the link from the mod's, and a "no"
+        -- lived 25 s and all the game's start-up time on top.)
+        net.notOnHost[name] = net.frameNow or link.now()
     end
 
     handlers.C = function(amount)
@@ -3091,7 +3121,14 @@ return function(api)
         if game.refreshEnemyIds then
             game.refreshEnemyIds(true)
         end
-        if not at or not valid(pawn) or game.isDead(pawn) or p.ghostHidden == nil then
+        if not at or not valid(pawn) or game.isDead(pawn) then
+            return
+        end
+        if p.ghostHidden == nil then
+            -- (Just linked, the partner's figure not made yet: the way in is kept for F3 all the same, a joiner's while it
+            -- watches the fight. Returned before it, F3 did nothing till the watch let go.)
+            net.farFight = { name = name, p = p, at = { X = at.X, Y = at.Y, Z = at.Z } }
+            net.lastFarFight = net.farFight
             return
         end
         if gap3d(pawn:K2_GetActorLocation(), at) > BOSS_JOIN_CM then
@@ -3103,6 +3140,23 @@ return function(api)
             net.farFight = { name = name, p = p, at = { X = at.X, Y = at.Y, Z = at.Z } }
             api.status.notify("join", "your partner is in a boss fight: press E at the black wall, or F3, to join.")
         end
+        net.lastFarFight = net.farFight     -- (F3 back in after a death here: see onLocalRest)
+    end
+
+    -- A joiner held watching a partner's fight goes in by F3 or E: the watch ends there. (Left on, partner.check held them
+    -- again within half a second: frozen in the arena, the camera on the partner, at 1 health, till the fight ended. Not
+    -- watchFight(false): its resetBosses took down the bar of the fight they were going into.) watchGaveUp: no hold again,
+    -- and no trip after it, for this link.
+    function net.endWatch(pawn)
+        if not net.watchingFight then
+            return
+        end
+        net.watchingFight, net.watchHeld, net.watchGaveUp = false, false, true
+        game.spectate(nil)
+        if valid(pawn) then
+            game.setMinHealth(pawn, 0)
+        end
+        log("Into the fight: no longer watching it.")
     end
 
     -- F3 during a partner's fight in an arena apart from the map. True if it took this player there. (Not TP > PARTNER:
@@ -3115,14 +3169,17 @@ return function(api)
         end
         -- (joinPartner's guards: F3 skipped them all, and took a guest out of the prologue, a scene or a fight of their own.
         -- False here, joinPartner says why.)
+        -- (A fight of this player's own, not any bar: the one shown here for the partner's fight counts as a bar, and a guest
+        -- by the place the host was taken in, its copy within reach, could never F3 in: report A1 of the forest, again.)
         if (game.inCutscene and game.inCutscene()) or net.pvp or (game.inPrologue and game.inPrologue())
-            or (game.bossFightActive() and not net.watchingFight) or os.clock() < (net.travelUntil or 0)
+            or (#net.ownBosses() > 0 and not net.watchingFight) or os.clock() < (net.travelUntil or 0)
             or api.gs():IsGamePaused(controller) or api.localcoop.bellMenuUp() or api.localcoop.screenUp() then
             return false
         end
         net.farFight = nil
         log("Joining the other player's boss fight, in an arena apart from the map.")
         net.joinedBoss, net.joinedWith, net.joinedFar = far.name, far.p, true
+        net.endWatch(pawn)
         net.arrival = nil
         arriveAt(pawn, far.at)
         return true
@@ -3166,6 +3223,7 @@ return function(api)
             local p = net.party and peerOf(net.fightOf[name]) or net
             local inside = (sameMap(p.target) and p.target) or (valid(enemyByName[name]) and enemyByName[name]:K2_GetActorLocation())
             if inside and (game.fogSide(wall, here) >= 0) ~= (game.fogSide(wall, inside) >= 0) then
+                net.endWatch(pawn)
                 if game.passFog(pawn, wall, inside) then
                     log("Through the fog wall, into the other player's boss fight.")
                     net.joinedBoss, net.joinedWith, net.joinedFar = name, p, false
@@ -3298,9 +3356,20 @@ return function(api)
                 net.arrival = nil       -- on the ground: from here a drop is a slope or a ledge, and the player's own
             end
         end
-        -- The boss is dead and the partner has gone back to the map: don't leave this player stranded in the arena.
+        -- The boss is dead and the partner has gone back to the map: don't leave this player stranded in the arena. (Not in
+        -- a scene or a fight of this player's own: one taken out mid-outro, or mid-fight once the partner's F dropped. Put
+        -- off 2 s at a time, given up 120 s after it was first due.)
+        if net.bossOverAt and os.clock() >= net.bossOverAt and ((game.sequenceOn and game.sequenceOn())
+            or (game.inCutscene and game.inCutscene()) or #net.ownBosses() > 0) then
+            net.bossOverFirst = net.bossOverFirst or net.bossOverAt
+            if os.clock() - net.bossOverFirst < 120 then
+                net.bossOverAt = os.clock() + 2
+            else
+                net.bossOverAt, net.bossOverFirst = nil, nil
+            end
+        end
         if net.bossOverAt and os.clock() >= net.bossOverAt then
-            net.bossOverAt = nil
+            net.bossOverAt, net.bossOverFirst = nil, nil
             local t = (net.joinedWith or net).target
             if valid(pawn) and sameMap(t) and not game.isDead(pawn) and gap3d(pawn:K2_GetActorLocation(), t) > BOSS_JOIN_CM then
                 arriveAt(pawn, t)
@@ -3417,6 +3486,16 @@ return function(api)
             end)
             return
         end
+        -- (On the host, a bar the game put up itself is this game's own fight, whatever actor it's on: the host's own scene
+        -- brought a new actor of the boss a guest had started first, and the fight stayed filed as the guest's. That guest's F 0
+        -- then took the host's bar down and opened its walls mid-fight, and a guest's bell rest refreshed the host's world.)
+        if isHost() and net.partnerBosses[name] then
+            net.partnerBosses[name], net.fightOf[name] = nil, nil
+            if net.joinedBoss == name then
+                net.joinedBoss, net.joinedWith, net.joinedFar = nil, nil, nil
+            end
+            log("Boss fight with " .. name .. ": this game's own now, not only the other player's.")
+        end
         if not net.partnerBosses[name] then
             sendEvent("B", name)
             if isClient() then
@@ -3442,6 +3521,9 @@ return function(api)
         end
         if net.partnerBosses[name] then
             net.partnerBosses[name], net.fightOf[name] = nil, nil
+            if net.joinedBoss == name then
+                net.joinedBoss, net.joinedWith, net.joinedFar = nil, nil, nil     -- (its own now: no trip back after it)
+            end
             log("Boss fight with " .. name .. ": this game's own now, not only the other player's.")
         end
         announceBoss(boss)
@@ -3482,6 +3564,12 @@ return function(api)
             flags = flags + 4
         elseif mode ~= MOVE_NONE then
             flags = flags + 8       -- ladders, wall runs and the like fly the player along their montage
+        end
+        -- (A jump of more than 30 m, a trip on the same map that didn't stall: this world is still streaming in, and gives no
+        -- "no" a while (HAS). A stall is caught in tick.)
+        local was = net.localLoc
+        if was and (x - was.X) ^ 2 + (y - was.Y) ^ 2 > 3000 * 3000 then
+            net.unsettledUntil = math.max(net.unsettledUntil or 0, os.clock() + net.UNSETTLED_S)
         end
         net.localLoc = { X = x, Y = y, Z = z }
         -- Health from the same read, with the place: a hit shows on the partner's screen the frame after, not on the next
@@ -3643,12 +3731,22 @@ return function(api)
         -- a frozen figure and a held fight for a minute, not 12 s.)
         -- (Or heard steadily well after it: a trip on the same map can be silent under 3 s, and its minute ran on, a real
         -- drop after it noticed in 60 s, not 12.)
+        local loadEnded = false
         if p.loadingUntil and p.lastRemoteAt and (heardAt - p.lastRemoteAt >= 3
             or (p.loadToldAt and heardAt - p.loadToldAt > 8)) then
             p.loadingUntil, p.loadToldAt = nil, nil
+            loadEnded = true
         end
         if p.byeAt and heardAt > p.byeAt + 1 then
             p.byeAt = nil           -- (their sync is on again: see BYE)
+        end
+        -- (The host back from a load, or more than 30 m from where it was (a trip, a bell, a respawn): its world is still
+        -- streaming in, and its "not in my world" of an enemy it hadn't spawned yet hid that enemy here for good (report 3:
+        -- "small enemies go invisible; teleporting to the player or sitting at a bell sets it off"). No new asks for a while:
+        -- see setAside. Any host's, one on 1.6.6 too.)
+        local t0 = p.target
+        if p == net and isClient() and (loadEnded or (t0 and t0.X and (x - t0.X) ^ 2 + (y - t0.Y) ^ 2 > 3000 * 3000)) then
+            net.hostSettleUntil = clock + net.UNSETTLED_S
         end
         p.lastRemoteAt = heardAt
         local t = p.target or {}
@@ -3743,7 +3841,7 @@ return function(api)
         net.fightOf = {}
         net.notOnHost = {}
         net.bossAsk = {}
-        net.joinedBoss, net.joinedWith, net.farFight, net.bossOverAt = nil, nil, nil, nil
+        net.joinedBoss, net.joinedWith, net.farFight, net.bossOverAt, net.lastFarFight = nil, nil, nil, nil, nil
         net.healTicks = {}
         net.lethalPending = {}
         net.bossFell, net.extraBossWatch, net.watchGaveUp, net.watchHeldAt = {}, {}, nil, nil
@@ -3909,6 +4007,9 @@ return function(api)
         RegisterHook("/Script/ProjectPBZ.PBZSaveLoadSubsystem:TeleportTo", function()
             net.tellLoading()
             pcall(net.unsettle)
+            if game.forgetActors then
+                pcall(game.forgetActors)        -- (spawners stream in on freed addresses: their ids read afresh)
+            end
         end)
     end)
 
@@ -4257,6 +4358,14 @@ return function(api)
                 end
             end
             if from == nil and isClient() then
+                -- (With the bosses the host killed in this fight, their names gone from it already: see handlers.K. A
+                -- duplicate of one, or another phase, stood by the arena and its bell: "in combat".)
+                for name, at in pairs(net.endedInFight or {}) do
+                    if os.clock() - at < 600 then
+                        over[name] = true
+                    end
+                end
+                net.endedInFight = {}
                 net.putDownLeftBosses(over)
             end
         end
@@ -4367,7 +4476,9 @@ return function(api)
         end
     end
 
-    net.WATCH_MAX_S = 180
+    -- (30 s, was 180: a joiner lost 3 minutes at every link while the host fought, "just stands there, no control". The trip
+    -- to the host still comes once the fight is over: see partner.check.)
+    net.WATCH_MAX_S = 30
     extraTicksEarly.watchCap = function()
         if net.watchHeld and os.clock() - (net.watchHeldAt or os.clock()) > net.WATCH_MAX_S then
             net.watchGaveUp = true
@@ -4415,7 +4526,7 @@ return function(api)
         net.watchingFight = on
         if on then
             if api.status then
-                api.status.notify("join", "your partner is in a boss fight: you'll join them when it's over.")
+                api.status.notify("join", "your partner is in a boss fight: you'll join them when it's over. F3 takes you in now.")
             end
             local p = fightToWatch()
             if valid(pawn) and p then
@@ -4592,12 +4703,20 @@ return function(api)
         local gap = lastFrame and now - lastFrame or 0
         if gap > 0.5 then
             -- A stall (a load, a trip on the same map, the world streaming in): the world searches wait a while after it.
+            -- And no "not in my world" (HAS) for UNSETTLED_S from when it runs again: the trip's own hook had started those
+            -- seconds as it began, and a stall of 12-18 s used them up (report 3: enemies invisible after a trip or a bell).
+            -- The spawners and enemies are read afresh: one streamed in on a freed address took the old one's id.
             net.quietUntil = math.max(net.quietUntil or 0, os.clock() + net.QUIET_AFTER_LOAD_S)
             net.settleUntil = os.clock() + net.SETTLE_S
+            net.unsettledUntil = math.max(net.unsettledUntil or 0, os.clock() + net.UNSETTLED_S)
+            if game.forgetActors then
+                pcall(game.forgetActors)
+            end
         elseif gap > 0.15 and os.clock() < (net.settleUntil or 0) then
             -- Still loading in after it (a 16 s load streamed on for 5 s more and the host crashed in the chains job 0.7 s
             -- after the quiet ended): each hitch keeps them waiting, till the world has run smoothly a while.
             net.quietUntil = math.max(net.quietUntil or 0, os.clock() + net.QUIET_AFTER_LOAD_S)
+            net.unsettledUntil = math.max(net.unsettledUntil or 0, os.clock() + net.UNSETTLED_S)
         end
         frameNow, frameDt = now, lastFrame and math.min(now - lastFrame, 0.1) or 0.016
         net.frameNow = now

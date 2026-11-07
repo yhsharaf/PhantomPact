@@ -1580,6 +1580,10 @@ local function twoSaves()
     s:run(1)
     check(field(copy, "hidden") ~= true, "an enemy only the guest's save has isn't taken away at once")
     s:run(5)
+    -- (Report 3: a host just come from 290 m off has a world still streaming in, and its "not here" of an enemy it hadn't
+    -- spawned yet hid that enemy for good. Nothing new is asked while it settles.)
+    check(count(g.sent, "^E HAS sp:thug1$") == 0, "a host that has just jumped 290 m: nothing asked while its world settles")
+    s:run(8)
     check(count(g.sent, "^E HAS sp:thug1$") == 1, "the guest asks the host about it, once")
     check(count(h.sent, "^E NOT sp:thug1$") == 1, "and the host, who hasn't got it, says so")
     check(field(copy, "hidden") == true, "then it steps aside")
@@ -1593,7 +1597,7 @@ local function twoSaves()
     check(field(copy, "hidden") == false and field(brain, "running") == true, "the host moves on, and it's back")
     check(gap(at(copy), { X = 1500.0, Y = 300.0 }) < 50 and math.abs(at(copy).Z - 100.0) < 50, "where it stood")
     Session.moveTo(h, 1000, 300)
-    s:run(5)
+    s:run(14)               -- (the host's jump back: its world settles first)
     check(field(copy, "hidden") == true, "the host comes back, and it's out of the way again")
     local home = h.map
     h.map = "Map_Other"
@@ -1621,7 +1625,7 @@ local function twoSaves()
     local chaser = Session.enemyOn(tg, "guestside")
     Fake.put(chaser, "loc", { X = 500.0, Y = 100.0, Z = 100.0 })
     t:run(1)
-    t:run(5)
+    t:run(14)               -- (the host's jump: its world settles first)
     check(count(tg.sent, "^E HAS sp:guestside$") == 1, "a copy that ran off from the host's is asked about too")
     check(count(th.sent, "^E NOT ") == 0, "the host has it, and says nothing")
     check(field(chaser, "hidden") ~= true, "so it stays")
@@ -2748,6 +2752,48 @@ local function playerReports()
         allErrors(s)
     end
     do
+        -- The host wins: its K comes first and took the boss off the fights shown here, so the sweep as the fight ended put
+        -- nothing down. Another of that boss here (a duplicate, another phase) stood by the arena: its bell said "in combat".
+        local s, h, g = pair()
+        Session.moveTo(h, 3000, 2800)
+        Session.moveTo(g, 3000, 2700)
+        s:run(3)
+        bossStart(s)
+        s:run(4)
+        check(net(g).partnerBosses["sp:boss"] == true, "(the guest is shown the host's fight)")
+        local extra = Fake.enemy(g, "boss", "BP_Monster_Boss_C", 12000.0, 3000.0, 100.0, 5000, 400, true)
+        s:run(1)
+        bossEnd(s)
+        s:run(10)
+        check(field(extra, "dead") == true, "the host wins: another of that boss left standing here is put down after it")
+        allErrors(s)
+    end
+    do
+        -- The guest starts the fight first, then the host's own scene brings its own actor of that boss: the host's fight
+        -- stayed filed as the guest's, and the guest's F 0 took the host's bar down and opened its walls mid-fight.
+        local s, h, g = pair()
+        Session.moveTo(h, 3000, 2800)
+        Session.moveTo(g, 3000, 2700)
+        s:run(3)
+        g.hudLayout:RegisterBossHPBar(Session.enemyOn(g, "boss"))
+        s:run(3)
+        check(net(h).partnerBosses["sp:boss"] == true, "(the host is shown the guest's fight)")
+        local stand = Session.enemyOn(h, "boss")
+        local scene = Fake.enemy(h, "boss_scene", "BP_Monster_Boss_C", 3050.0, 3000.0, 100.0, 5000, 400, true)
+        table.remove(h.spawners, Session.indexOf(h, "boss_scene"))
+        rawset(stand, "__alive", false)              -- (the stand-in goes, as dropExtraBoss does)
+        Fake.put(h.spawners[Session.indexOf(h, "boss")], "SpawnedAI", scene)  -- (the scene's boss is that spawner's now)
+        s:run(1.5)
+        h.hudLayout:RegisterBossHPBar(scene)         -- (the game's own bar on it)
+        s:run(2)
+        check(net(h).partnerBosses["sp:boss"] == nil, "the host's own bar on its scene's boss: the host's fight from now on")
+        g.hudLayout:UnRegisterBossHPBar(Session.enemyOn(g, "boss"))     -- (the guest walks out, or dies)
+        s:run(8)
+        check(h.env.PBZ.game.bossFightActive() and #net(h).ownBosses() == 1,
+            "and the guest's F 0 leaves it: the host's bar and walls stay")
+        allErrors(s)
+    end
+    do
         local list = {
             { "byguest", THUG, 11500.0, 0.0, 100.0, 600, 100 },
             { "hostboss", "BP_Monster_Boss_C", 300.0, 300.0, 100.0, 5000, 400, true },
@@ -2778,12 +2824,38 @@ local function playerReports()
         w:run(6)
         local late = w.pcs[2]
         check(net(late).watchingFight == true, "(a guest who joins in a fight watches it)")
-        w:run(185)
+        w:run(35)
         local cmc = field(late.pawn, "CharacterMovement")
         check(net(late).watchingFight ~= true and field(cmc, "MovementMode") ~= 0,
-            "a fight that never ends: after 3 minutes they're let go, free to move")
+            "a fight that never ends: after 30 s they're let go, free to move")
         w:run(10)
         check(net(late).watchingFight ~= true, "and not held again by it")
+        -- (The trip to the host still comes when the fight is over.)
+        Session.moveTo(late, 9000, 9000)
+        w.pcs[1].hudLayout:UnRegisterBossHPBar(Session.enemyOn(w.pcs[1], "boss"))
+        w:run(12)
+        check(gap(at(late.pawn), at(w.pcs[1].pawn)) < 1000, "and once it's over they're taken to the host, as on any link")
+        allErrors(w)
+    end
+    do
+        -- "My friend joins my save and just stands there, no control": F3 while held watching took them in, and the watch
+        -- held them again within half a second, frozen in the arena, the camera on the host, at 1 health.
+        local w = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, true, ENEMIES)
+        w.pcs[2].joinAt = w.pcs[1].now + 8
+        w:run(3)
+        Session.moveTo(w.pcs[1], 0, 0)
+        w:run(2)
+        bossStart(w)
+        w:run(6)
+        local late = w.pcs[2]
+        check(net(late).watchingFight == true, "(a joiner watches the host's fight)")
+        local went = late.env.PBZ.coop.joinFarFight()
+        w:run(3)
+        local cmc = field(late.pawn, "CharacterMovement")
+        check(went == true and net(late).watchingFight ~= true and not late.env.PBZ.game.isSpectating()
+            and field(cmc, "MovementMode") ~= 0, "F3 while watching: in, free to move, the camera their own")
+        w:run(5)
+        check(net(late).watchingFight ~= true and field(cmc, "MovementMode") ~= 0, "and not held again by the watch")
         allErrors(w)
     end
 end

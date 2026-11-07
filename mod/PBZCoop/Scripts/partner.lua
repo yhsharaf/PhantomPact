@@ -102,9 +102,13 @@ return function(api)
             partner.goFrom = os.clock() + TOLD_WAIT_S
             net.watchGaveUp = nil
         end
-        if partner.goUntil and net.watchGaveUp then
-            -- (Watched for coop.lua's WATCH_MAX_S and let go: no trip and no second hold for this link.)
-            partner.goUntil, partner.goTo = nil, nil
+        if partner.goUntil and net.watchGaveUp and net.partnerFighting then
+            -- (Watched for coop.lua's WATCH_MAX_S and let go: free, never held again for this link, and the trip to the
+            -- partner made once the fight is over, below. F3 or E took them into it instead: then net.joinedBoss, no trip.)
+            partner.goUntil = os.clock() + LINK_WAIT_S
+            if net.joinedBoss then
+                partner.goUntil, partner.goTo = nil, nil
+            end
         elseif partner.goUntil and net.partnerFighting then
             -- Not into the middle of a boss fight: it's watched, and the trip made when it's over, whoever won.
             partner.goUntil = os.clock() + LINK_WAIT_S
@@ -197,6 +201,13 @@ return function(api)
     -- F3, online. (Read on the game thread, like the panels' keys.)
     function partner.go()
         if coop.joinFarFight() then
+            return
+        end
+        if net.farFight and net.partnerBosses[net.farFight.name] then
+            -- (A partner's fight to go into, refused for now (a scene, a menu, a fight of this player's own): that, not the
+            -- TP tip, is the answer.)
+            api.status.lastShown.join = nil
+            tip("join", "not now.")
             return
         end
         if not partner.teleport then
