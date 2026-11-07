@@ -216,4 +216,20 @@ fell 110 m and lost round 1.
   stands it, `!hp now max` is the health it shows), and writes every event it hears to the heard file. On the bench, 11-07:
   one against two (a duel of three rounds) and two against one (Death), real blows: the lobby's three rows and its checks, a
   team out only when all of it is down, no blow landing on a teammate, both copies finishing the bot's figure, the gold card
-  for both winners, everyone home with their own.
+  for both winners, everyone home with their own. A bot's pick lists the arenas it may go to (`goldmask,huaqianxiao,...`,
+  `-` for none): the host refuses a boss arena until every player has beaten its boss.
+- Six players, the most a party takes: the host at `PartySize = 6`, the two copies and four bots (Crimson: both copies and
+  one bot; Azure: three bots), Death here, 11-07: the six-row lobby, three spots a side, three foes on the boss bars across
+  the top and two teammates' bars on each copy, Azure out only at its third fall, the host's F on one of the fallen.
+- The boss arenas need a save where those bosses are beaten. The bench's late-game save (the other account's, from the 11-02
+  story tour) had the story past all four but no record of their fights, so the records were written on the bench: a
+  spawner's own `SpawnerSaveInfo.IsAlive = false` and `SetShouldNotSpawnAfterDead = true`, then its `Save()` (that writes a
+  record the save lacks; one it has already is changed in place, through `SpawnerSaveData`'s value), and a trip for the game
+  to save it. Without `SetShouldNotSpawnAfterDead` a record comes back alive after a death or a trip home, and the host's
+  arena check then refuses that arena, as it should. Matches in the real arenas, 11-07: the game's own trip there (3 to 24 s),
+  both players at their spots 8 m from the middle, the gorge's fog wall closed (by its own collision, 28 m from the middle),
+  the fight, F pressed for real and the arena's boss's move, the cards, the trip home: Hua Qianxiao's stage, the Gold-Masked
+  Gorge, Mu Xiaokui's meadow. The Crimson Forest could not be tried: on that save YuCong's fight was left half done by the
+  test itself (killed in phase one, then the records written), so arriving started his second phase's prison scene and it
+  killed the guest; the match ended cleanly on both copies ("you died", "player 2 left"). A save where YuCong was beaten in a
+  real fight has no such scene.
