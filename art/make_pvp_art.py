@@ -263,8 +263,8 @@ def smear(w, h, color, seed):
     return ink(m, color, bleed=False)
 
 
-def banners():
-    """Words across the screen between rounds, on an ink smear."""
+def banners(only=None):
+    """Words across the screen between rounds, on an ink smear. only: just these keys (the rest left as they are)."""
     sets = {
         "round_1": ("ROUND ONE", "第一回合"), "round_2": ("ROUND TWO", "第二回合"), "round_3": ("FINAL ROUND", "决胜回合"),
         "death": ("ONE LIFE", "一命定胜负"),
@@ -272,15 +272,19 @@ def banners():
         "down": ("YOU'RE DOWN", "你倒下了"), "fell": ("YOU FELL", "你坠落了"),
         "finish": ("PRESS F TO FINISH", "按 F 处决"),
         "won": ("YOUR TEAM WINS", "你的队伍获胜"), "lost": ("YOUR TEAM FALLS", "你的队伍落败"),
+        # (One on one: it's you, not a team.)
+        "won_one": ("YOU WIN", "你获胜"), "lost_one": ("YOU FALL", "你落败"),
         "timeup": ("TIME", "时间到"),
     }
-    dark = ("round_lost", "lost", "down", "fell")
+    dark = ("round_lost", "lost", "lost_one", "down", "fell")
     for key, (en, zh) in sets.items():
+        if only and key not in only:
+            continue
         for prefix, text, face in (("", en, font), ("zh_", zh, chinese)):
             W, H = 900, 150
             img = Image.new("RGBA", (W * K, H * K), (0, 0, 0, 0))
             img.alpha_composite(smear(W * K, H * K, DEEP if key in dark else (20, 18, 20, 255), sum(map(ord, key))))
-            color = CRIMSON if key == "finish" else (GOLD if key in ("won", "round_won") else BONE)
+            color = CRIMSON if key == "finish" else (GOLD if key in ("won", "won_one", "round_won") else BONE)
             words = caption(text, 38, color, gap=12, face=face, w=W)
             img.alpha_composite(words, (0, (H * K - words.size[1]) // 2))
             save_hud(img, prefix + "banner_" + key)

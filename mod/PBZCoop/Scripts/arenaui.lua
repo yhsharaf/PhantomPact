@@ -281,7 +281,13 @@ return function(api)
     end
 
     function ui.matchOver(won, m)
-        showBanner(won and "won" or "lost", 2.2)
+        -- (One on one it's you, not your team: YOU WIN, YOU FALL.)
+        local per, alone = {}, true
+        for _, team in pairs(m and m.teams or {}) do
+            per[team] = (per[team] or 0) + 1
+            alone = alone and per[team] == 1
+        end
+        showBanner((won and "won" or "lost") .. (alone and "_one" or ""), 2.2)
         if won then
             api.arena.finishHint = os.clock() + 2.2      -- (then "PRESS F TO FINISH" till F stops working)
         end

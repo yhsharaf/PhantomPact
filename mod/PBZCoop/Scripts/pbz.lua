@@ -2218,8 +2218,19 @@ return function(api)
         end
         local ok, activated = pcall(function() return asc:TryActivateAbilityByClass(cls, true) end)
         if not (ok and activated) then
-            pcall(function() asc:K2_GiveAbility(cls, 1, -1) end)
-            ok, activated = pcall(function() return asc:TryActivateAbilityByClass(cls, true) end)
+            -- Given only if it isn't there: refused again (the guard's stance always is, on a figure), another copy went on
+            -- each time and the figure's list grew all match (the bench, 11-07: three of the stance after two guards).
+            local name, has = cls:GetFName():ToString(), false
+            forEachSpec(asc, function(spec)
+                if not has then
+                    local okn, n = pcall(function() return spec.Ability:GetClass():GetFName():ToString() end)
+                    has = okn and n == name
+                end
+            end)
+            if not has then
+                pcall(function() asc:K2_GiveAbility(cls, 1, -1) end)
+                ok, activated = pcall(function() return asc:TryActivateAbilityByClass(cls, true) end)
+            end
         end
         -- Their own game let them move, so the figure's flinch from a blow here (for show only: theirs decides) goes first.
         -- A dodge begun as the blow came was refused on a flinching figure, and the blow seemed to land (the bench, 11-07).
