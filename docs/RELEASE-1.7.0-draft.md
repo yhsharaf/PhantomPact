@@ -2,6 +2,10 @@
 
 Not posted. For the user to edit and post, on GitHub and Nexus.
 
+Unproven, so not claimed below: boss copies taking next to no poise in the host's moves (468a4e1), and 1.6.7's
+CoopBossPoise. On the bench (11-07) a thug's light-hit flinch didn't change with TakenReductionMultiplier_Poise at 1, 0.01
+or 0, nor with Resistance_Poise at 9999; whether a boss's armour in its attacks reads them still needs a boss to test on.
+
 ## To post
 
 **PvP matches (F6).** Real matches, fair for everyone, in the game's own boss arenas:
@@ -30,7 +34,7 @@ works as before.
 **Co-op fixes, from your reports:**
 
 - Bosses fight back: a partner's hits no longer stun-lock a boss. It flinches only when its posture breaks, never in the
-  middle of its own attack, and its attacks land on the guest too (hitting into them no longer cancels them on your screen)
+  middle of its own attack
 - A boss turns to whoever is pressing it harder: a turn the game didn't make no longer keeps it on the host for another 10 s
 - Bells: joining a host further along no longer lights every bell they have (Pangzhen's all lit, fast travel everywhere).
   A host's bell lights for you when you walk up to it
@@ -71,7 +75,7 @@ Both players need 1.7.0. Thanks to shilover (Rakka) for the ideas in issue #13, 
 
 **合作修复(来自大家的反馈):**
 
-- 首领会还手了:队友的攻击不会再让首领一直被打断。只有架势被打破时才会硬直,不会在它自己出招时被打断,它的攻击也会打中客人(在你的画面上打断它的出招不再让攻击落空)
+- 首领会还手了:队友的攻击不会再让首领一直被打断。只有架势被打破时才会硬直,不会在它自己出招时被打断
 - 首领会转向压制它更狠的人:游戏没有执行的转向不会再让它多盯房主 10 秒
 - 钟:加入进度更靠前的房主时,不会再点亮房主所有的钟(庞镇全部点亮、到处都能传送)。房主点亮的钟要等你走到旁边才会为你点亮
 - 队友还在首领战中时你倒下:你会一直等到战斗结束,首领不会再在几秒后回满血(房主的死亡曾结束客人那边的战斗)。首领的转阶段动画或处决也不会结束等待
