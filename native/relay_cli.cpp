@@ -12,6 +12,7 @@
 #include <limits>
 #include <queue>
 #include <random>
+#include <share.h>
 #include <thread>
 
 namespace {
@@ -2044,6 +2045,49 @@ int run_bot(int argc, wchar_t** argv) {
     const double events_for = opt_number(argc, argv, L"--events-for", seconds);
     const size_t event_bytes = static_cast<size_t>(opt_number(argc, argv, L"--event-bytes", 0));
     int burst = static_cast<int>(opt_number(argc, argv, L"--burst", 0));
+    // A stand-in player for the bench (a third player with only two game copies): lines a script adds to --say go out as
+    // the mod's own sure events, and "!" lines steer the bot: "!at x y z yaw" stands it there, "!walk" sends it round its
+    // circle again, "!hp now max" is the health it shows. Every event it hears goes to --heard as it came, for the script.
+    // (Both shared: the script writes the one and reads the other while the bot runs.)
+    const std::wstring say_path = opt_text(argc, argv, L"--say", L""), heard_path = opt_text(argc, argv, L"--heard", L"");
+    FILE* heard = heard_path.empty() ? nullptr : _wfsopen(heard_path.c_str(), L"ab", _SH_DENYWR);
+    long said = 0;
+    double next_say = 0;
+    bool still = false;
+    double still_x = 0, still_y = 0, still_z = 0, still_yaw = 0;
+    float bot_hp = 100, bot_max_hp = 100;
+    const auto read_say = [&] {
+        FILE* f = say_path.empty() ? nullptr : _wfsopen(say_path.c_str(), L"rb", _SH_DENYNO);
+        if (!f) return;
+        std::string text;
+        if (std::fseek(f, said, SEEK_SET) == 0) {
+            char buf[4096];
+            for (size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;) text.append(buf, n);
+        }
+        std::fclose(f);
+        const size_t last = text.rfind('\n');
+        if (last == std::string::npos) return;          // (a line still being written waits for its end)
+        said += static_cast<long>(last + 1);
+        for (size_t at = 0; at <= last;) {
+            size_t end = text.find('\n', at);
+            std::string line = text.substr(at, end - at);
+            at = end + 1;
+            while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+            if (line.empty()) continue;
+            double x, y, z, yaw;
+            float hp, max_hp;
+            if (line[0] != '!') {
+                relay::mail.post_sure(line);
+            } else if (sscanf_s(line.c_str(), "!at %lf %lf %lf %lf", &x, &y, &z, &yaw) == 4) {
+                still = true;
+                still_x = x, still_y = y, still_z = z, still_yaw = yaw;
+            } else if (line == "!walk") {
+                still = false;
+            } else if (sscanf_s(line.c_str(), "!hp %f %f", &hp, &max_hp) == 2) {
+                bot_hp = hp, bot_max_hp = max_hp;
+            }
+        }
+    };
     o.seconds = seconds + 2;
     CreateDirectoryW(o.dir.c_str(), nullptr);
     std::thread net([&] { relay::run(o, [](const std::string& line) { if (line.rfind("role=", 0) != 0) std::puts(line.c_str()); }); });
@@ -2078,8 +2122,17 @@ int run_bot(int argc, wchar_t** argv) {
         me.vx = static_cast<float>(-SPEED_CM_S * std::sin(angle));
         me.vy = static_cast<float>(SPEED_CM_S * std::cos(angle));
         me.yaw = static_cast<float>(angle * 180 / PI);
-        me.hp = 100;
-        me.max_hp = 100;
+        if (now >= next_say) {
+            next_say = now + 0.05;
+            read_say();
+        }
+        if (still) {
+            me.x = static_cast<float>(still_x), me.y = static_cast<float>(still_y), me.z = static_cast<float>(still_z);
+            me.vx = me.vy = 0;
+            me.yaw = static_cast<float>(still_yaw);
+        }
+        me.hp = bot_hp;
+        me.max_hp = bot_max_hp;
         me.flags = relay::FLAG_GROUNDED;
         relay::mail.post_sample(me);
 
@@ -2135,6 +2188,11 @@ int run_bot(int argc, wchar_t** argv) {
             size_t end = events.find('\n', at);
             std::string line = events.substr(at, end - at);
             at = end + 1;
+            if (heard) {
+                std::fputs(line.c_str(), heard);
+                std::fputc('\n', heard);
+                std::fflush(heard);
+            }
             double age = -1;     // how old the relay says a quick event is: the montage starts that far in
             if (line.size() > 1 && line[0] == '~' && line.find(' ') != std::string::npos) {
                 age = std::atof(line.c_str() + 1);
@@ -2191,6 +2249,7 @@ int run_bot(int argc, wchar_t** argv) {
     }
     net.join();
     timeEndPeriod(1);
+    if (heard) std::fclose(heard);
     std::printf("--- %s after %.0f s\n", o.role.c_str(), seconds);
     std::printf("%s\n", relay::mail.status().c_str());
     ghost_late.print("ghost behind real (ms)");
