@@ -4170,14 +4170,16 @@ return function(api)
         -- they stood shut in by the walls with it. (The bar came back every second, and the walls stayed shut for nobody.)
         -- (Or no F 1 heard at all, with a fight of theirs shown here: a B held up while this player was cut off came after
         -- the fight was over, and with nothing to end it its bar stayed up for good.)
+        -- (2: down in it, waiting for it. Their fight goes on here, though they're nobody to wait for.)
+        local down = on == "2"
         local theirs = false
-        if on ~= "1" and not was then
+        if on ~= "1" and not down and not was then
             local whose = net.party and (from or 1) or nil
             for name in pairs(net.partnerBosses) do
                 theirs = theirs or whose == nil or net.fightOf[name] == whose
             end
         end
-        if (was or theirs) and on ~= "1" then
+        if (was or theirs) and on ~= "1" and not down then
             if from == nil and isClient() then
                 -- (The host's fights are all over: none comes back at this player's death. Only those the host told of:
                 -- this player's own, announced to the host, stay theirs, and its kill still runs the boss's real death.)
@@ -4234,12 +4236,18 @@ return function(api)
             net.fightHereAt = now
         end
         local fighting = now - (net.fightHereAt or -FIGHT_GAP_S) < FIGHT_GAP_S
+        -- Down in the fight and waiting for it (F 2): the game took this player's bar down as they died, and "no fight"
+        -- ended the partner's copy of it, so their bar went, they told "no fight" back, and this player, the host above all
+        -- (whose world the boss is), stopped waiting and respawned at once (player report 11-08). Not a fight to wait on
+        -- either: two players both down don't hold each other.
+        local down = not fighting and net.deadSince ~= nil and net.holdLooking == true
         -- (Told again after a gap, a join or a sync start (fightToldAt 0), "no fight" too, once: only a change was ever
         -- said, and a fight's end missed in a gap was never heard.)
-        if fighting ~= net.toldFighting or (fighting and now >= (net.fightToldAt or 0)) or net.fightToldAt == 0 then
+        if fighting ~= net.toldFighting or down ~= (net.toldDown == true) or ((fighting or down) and now >= (net.fightToldAt or 0))
+            or net.fightToldAt == 0 then
             local again = fighting and net.toldFighting == false
-            net.toldFighting, net.fightToldAt = fighting, now + FIGHT_TOLD_S
-            sendEvent("F", fighting and 1 or 0)
+            net.toldFighting, net.toldDown, net.fightToldAt = fighting, down, now + FIGHT_TOLD_S
+            sendEvent("F", fighting and 1 or (down and 2 or 0))
             if again then
                 -- (A fight back on with no new bar: a boss up again after a fall, its bar up all along (Xiaoxue). Its B is
                 -- told again, so the others' copy has its bar, walls and the boss's whole death, not a quiet kill.)

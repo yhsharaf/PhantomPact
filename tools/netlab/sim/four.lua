@@ -1650,6 +1650,51 @@ local function pair(extraIni, before)
     return s, s.pcs[1], s.pcs[2]
 end
 
+
+-- A player report (11-08): with two players, a host who dies in a boss fight before the guest doesn't watch the guest and
+-- wait, as a guest who dies first does.
+local function hostDiesFirst()
+    part("the host dies first in a boss fight")
+    local s, h, g = pair()
+    bossStart(s)
+    check(g.env.PBZ.game.bossFightActive(), "the guest sees the host's boss fight")
+    s:run(5)
+    Session.die(h)
+    h.hudLayout:UnRegisterBossHPBar(Session.enemyOn(h, "boss"))     -- (the game takes its bar down as its player dies)
+    s:run(6)
+    check(field(h.deathWidget, "NotTick") == true, "the host, down with the guest still fighting, waits")
+    check(h.env.PBZ.game.isSpectating(), "and watches the guest")
+    check(g.env.PBZ.game.bossFightActive(), "and the guest's fight goes on")
+    s:run(10)
+    check(field(h.deathWidget, "NotTick") == true and h.env.PBZ.game.isSpectating(), "still, 16 s on")
+    bossEnd(s)
+    s:run(8)
+    check(field(h.deathWidget, "NotTick") == false, "the boss dies: the host's respawn goes on")
+
+    local t, th, tg = pair()
+    bossStart(t)
+    t:run(5)
+    Session.die(tg)
+    tg.hudLayout:UnRegisterBossHPBar(Session.enemyOn(tg, "boss"))
+    t:run(6)
+    check(field(tg.deathWidget, "NotTick") == true and tg.env.PBZ.game.isSpectating(), "the other way round: the guest waits and watches")
+
+    local u, uh, ug = pair()
+    bossStart(u)
+    u:run(5)
+    Session.die(uh)
+    uh.hudLayout:UnRegisterBossHPBar(Session.enemyOn(uh, "boss"))
+    u:run(6)
+    check(field(uh.deathWidget, "NotTick") == true, "again: the host down first waits")
+    Session.die(ug)
+    ug.hudLayout:UnRegisterBossHPBar(Session.enemyOn(ug, "boss"))
+    u:run(12)
+    check(field(uh.deathWidget, "NotTick") == false and field(ug.deathWidget, "NotTick") == false,
+        "the guest goes down too: nobody's left to wait for, and both respawn")
+    allErrors(u)
+    allErrors(s)
+    allErrors(t)
+end
 -- A guest's hit that makes their copy flinch: the host's enemy itself flinches the same way, and its next move doesn't cut the
 -- copy's reaction short.
 local function hitReactions()
@@ -5240,6 +5285,7 @@ return function(print_, scripts)
     targetsInParties()
     aiming()
     holding()
+    hostDiesFirst()
     lateJoiner()
     lateJoinerGuestFight()
     toldOnChange()
