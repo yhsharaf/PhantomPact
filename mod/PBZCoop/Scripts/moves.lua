@@ -148,6 +148,11 @@ return function(api)
                 coop.sendEvent("U", path, string.format("%.2f", pos))
                 moves.sent = moves.sent + 1
             end
+        elseif game.noteLocalMove and game.ownHitState and game.ownHitState() == "None" then
+            -- (Still in a move of this player's own, not a reaction to a hit: its blows count as theirs to the end. Only a
+            -- montage's start did, and a long execution's late blows, or the last of a combo built in one montage, were
+            -- taken for nobody's and undone on the copy: "the guest's hits don't stick" (1.6.3's report 1).)
+            game.noteLocalMove()
         end
         last, lastPos = addr, pos
     end

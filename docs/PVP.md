@@ -118,6 +118,16 @@ back right, but a match after either crashed the bench host within a second, a c
 Known: the upgrade to 30 gives a player who doesn't have it the game's "Skill Over Strength" achievement (a Phantom Edge to
 level 30), as it did the bench player.
 
+The four stats the match holds (health, attack, Phantom Edge energy and its attack) are noted before anything of the match,
+and one still at the match's value at the end gets the player's own back: the game works a stat out again only when an
+effect on it changes, and on the bench (11-07) both players came home with the match's 160 attack over their own 100.
+
+Open: a parry is judged by this player's guard (the stance) being up at some tick of the foe figure's swing with no health
+or posture lost, so guarding through a swing that never reached you can count. A rule on the game's own deflect needs a
+real deflect to look at: on the bench a scripted guard or stance ends at once (no key held), so it waits for a hands-on
+test. (Seen there: the game's guard is GA_Hun_Tang_HoldDeflect, its deflect BP_PlayerDeflectPassive, and a hit plays
+Hun_TangBlade_Hit_Light_*.)
+
 ## Arenas
 
 | Arena | Map | Middle | Opens when |

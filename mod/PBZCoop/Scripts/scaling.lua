@@ -127,6 +127,10 @@ return function(api)
         if poised[addr] == name or scaling.bossPoise == 1 or not game.isBoss(e, addr) then
             return false
         end
+        -- (A guest's copy of the host's boss is puppets.lua's to set: next to nothing in the host's moves, this between them.)
+        if api.puppets and api.puppets.follows and api.puppets.follows(addr) then
+            return false
+        end
         poised[addr] = name
         local ok = pcall(function()
             local a = e.AttributeSetBase.TakenReductionMultiplier_Poise

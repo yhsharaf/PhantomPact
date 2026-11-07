@@ -2429,6 +2429,11 @@ return function(api)
         hitWatch.last = tag
     end
 
+    -- This player's own hit state as last read (watchHitState, every frame): "None" when they aren't reacting to a hit.
+    function game.ownHitState()
+        return hitWatch.last
+    end
+
     -- A hit state set by hand has no animation to end it, and while it lasts the character can't start a move
     -- (a PvP attacker stayed stuck after a parry). Cleared again after this long (clearHitStateLater).
     local HIT_STATE_HOLD_S = 0.9
@@ -3098,10 +3103,23 @@ return function(api)
     end
 
     -- Turns an enemy to one player, the game's own way: the others near off its list for that moment, its picker asked now.
+    -- A turn that didn't take (its hatred refused the body, or its picker kept the old target): no new hold, which made a boss
+    -- stay on the host a whole hold for each refusal ("the aggro is completely on the host", 1.6.6), asked again after
+    -- MOVE_WAIT_S. Said once an enemy, for the bench and the reports.
+    function aim.refused(f, actor, best, now)
+        f.retryAt = now + aim.MOVE_WAIT_S
+        f.refusals = (f.refusals or 0) + 1
+        if f.refusals == 1 then
+            log("Aggro: " .. tostring(className(actor)) .. " wouldn't turn to player " .. tostring(best.slot)
+                .. ": asked again in a moment.")
+        end
+    end
+
     function aim.turn(actor, f, best, near)
-        f.since, f.wantSince = os.clock(), nil      -- (done or refused, not tried again before the next hold)
+        local now = os.clock()
         local hatred = actor.BP_PBZHatredManagerComponent
         if not valid(hatred) or hatred:CheckCanHatredTarget(best.body) == false then
+            aim.refused(f, actor, best, now)
             return
         end
         pcall(function()
@@ -3119,7 +3137,15 @@ return function(api)
                 pcall(function() hatred:AddActorToHatredList(who.body, {}) end)
             end
         end
-        f.slot = best.slot
+        -- (Whether it took: its target now. A turn its picker didn't make isn't one: taken for one, the next look read the
+        -- old target as "turned by itself" and held it a whole hold again. If its target only shows the turn a tick on, the
+        -- next look sees it turned and holds the new one.)
+        local t = currentTarget(actor)
+        if t and t:GetAddress() == best.addr then
+            f.slot, f.since, f.wantSince, f.retryAt = best.slot, now, nil, nil
+        else
+            aim.refused(f, actor, best, now)
+        end
     end
 
     -- Host, an enemy's aggro turn, with any number of players. players: { body, addr, at, slot, mine } for each one up and
@@ -3190,7 +3216,7 @@ return function(api)
             return
         end
         f.wantSince = f.wantSince or now
-        if busy and now - f.wantSince < aim.MOVE_WAIT_S then
+        if (busy and now - f.wantSince < aim.MOVE_WAIT_S) or now < (f.retryAt or 0) then
             return
         end
         aim.turn(actor, f, best, near)
@@ -3893,16 +3919,24 @@ return function(api)
             end
         end
         pickupSpots = spots
+        -- (Here from far off since the last look, a respawn, a bell trip or F3 on the same map: what's gone went with the
+        -- streaming, not into this player's hands. Told as taken, the partner's copy was destroyed and nobody had the thing;
+        -- the review of the item reports, 1.6.6.)
+        local last = game.pickupsAt
+        local jumped = last ~= nil and distance(last.loc, here) > math.max(PICKUP_JUMP_CM, 2000 * (os.clock() - last.t))
+        game.pickupsAt = { loc = { X = here.X, Y = here.Y, Z = here.Z }, t = os.clock() }
         for name, info in pairs(watched) do
             local now = present[name]
             if now == nil or distance(now.loc, info.loc) > PICKUP_JUMP_CM then
-                takenHere[name] = true
-                -- (Only loot known to be loot: a pickup whose item couldn't be read, or read before the item table was, went
-                -- out as loot, and the partner's copy of a quest item (the Snake Tongue, a token half) vanished with nothing
-                -- given, their quest stuck: issue #15.)
-                local quest = game.keptApart(info.itemId)
-                if not quest and info.itemId ~= "?" and info.itemId ~= "None" and game.narrative ~= nil then
-                    report(name, info.itemId)
+                if not jumped then
+                    takenHere[name] = true
+                    -- (Only loot known to be loot: a pickup whose item couldn't be read, or read before the item table was,
+                    -- went out as loot, and the partner's copy of a quest item (the Snake Tongue, a token half) vanished
+                    -- with nothing given, their quest stuck: issue #15.)
+                    local quest = game.keptApart(info.itemId)
+                    if not quest and info.itemId ~= "?" and info.itemId ~= "None" and game.narrative ~= nil then
+                        report(name, info.itemId)
+                    end
                 end
                 present[name] = nil
             end

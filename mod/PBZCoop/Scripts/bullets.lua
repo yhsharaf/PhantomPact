@@ -107,6 +107,11 @@ return function(api)
         end)
         known = seen
         sendEnds(seen)
+        -- (This player's own shots still live, a Scarlet Wraithblade's flowers or a fire's: what they take off an enemy copy
+        -- is this player's hit, as a blow in their own move is (moves.lua). Undone as nobody's, it never reached the host.)
+        if next(sentIds) ~= nil and game.noteLocalMove then
+            game.noteLocalMove()
+        end
     end
 
     -- Looked up each time, as a montage is (moves.lua).

@@ -104,9 +104,33 @@ return function(api)
         if p == nil then
             p = { actor = actor, name = name, fname = fname, busyUntil = 0, aiAt = 0 }
             pcall(function() p.walkSpeed = actor.CharacterMovement.MaxWalkSpeed end)
+            p.boss = game.isBoss and game.isBoss(actor, addr) or false
             byAddr[addr] = p
         end
         p.target = target
+    end
+
+    -- A boss copy's share of poise damage: none to speak of while it plays a move of the host's, the boss's own (CoopBossPoise)
+    -- between them. A guest's blow broke the copy's attack on the guest's PC while the host's boss went on and finished it on
+    -- a shielded figure, so a guest who hit into each attack was never hit by one ("the guest is almost completely safe",
+    -- 1.6.6). Its posture still falls (a break and an execution go to the host as ever), and between moves it flinches as
+    -- before, for the host to judge. (0.01, not 0: whether the game divides by it isn't known.)
+    local function poiseFor(p)
+        if not p.boss then
+            return
+        end
+        local want = os.clock() < p.busyUntil and 0.01 or 1 / ((api.scaling and api.scaling.bossPoise) or 1)
+        pcall(function()
+            local a = p.actor.AttributeSetBase.TakenReductionMultiplier_Poise
+            if math.abs(a.CurrentValue - want) > 0.001 then
+                a.BaseValue, a.CurrentValue = want, want
+            end
+        end)
+    end
+
+    -- (scaling.lua leaves the ones followed here to poiseFor.)
+    function puppets.follows(addr)
+        return byAddr[addr] ~= nil
     end
 
     -- A hit of this player's on a copy here, which the game answered with a reaction (a flinch, a break, a knockdown, the far end
@@ -164,6 +188,8 @@ return function(api)
                         cmc.MaxWalkSpeed = p.walkSpeed      -- (else it keeps the last speed it was steered at)
                     end
                 end)
+                p.busyUntil = 0
+                poiseFor(p)                     -- (its own boss poise again, as its own AI takes over)
                 game.startAI(p.actor)
                 game.freeCopy(addr)
             end
@@ -335,6 +361,7 @@ return function(api)
                 if now >= p.aiAt then
                     p.aiAt = now + AI_EVERY_S
                     p.brain = game.stopAI(p.actor, p.brain)
+                    poiseFor(p)
                 end
                 if p.target then
                     steer(p, now, addr)

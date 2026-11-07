@@ -407,6 +407,21 @@ local function sharing()
         kept = kept and rawget(pc.pickups[#pc.pickups], "__alive") ~= false
     end
     check(kept and count(b.sent, "^E I tonguespot") == 0, "a pickup whose item can't be read stays in the others' worlds too")
+    -- A respawn, a bell trip or F3 on the same map: a pickup the player stood by went out of reach with the jump and was told
+    -- as taken, the others' copy gone and nobody with the thing (the review of the item reports, 1.6.6).
+    for _, pc in ipairs({ h, a, b, c }) do
+        Fake.pickup(pc, "jumpspot", "R_500", 340.0, 0.0, 100.0)
+    end
+    s:run(1.5)
+    Session.moveTo(b, 40000, 0)
+    s:run(1.5)
+    Session.moveTo(b, 300, 0)
+    s:run(1.5)
+    kept = true
+    for _, pc in ipairs({ h, a, c }) do
+        kept = kept and rawget(pc.pickups[#pc.pickups], "__alive") ~= false
+    end
+    check(kept and count(b.sent, "^E I jumpspot") == 0, "a pickup left behind by a jump isn't told as taken: the others keep theirs")
     -- Issue #15 as it was: a pile with a story item in it (the Snake Tongue, a token half) opened by one player was taken
     -- from the other's world, the item with it, never shared. Shared now, it goes as any pile does: its item comes by the gift.
     -- With the old rule (game.shareQuestItems = false) it stays, for this player to open.
@@ -1813,11 +1828,18 @@ local function bossReactions()
     s:run(0.5)
     check(playing(copy) == ATTACK2, "the guest's boss copy, in a flinch of its own, still plays the host's next move ("
         .. playing(copy) .. ")")
+    -- ("The guest is almost completely safe": a guest's blow broke the copy's attack on the guest's PC, the host's boss went
+    -- on with it, and it never landed. In a move of the host's the copy takes next to no poise; between moves, its own.)
+    local function poiseOf(e)
+        return e.AttributeSetBase.TakenReductionMultiplier_Poise.CurrentValue
+    end
+    check(math.abs(poiseOf(copy) - 0.01) < 1e-6, "in the host's move the guest's copy takes next to no poise: its attack lands")
     Fake.put(field(copy, "hit"), "state", "None")
     Session.enemyMove(h, "boss", nil)
     s:run(0.5)
     guestHit()
     check(playing(theirs) == HIT, "between its moves, a guest's hit makes the boss flinch (" .. playing(theirs) .. ")")
+    check(math.abs(poiseOf(copy) - 0.5) < 1e-6, "and between them the copy has its own boss poise back")
     Fake.put(field(copy, "hit"), "state", "None")
     Fake.put(field(theirs, "hit"), "state", "None")
     Session.enemyMove(h, "boss", nil)

@@ -1650,12 +1650,15 @@ return function(api)
         if prev and prev.addr == addr and prev.hp and hp then
             local dHp = prev.hp - hp
             local dPosture = (prev.posture and posture) and (prev.posture - posture) or 0
-            if dHp > 0.5 or dPosture > 0.5 then
-                if (ghostsHit() and dHp <= 0.5) or (dHp > 0.5 and not ownHit(actor)) then
+            -- (Onto its floor by any amount, as syncEnemy weighs it: a blow onto the floor of half a point or less was told
+            -- to nobody, and every blow after read as nothing, the host unable to finish it till the guest did.)
+            local onFloor = hp <= HELD_HP + 0.01 and prev.hp > hp + 0.01
+            if dHp > 0.5 or dPosture > 0.5 or onFloor then
+                if (ghostsHit() and dHp <= 0.5) or ((dHp > 0.5 or onFloor) and not ownHit(actor)) then
                     undoHit(actor, prev.hp, prev.posture)
                     hp, posture = prev.hp, prev.posture
                 else
-                    local lethal = dHp > 0.5 and hp <= HELD_HP + 0.01
+                    local lethal = (dHp > 0.5 or onFloor) and hp <= HELD_HP + 0.01
                     reportHit(name, actor, math.max(0, dHp), math.max(0, dPosture), lethal)
                     if lethal then
                         net.hostLethal[name] = true     -- (its items are rolled here when the death comes back: GK)
@@ -1674,9 +1677,15 @@ return function(api)
         if game.setMaxHealth and maxhp and math.abs(r.MaxHp - maxhp) > 1 then
             game.setMaxHealth(actor, r.MaxHp)
         end
-        if hp and r.Hp < hp - 0.5 then
-            game.setHealth(actor, r.Hp)
-            hp = r.Hp
+        -- (Never below half a point over its floor, as syncEnemy writes it, and lifted off the floor with no killing blow
+        -- told: written to the guest's 1.2, a blow after read as nothing.)
+        local want = math.max(r.Hp, HELD_HP + 0.5)
+        if hp and want < hp - 0.5 then
+            game.setHealth(actor, want)
+            hp = want
+        elseif hp and hp <= HELD_HP + 0.01 and not net.hostLethal[name] then
+            game.setHealth(actor, HELD_HP + 1)
+            hp = HELD_HP + 1
         elseif hp and r.Hp > hp + math.max(1, r.MaxHp * 0.05) then
             net.healTicks[name] = net.healTicks[name] or os.clock()
             if os.clock() - net.healTicks[name] >= HEAL_TICKS then
