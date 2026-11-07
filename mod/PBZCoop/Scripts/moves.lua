@@ -239,8 +239,12 @@ return function(api)
             return
         end
         moves.partnerSends = true
-        -- (In PvP the figure plays their abilities, M, but for the guard's moves: see the sending side.)
+        -- (In PvP the figure plays their abilities, M, but for the guard's moves: see the sending side. One older than a move
+        -- of theirs already started, come late behind it, would cut that move: dropped; the review.)
         if (net.pvp and not (game.isGuardMove and game.isGuardMove(path))) or not valid(p.ghost) or p.ghostHidden then
+            return
+        end
+        if net.pvp and os.clock() - net.moveAge() < (p.lastMoveSentAt or -1e9) then
             return
         end
         local m = montage(path)
@@ -265,8 +269,9 @@ return function(api)
             if path:find("StanceEnter", 1, true) then
                 p.stancePath = path
                 moves.holdStance(p, m, start)
-            elseif p.stance and game.isGuardReaction and game.isGuardReaction(path) then
-                moves.backToGuard(p, m)
+            elseif game.isGuardReaction and game.isGuardReaction(path) then
+                p.guardPlays = (p.guardPlays or 0) + 1
+                moves.backToGuard(p, m, start)      -- (whether their guard's bit is here yet or not: it comes with their place)
             end
             if game.noteGhostMove then
                 game.noteGhostMove(p.ghost)
@@ -308,16 +313,17 @@ return function(api)
         end)
     end
 
-    -- Their guard's answer to a blow (its Defence move) played on the figure while they still hold the guard: back into the
-    -- guard's pose after it, as their own body goes. (The bench, 11-07: the figure stood at ease after it with the guard still
-    -- up on their screen, and played the stance's exit from there.) Not over a move of theirs begun meanwhile.
-    function moves.backToGuard(p, m)
-        local path, addr, ghost = p.stancePath, m:GetAddress(), p.ghost
+    -- Their guard's answer to a blow (its Defence move) played on the figure: back into the guard's pose after it if they still
+    -- hold the guard then, as their own body goes. (The bench, 11-07: the figure stood at ease after it with the guard still
+    -- up on their screen, and played the stance's exit from there.) Not over a move of theirs begun meanwhile, nor over the
+    -- next Defence move (each play its own count: p.guardPlays). start: where in the move it began here.
+    function moves.backToGuard(p, m, start)
+        local path, addr, ghost, play = p.stancePath, m:GetAddress(), p.ghost, p.guardPlays
         local len = 0.8
         pcall(function() len = m:GetPlayLength() end)
-        game.after(math.max(0.1, (tonumber(len) or 0.8) - 0.25), function()
-            if not (p.stance and path and valid(ghost) and ghost == p.ghost and valid(p.ghostMontage)
-                and p.ghostMontage:GetAddress() == addr) then
+        game.after(math.max(0.1, (tonumber(len) or 0.8) - (start or 0) - 0.25), function()
+            if not (p.stance and path and p.guardPlays == play and valid(ghost) and ghost == p.ghost
+                and valid(p.ghostMontage) and p.ghostMontage:GetAddress() == addr) then
                 return
             end
             local ai, now = animOf(ghost), nil
@@ -659,6 +665,15 @@ return function(api)
         coop.handlers.M = function(rest, from)
             if moves.partnerSends and not net.pvp then
                 return
+            end
+            -- In PvP a move of theirs that isn't the guard's: no guard pose of theirs is held or played over it from here on
+            -- (a hold's timer, their guard's bit come late), and a guard move older than it is dropped (handlers.U). (The
+            -- review: the stance's enter, held a moment later, cut the attack they had just started on the figure.)
+            local p = net.pvp and coop.peerOf(from)
+            local path = p and (rest or ""):match("^(%S+)")
+            if path and not (game.isGuardMove and game.isGuardMove(path)) then
+                p.ghostMontage, p.ghostPath, p.stanceHeld = nil, nil, nil
+                p.lastMoveSentAt = os.clock() - net.moveAge()
             end
             return replayAbility(rest, from)
         end

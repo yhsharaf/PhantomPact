@@ -165,7 +165,11 @@ function Fake.character(pc, class, x, y, z, hp, posture)
     local anim = object(pc, "Anim", { montage = nil })
     defs(pc, anim, {
         GetCurrentActiveMontage = function(self) return rawget(self, "__fields").montage end,
-        Montage_GetPosition = function() return 0.25 end,
+        -- (How far in: since Session.startMove began it, as the game's; 0.25 for one put on any other way.)
+        Montage_GetPosition = function(self)
+            local at = rawget(self, "__fields").startedAt
+            return at and math.max(0, pc.now - at) or 0.25
+        end,
         Montage_IsPlaying = function(self, m) return m ~= nil and rawget(self, "__fields").montage == m end,
         Montage_Play = function(self, m, _, _, start) put(self, "montage", m) put(self, "paused", nil) put(self, "start", start) put(self, "played", (rawget(self, "__fields").played or 0) + 1) return 1.0 end,
         Montage_Stop = function(self) put(self, "montage", nil) put(self, "paused", nil) end,
@@ -1776,7 +1780,24 @@ function Fake.new(id, scripts, ini, link)
         end
         return statics.nothing
     end
-    env.FindObject = function(kind) return kind == "WidgetBlueprintGeneratedClass" and widgetClass or nil end
+    -- (A gameplay effect's class by its name, for a shield: a stand-in each. Other blueprint classes stay missing, as before:
+    -- local co-op's gap blocker class found here changed its prompts.)
+    local bpClasses = {}
+    env.FindObject = function(kind, name)
+        if kind == "WidgetBlueprintGeneratedClass" then
+            return widgetClass
+        end
+        if kind == "BlueprintGeneratedClass" and name and name:find("^GE_") then
+            local c = bpClasses[name]
+            if not c then
+                c = object(pc, "BlueprintGeneratedClass")
+                rawset(c, "__path", "/Game/Fake/" .. name .. "." .. name)
+                bpClasses[name] = c
+            end
+            return c
+        end
+        return nil
+    end
     env.FindFirstOf = function(class)
         if class == "PlayerController" then
             return controller

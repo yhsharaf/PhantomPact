@@ -607,7 +607,9 @@ return function(api)
         -- (On the sender's own ghost: in a party, net.ghost is the lead's, and every player's move played on it.)
         local p = net.party and peerOf(from) or net
         local ghost = p.ghost
-        p.moveAt, p.movePath = os.clock(), path     -- (pvp.lua: an attack of theirs opens a swing to judge a parry by)
+        -- (pvp.lua: an attack of theirs opens a swing to judge a parry by, aimed where they faced as it began.)
+        local y = tonumber(yaw)
+        p.moveAt, p.movePath, p.moveYaw = os.clock(), path, (y and y == y and math.abs(y) <= 720) and y or nil
         if path and valid(ghost) and game.playMove then
             game.playMove(ghost, path, tonumber(yaw))
         end
@@ -3707,10 +3709,8 @@ return function(api)
             log("Sending: sequence " .. cine .. ", movement mode " .. tostring(mode) .. ".")
             net.lastCine, net.lastMode = cine, mode
         end
-        -- (In a match arena.lua's frameMoves does it every frame: here too was a second walk of the whole list.)
-        if net.pvp and not net.arena and game.watchLocalPlayer then
-            game.watchLocalPlayer(pawn, sendEvent)    -- ability replays: elsewhere montages say it all (moves.lua)
-        end
+        -- (The player's moves as abilities, for PvP, are read every frame in arena.lua's frameMoves, in a match and in PvPvE:
+        -- here, ten times a second, a guard tapped up read as one held from before, and a parry was lost; the review.)
         -- (Not in the quiet after a load or a trip: see net.QUIET_AFTER_LOAD_S. A host crashed in here, in its first frame
         -- after a trip on the same map.)
         local quiet = os.clock() < (net.quietUntil or 0)

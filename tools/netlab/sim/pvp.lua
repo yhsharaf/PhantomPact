@@ -113,9 +113,11 @@ return function(out, scripts)
     local STANCE_ENTER = "/PBZCombatAsset/ActorData/Move/AM_Hun_Tang_StanceEnter.AM_Hun_Tang_StanceEnter"
     local heldSeen = "-"            -- the host's figure, for the guest, as the held guard went up
     local hgame = h.env.PBZ.game
-    local function beside(cm)
+    -- The guest cm along X from the host, facing it (yaw 180), or away (its move aimed elsewhere).
+    local function beside(cm, away)
         local l = rawget(h.pawn, "__fields").loc
         Session.moveTo(g, l.X + cm, l.Y, l.Z)
+        Fake.put(g.pawn, "yaw", away and 0.0 or 180.0)
         s:run(1.0)
     end
     -- The guest's blow (its attack's ability on: the guest's own watch sends it as M) and the host's guard: "parry" raised as
@@ -200,9 +202,23 @@ return function(out, scripts)
     beside(600)
     blow("parry")
     check(parries() == 1, "nor a deflect of a foe out of reach: " .. parries())
-    beside(150)
+    -- (In PvPvE an enemy's blow turned aside while the partner swung nearby, at something else, staggered the partner.)
+    beside(150, true)
     blow("parry")
-    check(parries() == 2, "and the next deflect in reach is one again: " .. parries())
+    check(parries() == 1, "nor a deflect while the guest's move was aimed away from the host (another's blow): " .. parries())
+    beside(150)
+    Fake.running(g, g.pawn, "GA_Hun_Tang_A_C", true)
+    s:run(0.08)
+    Fake.running(h, h.pawn, STANCE, true)
+    Session.startMove(h, DEFENCE)
+    s:run(0.4)
+    Fake.running(g, g.pawn, "GA_Hun_Tang_A_C", false)
+    Fake.running(h, h.pawn, STANCE, false)
+    Session.endMove(h)
+    s:run(1.6)
+    check(parries() == 1, "nor a guard answer before the guest's blow could have come (0.08 s into its move): " .. parries())
+    blow("parry")
+    check(parries() == 2, "and the next deflect in reach, facing the host, is one again: " .. parries())
     Fake.running(g, g.pawn, "GA_Hun_ShachiHook_Passive_C", false)
 
     out("round 1, the guest goes down:")

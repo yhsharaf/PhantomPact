@@ -166,12 +166,15 @@ return function(api)
 
     local lastPartnerHitAt = -100   -- os.clock() of the partner's last hit on us
     local deathScored = false       -- this death was already reported (until we're alive again)
-    -- Each foe's latest attack, watched SWING_S from its start (their M): what we looked like then, and whether it's settled.
-    local swings = {}               -- slot -> { at, hp, posture, low, done }
-    local SWING_S = 1.2             -- (a light blow lands about 0.3 s into its move: the bench, 11-07)
-    local BLOCK_POSTURE = 20        -- our guard's answer that cost more posture than this was a block, not a deflect
+    -- Each foe's latest attack, from its start (their M): what we looked like then, and whether it's settled.
+    local swings = {}               -- slot -> { at, hp, posture, low, done, yaw }
+    local SWING_S = 1.2             -- open this long at least (a light blow lands about 0.3 s into its move: the bench, 11-07)
+    local SWING_MAX_S = 3.0         -- and on while their figure still plays its move: a slow one's blow comes late
+    local WINDUP_S = 0.15           -- no blow lands sooner after its move starts: a younger swing isn't what our guard met
+    local FACING_DEG = 70           -- their move aimed within this of us (its yaw comes with their M), or it wasn't at us
+    local BLOCK_POSTURE = 20        -- our guard's answer that cost more posture than this, in a tick, was a block
     local GUARD_LEAD_S = 0.15       -- a guard raised this long before their attack came still met it (a read of it)
-    local guard = { addr = nil, pos = 0 }      -- our own guard's last answer to a blow (watchGuard)
+    local guard = { addr = nil, pos = 0, posture = nil }    -- our guard's last answer to a blow; our posture a tick ago
     local function watchDeath(pawn)
         local hp = game.getHealth(pawn)
         local dead = (hp ~= nil and hp <= 0) or game.isDead(pawn)
@@ -192,27 +195,52 @@ return function(api)
         end
     end
 
-    -- A move off the wire (coop.lua: p.movePath, its ability's class) that's an attack: not a guard, a dash or dodge, an
-    -- escape, or a passive. (A passive is always on: GA_Hun_ShachiHook_Passive_C on every figure. Taken for a swing, it kept
-    -- every swing open for good, and not one parry was ever judged in a match: the bench, 11-07.)
+    -- A move off the wire (coop.lua: p.movePath, its ability's class) that's an attack. Not one of these, by the names of the
+    -- player's moves on the bench (11-07): the dodges (AdvancedDash, SpecialDash, PerfectDodge: a dash attack, A_Dash, is an
+    -- attack), the guard's, the jump, the weapon's buff and draw, and a passive. (A passive is always on: every figure runs
+    -- GA_Hun_ShachiHook_Passive_C, and taken for a swing it kept every swing open: not one parry was ever judged in a match.)
+    local NOT_ATTACKS = { "AdvancedDash", "SpecialDash", "Dodge", "Deflect", "Escape", "Stance", "_Jump_C", "Buff",
+        "ChangeArmed", "Passive" }
     local function isAttack(path)
         local name = path and path:match("([^.]+)$")
-        return name ~= nil and name:find("^GA_") ~= nil and not (name:find("Stance") or name:find("Dash")
-            or name:find("Dodge") or name:find("Deflect") or name:find("Escape") or name:find("Passive"))
+        if not (name and name:find("^GA_")) then
+            return false
+        end
+        for _, word in ipairs(NOT_ATTACKS) do
+            if name:find(word, 1, true) then
+                return false
+            end
+        end
+        return true
     end
 
-    -- A foe's attack opens a swing, from their M (coop.lua: p.moveAt): what we looked like then. Their blow landing settles it
-    -- (no parry from it) and says who struck last; it shuts SWING_S after its start.
-    local function watchSwing(slot, p, now, hp, posture)
+    -- Their figure still in a move of theirs: a montage, not a flinch, a guard's or a dodge's.
+    local function stillMoving(ghost)
+        local busy = false
+        pcall(function()
+            local ai = ghost.Mesh:GetAnimInstance()
+            local m = valid(ai) and ai:GetCurrentActiveMontage()
+            if valid(m) then
+                local name = m:GetFName():ToString()
+                busy = not (name:find("Hit", 1, true) or name:find("Dash", 1, true) or game.isGuardMove(name))
+            end
+        end)
+        return busy
+    end
+
+    -- A foe's attack opens a swing, from their M (coop.lua: p.moveAt, and p.moveYaw where it aimed): what we looked like then.
+    -- Their blow landing settles it (no parry from it) and says who struck last. It shuts SWING_S after its start, or later
+    -- while their figure still plays the move (SWING_MAX_S at most): a slow move's blow comes after SWING_S (the review).
+    local function watchSwing(slot, p, now, hp, posture, ghost)
         local s = swings[slot]
         if p.moveAt and (not s or s.at ~= p.moveAt) and now - p.moveAt <= SWING_S and isAttack(p.movePath) then
-            s = { at = p.moveAt, hp = hp, posture = posture }
+            s = { at = p.moveAt, hp = hp, posture = posture, yaw = p.moveYaw }
             swings[slot] = s
         end
         if not s then
             return
         end
-        if now - s.at > SWING_S then
+        if now - s.at > SWING_S and (now - s.at > SWING_MAX_S or not stillMoving(ghost)) then
             swings[slot] = nil
         elseif hp and hp < (s.low or s.hp or hp) - 0.5 then
             s.done, s.low = true, hp
@@ -237,25 +265,35 @@ return function(api)
     -- A parry, judged by the game's own deflect, and timed: our guard raised to meet their blow (the bench, 11-07: a guard
     -- pressed as the blow comes plays a Defence montage and costs nothing; one already held when it came plays the same and
     -- costs nothing either, so the game turns aside every blow into a held guard, and a stagger for each made holding it the
-    -- whole match's answer; a swing that never reached us plays none, guard or not). A new answer of our guard while foes'
-    -- swings are open settles the nearest of them in reach whose blow was due (begun before the answer). Raised after their
-    -- attack came (GUARD_LEAD_S), nothing lost: our foe staggers and loses posture ("V parry", at once: it waited for their
-    -- swing's end before), and their figure here staggers too. Held from before, or costing posture: the game's block alone.
+    -- whole match's answer; a swing that never reached us plays none, guard or not). A new answer of our guard settles the
+    -- swing whose blow it met: of those open, in reach, aimed at us (FACING_DEG) and old enough for a blow to have come
+    -- (WINDUP_S), the latest begun. (The review: the nearest open one was taken, a blow that hadn't come yet or one at a
+    -- teammate; and in PvPvE an enemy's blow turned aside staggered a partner who was only swinging near us.) Raised after
+    -- their attack came (GUARD_LEAD_S), nothing lost: our foe staggers and loses posture ("V parry", at once), and their
+    -- figure here staggers too. Held from before, or costing posture in a tick: the game's block alone.
     -- open: slot -> that foe's figure, this tick's (none kept).
     local function watchGuard(pawn, open, now, hp, posture)
         local addr, pos = guardReaction(pawn)
         local fresh = addr ~= nil and (addr ~= guard.addr or pos < guard.pos - 0.05)
-        guard.addr, guard.pos = addr, pos
+        local before = guard.posture
+        guard.addr, guard.pos, guard.posture = addr, pos, posture
         if not fresh then
             return
         end
-        local at = pawn:K2_GetActorLocation()
-        local best, bestD = nil, PARRY_REACH_CM
+        local at, met = pawn:K2_GetActorLocation(), now - pos
+        local best, bestAt = nil, -math.huge
         for slot, ghost in pairs(open) do
             local s = swings[slot]
-            local d = s and not s.done and now - s.at >= pos - 0.1 and api.distance(at, ghost:K2_GetActorLocation())
-            if d and d <= bestD then
-                best, bestD = slot, d
+            if s and not s.done and met - s.at >= WINDUP_S and s.at > bestAt then
+                local g = ghost:K2_GetActorLocation()
+                local aimed = true
+                if s.yaw then
+                    local to = math.deg((math.atan2 or math.atan)(at.Y - g.Y, at.X - g.X))
+                    aimed = math.abs((to - s.yaw + 540) % 360 - 180) <= FACING_DEG
+                end
+                if aimed and api.distance(at, g) <= PARRY_REACH_CM then
+                    best, bestAt = slot, s.at
+                end
             end
         end
         local s = best and swings[best]
@@ -263,7 +301,8 @@ return function(api)
             return
         end
         s.done = true
-        if (hp and s.hp and hp < s.hp - 0.5) or (posture and s.posture and posture < s.posture - BLOCK_POSTURE)
+        before = before or s.posture
+        if (hp and s.hp and hp < s.hp - 0.5) or (posture and before and posture < before - BLOCK_POSTURE)
             or (game.guardUpAt or -1e9) < s.at - GUARD_LEAD_S then
             return          -- (a block: our guard was up before their attack, or the game took it out of our posture)
         end
@@ -309,6 +348,18 @@ return function(api)
     -- Defence move, moves.lua: p.guardAt): shielded, so our blows don't make it flinch over the guard they have up. Their game
     -- decides every hit; ours on the figure are only for show. (The bench, 11-07: our blow's flinch came over their deflect.)
     local GUARD_SHIELD_S = 0.6
+    -- The shield's class: searched for once (a search of every object, 1-3 ms: the review), then by its path.
+    local shieldPath = nil
+    local function shieldClass()
+        local cls = shieldPath and StaticFindObject(shieldPath)
+        if not valid(cls) then
+            cls = FindObject("BlueprintGeneratedClass", "GE_PBZLieInvulnerable_C")
+            if valid(cls) then
+                shieldPath = cls:GetFullName():gsub("^%S+ ", "")
+            end
+        end
+        return valid(cls) and cls or nil
+    end
     local function guardShield(ghost, h, on)
         if (h.guardShield ~= nil) == on then
             return
@@ -316,9 +367,14 @@ return function(api)
         pcall(function()
             local bl = StaticFindObject("/Script/GameplayAbilities.Default__AbilitySystemBlueprintLibrary")
             local asc = bl:GetAbilitySystemComponent(ghost)
+            if not valid(asc) then
+                return
+            end
             if on then
-                local cls = FindObject("BlueprintGeneratedClass", "GE_PBZLieInvulnerable_C")
-                h.guardShield = asc:BP_ApplyGameplayEffectToSelf(cls, 1, asc:MakeEffectContext())
+                local cls = shieldClass()
+                if cls then
+                    h.guardShield = asc:BP_ApplyGameplayEffectToSelf(cls, 1, asc:MakeEffectContext())
+                end
             else
                 asc:RemoveActiveGameplayEffect(h.guardShield, -1)
             end
@@ -408,7 +464,7 @@ return function(api)
                     if hp == nil then
                         hp, posture = game.getHealth(pawn), game.getPosture(pawn)
                     end
-                    watchSwing(f.slot, p, now, hp, posture)
+                    watchSwing(f.slot, p, now, hp, posture, ghost)
                     if swings[f.slot] then
                         open = open or {}
                         open[f.slot] = ghost
@@ -514,7 +570,11 @@ return function(api)
             log(string.format("PvP parry reward: %.0f posture.", pvp.parryPosture))
         elseif cmd == "damage" and tonumber(arg) then
             pvp.damage = math.max(0.1, math.min(3.0, tonumber(arg) / 100))
-            hostile = {}        -- re-apply the ghost's attack next tick
+            -- (The ghost's attack given again next tick. Not by emptying the list: a figure's guard shield in it stayed on
+            -- for good, its handle gone; the review.)
+            for _, h in pairs(hostile) do
+                h.restat = true
+            end
             log(string.format("PvP damage %d%%.", math.floor(pvp.damage * 100 + 0.5)))
         else
             log(string.format("PvP %s, damage %d%%, score %d - %d. Usage: pvp on|off|damage <percent>",

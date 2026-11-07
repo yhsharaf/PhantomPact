@@ -1484,9 +1484,10 @@ return function(api)
         end
     end
 
-    -- Moves noticed every frame in a match (outside it: ten times a second, watchSlowly): most of a swing's lead on a parry.
+    -- Moves noticed every frame in a match and in PvPvE: most of a swing's lead on a parry, and the frame a guard goes up
+    -- (pvp.lua times a parry by it; read ten times a second in PvPvE, a guard tapped up read as held: the review).
     local function frameMoves()
-        if not net.arena then
+        if not (net.arena or net.pvp) then
             return
         end
         local pawn = coop.localPawn and coop.localPawn()

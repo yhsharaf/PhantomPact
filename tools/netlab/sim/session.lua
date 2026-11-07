@@ -115,10 +115,12 @@ end
 function Session.startMove(pc, path)
     local m = pc.env.StaticFindObject(path)
     Fake.put(pc.pawn.anim, "montage", m)
+    Fake.put(pc.pawn.anim, "startedAt", pc.now)
 end
 
 function Session.endMove(pc)
     Fake.put(pc.pawn.anim, "montage", nil)
+    Fake.put(pc.pawn.anim, "startedAt", nil)
 end
 
 function Session.enemyMove(pc, id, path)
