@@ -165,15 +165,28 @@ function Fake.character(pc, class, x, y, z, hp, posture)
     local anim = object(pc, "Anim", { montage = nil })
     defs(pc, anim, {
         GetCurrentActiveMontage = function(self) return rawget(self, "__fields").montage end,
-        -- (How far in: since Session.startMove began it, as the game's; 0.25 for one put on any other way.)
+        -- (How far in, as the game's: since Session.startMove or Montage_Play began it, from where it began, and held where
+        -- it was paused; 0.25 for one put on any other way.)
         Montage_GetPosition = function(self)
-            local at = rawget(self, "__fields").startedAt
-            return at and math.max(0, pc.now - at) or 0.25
+            local f = rawget(self, "__fields")
+            if f.pausedAt then
+                return f.pausedAt
+            end
+            return f.startedAt and math.max(0, pc.now - f.startedAt) or 0.25
         end,
         Montage_IsPlaying = function(self, m) return m ~= nil and rawget(self, "__fields").montage == m end,
-        Montage_Play = function(self, m, _, _, start) put(self, "montage", m) put(self, "paused", nil) put(self, "start", start) put(self, "played", (rawget(self, "__fields").played or 0) + 1) return 1.0 end,
-        Montage_Stop = function(self) put(self, "montage", nil) put(self, "paused", nil) end,
-        Montage_Pause = function(self, m) put(self, "paused", m) end,
+        Montage_Play = function(self, m, _, _, start)
+            put(self, "montage", m) put(self, "paused", nil) put(self, "pausedAt", nil) put(self, "start", start)
+            put(self, "startedAt", pc.now - (tonumber(start) or 0))
+            put(self, "played", (rawget(self, "__fields").played or 0) + 1)
+            return 1.0
+        end,
+        Montage_Stop = function(self) put(self, "montage", nil) put(self, "paused", nil) put(self, "pausedAt", nil) put(self, "startedAt", nil) end,
+        Montage_Pause = function(self, m)
+            local f = rawget(self, "__fields")
+            put(self, "pausedAt", f.startedAt and math.max(0, pc.now - f.startedAt) or 0.25)
+            put(self, "paused", m)
+        end,
     })
     local mesh = object(pc, "Mesh", { children = {}, shown = true })
     defs(pc, mesh, { GetAnimInstance = function() return anim end,

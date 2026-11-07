@@ -313,30 +313,47 @@ return function(api)
         end)
     end
 
-    -- Their guard's answer to a blow (its Defence move) played on the figure: back into the guard's pose after it if they still
-    -- hold the guard then, as their own body goes. (The bench, 11-07: the figure stood at ease after it with the guard still
-    -- up on their screen, and played the stance's exit from there.) Not over a move of theirs begun meanwhile, nor over the
-    -- next Defence move (each play its own count: p.guardPlays). start: where in the move it began here.
+    -- Their guard's answer to a blow (its Defence move) played on the figure: back into the guard's pose as it goes, if they
+    -- still hold the guard then, as their own body goes. (The bench, 11-07: the figure stood at ease after it with the guard
+    -- still up on their screen. Timed by the move's length, the guard came back late: the move was over well before it.) The
+    -- figure is looked at every 50 ms while the move plays: as it starts to blend out, or is over, the guard's pose. Not over
+    -- a move of theirs begun meanwhile, nor after the next Defence move (each play its own count: p.guardPlays).
     function moves.backToGuard(p, m, start)
         local path, addr, ghost, play = p.stancePath, m:GetAddress(), p.ghost, p.guardPlays
-        local len = 0.8
-        pcall(function() len = m:GetPlayLength() end)
-        game.after(math.max(0.1, (tonumber(len) or 0.8) - (start or 0) - 0.25), function()
-            if not (p.stance and path and p.guardPlays == play and valid(ghost) and ghost == p.ghost
-                and valid(p.ghostMontage) and p.ghostMontage:GetAddress() == addr) then
+        local fades, untilAt = 0.6, os.clock() + 3.0
+        pcall(function()
+            local out = m.BlendOutTriggerTime
+            if not (type(out) == "number" and out >= 0) then
+                out = m.BlendOut.BlendTime
+            end
+            fades = m:GetPlayLength() - (tonumber(out) or 0.25)
+            untilAt = os.clock() + math.max(0.3, m:GetPlayLength() - (start or 0)) + 0.3
+        end)
+        local function look()
+            if not (path and p.guardPlays == play and valid(ghost) and ghost == p.ghost and valid(p.ghostMontage)
+                and p.ghostMontage:GetAddress() == addr) or os.clock() > untilAt then
                 return
             end
             local ai, now = animOf(ghost), nil
             pcall(function() now = ai and ai:GetCurrentActiveMontage() end)
             if valid(now) and now:GetAddress() ~= addr then
+                return          -- (a move of theirs)
+            end
+            local going = not valid(now)
+            if not going then
+                pcall(function() going = ai:Montage_GetPosition(now) >= fades - 0.05 end)
+            end
+            if not going then
+                game.after(0.05, look)
                 return
             end
-            local enter = montage(path)
+            local enter = p.stance and montage(path)
             if enter then
                 p.ghostMontage, p.ghostPath, p.stanceHeld = enter, path, nil
                 moves.holdStance(p, enter, math.huge)
             end
-        end)
+        end
+        game.after(0.05, look)
     end
 
     local function gaitTo(p, gait)
