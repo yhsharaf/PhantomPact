@@ -435,6 +435,49 @@ return function(api)
         end
     end
 
+    -- Teammates' health in a team match, over the player's own bar and in its look (the game's player bar follows only its
+    -- own player): the frame, the bone fill, the blood a blow takes holding a moment and then draining, the name in the
+    -- player's colour. A teammate down: an empty bar, dimmed. (Measured on the bench: the game's bar runs from 186 to 556
+    -- across, 936 to 950 down, on a screen 1080 high; its gourd and item diamonds stand left of 140.)
+    local MATE = { x = 186, y = 902, step = 42, w = 260, h = 12, fw = 254, fh = 6, lagS = 0.6, drain = 0.8 }
+    local mates = {}                -- slot -> { lag, shown, lagAt, lagLast }: the blood chunk's own fraction
+    local function drawMates(m, me, now)
+        local list = {}
+        for slot, team in pairs(m.teams) do
+            if slot ~= me and team == m.teams[me] then
+                list[#list + 1] = slot
+            end
+        end
+        table.sort(list)
+        for i, slot in ipairs(list) do
+            local y = MATE.y - (i - 1) * MATE.step
+            local down = m.down[slot]
+            local frac = down and 0 or (healthOf(slot, me) or 1)
+            local st = mates[slot] or { lag = frac }
+            mates[slot] = st
+            if frac < (st.shown or frac) - 0.001 then
+                st.lagAt = now + MATE.lagS          -- (a blow: what it took holds a moment)
+            end
+            st.shown = frac
+            if frac >= st.lag then
+                st.lag = frac
+            elseif now >= (st.lagAt or 0) then
+                st.lag = math.max(frac, st.lag - (now - (st.lagLast or now)) * MATE.drain)
+            end
+            st.lagLast = now
+            local a = down and 0.55 or 1
+            local lagW, fillW = MATE.fw * st.lag, MATE.fw * frac
+            put(part("mate_frame_" .. slot, "pvp/mate_frame.png", MATE.w, MATE.h, 1), MATE.x + MATE.w / 2, y, MATE.w,
+                MATE.h, a)
+            put(part("mate_lag_" .. slot, "pvp/mate_lag.png", MATE.fw, MATE.fh, 2), MATE.x + 3 + lagW / 2, y,
+                math.max(lagW, 1), MATE.fh, lagW > 0.5 and a or 0)
+            put(part("mate_fill_" .. slot, "pvp/mate_fill.png", MATE.fw, MATE.fh, 3), MATE.x + 3 + fillW / 2, y,
+                math.max(fillW, 1), MATE.fh, fillW > 0.5 and a or 0)
+            put(part("mate_name_" .. slot, "pvp/" .. worded("mate_" .. slot) .. ".png", 150, 22, 1), MATE.x + 75, y - 19,
+                150, 22, a)
+        end
+    end
+
     -- The blow that decides the match: on the winners' screens the beaten's bars break, as a boss's posture does.
     function ui.decided(m, winner, me)
         if m.teams[me] ~= winner or not api.game.breakFoeBar then
@@ -538,10 +581,12 @@ return function(api)
             local fighting = m.phase ~= "going" and m.phase ~= "there"
             if fighting and m.phase ~= "result" then
                 drawBars(m, me, now)
+                drawMates(m, me, now)
             else
                 for slot in pairs(foeBars) do
                     hideFoeBar(slot)
                 end
+                hideAll("mate_")
             end
             if api.arena.finishHint and now >= api.arena.finishHint and m.phase == "finish" and not m.finished
                 and m.teams[me] == m.winner and not m.down[me] and not banner then
@@ -574,6 +619,7 @@ return function(api)
 
     function ui.clear()
         count, banner, fightAt = nil, nil, nil
+        mates = {}
         -- Off the screen for good, not only hidden: the next match may be on another map (usable says why).
         for name, p in pairs(parts) do
             if usable(p) then

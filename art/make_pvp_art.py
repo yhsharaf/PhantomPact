@@ -513,9 +513,40 @@ def player_rows():
         save(img, "pvp_tick_%d" % on)
 
 
+def mate_bars():
+    """A teammate's health in a team match, over the player's own bar and in its look (seen on the bench: a dark frame cut
+    away at its right end, a bone fill with a grain): the frame, the fill, the blood a blow takes (it drains after), and each
+    player's name with their colour, as the lobby's rows have it. Drawn at their size on a screen 1080 high."""
+    w, h, cut = 260, 12, 7
+    img, d = canvas(w, h)
+    d.polygon([(0, 0), (w * K - 1, 0), (w * K - 1 - cut * K, h * K - 1), (0, h * K - 1)], fill=(12, 9, 9, 175),
+              outline=(150, 140, 128, 210))
+    save_hud(img, "mate_frame")
+    fw, fh = 254, 6
+    img, d = canvas(fw, fh)
+    rng = random.Random(5)
+    for x in range(fw * K):
+        shade = 214 + int(16 * math.sin(x / (9.0 * K))) + rng.randint(-9, 9)
+        d.line((x, 0, x, fh * K), fill=(shade, shade - 5, shade - 13, 255))
+    save_hud(img, "mate_fill")
+    img, d = canvas(fw, fh)
+    d.rectangle((0, 0, fw * K, fh * K), fill=BLOOD)
+    save_hud(img, "mate_lag")
+    for slot, (rgb, text) in PLAYERS.items():
+        for zh in (False, True):
+            img, d = canvas(150, 22)
+            d.ellipse((2 * K, 7 * K, 10 * K, 15 * K), fill=rgb + (255,))
+            if zh:
+                d.text((16 * K, 11 * K), "玩家 %d" % slot, font=chinese(12, True), fill=BONE, anchor="lm")
+            else:
+                spaced(d, (16 * K, 11 * K), text, font(11, True), BONE, gap=2, anchor="lm")
+            save_hud(img, ("zh_" if zh else "") + "mate_%d" % slot)
+
+
 if __name__ == "__main__":
     countdown()
     banners()
+    mate_bars()
     player_rows()
     frames()
     for wd in WORDS.values():

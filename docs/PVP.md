@@ -75,6 +75,12 @@ a boss bar gets no `Character` (the bench), so pbz.lua knows each bar by the wid
 the mod's own boss lists (`bosses`, `bossActors`), so nothing that walks the bosses sees a player. The countdown and banners are
 ink-brush pictures of ours; the death card and the golden VICTORY are the game's own screens.
 
+In a team match each teammate has a bar over the player's own, in its look (the game's player bar follows only its own
+player): the dark frame cut away at its right end, the bone fill, the name in the player's lobby colour (`art/pvp/mate_*`,
+`make_pvp_art.py` `mate_bars`). A blow's share holds in blood for 0.6 s and then drains; a teammate down shows an empty bar,
+dimmed. Their health comes with their position, as the foes' bars do. On the bench, 11-07, three players: the bar full,
+after two blows the blood chunk then drained, empty and dimmed when the guest went down, the host's on the guest's screen.
+
 ## On the wire
 
 One sure-lane event kind, `AR <what> ...`, so older versions ignore all of it. A match only starts when every player runs the
