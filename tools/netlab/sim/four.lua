@@ -1689,6 +1689,62 @@ local function hitReactions()
     allErrors(s)
 end
 
+-- A boss isn't stun-locked by a partner's hits (Nexus reports on 1.6.6: "it gets continuously hit and can't fight back"): a
+-- guest's hit doesn't force their copy's flinch on the host's boss in the middle of a move of its own; between moves one gets
+-- through now and then; a posture break always does. And the guest's boss copy, in a flinch of its own, still plays the host's
+-- next move (thrown away, the guest was never hit back).
+local function bossReactions()
+    part("a boss's reaction to a partner's hits")
+    local s, h, g = pair()
+    Session.moveTo(h, 2700, 3000)
+    Session.moveTo(g, 3300, 3000)
+    s:run(2)
+    local REACT, HIT = "CharacterState.Hitreact.State.Normal", "/PBZCombatAsset/ActorData/Move/Hit1.Hit1"
+    local ATTACK, ATTACK2 = "/PBZCombatAsset/ActorData/Move/E1.E1", "/PBZCombatAsset/ActorData/Move/E2.E2"
+    local copy, theirs = Session.enemyOn(g, "boss"), Session.enemyOn(h, "boss")
+    local function stateOf(e)
+        return field(field(e, "hit"), "state")
+    end
+    local function playing(e)
+        local m = field(field(e, "anim"), "montage")
+        return m and m:GetFullName():gsub("^%S+ ", "") or "-"
+    end
+    local function guestHit()
+        Session.enemyMove(g, "boss", HIT)
+        Fake.put(field(copy, "hit"), "state", REACT)
+        swing(g, copy, select(1, Fake.health(copy)) - 50)
+        s:run(0.5)
+    end
+    Session.enemyMove(h, "boss", ATTACK)
+    s:run(0.5)
+    guestHit()
+    check(playing(theirs) == ATTACK and stateOf(theirs) ~= REACT,
+        "a guest's hit doesn't cut the boss's own attack short (" .. playing(theirs) .. ")")
+    -- The guest's copy, flinching at that hit, still takes the host's next move.
+    Session.enemyMove(h, "boss", ATTACK2)
+    s:run(0.5)
+    check(playing(copy) == ATTACK2, "the guest's boss copy, in a flinch of its own, still plays the host's next move ("
+        .. playing(copy) .. ")")
+    Fake.put(field(copy, "hit"), "state", "None")
+    Session.enemyMove(h, "boss", nil)
+    s:run(0.5)
+    guestHit()
+    check(playing(theirs) == HIT, "between its moves, a guest's hit makes the boss flinch (" .. playing(theirs) .. ")")
+    Fake.put(field(copy, "hit"), "state", "None")
+    Fake.put(field(theirs, "hit"), "state", "None")
+    Session.enemyMove(h, "boss", nil)
+    s:run(0.5)
+    guestHit()
+    check(playing(theirs) ~= HIT, "but not again a moment later: one now and then, so it can fight back (" .. playing(theirs) .. ")")
+    Fake.put(field(copy, "hit"), "state", "None")
+    Session.enemyMove(h, "boss", ATTACK)
+    Fake.put(field(theirs, "AttributeSetBase").Shachi, "CurrentValue", 0)
+    s:run(0.5)
+    guestHit()
+    check(playing(theirs) == HIT, "a posture break always plays, in a move or not (" .. playing(theirs) .. ")")
+    allErrors(s)
+end
+
 -- A boss beaten in co-op is beaten in both saves, and two saves that disagree are brought round to the host's.
 local function beatenInBoth()
     part("a boss beaten in both worlds")
@@ -5170,6 +5226,7 @@ return function(print_, scripts)
     guestRunsWhatsNearIt()
     syncRaces()
     hitReactions()
+    bossReactions()
     rests()
     sits()
     sitsForTwo()

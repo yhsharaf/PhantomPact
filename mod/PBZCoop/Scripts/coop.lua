@@ -2222,6 +2222,30 @@ return function(api)
         end
     end
 
+    -- A boss's flinch at a partner's hit, played on the boss itself only now and then. (Every one was: the copy's flinch,
+    -- forced with every montage stopped, cut the boss's attack with no hit and held it 0.3-2.5 s where it can't start a move;
+    -- with two players hitting it, it never fought back. Nexus reports on 1.6.6: "it gets continuously hit and can't fight
+    -- back".) A posture break always plays. In a move of its own its own poise decides: the partner's figure's swing reached
+    -- it here already. Between moves, one in BOSS_REACT_S x CoopBossPoise/100. (Fields, not locals: this function is at
+    -- Lua's 200.)
+    net.BOSS_REACT_S = 1.5
+    net.bossReactAt = {}
+    function net.bossMayReact(name, actor)
+        local shachi = game.getPosture and game.getPosture(actor)
+        if shachi and shachi <= 0.5 then
+            return true
+        end
+        if api.puppets and api.puppets.inMove(name) then
+            return false
+        end
+        local now = os.clock()
+        if now < (net.bossReactAt[name] or 0) then
+            return false
+        end
+        net.bossReactAt[name] = now + net.BOSS_REACT_S * ((api.scaling and api.scaling.bossPoise) or 2)
+        return true
+    end
+
     -- from: the slot of the guest who hit it, with more than two players, or nil. Where they are is peerOf(from).target, which
     -- with two players is net.target: anything that asks where "the guest" is must go by that, not by net.target, which in a
     -- host's party is only its first guest here.
@@ -2288,7 +2312,9 @@ return function(api)
                 local real = game.applyDamage(actor, amount, posture, true)
                 -- (What it took, for who the enemy goes for: a floor or a kill takes less than was sent.)
                 game.partnerHit(actor:GetAddress(), from, (before or 0) - (game.getHealth(actor) or before or 0))
-                react(actor)
+                if not boss or net.bossMayReact(name, actor) then
+                    react(actor)
+                end
                 if wasAlive and (real or (game.isDead and game.isDead(actor))) then
                     if real and boss and game.rollLoot then
                         -- The game ran the whole death and paid this player, as for their own blow. A boss's items are
@@ -3503,7 +3529,8 @@ return function(api)
             log("Sending: sequence " .. cine .. ", movement mode " .. tostring(mode) .. ".")
             net.lastCine, net.lastMode = cine, mode
         end
-        if net.pvp and game.watchLocalPlayer then
+        -- (In a match arena.lua's frameMoves does it every frame: here too was a second walk of the whole list.)
+        if net.pvp and not net.arena and game.watchLocalPlayer then
             game.watchLocalPlayer(pawn, sendEvent)    -- ability replays: elsewhere montages say it all (moves.lua)
         end
         -- (Not in the quiet after a load or a trip: see net.QUIET_AFTER_LOAD_S. A host crashed in here, in its first frame

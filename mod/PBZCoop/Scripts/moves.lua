@@ -123,7 +123,9 @@ return function(api)
         local inMove = valid(m)
         net.moveBits = stance.bits and stance.bits + (inMove and BIT.MOVE or 0)
         if not inMove then
-            if last then
+            -- (Not in a match: every world drops U and Z there, where M plays the figure. The review of 1.7.0: half the
+            -- move bytes, sent three times each and forwarded by a party's host, for nothing.)
+            if last and not net.arena then
                 coop.sendEvent("U", "-", "0")     -- over or cut short: the ghost's copy mustn't play on (some loop)
             end
             last = nil
@@ -142,7 +144,7 @@ return function(api)
             if api.revive then
                 api.revive.onLocalMontage(m:GetFName():ToString())
             end
-            if allowedPath(path) then
+            if allowedPath(path) and not net.arena then
                 coop.sendEvent("U", path, string.format("%.2f", pos))
                 moves.sent = moves.sent + 1
             end
@@ -453,7 +455,7 @@ return function(api)
             local m = ai and ai:GetCurrentActiveMontage()
             if valid(m) then
                 local addr, pos = m:GetAddress(), ai:Montage_GetPosition(m) or 0
-                if addr ~= gear.edgeMontage or pos < gear.edgePos - RESTART_S then
+                if (addr ~= gear.edgeMontage or pos < gear.edgePos - RESTART_S) and not net.arena then
                     coop.sendEvent("Z", pathOf(m), string.format("%.2f", pos))
                 end
                 gear.edgeMontage, gear.edgePos = addr, pos

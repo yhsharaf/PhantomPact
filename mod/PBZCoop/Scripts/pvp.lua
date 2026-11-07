@@ -76,6 +76,18 @@ return function(api)
         end)
     end
 
+    -- What a foe's copy of our stats was made from: the few of ours that setting up a match changes (the skill tree, the
+    -- match's levels), three reads. The whole block is copied again only when they've moved: copied every RESTAT_S
+    -- regardless (223 attributes, thousands of calls), a 3v3 hitched 22-55 ms every 2 s for the whole match (the review).
+    local function statSig(pawn)
+        local ok, sig = pcall(function()
+            local a = pawn.AttributeSetBase
+            return string.format("%.1f/%.1f/%.1f", a.Health_Max.CurrentValue, a.Attack.CurrentValue,
+                a.ShachiAttack.CurrentValue)
+        end)
+        return ok and sig or nil
+    end
+
     -- The ghost was spawned as an empty shell (0 health counts as dead, and the dead can't attack): give it a full
     -- stat block. It gets ours, so both fighters hit equally hard and only skill decides; PvPDamage scales it.
     local function giveGhostStats(ghost, pawn)
@@ -326,11 +338,15 @@ return function(api)
                     game.shieldGhost(ghost, false)        -- in a duel the ghost must take real hits
                     giveGhostStats(ghost, pawn)
                     if setHostile(pawn, ghost, true) then
-                        hostile[addr] = { ghost = ghost, at = now }
+                        hostile[addr] = { ghost = ghost, at = now, sig = statSig(pawn) }
                     end
-                elseif (pvp.teams and now - h.at >= RESTAT_S) or h.restat then
-                    h.at, h.restat = now, nil
-                    giveGhostStats(ghost, pawn)
+                elseif h.restat or (pvp.teams and now - h.at >= RESTAT_S) then
+                    h.at = now
+                    local sig = statSig(pawn)
+                    if h.restat or sig == nil or sig ~= h.sig then
+                        h.restat, h.sig = nil, sig
+                        giveGhostStats(ghost, pawn)
+                    end
                 end
                 -- The ghost shows its player's real health (it never drops to 0 here, so it can keep fighting).
                 local t = p.target

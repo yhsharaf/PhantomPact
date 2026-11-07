@@ -1582,10 +1582,31 @@ function Fake.new(id, scripts, ini, link)
         local e = { path = rawget(system, "__path"), on = on, socket = socket:ToString(), active = true }
         pc.effectsOn[#pc.effectsOn + 1] = e
         local n = #pc.effectsOn
-        -- (The component it makes: one that loops is on until turned off.)
-        return { IsValid = function() return not e.destroyed end,
+        -- The component it makes, attached to the body's mesh as the game's is (among its children, with its system): one
+        -- that loops is on until turned off, and one made to destroy itself (as these are) goes once it's off.
+        local fields = type(on) == "table" and rawget(on, "__fields")
+        local kids = fields and fields.children
+        local comp
+        comp = { IsValid = function() return not e.destroyed end,
+            IsA = function(_, cls) return cls == found["/Script/Niagara.NiagaraComponent"] end,
+            GetAsset = function()
+                return { IsValid = function() return true end,
+                    GetFullName = function() return "NiagaraSystem " .. tostring(e.path) end }
+            end,
             GetFName = function() return { ToString = function() return "NiagaraComponent_fx" .. n end } end,
-            Deactivate = function() e.active = false end, K2_DestroyComponent = function() e.destroyed = true end }
+            Deactivate = function()
+                e.active, e.destroyed = false, true
+                for i = #(kids or {}), 1, -1 do
+                    if kids[i] == comp then
+                        table.remove(kids, i)
+                    end
+                end
+            end,
+            K2_DestroyComponent = function() e.destroyed = true end }
+        if kids then
+            kids[#kids + 1] = comp
+        end
+        return comp
     end })
     local particleClass = object(pc, "Class")
     rawset(particleClass, "__path", "/Script/PBZCombatAsset.PBZ_ParticleBullet")

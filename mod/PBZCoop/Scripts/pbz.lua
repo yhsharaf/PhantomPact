@@ -1965,8 +1965,10 @@ return function(api)
         end
         local nowActive = {}
         forEachSpec(asc, function(spec)
-            local ability = spec.Ability
-            if spec.ActiveCount > 0 and valid(ability) then
+            -- (The ability read only for a running one: a wrapper made for each of a couple of hundred, every frame in a
+            -- match, was most of the walk's cost; the review of 1.7.0.)
+            local ability = spec.ActiveCount > 0 and spec.Ability
+            if ability and valid(ability) then
                 local cls = ability:GetClass()
                 local name = cls:GetFName():ToString()
                 -- Only Hun's own moves; background abilities such as GA_LocomotionDriver_3DDefault and the
@@ -2121,16 +2123,33 @@ return function(api)
     -- stayed on for good, stacking, the frame rate lower with each (a player report, 11-06). Each now goes after
     -- itemFx.GHOST_S, and a new one of the same system takes the old one's place.
     -- (On itemFx, not locals: this function is at the 200 Lua allows.)
-    itemFx.GHOST_S, itemFx.onGhost = 8, {}      -- ghost address .. path -> { comp, name }
+    -- Each is found again on the figure by its system when it's time, the figure by its address among the partners': no
+    -- component is kept for those 8 s (a one-shot copy destroys itself in a second or two, and a kept pointer to it is
+    -- what UE4SS can't check; the review of the player-report fixes).
+    itemFx.GHOST_S, itemFx.onGhost = 8, {}      -- ghost address .. path -> { addr, path, at }
     function itemFx.endOnGhost(key)
         local f = itemFx.onGhost[key]
         itemFx.onGhost[key] = nil
-        pcall(function()
-            if f and valid(f.comp) and f.comp:GetFName():ToString() == f.name then
-                f.comp:Deactivate()
-                f.comp:K2_DestroyComponent(f.comp)
+        if not f then
+            return
+        end
+        for _, p in ipairs(api.coop and api.coop.partners() or {}) do
+            if valid(p.ghost) and p.ghost:GetAddress() == f.addr then
+                pcall(function()
+                    local mesh = p.ghost.Mesh
+                    local niagara = StaticFindObject("/Script/Niagara.NiagaraComponent")
+                    for i = mesh:GetNumChildrenComponents() - 1, 0, -1 do
+                        local c = mesh:GetChildComponent(i)
+                        if valid(c) and c:IsA(niagara) then
+                            local a = c:GetAsset()
+                            if valid(a) and a:GetFullName():gsub("^%S+ ", "") == f.path then
+                                c:Deactivate()      -- (it fades out and goes: it was made to destroy itself)
+                            end
+                        end
+                    end
+                end)
             end
-        end)
+        end
     end
     function game.ghostEffect(ghost, path, socket)
         if not (path:match("^/[%w_/%-]+%.[%w_%-]+$") and #path <= 200 and socket:match("^[%w_]+$")) then
@@ -2142,8 +2161,10 @@ return function(api)
             pcall(LoadAsset, path)
             sys = StaticFindObject(path)
         end
-        local key = tostring(ghost:GetAddress()) .. path
-        itemFx.endOnGhost(key)
+        local addr = ghost:GetAddress()
+        local key = tostring(addr) .. path
+        itemFx.onGhost[key] = itemFx.onGhost[key] or { addr = addr, path = path }
+        itemFx.endOnGhost(key)          -- (the old one's place: a new one of the same system takes it)
         return (pcall(function()
             if valid(sys) and sys:IsA(StaticFindObject("/Script/Niagara.NiagaraSystem"))
                 and ghost:IsA(StaticFindObject("/Script/Engine.Character")) then
@@ -2151,7 +2172,7 @@ return function(api)
                     ghost.Mesh, FName(socket), { X = 0.0, Y = 0.0, Z = 0.0 }, { Pitch = 0.0, Yaw = 0.0, Roll = 0.0 }, 0, true, true,
                     0, true)
                 if valid(comp) then
-                    local f = { comp = comp, name = comp:GetFName():ToString() }
+                    local f = { addr = addr, path = path }
                     itemFx.onGhost[key] = f
                     game.after(itemFx.GHOST_S, function()
                         if itemFx.onGhost[key] == f then
@@ -2422,6 +2443,15 @@ return function(api)
             return true
         end
         return false
+    end
+
+    -- A copy's own flinch let go, so the host's move for it plays at once (puppets.lua's A, for a boss: the host says when a
+    -- boss flinches, the copy's was only a guess).
+    function game.clearHitState(actor)
+        local state, comp = game.hitStateOf(actor)
+        if comp and state and state ~= "None" then
+            pcall(function() comp:ChangeHitState({ TagName = FName("None") }, nil, false) end)
+        end
     end
 
     -- PvP: the local player reacts to a hit the game itself didn't deal (a parried swing).
@@ -3423,21 +3453,29 @@ return function(api)
         return spot, { X = mid.X, Y = mid.Y, Z = mid.Z - 50 }      -- (aim looks 60 over what it's given)
     end
 
-    local function cinemaFrame(run, bodies, from, seconds, side)
-        if run ~= cinemaRun or not valid(cinemaCam) then
+    -- One step of the camera, every frame while it plays: coop's frameTicks.cinema. (On game.after's 16 ms loop it moved only
+    -- every second or third frame at a high frame rate, a judder at the moment it's there for; the review of 1.7.0.)
+    local cine = nil            -- { run, bodies, from, seconds, side } while one plays
+    local function cinemaPlace(cam, a, b, t, side)
+        local spot, at = cinemaSpot(a, b, t, side)
+        cam:K2_SetActorLocationAndRotation(spot, aim(spot, at), false, {}, true)
+    end
+    local function cinemaTick()
+        local c = cine
+        if not c then
             return
         end
-        local t = (os.clock() - from) / seconds
-        local a, b = bodies()
+        if c.run ~= cinemaRun or not valid(cinemaCam) then
+            cine = nil
+            return
+        end
+        local t = (os.clock() - c.from) / c.seconds
+        local a, b = c.bodies()
         if t >= 1 or not (valid(a) and valid(b)) then
             game.endCinema()
             return
         end
-        pcall(function()
-            local spot, at = cinemaSpot(a, b, t, side)
-            cinemaCam:K2_SetActorLocationAndRotation(spot, aim(spot, at), false, {}, true)
-        end)
-        game.after(0.016, function() cinemaFrame(run, bodies, from, seconds, side) end)
+        pcall(cinemaPlace, cinemaCam, a, b, t, c.side)
     end
 
     function game.cinema(bodies, seconds, side)
@@ -3468,14 +3506,30 @@ return function(api)
         end)
         if ok then
             cinemaRun = cinemaRun + 1
-            local run, from = cinemaRun, os.clock()
-            game.after(0.016, function() cinemaFrame(run, bodies, from, seconds, side) end)
+            cine = { run = cinemaRun, bodies = bodies, from = os.clock(), seconds = seconds, side = side }
+            local ticks = api.coop and api.coop.frameTicks
+            if ticks then
+                ticks.cinema = cinemaTick
+            else
+                local function loop()
+                    if cine then
+                        cinemaTick()
+                        game.after(0.016, loop)
+                    end
+                end
+                game.after(0.016, loop)
+            end
         end
         return ok
     end
 
     function game.endCinema()
         cinemaRun = cinemaRun + 1
+        cine = nil
+        local ticks = api.coop and api.coop.frameTicks
+        if ticks then
+            ticks.cinema = nil
+        end
         if not valid(cinemaCam) then
             cinemaCam = nil
             return

@@ -1031,13 +1031,17 @@ return function(api)
         log("PvP: set up in the arena.")
     end
 
-    -- A round from its countdown: refilled, on the spot, still; the fight COUNT_S on.
-    local function startRound(m, round)
+    -- A round from its countdown: refilled, on the spot, still; the fight COUNT_S on. age: how old the host's word to count
+    -- is here (a guest), so every world's fight starts at the host's moment. (The review of 1.7.0: each world counted from
+    -- when the word came, the host half a round trip ahead of every guest, every round.)
+    local MAX_COUNT_AGE_S = 0.5
+    local function startRound(m, round, age)
         local _, pawn = pawnNow()
+        local lead = math.max(0, math.min(tonumber(age) or 0, MAX_COUNT_AGE_S))
         m.round = round
         m.down = {}
         m.phase = "count"
-        m.fightAt = os.clock() + COUNT_S
+        m.fightAt = os.clock() + COUNT_S - lead
         m.endsAt = m.timer > 0 and (m.fightAt + m.timer) or nil
         if api.pvp then
             api.pvp.lastHitBy = nil
@@ -1066,7 +1070,7 @@ return function(api)
             end
         end
         if ui() then
-            ui().countdown(COUNT_S, round, m)
+            ui().countdown(COUNT_S - lead, round, m)
         end
     end
 
@@ -1204,18 +1208,36 @@ return function(api)
     -- The game's time in a match, every frame (coop.frameTicks.arenaTime): at 1 for everyone (a perfect dodge's slow
     -- motion slowed only the dodger's game, issue #13), but in the beats this file slows on purpose (beat), held there:
     -- the game puts its own time back each frame (the bench, 11-07: a slowing set once was gone within a frame or two).
+    -- (Named, not a closure each frame; the body sendPlayer already checked this frame: the review of 1.7.0.)
+    local function holdTime(pawn, want)
+        local gs = api.gs()
+        if math.abs(gs:GetGlobalTimeDilation(pawn) - want) > 0.01 then
+            gs:SetGlobalTimeDilation(pawn, want)
+        end
+    end
     local function timeNow(m)
-        local _, pawn = pawnNow()
+        local pawn = coop.localPawn and coop.localPawn()
         if not valid(pawn) then
             return
         end
-        local want = os.clock() < (m.slowUntil or 0) and (m.slowDilation or 1.0) or 1.0
-        pcall(function()
-            local gs = api.gs()
-            if math.abs(gs:GetGlobalTimeDilation(pawn) - want) > 0.01 then
-                gs:SetGlobalTimeDilation(pawn, want)
-            end
-        end)
+        pcall(holdTime, pawn, os.clock() < (m.slowUntil or 0) and (m.slowDilation or 1.0) or 1.0)
+    end
+
+    -- The countdown's end: free to fight on the frame it comes (coop.frameTicks.arenaTime). At the arena's 40 Hz tick it came
+    -- up to 33 ms late, a different lateness on each PC (the review of 1.7.0).
+    local function startFight(m)
+        if m.phase ~= "count" or os.clock() < (m.fightAt or math.huge) then
+            return
+        end
+        m.phase = "fight"
+        local _, pawn = pawnNow()
+        if valid(pawn) then
+            hold(pawn, false)
+            shield(pawn, false)
+        end
+        if ui() then
+            ui().fight(FIGHT_SHOW_S)
+        end
     end
 
     -- Down, after a moment the camera follows someone still up (the game's spectating, pbz.lua): a teammate fighting on, or
@@ -1289,14 +1311,7 @@ return function(api)
                 game.setBossFog(middleOf(m), true, true)        -- (said once, as they first close: arrive)
             end
         end
-        if m.phase == "count" and now >= m.fightAt then
-            m.phase = "fight"
-            hold(pawn, false)
-            shield(pawn, false)
-            if ui() then
-                ui().fight(FIGHT_SHOW_S)
-            end
-        end
+        startFight(m)
         if m.phase == "fight" then
             if now >= keepAt then
                 keepAt = now + KEEP_S
@@ -1359,6 +1374,17 @@ return function(api)
         return nil
     end
 
+    -- A body's animation, checked first: a call on one that's gone can't be caught, pcall or not (the review of 1.7.0:
+    -- a figure re-made or taken off the world between a match's last blow and its timers).
+    local function animOf(body)
+        if api.moves and api.moves.animOf then
+            return api.moves.animOf(body)
+        end
+        local ai
+        pcall(function() ai = body.Mesh:GetAnimInstance() end)
+        return valid(ai) and ai or nil
+    end
+
     -- One of the game's montages by path, loaded as the moment comes, as moves.lua loads any move. (Not ahead, in the first
     -- countdown: loading right after the arena's trip, its long load just over, crashed the bench host inside UE4SS.)
     local function loadMontage(path)
@@ -1403,14 +1429,20 @@ return function(api)
                 if game.noteGhostMove then
                     game.noteGhostMove(body, BETWEEN_S + FINISH_S)
                 end
-                body.Mesh:GetAnimInstance():Montage_Play(move, 1.0, 0, 0.0, true)
+                local ai = animOf(body)
+                if ai then
+                    ai:Montage_Play(move, 1.0, 0, 0.0, true)
+                end
             end
         end)
         local function rate(r)
             local b = arena.match == m and m.finished ~= slot and coop.playerBody and coop.playerBody(slot)
             local mv = valid(b) and loadMontage(data.DAZED)
             if mv then
-                pcall(function() b.Mesh:GetAnimInstance():Montage_SetPlayRate(mv, r) end)
+                local ai = animOf(b)
+                if ai then
+                    pcall(function() ai:Montage_SetPlayRate(mv, r) end)
+                end
             end
         end
         local sway = swayAfter or DAZED_IN_S
@@ -1422,7 +1454,7 @@ return function(api)
     -- death holds its last frame), let go. Only ours: a move of the player's own plays on.
     local function letGo(body)
         pcall(function()
-            local ai = valid(body) and body.Mesh:GetAnimInstance()
+            local ai = valid(body) and animOf(body)
             local held = valid(ai) and ai:GetCurrentActiveMontage()
             if not valid(held) then
                 return
@@ -1525,7 +1557,7 @@ return function(api)
     local SLOW_S = 1.0              -- (real seconds)
     local THROW_CM_S = 700          -- the body thrown away from the blow, and up
     local THROW_UP_CM_S = 450
-    local CINEMA_AFTER_S = 1.0      -- the camera stays on them this long after the move (with the slow beat in it)
+    local CINEMA_AFTER_S = 0.5      -- the camera stays on them this long after the move (its real length: realLen)
 
     -- Where a body is: a fallen one's mesh (loose on its own), else the body. loose: whether it lies loose.
     local function lyingAt(body)
@@ -1585,16 +1617,17 @@ return function(api)
         local played = false
         if move then
             arena.fall(body, false)
-            played = pcall(function()
+            local ai = victim ~= mySlot() and animOf(body)
+            played = (victim == mySlot() or ai) and pcall(function()
                 if victim == mySlot() then
                     body:PlayAnimMontage(move, 1.0, FName("None"))
                 else
                     if game.noteGhostMove then
                         game.noteGhostMove(body, FINISH_S)
                     end
-                    body.Mesh:GetAnimInstance():Montage_Play(move, 1.0, 0, 0.0, true)
+                    ai:Montage_Play(move, 1.0, 0, 0.0, true)
                 end
-            end)
+            end) or false
         end
         if not played then
             arena.fall(body, true)
@@ -1623,14 +1656,20 @@ return function(api)
                     len = winner:PlayAnimMontage(montage, 1.0, FName("None")) or len
                 else
                     if game.noteGhostMove then
-                        game.noteGhostMove(winner, len + 0.5)
+                        game.noteGhostMove(winner, len + SLOW_S * (1 - SLOW_DILATION) + 0.5)
                     end
-                    winner.Mesh:GetAnimInstance():Montage_Play(montage, 1.0, 0, 0.0, true)
+                    local ai = animOf(winner)
+                    if ai then
+                        ai:Montage_Play(montage, 1.0, 0, 0.0, true)
+                    end
                 end
             end)
         end
+        -- The move's length in real seconds: its slow beat (always inside it, the blow before its end) stretches it. (The
+        -- review of 1.7.0: timed by the montage's own length, the winner was let go 0.8 s before the move's end.)
+        local realLen = len + SLOW_S * (1 - SLOW_DILATION)
         if mine then
-            game.after(len, function()
+            game.after(realLen, function()
                 local _, pawn = pawnNow()
                 if arena.match == m and valid(pawn) then
                     hold(pawn, false)
@@ -1645,10 +1684,10 @@ return function(api)
             end
         end
         if game.cinema then
-            game.cinema(function() return coop.playerBody(by), coop.playerBody(victim) end, len + CINEMA_AFTER_S,
+            game.cinema(function() return coop.playerBody(by), coop.playerBody(victim) end, realLen + CINEMA_AFTER_S,
                 cinemaSide(m, by, victim))
         end
-        m.finishUntil = math.max(m.finishUntil or 0, os.clock() + len + 1.2)
+        m.finishUntil = math.max(m.finishUntil or 0, os.clock() + realLen + CINEMA_AFTER_S + 0.2)
         game.after(f and f.hit or len * 0.5, function()
             if arena.match ~= m then
                 return
@@ -1982,7 +2021,7 @@ return function(api)
         local id, round = rest:match("^(%d+) (%d+)")
         local m = sameMatch(id)
         if m and m.phase ~= "going" then
-            startRound(m, tonumber(round))
+            startRound(m, tonumber(round), net.moveAge and net.moveAge() or 0)
         end
     end
 
@@ -2162,21 +2201,30 @@ return function(api)
     -- hitch, so the match's clock, its countdown and a player falling to 1 health froze for up to 5 s (the review of
     -- 1.7.0). Its world searches (enemies put aside, fog walls) still wait for the quiet: tick() asks.
     local ARENA_TICK_S, arenaTickAt = 1 / 40, 0
+    -- The lobby is built again at most LOBBY_S apart, or at once once the last one sent was let go (lobbySent nil): a choice,
+    -- a READY or a pick sends it themselves. (The review of 1.7.0: built every tick, on every co-op host, ~800 tables a
+    -- second for something that changes at a person's speed.)
+    local LOBBY_S, lobbyAt = 0.5, 0
+    local function arenaTick()
+        if coop.isHost() and net.enabled and not arena.match then
+            local clock = os.clock()
+            if lobbySent == nil or clock >= lobbyAt then
+                lobbyAt = clock + LOBBY_S
+                arena.sendLobby()
+            end
+        elseif not coop.isHost() and arena.lobby and net.partnerGone then
+            arena.lobby, arena.pick.ready = nil, false      -- (the host gone: its lobby and this READY with it)
+        end
+        tick()
+        recover()
+    end
     coop.frameTicks.arena = function()
         local clock = os.clock()
         if clock < arenaTickAt then
             return
         end
         arenaTickAt = clock + ARENA_TICK_S
-        local ok, err = pcall(function()
-            if coop.isHost() and net.enabled and not arena.match then
-                arena.sendLobby()
-            elseif not coop.isHost() and arena.lobby and net.partnerGone then
-                arena.lobby, arena.pick.ready = nil, false      -- (the host gone: its lobby and this READY with it)
-            end
-            tick()
-            recover()
-        end)
+        local ok, err = pcall(arenaTick)
         if not ok and err ~= arena.lastError then
             arena.lastError = err
             log("arena: " .. tostring(err))
@@ -2190,6 +2238,9 @@ return function(api)
         local m = arena.match
         if m and m.phase ~= "going" then
             timeNow(m)
+            if m.phase == "count" then
+                pcall(startFight, m)
+            end
         end
     end
 

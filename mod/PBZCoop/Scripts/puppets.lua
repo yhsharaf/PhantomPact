@@ -207,7 +207,16 @@ return function(api)
             p.reactState, p.reactSince = state, os.clock()
         end
         if state and state ~= "None" and os.clock() - p.reactSince < REACT_S then
-            return
+            -- A boss's moves are the host's to say: when it flinches is decided there now (coop.lua's bossMayReact), so its
+            -- copy's own flinch, a guess, gives way. (Dropped for 2.5 s after every flinch of the copy, the host's attacks never
+            -- came here while both players hit it, and the guest was never hit back: Nexus reports on 1.6.6.)
+            if not (game.isBoss and game.isBoss(actor)) then
+                return
+            end
+            if game.clearHitState then
+                game.clearHitState(actor)
+            end
+            p.reactState, p.reactSince = nil, 0
         end
         local target = p.target
         if target then

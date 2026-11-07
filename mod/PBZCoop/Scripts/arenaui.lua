@@ -82,7 +82,7 @@ return function(api)
     -- A picture by name: made once (again after a map change, when the old widget has gone), then placed and shown each frame.
     local function part(name, tex, w, h, z)
         local p = parts[name]
-        if p and not (api.status and api.status.onScreen(p.widget)) then
+        if p and (p.map ~= coop.net.localMap or not (api.status and api.status.onScreen(p.widget))) then
             parts[name], p = nil, nil
         end
         if not p then
@@ -91,7 +91,7 @@ return function(api)
                 return nil
             end
             pcall(function() widget:SetVisibility(2) end)     -- hidden till put() can size it (see there)
-            p = { widget = widget, tex = tex, w = w, h = h }
+            p = { widget = widget, tex = tex, w = w, h = h, map = coop.net.localMap }
             parts[name] = p
         end
         setTexture(p, tex)
@@ -117,17 +117,29 @@ return function(api)
         end
     end
 
+    -- A picture made on a map that's gone went with it: dropped untouched. (The review of 1.7.0: hidden with a bare valid()
+    -- at every tick of the next match on another map, a gone widget "reads as valid for a while, and moving it crashed".)
+    local function usable(p)
+        return p.map == coop.net.localMap and api.status ~= nil and api.status.onScreen(p.widget)
+    end
+
     local function hide(name)
         local p = parts[name]
-        if p then
+        if p and usable(p) then
             hud.show(p.widget, false)
+        elseif p then
+            parts[name] = nil
         end
     end
 
     local function hideAll(prefix)
         for name, p in pairs(parts) do
             if not prefix or name:sub(1, #prefix) == prefix then
-                hud.show(p.widget, false)
+                if usable(p) then
+                    hud.show(p.widget, false)
+                else
+                    parts[name] = nil
+                end
             end
         end
     end
@@ -465,7 +477,13 @@ return function(api)
 
     function ui.clear()
         count, banner, fightAt = nil, nil, nil
-        hideAll()
+        -- Off the screen for good, not only hidden: the next match may be on another map (usable says why).
+        for name, p in pairs(parts) do
+            if usable(p) then
+                pcall(function() p.widget:RemoveFromParent() end)
+            end
+            parts[name] = nil
+        end
         for slot in pairs(foeBars) do
             hideFoeBar(slot)
         end
