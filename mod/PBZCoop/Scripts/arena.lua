@@ -574,9 +574,10 @@ return function(api)
 
     ------------------------------------------------------------------ this player's world: fair play
 
+    -- (A table too: the simulator's stand-in for the game's struct, so the match's stats are held and put back there as well.)
     local function attr(pawn, name)
         local ok, a = pcall(function() return pawn.AttributeSetBase[name] end)
-        return ok and type(a) == "userdata" and a or nil
+        return ok and (type(a) == "userdata" or type(a) == "table") and a or nil
     end
 
     -- An attribute to exactly `want`, whatever adds to it: its base moved by what the rest made of the last one.
@@ -649,6 +650,14 @@ return function(api)
     -- Everything the match changes, noted first; then the weapons, the loadout, every skill node, the gourd.
     local function setup(pawn, m)
         setVeto(true)
+        -- (Each of the match's stats as it is now, before anything of the match: see restore.)
+        saved.cur = {}
+        for name in pairs(data.STATS) do
+            local at = attr(pawn, name)
+            if at then
+                pcall(function() saved.cur[name] = at.CurrentValue end)
+            end
+        end
         local bp = game.backpackOf(pawn)
         saved.mainOwned, saved.edgeOwned = {}, {}
         local p = arena.preset or arena.loadPreset()
@@ -877,6 +886,21 @@ return function(api)
                     end
                     if #wrong > 0 then
                         log("PvP: the skill tree isn't as it was before the match: " .. table.concat(wrong, ", ") .. ".")
+                    end
+                end
+                -- (A stat still at the value the match held it to gets the player's own back: the base was written back
+                -- above, but the game works a stat out again only when an effect on it changes, and on the bench (11-07)
+                -- both players came home with the match's 160 attack over their own 100, stronger or weaker than their
+                -- own till something made it count again. One whose own is the match's value is left as it is.)
+                for name, want in pairs(data.STATS) do
+                    local at = valid(p) and attr(p, name)
+                    local cur0 = s.cur and s.cur[name]
+                    if at and cur0 then
+                        pcall(function()
+                            if math.abs(at.CurrentValue - want) < 0.5 and math.abs(cur0 - want) >= 0.5 then
+                                at.CurrentValue = cur0
+                            end
+                        end)
                     end
                 end
                 if valid(p) and s.attrs then

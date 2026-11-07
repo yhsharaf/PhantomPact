@@ -50,6 +50,11 @@ return function(out, scripts)
         end
         return n
     end
+    local function attack(pc)
+        local ok, v = pcall(function() return pc.pawn.AttributeSetBase.Attack.CurrentValue end)
+        return ok and v or -1
+    end
+    local attack0 = attack(h)
 
     out("lobby:")
     Session.command(h, "arena place 0")
@@ -133,6 +138,8 @@ return function(out, scripts)
     -- (The game's DeactivateAllNodes took a player's own nodes too, and nothing put them back: the next save kept that.)
     check(onNodes(h) == OWN and h.slots.HeiShi == true, "home: the host's own three nodes on, its talisman slot open: " .. onNodes(h))
     check(onNodes(g) == "", "the guest's tree as it was, nothing on: " .. onNodes(g))
+    check(math.abs(attack(h) - attack0) < 0.5, string.format("and its attack its own again, %.0f, not the match's: %.0f",
+        attack0, attack(h)))
     check(count(h.treeCalls, "AllNodes") == 0 and count(g.treeCalls, "AllNodes") == 0
         and count(h.treeCalls, "^DeactivateNode HeiShi1$") == 0, "the whole tree never switched, nor a node of the player's own")
 
