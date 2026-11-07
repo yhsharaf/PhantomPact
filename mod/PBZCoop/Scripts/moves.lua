@@ -144,7 +144,9 @@ return function(api)
             if api.revive then
                 api.revive.onLocalMontage(m:GetFName():ToString())
             end
-            if allowedPath(path) and not net.arena then
+            -- (In a match only the guard's answer to a blow: the game starts that one itself, not one of the player's
+            -- abilities, so no M brings it, and the other side saw its blow go home on a figure that had turned it aside.)
+            if allowedPath(path) and (not net.arena or (game.isGuardReaction and game.isGuardReaction(path))) then
                 coop.sendEvent("U", path, string.format("%.2f", pos))
                 moves.sent = moves.sent + 1
             end
@@ -236,7 +238,8 @@ return function(api)
             return
         end
         moves.partnerSends = true
-        if net.pvp or not valid(p.ghost) or p.ghostHidden then
+        -- (In PvP the figure plays their abilities, M, but for the guard's answer to a blow: see the sending side.)
+        if (net.pvp and not (game.isGuardReaction and game.isGuardReaction(path))) or not valid(p.ghost) or p.ghostHidden then
             return
         end
         local m = montage(path)

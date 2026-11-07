@@ -7,9 +7,10 @@
 -- they land in your opponent's world, where your ghost swings at them.
 --
 -- Parrying pays off like against a boss. The game's deflect leaves an attacking player unharmed, so the mod judges
--- it on the defender's side: your guard (stance) came up during your opponent's swing, you were in reach, and it
--- cost you neither health nor posture (a plain block costs posture). Then your opponent staggers and loses posture
--- ("V parry"), and you see their ghost stagger too.
+-- it on the defender's side, by the game's own deflect: your guard, raised to meet their blow, answered it (the game's
+-- Defence move), you were in reach, and it cost you neither health nor posture (a guard held from before only blocks:
+-- the game turns the blow aside, nothing more). That moment your opponent staggers and loses posture ("V parry"), and
+-- you see their figure stagger too; they see yours turn the blow aside (moves.lua sends that one move in a match).
 --
 -- PvPvE: death decides. The loser really dies (and respawns at their bell, as after any death). A death within a few
 -- seconds of your partner's last hit counts as their win ("V lose"); dying to an enemy doesn't. In a match, arena.lua keeps
@@ -165,8 +166,12 @@ return function(api)
 
     local lastPartnerHitAt = -100   -- os.clock() of the partner's last hit on us
     local deathScored = false       -- this death was already reported (until we're alive again)
-    -- One opponent's swing at a time each (watchParry): what we looked like when it started, and whether our guard came up.
-    local swings = {}               -- slot -> { hp, posture, guarded, spoiled }
+    -- Each foe's latest attack, watched SWING_S from its start (their M): what we looked like then, and whether it's settled.
+    local swings = {}               -- slot -> { at, hp, posture, low, done }
+    local SWING_S = 1.2             -- (a light blow lands about 0.3 s into its move: the bench, 11-07)
+    local BLOCK_POSTURE = 20        -- our guard's answer that cost more posture than this was a block, not a deflect
+    local GUARD_LEAD_S = 0.15       -- a guard raised this long before their attack came still met it (a read of it)
+    local guard = { addr = nil, pos = 0 }      -- our own guard's last answer to a blow (watchGuard)
     local function watchDeath(pawn)
         local hp = game.getHealth(pawn)
         local dead = (hp ~= nil and hp <= 0) or game.isDead(pawn)
@@ -176,7 +181,7 @@ return function(api)
         end
         if not deathScored then
             deathScored = true
-            -- A killing blow from full-ish health can land and kill within one tick, before watchParry noted the
+            -- A killing blow from full-ish health can land and kill within one tick, before watchSwing noted the
             -- hit: a partner swing in progress counts as their hit too.
             if next(swings) ~= nil or os.clock() - lastPartnerHitAt <= KILL_WINDOW_S then
                 coop.sendEvent("V", "lose")
@@ -187,83 +192,91 @@ return function(api)
         end
     end
 
-    -- Active move names on an actor (GA_Hun_* only: attacks, stance, dashes).
-    local function activeMoves(actor)
-        local bl = StaticFindObject("/Script/GameplayAbilities.Default__AbilitySystemBlueprintLibrary")
-        local asc = valid(bl) and bl:GetAbilitySystemComponent(actor) or nil
-        local out = {}
-        if not valid(asc) then
-            return out
+    -- A move off the wire (coop.lua: p.movePath, its ability's class) that's an attack: not a guard, a dash or dodge, an
+    -- escape, or a passive. (A passive is always on: GA_Hun_ShachiHook_Passive_C on every figure. Taken for a swing, it kept
+    -- every swing open for good, and not one parry was ever judged in a match: the bench, 11-07.)
+    local function isAttack(path)
+        local name = path and path:match("([^.]+)$")
+        return name ~= nil and name:find("^GA_") ~= nil and not (name:find("Stance") or name:find("Dash")
+            or name:find("Dodge") or name:find("Deflect") or name:find("Escape") or name:find("Passive"))
+    end
+
+    -- A foe's attack opens a swing, from their M (coop.lua: p.moveAt): what we looked like then. Their blow landing settles it
+    -- (no parry from it) and says who struck last; it shuts SWING_S after its start.
+    local function watchSwing(slot, p, now, hp, posture)
+        local s = swings[slot]
+        if p.moveAt and (not s or s.at ~= p.moveAt) and now - p.moveAt <= SWING_S and isAttack(p.movePath) then
+            s = { at = p.moveAt, hp = hp, posture = posture }
+            swings[slot] = s
         end
-        pcall(function()
-            asc.ActivatableAbilities.Items:ForEach(function(_, elem)
-                local spec = elem:get()
-                if spec.ActiveCount > 0 and valid(spec.Ability) then
-                    local name = spec.Ability:GetClass():GetFName():ToString()
-                    if name:find("^GA_Hun") then
-                        out[#out + 1] = name
-                    end
-                end
-            end)
-        end)
-        return out
-    end
-
-    local function isAttack(name)
-        return not (name:find("Stance") or name:find("Dash") or name:find("Dodge") or name:find("Deflect")
-            or name:find("Escape"))
-    end
-
-    -- slot: whose ghost this is. In a party the parry names the attacker (only they stagger); two players need no name.
-    -- p: that player. (A figure only starts a move from their M (coop.lua: p.moveAt): with none in the last second and no
-    -- swing open, it can't be swinging, and its whole ability list isn't walked, 30 times a second for each foe.)
-    local function watchParry(pawn, ghost, slot, ownMoves, p)
-        if not swings[slot] and os.clock() - (p and p.moveAt or -1e9) > 1.0 then
+        if not s then
             return
         end
-        local attacking = false
-        for _, name in ipairs(activeMoves(ghost)) do
-            if isAttack(name) then
-                attacking = true
-            end
-        end
-        local hp, posture = game.getHealth(pawn), game.getPosture(pawn)
-        local swing = swings[slot]
-        if attacking and not swing then
-            swing = { hp = hp, posture = posture, guarded = false }
-            swings[slot] = swing
-        end
-        if swing then
-            for _, name in ipairs(ownMoves()) do
-                if name:find("Stance") then
-                    swing.guarded = true
-                end
-            end
-            -- A hit or a block during the swing settles it: no parry.
-            if hp and swing.hp and hp < swing.hp - 0.5 then
-                swing.spoiled = true
-                lastPartnerHitAt = os.clock()
-                pvp.lastHitBy = slot
-            elseif posture and swing.posture and posture < swing.posture - 0.5 then
-                swing.spoiled = true
-            end
-        end
-        if swing and not attacking then
-            local near = api.distance(pawn:K2_GetActorLocation(), ghost:K2_GetActorLocation()) <= PARRY_REACH_CM
-            if swing.guarded and not swing.spoiled and near then
-                local cost = pvp.teams and MATCH_PARRY_POSTURE or pvp.parryPosture
-                if net.party then
-                    coop.sendEvent("V", "parry", string.format("%.0f", cost), slot)
-                else
-                    coop.sendEvent("V", "parry", string.format("%.0f", cost))
-                end
-                if game.playHitReaction then
-                    game.playHitReaction(ghost, STAGGER_TAG)
-                end
-                log(string.format("PvP: PARRIED! Your partner staggers (-%.0f posture).", cost))
-            end
+        if now - s.at > SWING_S then
             swings[slot] = nil
+        elseif hp and hp < (s.low or s.hp or hp) - 0.5 then
+            s.done, s.low = true, hp
+            lastPartnerHitAt = now
+            pvp.lastHitBy = slot
         end
+    end
+
+    -- Our guard's answer to a blow, the game's own: the montage it plays now (its address and position), or nil.
+    local function guardReaction(pawn)
+        local addr, pos = nil, 0
+        pcall(function()
+            local ai = pawn.Mesh:GetAnimInstance()
+            local m = valid(ai) and ai:GetCurrentActiveMontage()
+            if valid(m) and game.isGuardReaction(m:GetFName():ToString()) then
+                addr, pos = m:GetAddress(), ai:Montage_GetPosition(m) or 0
+            end
+        end)
+        return addr, pos
+    end
+
+    -- A parry, judged by the game's own deflect, and timed: our guard raised to meet their blow (the bench, 11-07: a guard
+    -- pressed as the blow comes plays a Defence montage and costs nothing; one already held when it came plays the same and
+    -- costs nothing either, so the game turns aside every blow into a held guard, and a stagger for each made holding it the
+    -- whole match's answer; a swing that never reached us plays none, guard or not). A new answer of our guard while foes'
+    -- swings are open settles the nearest of them in reach whose blow was due (begun before the answer). Raised after their
+    -- attack came (GUARD_LEAD_S), nothing lost: our foe staggers and loses posture ("V parry", at once: it waited for their
+    -- swing's end before), and their figure here staggers too. Held from before, or costing posture: the game's block alone.
+    -- open: slot -> that foe's figure, this tick's (none kept).
+    local function watchGuard(pawn, open, now, hp, posture)
+        local addr, pos = guardReaction(pawn)
+        local fresh = addr ~= nil and (addr ~= guard.addr or pos < guard.pos - 0.05)
+        guard.addr, guard.pos = addr, pos
+        if not fresh then
+            return
+        end
+        local at = pawn:K2_GetActorLocation()
+        local best, bestD = nil, PARRY_REACH_CM
+        for slot, ghost in pairs(open) do
+            local s = swings[slot]
+            local d = s and not s.done and now - s.at >= pos - 0.1 and api.distance(at, ghost:K2_GetActorLocation())
+            if d and d <= bestD then
+                best, bestD = slot, d
+            end
+        end
+        local s = best and swings[best]
+        if not s then
+            return
+        end
+        s.done = true
+        if (hp and s.hp and hp < s.hp - 0.5) or (posture and s.posture and posture < s.posture - BLOCK_POSTURE)
+            or (game.guardUpAt or -1e9) < s.at - GUARD_LEAD_S then
+            return          -- (a block: our guard was up before their attack, or the game took it out of our posture)
+        end
+        local cost = pvp.teams and MATCH_PARRY_POSTURE or pvp.parryPosture
+        if net.party then
+            coop.sendEvent("V", "parry", string.format("%.0f", cost), best)
+        else
+            coop.sendEvent("V", "parry", string.format("%.0f", cost))
+        end
+        if game.playHitReaction then
+            game.playHitReaction(open[best], STAGGER_TAG)
+        end
+        log(string.format("PvP: PARRIED! Your partner staggers (-%.0f posture).", cost))
     end
 
     local function slotOf(p)
@@ -329,12 +342,8 @@ return function(api)
         if not valid(pawn) then
             return
         end
-        local own = nil
-        local function ownMoves()
-            own = own or activeMoves(pawn)
-            return own
-        end
         local now = os.clock()
+        local hp, posture, open = nil, nil, nil     -- (ours, read once a tick only while a foe's move is fresh)
         for addr, f in pairs(want) do
             local p, ghost = f.p, f.p.ghost
             if not p.ghostHidden then
@@ -367,7 +376,16 @@ return function(api)
                     end
                     game.setHealth(ghost, math.max(1, t.Hp))
                 end
-                watchParry(pawn, ghost, f.slot, ownMoves, p)
+                if swings[f.slot] or (p.moveAt and now - p.moveAt <= SWING_S) then
+                    if hp == nil then
+                        hp, posture = game.getHealth(pawn), game.getPosture(pawn)
+                    end
+                    watchSwing(f.slot, p, now, hp, posture)
+                    if swings[f.slot] then
+                        open = open or {}
+                        open[f.slot] = ghost
+                    end
+                end
                 -- Keep the ghost's posture pool from emptying here (their real posture lives on their PC). (Only when it's
                 -- below the top: a read of memory, not two writes, a tick.)
                 local gmax = attr(ghost, "Shachi_Max")
@@ -379,6 +397,11 @@ return function(api)
                     end
                 end
             end
+        end
+        if open and game.isGuardReaction then
+            watchGuard(pawn, open, now, hp, posture)
+        else
+            guard.addr = nil
         end
     end
     coop.extraTicks.pvp = tick

@@ -1733,6 +1733,7 @@ function Fake.new(id, scripts, ini, link)
             if m == nil then
                 m = object(pc, "AnimMontage", { BlendOutTriggerTime = -1.0, BlendOut = { BlendTime = 0.25 } })
                 rawset(m, "__path", path)
+                rawset(m, "__name", path:match("([^.]+)$"))    -- (its own name, as the game's: pvp.lua reads a guard's by it)
                 defs(pc, m, { GetPlayLength = function() return 1.5 end })
                 pc.montages[path] = m
             end

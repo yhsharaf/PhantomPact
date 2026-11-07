@@ -1412,6 +1412,16 @@ return function(api)
             end
         end
         watchTeam(m, now)
+        -- The game's tip to drink, off while this player can't drink: down, beaten (the match decided, on the clock too), or
+        -- held through their own finishing move. It stayed up by the gourd through the deciding blow, the dazed wait and the
+        -- move (the bench, 11-07). Looked up only when that changes.
+        local team = myTeam()
+        local cant = (m.down[mySlot()] or (m.decidedFor and team ~= m.decidedFor)
+            or ((m.phase == "finish" or m.phase == "result") and team ~= m.winner) or now < (m.heldUntil or 0)) and true or nil
+        if cant ~= m.hintHidden and game.potionHint then
+            m.hintHidden = cant
+            game.potionHint(not cant)
+        end
         -- Each player's own clock, the finishing window put back by a finishing move.
         if m.phase == "finish" and now >= (m.finishUntil or 0) then
             arena.showResult(m)
@@ -1558,6 +1568,7 @@ return function(api)
     -- beaten up again, dazed, waiting for the end to the game's own near-death heartbeat.
     local KILL_DILATION, KILL_S = 0.2, 1.4
     local function decided(m, winner)
+        m.decidedFor = winner       -- (the tip to drink goes for its losers: tick)
         beat(m, KILL_DILATION, KILL_S)
         sound("decided")
         if ui() and ui().decided then
@@ -1754,6 +1765,7 @@ return function(api)
         -- review of 1.7.0: timed by the montage's own length, the winner was let go 0.8 s before the move's end.)
         local realLen = len + SLOW_S * (1 - SLOW_DILATION)
         if mine then
+            m.heldUntil = os.clock() + realLen      -- (no tip to drink while the move holds them: tick)
             game.after(realLen, function()
                 local _, pawn = pawnNow()
                 if arena.match == m and valid(pawn) then
@@ -1878,6 +1890,9 @@ return function(api)
         end
         if game.endCinema then
             game.endCinema()
+        end
+        if m.hintHidden and game.potionHint then
+            game.potionHint(true)
         end
         if m.watching and game.spectate then
             game.spectate(nil)

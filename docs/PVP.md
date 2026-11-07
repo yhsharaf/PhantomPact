@@ -25,10 +25,14 @@ Two ways to fight each other:
 
 ## The finishing move
 
-A winner who presses F within 9 m of a dazed foe in the finishing window (7 s, F taken till 1.5 s before its end, so the move reaches every screen in time) steps in before them, facing them, and plays a boss's move
-the game keeps for the player's own body (`FINISHERS` in `arenas.lua`): the club bosses' leap and two-handed slam. (The archer
-Du Yan's point-blank shot was a second one; the user found it poor, so it went.) Every screen cuts to a camera beside the two, low,
-turning round them from the winner's face to the beaten's as the move plays, as a fighting game shows its finishing moves. As it
+A winner who presses F within 9 m of a dazed foe in the finishing window (7 s, F taken till 1.5 s before its end, so the move reaches every screen in time) steps in before them, facing them, and plays an execution
+the game keeps for the player's own body (`FINISHERS` in `arenas.lua`): the Infernal Rouge's, `Hun_HeiMoShang_EXE_F_04`, a
+spinning grab and an overhead cut. (The club bosses' leap and slam came first, and Du Yan's point-blank shot; the user found
+the leap wrong and the shot poor, so both went.) Every screen cuts to a camera beside the two, low, turning round them from the
+winner's face to the beaten's as the move plays, as a fighting game shows its finishing moves. It keeps clear of rock and wall
+as the game's own camera arm does: the line from the two to it is traced each frame and it comes in before anything on it, and
+when it starts it takes the side of the pair (or a higher view) whose line stays clearest through the move. (The bench, 11-07:
+"here" on a river bank it had turned into a slope of rock and bush, and the move played behind them on both screens.) As it
 lands the game slows to 0.2 for a second (held every frame: the game puts its own time back each frame), the game's musical hit
 sounds, and the beaten dies as the game shows a player's death (`DEATH`, its own death animation, held on its last frame till
 everyone goes home). Every player sees it: the winner's world plays it on the winner, every other world on the winner's figure
@@ -122,11 +126,28 @@ The four stats the match holds (health, attack, Phantom Edge energy and its atta
 and one still at the match's value at the end gets the player's own back: the game works a stat out again only when an
 effect on it changes, and on the bench (11-07) both players came home with the match's 160 attack over their own 100.
 
-Open: a parry is judged by this player's guard (the stance) being up at some tick of the foe figure's swing with no health
-or posture lost, so guarding through a swing that never reached you can count. A rule on the game's own deflect needs a
-real deflect to look at: on the bench a scripted guard or stance ends at once (no key held), so it waits for a hands-on
-test. (Seen there: the game's guard is GA_Hun_Tang_HoldDeflect, its deflect BP_PlayerDeflectPassive, and a hit plays
-Hun_TangBlade_Hit_Light_*.)
+Parries go by the game's own deflect. On the bench (11-07) the guard was pressed for real: the game's `IA_Deflect` and
+`IA_Stance` are on the right mouse button (and the left shoulder), and a keyboard key bound to them in the bench copy's
+memory took key presses posted to its window (a posted mouse button never reached the game). Against a light attack:
+
+- pressed 60 to 220 ms after the attack starts on the defender's screen: the game plays `Hun_Tang_DefenceNormal_A/B/C` and
+  nothing is lost;
+- pressed 300 ms after or later: the blow lands (250 health, about 230 posture);
+- held from before it (0.4 to 1.7 s): the same Defence move, and nothing lost either, only the guard's own upkeep of about
+  20 posture a second (traced frame by frame; the first tries had read about 170 lost, which never came again);
+- a blow that never reached: no Defence move at all.
+
+So the game turns aside every blow that meets a guard, held or not, and a stagger for each would make holding the guard the
+whole match's answer. A parry is the timed one, as in a fighting game. `pvp.lua` opens a swing at each foe attack's `M` (by
+its ability class) and settles it at this player's next Defence move. The guard raised after that attack came (150 ms of
+grace, for a read of it), nothing lost and the foe in reach (3.5 m): a parry, sent that moment (`V parry`). The attacker
+staggers and loses 60 posture, and their figure staggers here. A guard held from before, an answer that cost posture, a hit
+or a blow that never came: the game's own block or nothing, no stagger. The rule before looked for any running ability on
+the foe's figure, and every figure always runs a passive (`GA_Hun_ShachiHook_Passive_C`), so its swing never ended and not
+one parry was ever judged in a match.
+
+In a match the Defence move is the one montage sent (`U`): the game starts it itself, not as one of the player's abilities,
+so no `M` brought it, and the attacker saw their blow go home on a figure that had turned it aside.
 
 ## Arenas
 

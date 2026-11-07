@@ -2046,6 +2046,13 @@ return function(api)
         return name:find("^GA_Hun") ~= nil and name:find("Passive", 1, true) == nil
     end
 
+    -- A guard's answer to a blow, by its montage's name or path: the game plays Hun_<weapon>_DefenceNormal_* for a deflect
+    -- and for a block alike (the bench, 11-07). Not the stance's own enter and exit. (pvp.lua judges a parry by it; moves.lua
+    -- sends it in a match.)
+    function game.isGuardReaction(name)
+        return name ~= nil and name:find("Defence", 1, true) ~= nil and name:find("Stance", 1, true) == nil
+    end
+
     function game.watchLocalPlayer(pawn, sendEvent)
         local asc = abilitySystem(pawn)
         if not asc then
@@ -2068,6 +2075,9 @@ return function(api)
                         -- The facing at the start of the move, so the ghost swings where the player aimed.
                         sendEvent("M", path, string.format("%.1f", pawn:K2_GetActorRotation().Yaw))
                         localMoveAt = os.clock()
+                        if name:find("Stance", 1, true) then
+                            game.guardUpAt = localMoveAt        -- (pvp.lua: a parry is a guard raised to meet the blow)
+                        end
                     end
                 end
             end
@@ -3582,24 +3592,126 @@ return function(api)
     local CINE_FAR_CM, CINE_NEAR_CM = 560, 380
     local CINE_HIGH_CM, CINE_LOW_CM = 110, 30           -- above the bodies' middles
     local CINE_FOV = 55
+    -- Kept clear of rock and wall as the game's own camera arm is: the line from the two to the camera is traced (the
+    -- visibility channel, the two left out), the camera comes in before anything on it at once and goes back out gently,
+    -- never past it. And when it starts, the side of the pair (or a higher view) whose line stays clearest through the move;
+    -- one that loses its room on the way cuts to another, or stays where it last had room. (The bench, 11-07: "here" on a
+    -- river bank it turned into a slope of rock and bush, and the move played behind them on both screens.)
+    local CLEAR = { FROM_CM = 60, MARGIN_CM = 35, MIN_CM = 150, OUT_CM_S = 300, LIFT_CM = 170, REPICK_S = 0.25,
+        SAMPLES = { 0, 0.3, 0.6, 1 }, NONE = { R = 0, G = 0, B = 0, A = 0 } }
 
-    local function cinemaSpot(a, b, t, side)
+    local function cinemaSpot(a, b, t, side, lift)
         local la, lb = a:K2_GetActorLocation(), b:K2_GetActorLocation()
         local mid = { X = (la.X + lb.X) / 2, Y = (la.Y + lb.Y) / 2, Z = (la.Z + lb.Z) / 2 }
         local e = t * t * (3 - 2 * t)
         local turn = math.atan(lb.Y - la.Y, lb.X - la.X) + side * math.rad(CINE_FROM_DEG + (CINE_TO_DEG - CINE_FROM_DEG) * e)
         local r = CINE_FAR_CM + (CINE_NEAR_CM - CINE_FAR_CM) * e
         local spot = { X = mid.X + math.cos(turn) * r, Y = mid.Y + math.sin(turn) * r,
-            Z = mid.Z + CINE_HIGH_CM + (CINE_LOW_CM - CINE_HIGH_CM) * e }
-        return spot, { X = mid.X, Y = mid.Y, Z = mid.Z - 50 }      -- (aim looks 60 over what it's given)
+            Z = mid.Z + CINE_HIGH_CM + (CINE_LOW_CM - CINE_HIGH_CM) * e + (lift or 0) }
+        return spot, { X = mid.X, Y = mid.Y, Z = mid.Z - 50 }, mid      -- (aim looks 60 over what it's given)
+    end
+
+    -- The line to a camera spot from beside the two (FROM_CM out of their middle toward it: past both bodies): how much of
+    -- it is free, where it starts, its length.
+    function CLEAR.line(a, b, spot, mid)
+        local dx, dy, dz = spot.X - mid.X, spot.Y - mid.Y, spot.Z - mid.Z
+        local len = math.sqrt(dx * dx + dy * dy + dz * dz)
+        if len <= CLEAR.FROM_CM + 1 then
+            return 0, spot, 0
+        end
+        local k = CLEAR.FROM_CM / len
+        local from = { X = mid.X + dx * k, Y = mid.Y + dy * k, Z = mid.Z + dz * k }
+        local free, hit = len - CLEAR.FROM_CM, {}
+        local ksl = StaticFindObject("/Script/Engine.Default__KismetSystemLibrary")
+        if valid(ksl) then
+            local ok, got = pcall(function()
+                return ksl:LineTraceSingle(a, from, spot, 0, false, { b }, 0, hit, true, CLEAR.NONE, CLEAR.NONE, 0)
+            end)
+            if ok and got and type(hit.Distance) == "number" then
+                free = math.min(free, hit.Distance)
+            end
+        end
+        return free, from, len - CLEAR.FROM_CM
+    end
+
+    -- Room on a line for the camera in front of what's on it, MIN_CM from the two's middle at least.
+    function CLEAR.roomy(free, full)
+        return free >= full or free - CLEAR.MARGIN_CM >= CLEAR.MIN_CM - CLEAR.FROM_CM
+    end
+
+    -- How clear a way round the pair stays from t0 on: the free share of its line at a few points of what's left of the move.
+    -- A point with no room (the camera would have to go into what's there) counts -1, so a way with one loses to any without.
+    -- (The review: averaged, a way into a boulder at the move's end still won.)
+    function CLEAR.score(a, b, side, lift, t0)
+        local sum = 0
+        for _, k in ipairs(CLEAR.SAMPLES) do
+            local spot, _, mid = cinemaSpot(a, b, t0 + (1 - t0) * k, side, lift)
+            local free, _, full = CLEAR.line(a, b, spot, mid)
+            if CLEAR.roomy(free, full) then
+                sum = sum + (full > 0 and math.min(1, free / full) or 1)
+            else
+                sum = sum - 1
+            end
+        end
+        return sum / #CLEAR.SAMPLES
+    end
+
+    -- The side given (arena.lua's: toward the arena's middle), else the other, else either from higher up: the clearest from
+    -- t0 on, the earlier on a near tie.
+    function CLEAR.pick(a, b, side, t0)
+        local best, bestSide, bestLift = -math.huge, side, 0
+        for _, try in ipairs({ { side, 0 }, { -side, 0 }, { side, CLEAR.LIFT_CM }, { -side, CLEAR.LIFT_CM } }) do
+            local s = CLEAR.score(a, b, try[1], try[2], t0 or 0)
+            if s > best + 0.05 then
+                best, bestSide, bestLift = s, try[1], try[2]
+            end
+            if best >= 0.99 then
+                break
+            end
+        end
+        return bestSide, bestLift, best
     end
 
     -- One step of the camera, every frame while it plays: coop's frameTicks.cameras. (On game.after's 16 ms loop it moved only
     -- every second or third frame at a high frame rate, a judder at the moment it's there for; the review of 1.7.0.)
-    local cine = nil            -- { run, bodies, from, seconds, side } while one plays
-    local function cinemaPlace(cam, a, b, t, side)
-        local spot, at = cinemaSpot(a, b, t, side)
+    -- False when it has nowhere to be: no room on its line, none on another way round, and no spot it had room at before.
+    local cine = nil            -- { run, bodies, from, seconds, side, lift, reach, at, last, repickAt } while one plays
+    local function cinemaPlace(cam, a, b, t, c)
+        local spot, at, mid = cinemaSpot(a, b, t, c.side, c.lift)
+        local free, from, full = CLEAR.line(a, b, spot, mid)
+        local now = os.clock()
+        -- Something within MIN_CM of the two on its line (the review: the floor put the camera into it): another way round
+        -- from here, cut to, looked for at most every REPICK_S.
+        if not CLEAR.roomy(free, full) and now >= (c.repickAt or 0) then
+            c.repickAt = now + CLEAR.REPICK_S
+            local s, lift = CLEAR.pick(a, b, c.side, t)
+            if s ~= c.side or lift ~= c.lift then
+                local spot2, at2, mid2 = cinemaSpot(a, b, t, s, lift)
+                local free2, from2, full2 = CLEAR.line(a, b, spot2, mid2)
+                if CLEAR.roomy(free2, full2) then
+                    c.side, c.lift, c.reach = s, lift, nil      -- (a cut, as at the start: no sweep through what was there)
+                    spot, at, free, from, full = spot2, at2, free2, from2, full2
+                end
+            end
+        end
+        if CLEAR.roomy(free, full) then
+            -- (In at once; out again at OUT_CM_S, so a branch passing the line doesn't pump it in and out.)
+            local want = free < full and free - CLEAR.MARGIN_CM or full
+            local reach = c.reach and math.min(want, c.reach + CLEAR.OUT_CM_S * math.max(0, now - c.at)) or want
+            c.reach, c.at = reach, now
+            if reach < full then
+                local k = reach / full
+                spot = { X = from.X + (spot.X - from.X) * k, Y = from.Y + (spot.Y - from.Y) * k,
+                    Z = from.Z + (spot.Z - from.Z) * k }
+            end
+            c.last = spot
+        elseif c.last then
+            spot = c.last       -- (no room anywhere now: it stays where it last had some, still on the two)
+        else
+            return false
+        end
         cam:K2_SetActorLocationAndRotation(spot, aim(spot, at), false, {}, true)
+        return true
     end
     local function cinemaTick()
         local c = cine
@@ -3616,7 +3728,7 @@ return function(api)
             game.endCinema()
             return
         end
-        pcall(cinemaPlace, cinemaCam, a, b, t, c.side)
+        pcall(cinemaPlace, cinemaCam, a, b, t, c)
     end
 
     function game.cinema(bodies, seconds, side)
@@ -3625,8 +3737,12 @@ return function(api)
         if not (valid(pc) and valid(a) and valid(b)) then
             return false
         end
-        side = side or 1
-        local spot, at = cinemaSpot(a, b, 0, side)
+        local c = { bodies = bodies, seconds = seconds }
+        local ok0, s, lift, score = pcall(CLEAR.pick, a, b, side or 1, 0)
+        c.side, c.lift = ok0 and s or side or 1, ok0 and lift or 0
+        log(string.format("Finishing move's camera: side %d, %s, its way %.2f clear (of 1).", c.side,
+            c.lift > 0 and "from higher up" or "level", ok0 and score or 0))
+        local spot = cinemaSpot(a, b, 0, c.side, c.lift)
         if not valid(cinemaCam) then
             local t = { Rotation = { X = 0.0, Y = 0.0, Z = 0.0, W = 1.0 }, Translation = spot, Scale3D = { X = 1.0, Y = 1.0, Z = 1.0 } }
             pcall(function()
@@ -3642,12 +3758,18 @@ return function(api)
             pcall(function() cinemaCam.CameraComponent:SetFieldOfView(CINE_FOV) end)
         end
         local ok = pcall(function()
-            cinemaCam:K2_SetActorLocationAndRotation(spot, aim(spot, at), false, {}, true)
+            if not cinemaPlace(cinemaCam, a, b, 0, c) then
+                error("no room")
+            end
             pc:SetViewTargetWithBlend(cinemaCam, 0.0, 0, 0, false)     -- (a cut: a blend swept the view across)
         end)
+        if not ok then
+            log("Finishing move's camera: no room round the two here; each player's own camera shows it.")
+        end
         if ok then
             cinemaRun = cinemaRun + 1
-            cine = { run = cinemaRun, bodies = bodies, from = os.clock(), seconds = seconds, side = side }
+            c.run, c.from = cinemaRun, os.clock()
+            cine = c
             if api.coop and api.coop.frameTicks then
                 game.cinemaTick = cinemaTick        -- (run by coop's frameTicks.cameras: see game.spectate)
             else
@@ -3682,6 +3804,17 @@ return function(api)
         cinemaCam = nil
         game.after(0.7, function() if valid(cam) then cam:K2_DestroyActor() end end)
     end
+    end
+
+    -- The game's own tip by the gourd at low health ("Press R to use Medicine and recover HP!", W_TutorialBar_Hint_Potion_C)
+    -- hidden or shown again: a match hides it while this player is down or beaten (arena.lua), when they can't drink. (Its
+    -- widget is always shown, only its bubble comes and goes, so its opacity it is: the bench, 11-07.)
+    function game.potionHint(show)
+        for _, w in ipairs(FindAllOf("W_TutorialBar_Hint_Potion_C") or {}) do
+            if valid(w) then
+                pcall(function() w:SetRenderOpacity(show and 1.0 or 0.0) end)
+            end
+        end
     end
 
     -- rest: test helper, run the game's enemy refresh as if player 1 rested at a bell (the hook sees it).

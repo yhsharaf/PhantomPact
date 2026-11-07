@@ -97,6 +97,81 @@ return function(out, scripts)
         end
     end
 
+    out("parries, judged by the game's own deflect:")
+    -- The guest swings at the host beside it, and the host's game answers with its guard or doesn't. (The bench, 11-07: a
+    -- guard pressed as the blow comes plays Hun_Tang_DefenceNormal_* and costs nothing; one held from before it plays the
+    -- same and costs nothing either; a blow that never reached, nothing. Every figure always runs
+    -- GA_Hun_ShachiHook_Passive_C.)
+    local DEFENCE = "/PBZCombatAsset/ActorData/Move/Hun_Tang_DefenceNormal_B_Montage.Hun_Tang_DefenceNormal_B_Montage"
+    local STANCE = "GA_Hun_Tang_Stance_C"
+    local hgame = h.env.PBZ.game
+    local function beside(cm)
+        local l = rawget(h.pawn, "__fields").loc
+        Session.moveTo(g, l.X + cm, l.Y, l.Z)
+        s:run(1.0)
+    end
+    -- The guest's blow (its attack's ability on: the guest's own watch sends it as M) and the host's guard: "parry" raised as
+    -- it comes, "held" up from before it, "block" raised as it comes but taken out of the host's posture, "none" no answer.
+    local function blow(how)
+        if how == "held" then
+            Fake.running(h, h.pawn, STANCE, true)
+            s:run(0.5)
+        end
+        Fake.running(g, g.pawn, "GA_Hun_Tang_A_C", true)
+        s:run(0.15)
+        if how == "parry" or how == "block" then
+            Fake.running(h, h.pawn, STANCE, true)
+        end
+        s:run(0.1)
+        if how ~= "none" then
+            if how == "block" then
+                hgame.setPosture(h.pawn, hgame.getPosture(h.pawn) - 170)
+            end
+            Session.startMove(h, DEFENCE)
+        end
+        s:run(0.4)
+        Fake.running(g, g.pawn, "GA_Hun_Tang_A_C", false)
+        Fake.running(h, h.pawn, STANCE, false)
+        Session.endMove(h)
+        s:run(1.6)
+    end
+    local function parries()
+        return count(h.sent, "^E V parry")
+    end
+    local function figureMontage()
+        local ok, path = pcall(function()
+            return rawget(rawget(rawget(g.env.PBZ.net.ghost, "__fields").anim, "__fields").montage, "__path")
+        end)
+        return ok and path or "-"
+    end
+    Fake.running(g, g.pawn, "GA_Hun_ShachiHook_Passive_C", true)       -- (on for good, as the game's are)
+    beside(150)
+    blow("parry")
+    check(parries() == 1, "a deflect (the guard raised to meet the blow, nothing lost) is a parry, at once: " .. parries())
+    check(count(g.logs, "PARRIED you") == 1, "the guest staggers for it: " .. count(g.logs, "PARRIED you"))
+    check(count(h.sent, "^%u U .*DefenceNormal") >= 1, "the host's guard answer goes out in the match")
+    check(tostring(figureMontage()):find("DefenceNormal", 1, true) ~= nil,
+        "and the host's figure plays it for the guest: " .. tostring(figureMontage()))
+    check(count(h.sent, "^%u U ") == count(h.sent, "^%u U .*Defence"), "no other move goes out as U in a match")
+    blow("held")
+    check(parries() == 1, "a guard held from before the blow only blocks, no stagger: " .. parries())
+    blow("block")
+    check(parries() == 1, "nor a guard answer that cost posture: " .. parries())
+    blow("none")
+    check(parries() == 1, "nor a blow that never reached the host: " .. parries())
+    Session.startMove(h, DEFENCE)
+    s:run(0.5)
+    Session.endMove(h)
+    s:run(1.6)
+    check(parries() == 1, "nor a guard answer with no attack of the guest's (its always-on passive isn't one): " .. parries())
+    beside(600)
+    blow("parry")
+    check(parries() == 1, "nor a deflect of a foe out of reach: " .. parries())
+    beside(150)
+    blow("parry")
+    check(parries() == 2, "and the next deflect in reach is one again: " .. parries())
+    Fake.running(g, g.pawn, "GA_Hun_ShachiHook_Passive_C", false)
+
     out("round 1, the guest goes down:")
     Session.command(g, "arena down")
     s:run(1)

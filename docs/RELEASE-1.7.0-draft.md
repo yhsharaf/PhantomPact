@@ -20,9 +20,12 @@ or 0, nor with Resistance_Poise at 9999; whether a boss's armour in its attacks 
   someone down, so parries and reads decide it
 - The arena's fog walls go up and there are no monsters. A countdown in brush strokes, 三 二 一, then 斗
 - Every foe on the game's own boss health bar, with their name, the score and the clock over it; round and match banners
+- Parries are the game's own deflect, timed: raise your guard as their blow comes and it's turned aside for nothing, your
+  foe staggers and loses posture, and they see your blade turn theirs aside. A guard already held only blocks
 - The blow that wins the match plays in slow motion and leaves the losers on their feet, dazed. The winners then have about
-  five seconds to finish them with F: every screen cuts to a camera beside the two, the winner executes them with the
-  game's own execution, the moment it lands slows nearly to a stop, and the loser dies the way the game shows a death
+  five seconds to finish them with F: every screen cuts to a camera beside the two that keeps clear of rocks and walls, the
+  winner executes them with the game's own execution, the moment it lands slows nearly to a stop, and the loser dies the
+  way the game shows a death
 - The winners get a golden 生还, the losers the game's red 殒命, both shown the same way, and everyone goes back where they
   were with their own weapons, levels, gourd and skills. Nothing in a match is saved
 - The network carries only the players in a match (no enemy traffic), moves are sent the frame they start, and a perfect
@@ -67,7 +70,8 @@ Both players need 1.7.0. Thanks to shilover (Rakka) for the ideas in issue #13, 
 - 所有人用同样的身体作战:技能全部点满,生命和攻击相同,所有武器都是 30 级,整场比赛同一个葫芦只能喝三口。每一击的伤害是平时的一半:大约六次干净的命中才能击倒对手,胜负取决于弹反和读招
 - 场地的雾墙升起,没有怪物。水墨笔触的倒数 三 二 一,然后 斗
 - 每个对手都显示在游戏自己的首领血条上,上方写着名字、比分和时间;每局和整场的结果横幅
-- 决定胜负的一击会慢放,败者不会倒下,而是站着失去架势。胜者有大约五秒钟按 F 终结对手:所有画面切到两人身旁的镜头,胜者用游戏自己的处决动作处决对手,命中的一刻几乎静止,败者以游戏自己的死亡方式倒下
+- 弹反就是游戏自己的弹刀,讲究时机:在对方的攻击到来时举起架势,这一击就会被无损地弹开,对手会失衡并损失架势,对方也会看到你的刀弹开了他的刀。一直举着的架势只是格挡
+- 决定胜负的一击会慢放,败者不会倒下,而是站着失去架势。胜者有大约五秒钟按 F 终结对手:所有画面切到两人身旁的镜头(镜头会避开岩石和墙壁),胜者用游戏自己的处决动作处决对手,命中的一刻几乎静止,败者以游戏自己的死亡方式倒下
 - 胜者看到金色的“生还”,败者看到游戏自己的红色“殒命”,两者以同样的方式呈现,所有人回到原来的地方,武器、等级、葫芦和技能都会还原。比赛中的一切都不会存档
 - 比赛中网络只传送玩家的数据(没有敌人的数据),招式在开始的那一帧就会发出;比赛中没有完美闪避的慢动作,所有人的游戏以同样的速度运行
 

@@ -607,7 +607,7 @@ return function(api)
         -- (On the sender's own ghost: in a party, net.ghost is the lead's, and every player's move played on it.)
         local p = net.party and peerOf(from) or net
         local ghost = p.ghost
-        p.moveAt = os.clock()           -- (pvp.lua: a figure with no move of late isn't watched for a swing)
+        p.moveAt, p.movePath = os.clock(), path     -- (pvp.lua: an attack of theirs opens a swing to judge a parry by)
         if path and valid(ghost) and game.playMove then
             game.playMove(ghost, path, tonumber(yaw))
         end
