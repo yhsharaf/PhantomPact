@@ -66,7 +66,7 @@ return function(api)
         unlocked = {},              -- arena key -> true: this save has that boss beaten
     }
     local saved = nil               -- what this player had before the match (see setup / goHome)
-    local parked = {}               -- address -> { actor, home }: enemies put aside for the match
+    local parked = {}               -- address -> { name, home }: enemies put aside for the match
     local leaveAskedAt = -1e9
 
     ------------------------------------------------------------------ who's who
@@ -914,15 +914,25 @@ return function(api)
 
     ------------------------------------------------------------------ this player's world: the arena itself
 
+    -- (Known by address and name, the enemy itself asked for in a fresh list each time: one kept from the match's start can
+    -- read as valid after it's gone, and the game frees enemies as the world streams.)
+    local function nameOf(e)
+        return select(2, pcall(function() return e:GetFName():ToString() end))
+    end
+
     local function parkEnemies(center)
         for _, e in ipairs(game.listEnemies(true)) do
             local addr = e:GetAddress()
-            local l = parked[addr] == nil and locOf(e)
+            local was = parked[addr]
+            if was and was.name ~= nameOf(e) then
+                parked[addr], was = nil, nil        -- (another enemy at a gone one's address)
+            end
+            local l = was == nil and locOf(e)
             if l and l.X and flatDist(l, center) <= PARK_CM then
-                parked[addr] = { actor = e, home = { X = l.X, Y = l.Y, Z = l.Z } }
+                parked[addr] = { name = nameOf(e), home = { X = l.X, Y = l.Y, Z = l.Z } }
                 game.stopAI(e)
                 game.stepAside(e, true, parked[addr].home)
-            elseif parked[addr] and valid(parked[addr].actor) then
+            elseif was then
                 game.stopAI(e)          -- (the game starts a stopped brain again by itself)
             end
         end
@@ -932,11 +942,17 @@ return function(api)
     end
 
     local function unparkEnemies()
-        for addr, e in pairs(parked) do
-            if valid(e.actor) then
-                game.stepAside(e.actor, false, e.home)
-                game.startAI(e.actor)
+        if next(parked) == nil then
+            return
+        end
+        for _, e in ipairs(game.listEnemies(true)) do
+            local p = parked[e:GetAddress()]
+            if p and p.name == nameOf(e) then
+                game.stepAside(e, false, p.home)
+                game.startAI(e)
             end
+        end
+        for addr in pairs(parked) do
             parked[addr] = nil
         end
     end
@@ -1345,9 +1361,14 @@ return function(api)
             return
         end
         if m.phase ~= "going" then
+            -- (The enemies and the walls half a second apart: each is a search of every object, 1-3 ms, and the two in one
+            -- frame were a hitch every second of the fight.)
             if now >= areaAt and now >= (net.quietUntil or 0) then
                 areaAt = now + AREA_S
+                m.fogAt = now + AREA_S / 2
                 parkEnemies(middleOf(m))
+            elseif m.fogAt and now >= m.fogAt then
+                m.fogAt = nil
                 game.setBossFog(middleOf(m), true, true)        -- (said once, as they first close: arrive)
             end
         end

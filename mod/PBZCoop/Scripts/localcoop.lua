@@ -1830,7 +1830,9 @@ return function(api)
         local _, p1 = getPlayer1()
         if valid(p1) and V.knownAtBell then
             for name, class in pairs(V.abilitiesOf(p1)) do
-                if not V.knownAtBell[name] then
+                -- (Not a talisman slot's: the slots are the shared backpack's, and player 2 got nothing from one but its
+                -- end, which may shut player 1's slot as player 2's body goes; the review of the slot reports.)
+                if not V.knownAtBell[name] and not name:find("^GA_AddAccessorySlot") then
                     V.learned[name] = class
                 end
             end

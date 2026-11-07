@@ -344,16 +344,18 @@ return function(api)
     end
 
     local function spawnGhost(p)
-        local ghostClass
+        local ghostClass, cloned = nil, false
         -- (Not a clone in the prologue: a body of the player's own class bound itself to the backpack the game was still
         -- filling, and both players of a new game came out of the tutorial without the healing gourd.)
         if net.ghostMode == "clone" and not (game.inPrologue and game.inPrologue()) then
             local _, pawn = getPlayer1()
             ghostClass = valid(pawn) and pawn:GetClass() or nil
+            cloned = valid(ghostClass)
         end
         if not valid(ghostClass) then
             ghostClass = StaticFindObject(GHOST_CLASS)
         end
+        p.ghostClone = cloned       -- (for destroyGhost: a clone is put away, never destroyed mid-world)
         p.ghost = net.unparkClone and net.unparkClone(ghostClass) or nil
         if not valid(p.ghost) then
             p.ghost = spawnBesidePlayer1(ghostClass)
@@ -603,7 +605,9 @@ return function(api)
     handlers.M = function(rest, from)
         local path, yaw = rest:match("^(%S+)%s*(%S*)")
         -- (On the sender's own ghost: in a party, net.ghost is the lead's, and every player's move played on it.)
-        local ghost = net.party and peerOf(from).ghost or net.ghost
+        local p = net.party and peerOf(from) or net
+        local ghost = p.ghost
+        p.moveAt = os.clock()           -- (pvp.lua: a figure with no move of late isn't watched for a swing)
         if path and valid(ghost) and game.playMove then
             game.playMove(ghost, path, tonumber(yaw))
         end
@@ -3861,11 +3865,17 @@ return function(api)
             -- and gone with the next load, as the world takes everything then. Players reported locked slots their talent tree
             -- had opened, every time someone left, fixed only by resetting the tree: the clone's end of life (its unbinding
             -- from the world's skill and backpack systems, which it shares with this player) is the one thing a leave does.
-            local ok, clone = pcall(function()
-                local _, pawn = getPlayer1()
-                return valid(pawn) and p.ghost:GetClass():GetAddress() == pawn:GetClass():GetAddress()
-            end)
-            if ok and clone then
+            -- (Whether it's one was decided as it was made: asked here with no body of this player's own (a load, a death,
+            -- getPlayer1's pawn gone), it read as not one, and the clone was destroyed after all.)
+            local clone = p.ghostClone
+            if clone == nil then
+                local ok, same = pcall(function()
+                    local _, pawn = getPlayer1()
+                    return valid(pawn) and p.ghost:GetClass():GetAddress() == pawn:GetClass():GetAddress()
+                end)
+                clone = ok and same
+            end
+            if clone then
                 -- (Not left following one put away 2 km up: a downed player watching it saw the sky till respawn.)
                 if game.spectatingAt and game.spectatingAt() == p.ghost:GetAddress() then
                     game.spectate(nil)
@@ -3901,6 +3911,7 @@ return function(api)
         p.ghostCmc = nil
         p.ghostHidden = nil
         p.ghostGliding = false
+        p.ghostClone = nil
         p.zeroSince = nil
         p.awaySince = nil
     end

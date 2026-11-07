@@ -215,7 +215,12 @@ return function(api)
     end
 
     -- slot: whose ghost this is. In a party the parry names the attacker (only they stagger); two players need no name.
-    local function watchParry(pawn, ghost, slot, ownMoves)
+    -- p: that player. (A figure only starts a move from their M (coop.lua: p.moveAt): with none in the last second and no
+    -- swing open, it can't be swinging, and its whole ability list isn't walked, 30 times a second for each foe.)
+    local function watchParry(pawn, ghost, slot, ownMoves, p)
+        if not swings[slot] and os.clock() - (p and p.moveAt or -1e9) > 1.0 then
+            return
+        end
         local attacking = false
         for _, name in ipairs(activeMoves(ghost)) do
             if isAttack(name) then
@@ -348,17 +353,29 @@ return function(api)
                         giveGhostStats(ghost, pawn)
                     end
                 end
-                -- The ghost shows its player's real health (it never drops to 0 here, so it can keep fighting).
+                -- The ghost shows its player's real health (it never drops to 0 here, so it can keep fighting). (Its top only
+                -- written when it changed: a closure and two writes a tick for each foe.)
                 local t = p.target
+                h = hostile[addr]
                 if t and t.Hp and t.MaxHp and t.MaxHp > 0 then
-                    setAttr(ghost, "Health_Max", t.MaxHp)
+                    if not h or h.maxhp ~= t.MaxHp then
+                        setAttr(ghost, "Health_Max", t.MaxHp)
+                        if h then
+                            h.maxhp = t.MaxHp
+                        end
+                    end
                     game.setHealth(ghost, math.max(1, t.Hp))
                 end
-                watchParry(pawn, ghost, f.slot, ownMoves)
-                -- Keep the ghost's posture pool from emptying here (their real posture lives on their PC).
+                watchParry(pawn, ghost, f.slot, ownMoves, p)
+                -- Keep the ghost's posture pool from emptying here (their real posture lives on their PC). (Only when it's
+                -- below the top: a read of memory, not two writes, a tick.)
                 local gmax = attr(ghost, "Shachi_Max")
                 if gmax and game.setPosture then
-                    game.setPosture(ghost, gmax.CurrentValue)
+                    local top = gmax.CurrentValue
+                    local now2 = game.getPosture and game.getPosture(ghost)
+                    if not now2 or now2 < top - 1 then
+                        game.setPosture(ghost, top)
+                    end
                 end
             end
         end

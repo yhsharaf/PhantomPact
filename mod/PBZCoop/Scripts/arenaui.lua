@@ -340,28 +340,48 @@ return function(api)
         -- Foes on the game's own boss bar (the user: health bars in the game's own design, not ours): put up once, its
         -- health moved by the game's own ForSeq_UpdateHealth, its words by its own name text, put up again if the HUD
         -- drops it. (Teammates get no bar: the game's player bar only follows its own player, and ours isn't the game's.)
+        -- The HUD is found once for this tick's bar calls, and only if one is made (each FindFirstOf is a search of every
+        -- object); never kept past it. A call that failed (a bar the HUD didn't make) waits half a second: it was two
+        -- searches a foe at every tick.
+        local hud = nil
+        local function hudNow()
+            if hud == nil then
+                hud = FindFirstOf("PBZHUDLayout") or false
+            end
+            return hud or nil
+        end
         for i, slot in ipairs(foes) do
             local body = coop.playerBody and coop.playerBody(slot)
             if valid(body) then
                 local addr = body:GetAddress()
                 local fb = foeBars[slot]
-                if not fb or fb.addr ~= addr or (now >= fb.checkAt and not api.game.foeBar(addr)) then
+                if not fb or fb.addr ~= addr or (now >= fb.checkAt and not api.game.foeBar(addr, hudNow())) then
                     if fb and fb.addr ~= addr then
                         hideFoeBar(slot)
                     end
-                    fb = { addr = addr, checkAt = now + FOE_CHECK_S, last = -1 }
+                    fb = { addr = addr, checkAt = now + FOE_CHECK_S, last = -1, retryAt = 0 }
                     foeBars[slot] = fb
-                    api.game.showFoeBar(body, foeName(slot))
+                    api.game.showFoeBar(body, foeName(slot), hudNow())
                 elseif now >= fb.checkAt then
                     fb.checkAt = now + FOE_CHECK_S
                 end
-                local frac = healthOf(slot, me) or 1
-                if math.abs(frac - fb.last) > 0.001 and api.game.setFoeBar(addr, frac) then
-                    fb.last = frac
-                end
-                local label = foeLabel(m, slot, i == 1, mine, now)
-                if label ~= fb.label and api.game.setFoeName(addr, label) then
-                    fb.label = label
+                if now >= (fb.retryAt or 0) then
+                    local frac = healthOf(slot, me) or 1
+                    if math.abs(frac - fb.last) > 0.001 then
+                        if api.game.setFoeBar(addr, frac, hudNow()) then
+                            fb.last = frac
+                        else
+                            fb.retryAt = now + 0.5
+                        end
+                    end
+                    local label = foeLabel(m, slot, i == 1, mine, now)
+                    if label ~= fb.label and now >= (fb.retryAt or 0) then
+                        if api.game.setFoeName(addr, label, hudNow()) then
+                            fb.label = label
+                        else
+                            fb.retryAt = now + 0.5
+                        end
+                    end
                 end
             end
         end

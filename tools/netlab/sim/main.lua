@@ -21,6 +21,9 @@ elseif SIM_MODE == "chaos" then
 elseif SIM_MODE == "pvp" then
     out("a PvP match:")
     passed = dofile(SIM_DIR .. "/pvp.lua")(out, SIM_OLD ~= "" and SIM_OLD or scripts)
+elseif SIM_MODE == "compile" then
+    out("compiling:")
+    passed = dofile(SIM_DIR .. "/compile.lua")(out, SIM_OLD ~= "" and SIM_OLD or scripts)
 elseif SIM_MODE == "scen" then
     passed = dofile(SIM_OLD)(out, scripts)
 else

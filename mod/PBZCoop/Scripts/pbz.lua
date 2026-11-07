@@ -1548,8 +1548,10 @@ return function(api)
 
     -- A player's figure on a boss bar gets no Character (the bench: the bar showed, but pointed at nothing), so its bar is
     -- known by the widget the HUD made for it: the one that wasn't there before.
-    function game.showFoeBar(actor, name)
-        local hud = FindFirstOf("PBZHUDLayout")
+    -- (hud, here and below: the HUD this frame's caller found already, or nil to find it. Each FindFirstOf is a search of
+    -- every object, and the match's bars asked for it several times a tick for each foe.)
+    function game.showFoeBar(actor, name, hud)
+        hud = valid(hud) and hud or FindFirstOf("PBZHUDLayout")
         if not (valid(actor) and valid(hud)) then
             return false
         end
@@ -1575,9 +1577,12 @@ return function(api)
 
     -- Its bar, or nil. addr: the actor's address. (Registered but its bar not seen yet, if the HUD makes it a moment later:
     -- the first one nobody has claimed and with no Character is it. A real boss's bar has one.)
-    function game.foeBar(addr)
+    function game.foeBar(addr, hud)
         local want = foeBars[addr]
-        local hud = want and FindFirstOf("PBZHUDLayout")
+        if not want then
+            return nil
+        end
+        hud = valid(hud) and hud or FindFirstOf("PBZHUDLayout")
         if not valid(hud) then
             return nil
         end
@@ -1607,8 +1612,8 @@ return function(api)
         return nil
     end
 
-    function game.setFoeBar(addr, fraction)
-        local bar = game.foeBar(addr)
+    function game.setFoeBar(addr, fraction, hud)
+        local bar = game.foeBar(addr, hud)
         if bar then
             pcall(function() bar:ForSeq_UpdateHealth(math.max(0, math.min(1, fraction))) end)
         end
@@ -1616,8 +1621,8 @@ return function(api)
     end
 
     -- The words over it (the game's own text, in its own font): the name, the score, the clock.
-    function game.setFoeName(addr, name)
-        local bar = game.foeBar(addr)
+    function game.setFoeName(addr, name, hud)
+        local bar = game.foeBar(addr, hud)
         if bar then
             pcall(function() bar.BossName:SetText(FText(name)) end)
         end
@@ -2065,6 +2070,11 @@ return function(api)
             end
         end)
         local drinkStarts = drink and not itemFx.using
+        -- (The window shuts half a second after the item's use ends, 3 s at most: a skill's or a dodge's effect on the body
+        -- just after a drink went out as the drink's, and looped on the figure.)
+        if itemFx.using and not using then
+            itemFx.untilAt = math.min(itemFx.untilAt, os.clock() + 0.5)
+        end
         if using and not itemFx.using then
             itemFx.seen, itemFx.untilAt = {}, os.clock() + itemFx.FOR_S
             itemFx.scan(pawn, nil)          -- (what's on the body already isn't the item's)
@@ -3649,6 +3659,29 @@ return function(api)
                         local fx = b.ParticleComponent
                         if valid(fx) then
                             fx:Deactivate()
+                        end
+                    end
+                end)
+                -- (And the bullet's own record of its looks, any kind: a projectile keeps them there, and its timer's end
+                -- skips the Deactivate that turns them off, so one placed in the world stayed where the copy was cut: the
+                -- Wild Oriole's sword energy that "stays in place and never goes away" may be this. Said once a kind.)
+                pcall(function()
+                    local n = 0
+                    b.EffectInstanceData.InstanceData:ForEach(function(_, v)
+                        v:get().NiagaraComponents:ForEach(function(_, e)
+                            local c = e:get()
+                            if valid(c) and c:IsActive() then
+                                c:Deactivate()
+                                n = n + 1
+                            end
+                        end)
+                    end)
+                    if n > 0 then
+                        game.saidLooks = game.saidLooks or {}
+                        local kind = b:GetClass():GetFName():ToString()
+                        if not game.saidLooks[kind] then
+                            game.saidLooks[kind] = true
+                            log("A copied bullet (" .. kind .. ") ended with " .. n .. " of its looks on: turned off.")
                         end
                     end
                 end)

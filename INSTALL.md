@@ -210,17 +210,41 @@ Not in PvPvE yet: executions (posture break only staggers). It's for two players
 
 - Enemies are one fight: the host's game runs them, and the guest sees and fights the same ones. Their attacks work as
   usual on both PCs, so block, parry and dodge do too.
-- Boss fights: when one of you starts a boss, the other is brought into the arena. Stay close when you're about to start
-  one: far from the host, enemies that aren't loaded on the host's PC fight on their own on the guest's.
+- Boss fights: when one of you starts a boss, the other gets a tip: press E at the black wall, or F3, to join. Stay close
+  when you're about to start one: far from the host, enemies that aren't loaded on the host's PC fight on their own on the
+  guest's.
 - If your partner disappears, they are down, in a cutscene, on another map or disconnected; they come back.
-- With both of you in a fight, an enemy stays on one of you for about 15 seconds, then turns on the other if they've been
-  hitting it.
+- With both of you in a fight, an enemy picks whom to fight by how near each of you is and the damage each has done to it
+  lately, and holds its target a few seconds (a boss longer) before it turns.
 - If one of you dies during a boss fight, they watch the other until it's over, and respawn when the boss dies or the
   other dies too.
-- If you join while the host is in a boss fight, you watch it, and go to them when it's over. From another map you only
-  get a message, and go across at the end.
-- Not shared yet: cutscenes, dialogue, spending dust, quests and story progress.
+- If you join while the host is in a boss fight, you watch it (F3 takes you in now), and go to them when it's over; after
+  30 s you're free to move. From another map you only get a message, and go across at the end.
+- Bells: the host's bells light for you when you come to them, not before.
+- Not shared yet: cutscenes, dialogue and spending dust. Quests and story: see The host's story, above.
 - Never press Ctrl+R (UE4SS hot reload) while playing together: it can crash the game. Restart the game instead.
+
+## Other mods
+
+Phantom Pact changes no game files: it's a UE4SS Lua mod with a small DLL of its own, and it runs beside most mods.
+
+- **Keys.** F3, F5 and F6 are Phantom Pact's, and F in a PvP match. A mod on the same key opens with it. Gauntlet of
+  Masters' menu is F5 unless you change "menuKey" in `ProjectPBZ\Content\Paks\~mods\BossRush.json` ("F2", say).
+  `OnlinePanel = Off` in `PhantomPact.ini` frees F5; you then connect with the ini.
+- **UE4SS.** Use UE4SS for Phantom Blade Zero 1.0.3 or newer. Phantom Pact puts two files in `ue4ss\UE4SS_Signatures`; a
+  UE4SS package, or a mod that brings its own, replaces them. After installing or updating one of those, extract Phantom
+  Pact again.
+- **Looks and camera** (gore, blood, effects, FOV, camera distance): only your own screen, fine together. While you're
+  down, and in a PvP finishing move, the camera is Phantom Pact's, so a camera mod doesn't show there.
+- **Your own fighting** (parry or deflect windows, animation cancels, damage, hit-stop): your own game judges the hits on
+  you, so in co-op such a mod counts for you alone. In a PvP match (F6) it isn't fair, or the screens disagree (a swing
+  you cancelled can still land on your foe's screen): everyone in a match should use the same mods, or none. In a match
+  the game runs at normal speed every frame, so another mod's slow motion or hit-stop doesn't show there.
+- **Boss rush and arena modes** (Gauntlet of Masters, Phantom Master Ninja): single player only. Online, the host's world
+  decides bosses: a master the host has beaten dies the moment it appears for a guest, enemies such a mode spawns are on
+  your PC only (your partner sees you fight nothing), and a run while linked can change your partner's save. Leave co-op
+  first (F5 > LEAVE, or `Role = Off`) and back up your saves.
+- **Anything that adds enemies or bosses** does so on your PC only.
 
 ## Troubleshooting
 
