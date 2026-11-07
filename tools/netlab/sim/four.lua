@@ -4226,6 +4226,41 @@ local function stuckQte()
     allErrors(s)
 end
 
+
+-- A player report (11-07): a guest emptied a boss's posture bar and it never filled again, so every guest hit staggered it.
+-- The host wrote its bar to 0 from the guest's report, the game's own break never ran there, and the guest's copy, filled
+-- again by its own break, was pulled back down to the host's 0.
+local function emptiedPosture()
+    part("a posture bar a guest empties")
+    local s, h, g = pair()
+    s:run(2)
+    local hostE, copy = Session.enemyOn(h, "thug1"), Session.enemyOn(g, "thug1")
+    local function bar(e)
+        return rawget(e, "__fields").AttributeSetBase.Shachi
+    end
+    local function setBar(e, v)
+        Fake.put(bar(e), "CurrentValue", v)
+        Fake.put(bar(e), "BaseValue", v)
+    end
+    local max = select(3, Fake.health(hostE))
+    setBar(copy, 1)                             -- (the game holds an emptied bar at 1, not 0)
+    s:run(1)
+    check(bar(hostE).CurrentValue <= 1.5, "the guest empties the bar: the host's boss is emptied too")
+    setBar(copy, max)                           -- (the guest's own game filled its copy after its break)
+    s:run(2)
+    check(bar(copy).CurrentValue == max, "the guest's copy, filled again by its break, isn't pulled back down to the host's empty bar")
+    s:run(5)
+    check(bar(hostE).CurrentValue == max and count(h.logs, "Posture bar a partner emptied") == 1,
+        "the host's bar, never filled by a break of the game's own, is filled after 6 s, and said")
+    s:run(2)
+    check(bar(copy).CurrentValue == max, "and the guest's stays full: the next hit is no break")
+    setBar(copy, 0)
+    s:run(1)
+    setBar(hostE, max)                          -- (this time the game's own break filled it)
+    s:run(8)
+    check(count(h.logs, "Posture bar a partner emptied") == 1, "a bar the game filled itself is left alone")
+    allErrors(s)
+end
 local function leaving()
     part("someone leaves")
     local s = party()
@@ -5211,6 +5246,7 @@ return function(print_, scripts)
     reviving()
     scaling()
     stuckQte()
+    emptiedPosture()
     sixPlayers()
     gaps()
     leaving()
