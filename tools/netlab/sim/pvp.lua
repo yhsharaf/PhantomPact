@@ -366,6 +366,19 @@ return function(out, scripts)
     check(m1 and m2 and m3 and m1.phase == "fight" and m2.phase == "fight" and m3.phase == "fight",
         "all three fight: " .. tostring(m1 and m1.phase) .. "/" .. tostring(m2 and m2.phase) .. "/" .. tostring(m3 and m3.phase))
     check(m1 and m1.teams[1] == 1 and m1.teams[2] == 2 and m1.teams[3] == 2, "the teams as picked")
+    -- A teammate's bar over the player's own (its frame's middle at 316, 902 on a screen 1080 high): on each guest's screen
+    -- the other guest's, on the lone host's none.
+    local function mateBar(pc)
+        for _, w in ipairs(pc.widgets or {}) do
+            local f = rawget(w, "__fields") or {}
+            local at = f.position
+            if at and math.abs(at.X - 316) < 1 and math.abs(at.Y - 902) < 1 and not f.removed then
+                return true
+            end
+        end
+        return false
+    end
+    check(mateBar(p2) and mateBar(p3) and not mateBar(p1), "a teammate's bar on each guest's screen, none on the lone host's")
     Session.command(p2, "arena down")
     t:run(3)
     check(m1 and m1.phase == "fight" and m1.down[2], "one Azure down, the other fights on: " .. tostring(m1 and m1.phase))
