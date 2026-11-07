@@ -3498,15 +3498,12 @@ return function(api)
         return { Pitch = math.deg(math.atan(dz, math.sqrt(dx * dx + dy * dy))), Yaw = math.deg(math.atan(dy, dx)), Roll = 0.0 }
     end
 
-    -- One step, every frame while it follows: coop's frameTicks.spectate, called with nothing. (On game.after's 16 ms loop it
+    -- One step, every frame while it follows: coop's frameTicks.cameras, called with nothing. (On game.after's 16 ms loop it
     -- moved every second or third frame at a high frame rate, a judder; the review of 1.7.0.) loop: the timer's way, only
     -- with no coop ticks to run on.
     local function followFrame(loop)
         if not (spectating and valid(spectating) and valid(spectateCam)) then
-            local ticks = api.coop and api.coop.frameTicks
-            if ticks then
-                ticks.spectate = nil
-            end
+            game.spectateTick = nil
             return
         end
         local want, at = camSpot(spectating)
@@ -3560,9 +3557,10 @@ return function(api)
         local wasFollowing = spectating ~= nil
         spectating = (ok and follow) or nil
         if spectating and not wasFollowing then
-            local ticks = api.coop and api.coop.frameTicks
-            if ticks then
-                ticks.spectate = followFrame
+            -- (Run by coop's frameTicks.cameras, a key made once at its load: one made here, from inside that loop, was a new
+            -- key in the middle of its traversal, which Lua leaves undefined.)
+            if api.coop and api.coop.frameTicks then
+                game.spectateTick = followFrame
             else
                 game.after(0.016, function() followFrame(true) end)
             end
@@ -3596,7 +3594,7 @@ return function(api)
         return spot, { X = mid.X, Y = mid.Y, Z = mid.Z - 50 }      -- (aim looks 60 over what it's given)
     end
 
-    -- One step of the camera, every frame while it plays: coop's frameTicks.cinema. (On game.after's 16 ms loop it moved only
+    -- One step of the camera, every frame while it plays: coop's frameTicks.cameras. (On game.after's 16 ms loop it moved only
     -- every second or third frame at a high frame rate, a judder at the moment it's there for; the review of 1.7.0.)
     local cine = nil            -- { run, bodies, from, seconds, side } while one plays
     local function cinemaPlace(cam, a, b, t, side)
@@ -3650,9 +3648,8 @@ return function(api)
         if ok then
             cinemaRun = cinemaRun + 1
             cine = { run = cinemaRun, bodies = bodies, from = os.clock(), seconds = seconds, side = side }
-            local ticks = api.coop and api.coop.frameTicks
-            if ticks then
-                ticks.cinema = cinemaTick
+            if api.coop and api.coop.frameTicks then
+                game.cinemaTick = cinemaTick        -- (run by coop's frameTicks.cameras: see game.spectate)
             else
                 local function loop()
                     if cine then
@@ -3669,10 +3666,7 @@ return function(api)
     function game.endCinema()
         cinemaRun = cinemaRun + 1
         cine = nil
-        local ticks = api.coop and api.coop.frameTicks
-        if ticks then
-            ticks.cinema = nil
-        end
+        game.cinemaTick = nil
         if not valid(cinemaCam) then
             cinemaCam = nil
             return

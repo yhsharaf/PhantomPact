@@ -30,7 +30,8 @@ works as before.
 **Co-op fixes, from your reports:**
 
 - Bosses fight back: a partner's hits no longer stun-lock a boss. It flinches only when its posture breaks, never in the
-  middle of its own attack, and the guest is in danger again
+  middle of its own attack, and its attacks land on the guest too (hitting into them no longer cancels them on your screen)
+- A boss turns to whoever is pressing it harder: a turn the game didn't make no longer keeps it on the host for another 10 s
 - Bells: joining a host further along no longer lights every bell they have (Pangzhen's all lit, fast travel everywhere).
   A host's bell lights for you when you walk up to it
 - Dying in a boss fight while your partner fights on: you stay down until it's over, and the boss is no longer reset to
@@ -41,9 +42,13 @@ works as before.
 - Story bosses: a boss your partner started first stays your fight when your own scene brings it in; Xiaoxue getting up
   again no longer vanishes for the guest; a leftover copy no longer blocks the bell by the arena ("in combat")
 - Enemies that turned invisible after a teleport or a bell come back, and a mob emptied by the guest no longer stands
-  frozen and hittable for seconds, or now and then can't be killed at all
+  frozen and hittable for seconds, or now and then can't be killed at all. The late blows of a long execution, and your
+  own lingering shots, count as your hits
 - A teammate's drink glow and other copied effects end when they should
-- In PvP, a match no longer resets your skill tree (it could take your nodes and lock talisman slots)
+- A QTE you get stuck in during a boss's scene lets you go, and the host skipping a scene no longer ends yours mid-QTE
+- Items lying where you stood no longer vanish for your partner when you teleport, respawn or rest away from them
+- In PvP, a match no longer resets your skill tree (it could take your nodes and lock talisman slots), and you come home
+  with your own attack, not the match's
 
 Both players need 1.7.0. Thanks to shilover (Rakka) for the ideas in issue #13, and to everyone who sent reports and logs.
 
@@ -66,13 +71,16 @@ Both players need 1.7.0. Thanks to shilover (Rakka) for the ideas in issue #13, 
 
 **合作修复(来自大家的反馈):**
 
-- 首领会还手了:队友的攻击不会再让首领一直被打断。只有架势被打破时才会硬直,不会在它自己出招时被打断,客人也重新面临危险
+- 首领会还手了:队友的攻击不会再让首领一直被打断。只有架势被打破时才会硬直,不会在它自己出招时被打断,它的攻击也会打中客人(在你的画面上打断它的出招不再让攻击落空)
+- 首领会转向压制它更狠的人:游戏没有执行的转向不会再让它多盯房主 10 秒
 - 钟:加入进度更靠前的房主时,不会再点亮房主所有的钟(庞镇全部点亮、到处都能传送)。房主点亮的钟要等你走到旁边才会为你点亮
 - 队友还在首领战中时你倒下:你会一直等到战斗结束,首领不会再在几秒后回满血(房主的死亡曾结束客人那边的战斗)。首领的转阶段动画或处决也不会结束等待
 - 房主在首领战中时加入:按 F3 可立即加入,30 秒后(原来是 3 分钟)无论如何都可以自由行动,不会再站着无法操作
 - 剧情首领:队友先开始的首领战,在你自己的剧情把首领带出来时仍然是你的战斗;小雪重新站起来后不会在客人那边消失;残留的复制体不会再挡住场地旁的钟(“战斗中”)
-- 传送或坐火后隐身的敌人会回来;客人打空血条的小怪不会再僵在原地几秒还能被打,也不会偶尔怎么都打不死
+- 传送或坐火后隐身的敌人会回来;客人打空血条的小怪不会再僵在原地几秒还能被打,也不会偶尔怎么都打不死。长处决的后几下和你自己残留的攻击也算作你的命中
 - 队友喝药的光效等复制的特效会按时结束
-- PvP 比赛不会再重置你的技能树(之前可能让你失去节点并锁住护符槽)
+- 在首领的过场中卡住的 QTE 会放开你,房主跳过过场时也不会在你 QTE 进行中结束你的过场
+- 你传送、复活或坐火离开后,你身边的物品不会再在队友那边消失
+- PvP 比赛不会再重置你的技能树(之前可能让你失去节点并锁住护符槽),回来后的攻击力也是你自己的,而不是比赛中的
 
 双方都需要 1.7.0。感谢 shilover(Rakka)在 issue #13 中提出的想法,也感谢所有提交反馈和日志的玩家。

@@ -351,6 +351,7 @@ return function(api)
                     if h.restat or sig == nil or sig ~= h.sig then
                         h.restat, h.sig = nil, sig
                         giveGhostStats(ghost, pawn)
+                        h.maxhp = nil       -- (that copied this player's top health over theirs: written again below)
                     end
                 end
                 -- The ghost shows its player's real health (it never drops to 0 here, so it can keep fighting). (Its top only

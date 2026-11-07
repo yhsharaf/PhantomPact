@@ -3661,6 +3661,19 @@ return function(api)
         end
     end
 
+    -- pbz.lua's cameras, every frame while one runs: the finishing move's (game.cinemaTick) and the downed player's watch
+    -- (game.spectateTick). A key of its own made here at load: made as one started, from a stage inside the frame loop, it
+    -- was a new key in the middle of that loop's traversal, which Lua leaves undefined (the review of 1.7.0).
+    frameTicks.cameras = function()
+        local cinema, spectate = game.cinemaTick, game.spectateTick
+        if cinema then
+            cinema()
+        end
+        if spectate then
+            spectate()
+        end
+    end
+
     -- Everything about the local player that doesn't need to go out every frame.
     local function watchSlowly(now)
         local pawn = localPawn()

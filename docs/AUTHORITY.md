@@ -84,14 +84,20 @@ online panel doesn't pause, and a pause by the game (its menu) is undone at once
   up and on your map. It comes back to you when you respawn, or sooner if they go down too. The death screen is
   dimmed, not removed: removing it would run the game's monster refresh.
 - **Dying in a boss fight your partner is still in:** the respawn waits. The death screen's tick is stopped (`NotTick`), so you keep watching until the boss dies, your partner dies too or leaves, or 15 minutes pass; then it goes on from there. Anywhere else the wait could have no end, so the respawn is the game's own. PvP isn't held.
+  A player down and held still says the fight is on (`F 1`): the game takes a dying player's bar down, and the F 0 that
+  followed once ended the partner's copy of the fight, whose own F 0 let the held respawn go. A partner counts as up while
+  linked, on this map and not a second at 0 health (`net.upHere`), not by their figure being shown: a scene on either
+  side (a boss's phase, an execution) hid it and let the respawn go. Being in a fight, for `F`, is this game's own bar,
+  or a partner's fight this player walked into (E at the wall, F3) or struck and stands near (`net.fightingHere`); a
+  copy's bar alone isn't.
 - **The client dies while the host fights a boss:** the client's game respawns it at its bell and refreshes the
   client's world, as single-player would. The host's world isn't touched, so the host's boss fight goes on. When
   the host wins, `K` reaches the client and kills its copy of the boss. Enemies the host had already killed are
   killed again in the client's refreshed world.
-- **The host dies while the client fights a boss:** the host's world is everyone's truth, and the host's game
-  refreshes it. So both worlds refresh and the fight starts over, as when the host dies in Elden Ring co-op.
-  Until the host respawns, the host's boss keeps fighting the client's ghost, and the client's hits still land.
-  The client can finish the boss in that window.
+- **The host dies while the client fights a boss:** the host's respawn waits, as its world is the shared one, and the
+  host's boss keeps fighting the client's ghost, the client's hits still landing: the client can finish it. The refresh,
+  and the boss back at full health, come only once everyone in the fight is down, the boss is dead, the client leaves,
+  or 15 minutes pass: then the host's world refreshes, and the client's with it (`R death`).
 
 - **Your partner vanishes** (quits, crashes, loses the connection): after 12 s with nothing heard (longer than a loading screen), their ghost
   hides instead of standing frozen. Fog walls closed for their fight open, and the enemies held for the host go
