@@ -20,6 +20,8 @@ or 0, nor with Resistance_Poise at 9999; whether a boss's armour in its attacks 
   someone down, so parries and reads decide it
 - The arena's fog walls go up and there are no monsters. A countdown in brush strokes, 三 二 一, then 斗
 - Every foe on the game's own boss health bar, with their name, the score and the clock over it; round and match banners
+- In a team match your teammates' health shows over your own bar, in its look: the health a blow takes stays in red a moment
+  and drains, and a fallen teammate's bar empties
 - Parries are the game's own deflect, timed: raise your guard as their blow comes and it's turned aside for nothing, your
   foe staggers and loses posture, and they see your blade turn theirs aside. A guard already held only blocks. Your guard
   and your dodges show on the other screens as you make them: a blow into your guard no longer looks like it landed there
