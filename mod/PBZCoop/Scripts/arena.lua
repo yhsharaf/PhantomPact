@@ -1439,6 +1439,10 @@ return function(api)
             elseif m.fogAt and now >= m.fogAt then
                 m.fogAt = nil
                 game.setBossFog(middleOf(m), true, true)        -- (said once, as they first close: arrive)
+                if now >= (m.guidesAt or 0) then
+                    m.guidesAt = now + 5.0
+                    arena.bellGuides(true)
+                end
             end
         end
         startFight(m)
@@ -2074,6 +2078,32 @@ return function(api)
         return arena.finish(best)
     end
 
+    -- A bell's guide line (BP_BellGuideLine_C): the game's red thread from a bell that reaches for the player near it. In a
+    -- match by a bell ("here" on the bench's riverbank) it ran from the bell to wherever a player was set down, and across
+    -- the fight for good: the "red cords" chased for a day as cloth, cables and debug lines (docs/PVP.md). Hidden from the
+    -- arrival (looked at again every 5 s, as more stream in) till home, and only those this hid shown again, by name: a
+    -- line the game itself hides stays hidden. (Three loaded at the bench's bell; the search is 2 ms.)
+    arena.guidesHidden = {}
+    function arena.bellGuides(hide)
+        for _, a in ipairs(FindAllOf("BP_BellGuideLine_C") or {}) do
+            pcall(function()
+                if not valid(a) then
+                    return
+                end
+                local name = a:GetFName():ToString()
+                if hide and not a.bHidden then
+                    a:SetActorHiddenInGame(true)
+                    arena.guidesHidden[name] = true
+                elseif not hide and arena.guidesHidden[name] then
+                    a:SetActorHiddenInGame(false)
+                end
+            end)
+        end
+        if not hide then
+            arena.guidesHidden = {}
+        end
+    end
+
     -- Back where they were, with what they had. said: why, for the tip.
     function arena.goHome(said)
         local m = arena.match
@@ -2117,6 +2147,7 @@ return function(api)
         end
         unparkEnemies()
         game.setBossFog(middleOf(m), false)
+        arena.bellGuides(false)
         if not home then
             if valid(pawn) then
                 shield(pawn, false)

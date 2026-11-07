@@ -53,18 +53,18 @@ sounds, and the beaten dies as the game shows a player's death (`DEATH`, its own
 everyone goes home). Every player sees it: the winner's world plays it on the winner, every other world on the winner's figure
 (`AR fin` says which move and where they stood). The result waits until the move is over.
 
-Known, not fixed: after a player is moved by hand (the arrival, a round's start, the finishing move's step), thin red lines
-can hang from them back towards where they stood, for good. What they aren't, tried on the bench 11-07: the body, its four
-Chaos cloth parts and every cloth reset (`ForceClothNextUpdateTeleportAndReset` on each mesh, `ForceNextUpdateTeleportAndReset`
-on the Chaos cloth), the band's streamers (`ABP_Hun_PostProcess`'s rigid body, `Hun_Cloth_Streamer_Physics`, off and on), the
-two whip components, the blade, the other players' figures, the world's lasting debug lines (flushed, no change), and any
-cable. With every player's actors hidden at once one line still stood: something of the world's that follows the player, not
-found yet. `ResetAnimInstanceDynamics` on the body's parts hung the game thread, so don't call that; this build ignores
-`show` flags, so they can't sort it either. The Dread Axe's release left the same lines, which first looked like its chains.
-Close up they're two thin strands side by side, like a chain; the Hunter's Chain Sickle's own actors (`BP_Weapon_ShachiHook_L/R`)
-don't exist until it's used, so not those. They go with the outfit: every sighting was on the starting outfit (the red cape and
-headband); the late-game save's (a straw hat, a dark coat) showed none through four arena matches, their trips and finishing
-moves, the same night.
+The thin red lines (fixed 11-08). After a player was moved by hand (the arrival, a round's start, the finishing move's step),
+two thin red strands could hang from them back towards where they stood, for good. They were the game's own bell guide line
+(`BP_BellGuideLine_C`): the red thread from a bell that reaches for the player near it (its tick eases its end towards the
+player's pawn). In a match "here" by the bench's bell it ran from the bell to wherever a player was set down, and across the
+whole fight. Every sighting was by that bell, on the bench's save; the late-game save's four arena matches showed none, so the
+outfit was a red herring. A match now hides every guide line from the arrival (looked at again every 5 s, as more stream in)
+till home, and home shows again only the ones it hid, by name (`arena.bellGuides`). Three are loaded by the bench's bell; the
+search is 2 ms. On the bench 11-08, a Death match "here": all three hidden in both worlds through the fight and the finishing
+move, no strand in any shot, all three back after (the bell's own threads to the player 1.2 m from it, as the game draws them).
+Ruled out first, 11-07: the body and its Chaos cloth (every cloth reset), the band's streamers, the whips, the blade, the other
+players' figures, the world's lasting debug lines and any cable. Don't call `ResetAnimInstanceDynamics` on the body's parts: it
+hung the game thread.
 
 ## Who decides what
 
