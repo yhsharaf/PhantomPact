@@ -1985,12 +1985,38 @@ local function bossReactions()
     s:run(0.5)
     guestHit()
     check(playing(theirs) ~= HIT, "but not again a moment later: one now and then, so it can fight back (" .. playing(theirs) .. ")")
+    -- A posture break plays, in a move or not: the guest's hit broke the copy (its reaction a break). Once: every hit on a
+    -- broken bar did, and two players kept the boss reeling (a report on 1.6.9).
+    local BREAK = "CharacterState.HitReact.State.Break.Normal"
+    local function guestBreak()
+        Session.enemyMove(g, "boss", HIT)
+        Fake.put(field(copy, "hit"), "state", BREAK)
+        swing(g, copy, select(1, Fake.health(copy)) - 50)
+        s:run(0.5)
+    end
+    Fake.put(field(copy, "hit"), "state", "None")
+    Fake.put(field(theirs, "hit"), "state", "None")
+    Session.enemyMove(h, "boss", ATTACK)
+    s:run(0.5)
+    guestBreak()
+    check(playing(theirs) == HIT, "a posture break plays, in a move or not (" .. playing(theirs) .. ")")
+    Fake.put(field(copy, "hit"), "state", "None")
+    Fake.put(field(theirs, "hit"), "state", "None")
+    Session.enemyMove(h, "boss", ATTACK2)
+    s:run(0.5)
+    guestBreak()
+    check(playing(theirs) == ATTACK2, "but once: hits on its broken bar don't stop its next move (" .. playing(theirs) .. ")")
+    -- On the guest: the copy's own flinch at the guest's hit, in the middle of the host's move, gives way to that move
+    -- (flinching at every swing, it dropped the host's attacks: the bench, 11-09).
     Fake.put(field(copy, "hit"), "state", "None")
     Session.enemyMove(h, "boss", ATTACK)
-    Fake.put(field(theirs, "AttributeSetBase").Shachi, "CurrentValue", 0)
+    Fake.put(field(theirs, "anim"), "startedAt", h.now)     -- (the move begins now: the host says where it is in it)
     s:run(0.5)
-    guestHit()
-    check(playing(theirs) == HIT, "a posture break always plays, in a move or not (" .. playing(theirs) .. ")")
+    Session.enemyMove(g, "boss", HIT)
+    Fake.put(field(copy, "hit"), "state", REACT)
+    s:run(0.3)
+    check(playing(copy) == ATTACK and stateOf(copy) == "None",
+        "the copy's own flinch in the host's move gives way to the move (" .. playing(copy) .. ", " .. tostring(stateOf(copy)) .. ")")
     allErrors(s)
 end
 

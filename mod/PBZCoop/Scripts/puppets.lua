@@ -265,6 +265,8 @@ return function(api)
         end
         p.busySince = os.clock()
         p.busyUntil = p.busySince + left
+        -- (Kept for a boss copy to take the move up again after a flinch of its own at this player's hit: resumeMove.)
+        p.move = m and { ability = ability, path = path, start = p.busySince - pos - net.moveAge() } or nil
         local ai = m and api.moves.animOf(actor)
         if ability ~= "-" and game.playAbility(actor, ability) then
             puppets.played = puppets.played + 1
@@ -293,6 +295,40 @@ return function(api)
         return p.anim ~= nil and valid(p.anim:GetCurrentActiveMontage())
     end
 
+    -- A boss copy's own flinch at this player's hit, while the host's move goes on: that move again, where the host is in it.
+    -- (When the boss reacts is the host's to say: coop.lua's bossMayReact. Flinching here at every swing, the copy dropped the
+    -- host's attacks and the guest was never hit back; on the bench, 11-09, the guest alone saw it reacting 16 s of 20 while
+    -- the host's boss attacked.) Its ability again, for its hits to land here, then its animation where the host's is, as
+    -- the "A" handler plays it. A break stays: the copy's bar is its own. The montage found by its path each time.
+    local RESUME_LOOK_S = 0.1
+    local function resumeMove(p, actor, addr, clock)
+        if not (p.move and clock >= (p.resumeLookAt or 0)) then
+            return
+        end
+        p.resumeLookAt = clock + RESUME_LOOK_S
+        if not (game.isBoss and game.isBoss(actor, addr)) then
+            return
+        end
+        local state = game.hitStateOf and game.hitStateOf(actor)
+        if not state or state == "None" or state:find("Break", 1, true) then
+            return
+        end
+        local m = api.moves.montage(p.move.path)
+        local ai = m and api.moves.animOf(actor)
+        local at, len = clock - p.move.start, 0
+        pcall(function() len = m:GetPlayLength() end)
+        if not ai or at >= len - 0.1 then
+            return
+        end
+        game.clearHitState(actor)
+        if p.move.ability ~= "-" then
+            game.playAbility(actor, p.move.ability)
+        end
+        if pcall(function() ai:Montage_Play(m, 1.0, 0, at, true) end) then
+            puppets.resumed = (puppets.resumed or 0) + 1
+        end
+    end
+
     -- The host's enemy is carried forward along its own speed from the last update, and the copy moves at that speed
     -- plus a pull onto it, so a walking enemy glides without waiting for the next update.
     local function steer(p, now, addr)
@@ -319,6 +355,9 @@ return function(api)
                 p.busyUntil = 0
                 busy = false
             end
+        end
+        if busy then
+            resumeMove(p, actor, addr, clock)
         end
         if busy and dist < LOCKED_CM then
             if dist > BUSY_CM then

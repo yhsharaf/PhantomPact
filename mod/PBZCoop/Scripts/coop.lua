@@ -2324,24 +2324,38 @@ return function(api)
     -- A boss's flinch at a partner's hit, played on the boss itself only now and then. (Every one was: the copy's flinch,
     -- forced with every montage stopped, cut the boss's attack with no hit and held it 0.3-2.5 s where it can't start a move;
     -- with two players hitting it, it never fought back. Nexus reports on 1.6.6: "it gets continuously hit and can't fight
-    -- back".) A posture break always plays. In a move of its own its own poise decides: the partner's figure's swing reached
-    -- it here already. Between moves, one in BOSS_REACT_S x CoopBossPoise/100. (Fields, not locals: this function is at
-    -- Lua's 200.)
+    -- back".) A posture break plays, once: emptied, the hit that took the bar from full to empty. (Every hit on an empty bar
+    -- did, even in a move: read after the partner's own write, and a bar a partner empties stays empty till its refill 6 s
+    -- on. In the sim a guest swinging every 0.75 s at it kept the boss from any move for those 6 s. On the bench, 11-09, the
+    -- elite swordsman's bar read 4 there, not 0, so it was rarer than it looks.) In a move of its own its own poise decides:
+    -- the partner's figure's swing reached it here already; and a reaction the game set itself plays out (forced over it, the
+    -- game's own break was cut short). Between moves, one in BOSS_REACT_S x CoopBossPoise/100. (Fields, not locals: this
+    -- function is at Lua's 200.)
     net.BOSS_REACT_S = 1.5
     net.bossReactAt = {}
-    function net.bossMayReact(name, actor)
-        local shachi = game.getPosture and game.getPosture(actor)
-        if shachi and shachi <= 0.5 then
+    net.bossBrokeAt = {}
+    function net.bossMayReact(name, actor, emptied)
+        local now = os.clock()
+        local wait = net.BOSS_REACT_S * ((api.scaling and api.scaling.bossPoise) or 2)
+        if emptied then
+            if now - (net.bossBrokeAt[name] or -1e9) < (game.POSTURE_BREAK_S or 6) then
+                return false
+            end
+            net.bossBrokeAt[name] = now
+            net.bossReactAt[name] = now + wait
             return true
         end
         if api.puppets and api.puppets.inMove(name) then
             return false
         end
-        local now = os.clock()
+        local state = game.hitStateOf and game.hitStateOf(actor)
+        if state and state ~= "None" then
+            return false
+        end
         if now < (net.bossReactAt[name] or 0) then
             return false
         end
-        net.bossReactAt[name] = now + net.BOSS_REACT_S * ((api.scaling and api.scaling.bossPoise) or 2)
+        net.bossReactAt[name] = now + wait
         return true
     end
 
@@ -2411,10 +2425,16 @@ return function(api)
                 local wasAlive = not (game.isDead and game.isDead(actor))
                 local boss = net.partnerBosses[name] or (game.isBoss and game.isBoss(actor))
                 local before = game.getHealth(actor)
+                local barBefore = game.getPosture and game.getPosture(actor)
                 local real = game.applyDamage(actor, amount, posture, true)
                 -- (What it took, for who the enemy goes for: a floor or a kill takes less than was sent.)
                 game.partnerHit(actor:GetAddress(), from, (before or 0) - (game.getHealth(actor) or before or 0))
-                if not boss or net.bossMayReact(name, actor) then
+                -- (A break: the bar this hit took to empty here, or the break it made on the sender's copy. The game holds a
+                -- broken bar a little above 0, the elite swordsman's at 4 on the bench, so a guest's hits often stop short.)
+                local barAfter = game.getPosture and game.getPosture(actor)
+                local emptied = (barBefore ~= nil and barAfter ~= nil and barBefore > (game.POSTURE_EMPTY or 1.5)
+                    and barAfter <= (game.POSTURE_EMPTY or 1.5)) or (rtag ~= nil and rtag:find("%.Break") ~= nil)
+                if not boss or net.bossMayReact(name, actor, emptied) then
                     react(actor)
                 end
                 if wasAlive and (real or (game.isDead and game.isDead(actor))) then
