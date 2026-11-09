@@ -227,6 +227,7 @@ Two copies on one PC, the bench's test save (`tools/netlab/bench/pvp`).
 
 | What | Script | Result |
 |---|---|---|
+| The goal's own checks, again after the 1.6.9 merge | `pvpgoal.ps1` on 952cc2f, 16:21-16:26 | F6 pressed for real opened the page on both copies; one team each, nothing stops the start; in a Death match both at 1360 health, 160 attack, 640 posture, the same Hulu with 3 drinks, 32/32 skill nodes, all 8 weapons at 30; the 60 s clock decided round 1 ("round 1 to Crimson, 1 - 0" in both worlds); F pressed for real played Mu Xiaokui's finishing move, the game's 斩 on the loser's screen, then 殒命; both home with their own 850 health, 2 drinks and no nodes; the 120 s clock ran |
 | The user's own play (host) against the guest (`spar.lua`) | live | after 2a2853a: lock-on on the foe's body; every swing shown (the guest's figure played 30 attacks to its 26+ swings); Q (the Combat Art) fired, 3/3 charges each round; R 3 drinks, no 4th; a timed parry cost the attacker 200 posture, a held or mashed guard only blocked |
 | The countdown and the last screens | `pvplook.ps1` (no match) | after 15072cb: every beat of 三 二 一 and 斗 shot, sharp and readable over snow, moss and rock; 生还 and 殒命 with their glow, embers and ash; the game's own 斩 at the finishing blow, its screen never activated |
 | The Crimson Forest | the thumbnail's shoot | a Duel there on both copies, fight on in both worlds 24 s after START (save with YuCong's last phase beaten) |
