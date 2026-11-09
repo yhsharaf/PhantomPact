@@ -3004,21 +3004,27 @@ local function playerReports()
         end
         s:run(20)
         check(not g.storyMarks["load.flag1"], "hundreds of flags new at once (a load) aren't sent")
-        -- The host's own world loaded (another map): the dozens of flow steps its setting up runs, under the flood's 200,
-        -- aren't news either. Marked done on a guest whose world hadn't run them, they skip its setting up there for good (a
-        -- report on 1.6.9, maybe: a boss the guest couldn't hurt, even as host after). A step of play after it goes as before.
+        -- Steps of play around the host's own load reach the guest: one just before it (a scene that ends in a trip), one on
+        -- arrival (the host walks through a door, the Pang Town tavern's of a 1.6.8 report), one in a gap of the link with a
+        -- load in it (the reports 7 and 8 reconnect). (11-09: holding back a load's own steps, a lead for BUGHUNT 220, was
+        -- tried and dropped: two reviews found it held such steps, and the safe repair searched the world mid-load.)
+        h.eventPipeline.ExecuteNodeGuid:Add("SCENE23456789ABCDEF0123456789AB")
+        Session.loadMap(h)
         h.map = "Map_Other"
-        s:run(2)
-        for i = 1, 40 do
-            h.eventPipeline.ExecuteNodeGuid:Add(string.format("LOAD%028d", i))
-        end
+        s:run(10)
+        check(g.storyGuids["SCENE23456789ABCDEF0123456789AB"] ~= nil, "a step of play just before the host's load reaches the guest")
+        h.eventPipeline.ExecuteNodeGuid:Add("DOOR0123456789ABCDEF0123456789AB")
         s:run(14)
-        check(not g.storyGuids[string.format("LOAD%028d", 1)] and count(h.logs, "with this world's load") >= 1,
-            "a load's own flow steps (40, under the flood's 200) aren't sent")
+        check(g.storyGuids["DOOR0123456789ABCDEF0123456789AB"] ~= nil, "a step on arrival, a moment after the load, reaches the guest")
+        h.cut = true
+        s:run(15)
+        Session.loadMap(h)
+        h.map = "Map_Third"
+        h.eventPipeline.ExecuteNodeGuid:Add("GAP00123456789ABCDEF0123456789AB")
+        s:run(15)
+        h.cut = false
         s:run(20)
-        h.eventPipeline.ExecuteNodeGuid:Add("PLAY0123456789ABCDEF0123456789AB")
-        s:run(14)
-        check(g.storyGuids["PLAY0123456789ABCDEF0123456789AB"] ~= nil, "a step of play after it is")
+        check(g.storyGuids["GAP00123456789ABCDEF0123456789AB"] ~= nil, "a step in a gap of the link with a load in it reaches the guest at the relink")
         allErrors(s)
 
         local o, oh, og = pair("FollowHostStory = Off\n")
