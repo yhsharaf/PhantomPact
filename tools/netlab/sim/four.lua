@@ -391,8 +391,10 @@ local function sharing()
     s:run(3.5)
     Session.gainItem(b, "Item_Herb", 1)
     s:run(3.5)
-    check(count(h.pushes, "^Item_Herb true$") == 1 and count(h.pushes, "^Item_Herb false$") == 1,
-        "a thing new to the partner shows its card; one they have already comes quietly")
+    -- (11-09: both with the game's notice on the right, the line; a thing new to them held a moment first, quietly, so
+    -- it's the line and not the full-screen card. Here the key's card waits for the game's own moment, the lines with it.)
+    check(count(h.pushes, "^Item_Herb true$") == 2 and count(h.pushes, "^Item_Herb false$") == 1,
+        "what the partner finds comes with the game's notice, a thing new to them too, held a moment first for its line")
     -- Issue #15: one whose item can't be read (the Snake Tongue, a token half) went out as loot, and the others' copy vanished
     -- with nothing given, their quest stuck. Only what's known to be loot goes.
     for _, pc in ipairs({ h, a, b, c }) do
@@ -1985,6 +1987,105 @@ local function pickupsFresh()
     check(gaveAt ~= nil and Session.items(tg, "R_930") == 1 and Session.items(th, "R_930") == 1,
         "a kill's reward both worlds give is one each, the guest's own a second after the share")
     allErrors(t)
+end
+
+-- What a partner finds shows on the right, the game's own notice for a find (the user, 11-09: "people want to be notified
+-- what their friends picked up on the right same as when you pick items the small notification that appears"), at once: it
+-- waited in the backpack's queue till the next chest (a report on 1.6.9). A thing new to the player gets the line too, not
+-- the full-screen card; a note's card waits for the game's own moment, as it did. A partner's ground pickup is given
+-- whatever this world was given lately, from our copy if its share never comes, and our copy stays gone when its area
+-- streams back in ("teleport a long distance, then fast travel back ... the item glow on the ground is still there").
+local function pickupsShown()
+    part("a partner's finds on the right")
+    local s, h, g = pair()
+    local function pickupOn(pc, id)
+        for i = #pc.pickups, 1, -1 do
+            if rawget(pc.pickups[i], "__name") == id then
+                return pc.pickups[i]
+            end
+        end
+    end
+    local function both(id, item, x, y)
+        Fake.pickup(h, id, item, x, y, 100.0)
+        Fake.pickup(g, id, item, x, y, 100.0)
+    end
+    Session.moveTo(h, 250, 150)
+    Session.moveTo(g, 250, -150)
+    s:run(2)
+    Session.gainItem(g, "Weapon_Material_01", 1)
+    s:run(5)
+    check(Session.items(h, "Weapon_Material_01") == 1 and #h.cards == 0 and h.tips[#h.tips] == "Weapon_Material_01 + 1",
+        "a thing new to the host comes as the line on the right, not the card, at once: " .. tostring(h.tips[#h.tips]))
+    local tips = #h.tips
+    Session.gainItem(g, "Weapon_Material_01", 2)
+    s:run(5)
+    check(#h.tips == tips + 1 and h.tips[#h.tips] == "Weapon_Material_01 + 2" and Session.items(h, "Weapon_Material_01") == 3,
+        "one the host has already: its line too, with the count: " .. tostring(h.tips[#h.tips]))
+    h.noPickupUI = true
+    Session.gainItem(g, "Weapon_Material_01", 1)
+    s:run(5)
+    local waited = #h.tips
+    h.noPickupUI = false
+    s:run(1.5)
+    check(waited == tips + 1 and #h.tips == tips + 2, "while the game can't show it (a scene, a menu) it waits, then shows")
+
+    -- Each takes a ground pickup of the same thing in the same moment: one each, and one from the other (the share was
+    -- dropped as "given here too" by the other's own).
+    both("matA", "Weapon_Material_02", 250.0, 100.0)
+    both("matB", "Weapon_Material_02", 250.0, -100.0)
+    s:run(2)
+    local h0, g0 = Session.items(h, "Weapon_Material_02"), Session.items(g, "Weapon_Material_02")
+    pickupOn(h, "matA"):K2_DestroyActor()
+    Session.gainItem(h, "Weapon_Material_02", 1)
+    pickupOn(g, "matB"):K2_DestroyActor()
+    Session.gainItem(g, "Weapon_Material_02", 1)
+    s:run(6)
+    check(Session.items(h, "Weapon_Material_02") == h0 + 2 and Session.items(g, "Weapon_Material_02") == g0 + 2,
+        string.format("two pickups of one thing in a moment: two each, %d and %d", Session.items(h, "Weapon_Material_02") - h0,
+            Session.items(g, "Weapon_Material_02") - g0))
+    check(rawget(pickupOn(h, "matB"), "__alive") == false and rawget(pickupOn(g, "matA"), "__alive") == false,
+        "and each one's copy of the other's gone")
+
+    -- The guest's game takes one in without its notice: no share comes. The host's copy went: given from it.
+    both("matC", "Weapon_Material_02", 300.0, 0.0)
+    s:run(2)
+    h0 = Session.items(h, "Weapon_Material_02")
+    pickupOn(g, "matC"):K2_DestroyActor()
+    g.bag:AddPropsToBackPack(1, g.env.FName("Weapon_Material_02"), false)
+    s:run(5)
+    local early = Session.items(h, "Weapon_Material_02")
+    s:run(16)
+    check(early == h0 and Session.items(h, "Weapon_Material_02") == h0 + 1 and count(h.logs, "never came") == 1,
+        "a pickup whose share never came is given from the host's copy, once its wait is out: " .. early - h0 .. " then "
+        .. Session.items(h, "Weapon_Material_02") - h0)
+
+    -- Its area streams back in (the host off by a bell and back): the game makes the copy again. Gone again, not given again.
+    h0 = Session.items(h, "Weapon_Material_02")
+    local again = Fake.pickup(h, "matB", "Weapon_Material_02", 250.0, -100.0, 100.0)
+    s:run(3)
+    check(rawget(again, "__alive") == false and Session.items(h, "Weapon_Material_02") == h0,
+        "a copy the guest took, made again as its area streams back in: gone again")
+    -- One the host's world hadn't loaded when the word came, loaded after: gone too.
+    Fake.pickup(g, "matD", "Weapon_Material_02", 280.0, -150.0, 100.0)
+    s:run(2)
+    pickupOn(g, "matD"):K2_DestroyActor()
+    Session.gainItem(g, "Weapon_Material_02", 1)
+    s:run(5)
+    local late = Fake.pickup(h, "matD", "Weapon_Material_02", 280.0, -150.0, 100.0)
+    s:run(3)
+    check(rawget(late, "__alive") == false, "a copy loaded after the guest's word came: gone as it loads")
+
+    -- A note's card isn't put up mid-play by us: the game's own next pickup shows it, the lines with it.
+    local pushes, cards = count(h.trace, "TryToPushPickupUI"), #h.cards
+    Session.gainItem(g, "R_77", 1)
+    Session.gainItem(g, "Weapon_Material_01", 1)
+    s:run(5)
+    check(#h.cards == cards and count(h.trace, "TryToPushPickupUI") == pushes and Session.items(h, "R_77") == 1,
+        string.format("a note's card waits for the game's own moment, the line after it with it: %d cards, %d shown, %d notes",
+            #h.cards - cards, count(h.trace, "TryToPushPickupUI") - pushes, Session.items(h, "R_77")))
+    Session.gainItem(h, "Weapon_Material_01", 1)     -- (the host's own next find: the game shows them all)
+    check(#h.cards == cards + 1 and h.tips[#h.tips] == "Weapon_Material_01 + 1", "and the host's own next find shows them")
+    allErrors(s)
 end
 
 local function bossReactions()
@@ -5816,6 +5917,7 @@ return function(print_, scripts)
     hitReactions()
     bossReactions()
     pickupsFresh()
+    pickupsShown()
     rests()
     sits()
     sitsForTwo()

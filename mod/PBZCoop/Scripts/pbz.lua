@@ -1525,24 +1525,70 @@ return function(api)
             -- AddPropsToBackPack is the backpack's own entry point; if the item count didn't move (seen in the
             -- prologue map, which keeps its own restricted backpack), fall back to the player's GiveItem.
             -- (Notes and keys, R_ and I_, aren't counted in the backpack: no second try for those.)
-            -- Its "push" off: on, a thing new to this player put up the game's full-screen card, as a weapon's "equip it now?"
-            -- did, in a game that isn't paused for it, and on a window that wasn't in front no key could close it.
             local before = game.itemCount(bp, itemId)
-            -- The card, for a thing new to this player or a quest item (notes and keys aren't counted: always new): the other
-            -- player saw nothing of what their partner found (a player report, 11-06). Counted things they have already
-            -- (herbs, dust-like loot) stay quiet, as a catch-up does. game.granting keeps the card's own report from going back.
-            local card = not quiet and (before == 0 or game.isNarrative(itemId))
-            pcall(function() bp:AddPropsToBackPack(count, FName(itemId), card) end)
+            local counted = not itemId:find("^[RI]_%d")
+            -- What a partner found shows on the right, as the game shows a find of this player's (the user, 11-09: "people
+            -- want to be notified what their friends picked up on the right same as when you pick items the small
+            -- notification that appears"): the backpack's notice flag on, then shown at once (game.showPickupTips). Not for a
+            -- catch-up (quiet). A quest item, a note or a key keeps the game's full-screen card, at the game's own moment (a
+            -- player report, 11-06: the other player saw nothing of what their partner found). game.granting keeps the
+            -- notice's own report from going back.
+            local line = not quiet and counted and not game.isNarrative(itemId)
+            local card = not quiet and not line and (before == 0 or game.isNarrative(itemId))
+            local held = 0
+            if line and before == 0 then
+                -- (A thing new to this player gets the card, not the line, and the card takes the screen in a game that isn't
+                -- paused for it. Held a moment first, quietly, the game counts it seen and shows the line: the bench, 11-09.)
+                pcall(function() bp:AddPropsToBackPack(1, FName(itemId), false) end)
+                if game.itemCount(bp, itemId) == 1 then
+                    pcall(function() bp:RemovePropsFromBackPack(1, FName(itemId), false) end)
+                end
+                held = game.itemCount(bp, itemId)      -- (0: taken back; 1: it came in some other way, and stays given)
+            end
+            if count > held then
+                pcall(function() bp:AddPropsToBackPack(count - held, FName(itemId), line or card) end)
+            end
+            if line then
+                game.tipsWanted = true
+            elseif card then
+                game.cardIds[itemId] = true
+            end
             local after = game.itemCount(bp, itemId)
             -- (Not when quiet: GiveItem is the player blueprint's own helper, with no way to keep its card down. Only when the
             -- count didn't move at all: one that fell, a fourth amber shard made into an amber as it came, got a second.)
-            if after == before and not itemId:find("^[RI]_%d") and not quiet then
+            if after == before and counted and not quiet then
                 pcall(function() pawn:GiveItem(FName(itemId), count) end)
                 after = game.itemCount(bp, itemId)
             end
-            log(string.format("Shared loot: %s x%d (%d -> %d)", itemId, count, before, after))
+            log(string.format("Shared loot: %s x%d (%d -> %d)%s", itemId, count, before, after, line and ", on the right" or ""))
         end
         game.granting = false
+    end
+
+    -- The game's own notice on the right (WB_ItemTips: "Forged Metal + 1") for what grantLoot gave with its flag. That only
+    -- waits in the backpack's queue (PushGetPropInfos) till the game's own pickup flow shows it: the next chest this player
+    -- opened (a report on 1.6.9: "all items will only show as picked up after opening the chest"). TryToPushPickupUI shows it
+    -- now (the bench, 11-09), when the game can (CanPushPickupUI, no card up): else at the next look. A card in the queue (a
+    -- note, a quest item) waits for the game's own moment with the rest, as it did: shown now it would take the screen
+    -- mid-fight, in a game that isn't paused for it. (Fields, not locals: this file is at its 200.)
+    game.tipsWanted, game.cardIds = false, {}
+    function game.showPickupTips(pawn)
+        local bp = valid(pawn) and worldSubsystem(pawn, "/Script/ProjectPBZ.PBZBackPackSubsystem")
+        if not bp then
+            return
+        end
+        local card = false
+        pcall(function()
+            bp.PushGetPropInfos:ForEach(function(_, e)
+                card = card or game.cardIds[e:get().ItemName:ToString()] == true
+            end)
+        end)
+        local ok, can = pcall(function() return bp:CanPushPickupUI() and not bp:IsDisplayPickupUI() end)
+        if card or not ok then
+            game.tipsWanted = false         -- (the game's own pickup flow shows them all: as before)
+        elseif can and pcall(function() bp:TryToPushPickupUI() end) then
+            game.tipsWanted = false
+        end
     end
 
     game.commands.lootlevel = function(arg)
@@ -4334,6 +4380,7 @@ return function(api)
 
     local watched = {}            -- pickup name -> { itemId } for pickups near the local player last tick
     local takenHere = {}          -- pickup name -> true once the local player took it (until the next bell rest)
+    game.goneHere = {}            -- map id -> { pickup name -> true }: what the other player took (game.takeRemotePickup)
 
     local function pickupItemId(p)
         local ok, id = pcall(function() return p.ItemId:ToString() end)
@@ -4367,6 +4414,7 @@ return function(api)
             watched = {}
         end
         local present, spots, newOnes = {}, {}, 0
+        local gone = game.goneHere[api.coop and api.coop.net.localMap or map]
         for _, p in ipairs(all) do
             local addr = p:GetAddress()
             local spot = pickupSpots[addr]
@@ -4375,10 +4423,18 @@ return function(api)
                 local okL, loc = pcall(function() return p:K2_GetActorLocation() end)
                 if okL and loc.X then
                     spot = { name = p:GetFName():ToString(), loc = loc }
+                    -- (One the partner took, made again as its area streamed back in, or loaded after their word came: gone
+                    -- again. See game.takeRemotePickup.)
+                    if gone and gone[spot.name] then
+                        pcall(function() p:K2_DestroyActor() end)
+                        spot.gone = true
+                        log("A pickup the other player took was here again (" .. spot.name .. "): gone again.")
+                    end
                 end
             end
             spots[addr] = spot
-            if spot and (watched[spot.name] or distance(spot.loc, here) <= PICKUP_WATCH_CM + PICKUP_JUMP_CM) and valid(p) then
+            if spot and not spot.gone and (watched[spot.name] or distance(spot.loc, here) <= PICKUP_WATCH_CM + PICKUP_JUMP_CM)
+                and valid(p) then
                 local okP, pickable = pcall(function() return p.bIsPickable end)
                 local okL, loc = pcall(function() return p:K2_GetActorLocation() end)
                 if (not okP or pickable ~= false) and okL and loc.X then
@@ -4417,8 +4473,9 @@ return function(api)
         end
     end
 
-    -- The other player took this pickup: remove our copy and give us the same item, so loot is shared.
-    function game.takeRemotePickup(name, itemId, pawn, kind)
+    -- The other player took this pickup: remove our copy and give us the same item, so loot is shared. map: the map it
+    -- lies on, as they said it (net's map id), or nil.
+    function game.takeRemotePickup(name, itemId, pawn, kind, map)
         if takenHere[name] then
             -- Both players grabbed it within the same moment: each already has theirs, as in single-player.
             log("The other player took " .. name .. " too; you already have yours.")
@@ -4430,9 +4487,20 @@ return function(api)
             log("The other player took " .. name .. " (" .. tostring(itemId) .. "): a quest item, left here for you to take.")
             return
         end
+        -- (Gone for good while the session lasts: a copy destroyed was made again when its area streamed back in, a bell trip
+        -- away and back, and lay there to be taken a second time; nor was one loaded after this word came ever taken. A
+        -- report on 1.6.9. watchPickups.)
+        local key = map or (api.coop and api.coop.net.localMap) or watchedMap
+        if key then
+            game.goneHere[key] = game.goneHere[key] or {}
+            game.goneHere[key][name] = true
+        end
         for _, p in ipairs(FindAllOf("PBZPickupActor") or {}) do
             if valid(p) and p:GetFName():ToString() == name then
                 watched[name] = nil
+                if itemId == "?" then
+                    game.awaitShare(pickupItemId(p))        -- (its item comes by T: what our copy held is waited for)
+                end
                 p:K2_DestroyActor()
                 break
             end
@@ -4604,12 +4672,19 @@ return function(api)
             return          -- (a quest item, with the old rule: each player picks up their own, see game.keptApart)
         end
         local key = id .. "x" .. count
+        -- (The share of a ground pickup of the partner's: our copy went with their word, so nothing here gave it, whatever
+        -- this world was given lately. Two players finding the same herb in a moment lost one. game.awaitShare.)
+        local pickup = game.takePickupShare(id)
+        if pickup == "given" then
+            log("The share for " .. id .. " came after it was given from the pickup here: one each.")
+            return
+        end
         local here = givenHere[key]
-        if here and os.clock() - here < SAME_GIFT_S then
+        if pickup == nil and here and os.clock() - here < SAME_GIFT_S then
             log("The game gave " .. id .. " here too: one each.")
             return
         end
-        if from then
+        if from and pickup == nil then
             local last = gotFrom[key]
             if last and last.from ~= from and os.clock() - last.at < SAME_GIFT_S then
                 log("Two players got " .. id .. ": one each.")
@@ -4620,7 +4695,72 @@ return function(api)
         if gearKnown then
             gearKnown[id] = true
         end
+        if pickup == nil then
+            game.sharesGiven[#game.sharesGiven + 1] = { id = id, at = os.clock() }
+        end
         game.grantLoot(pawn, id, kind, count)
+    end
+
+    -- A ground pickup the partner took, our copy gone (game.takeRemotePickup): what it held is waited for. Its share (T)
+    -- is given whatever was given here lately (receiveGift). One that doesn't come in PICKUP_SHARE_S is given from the
+    -- copy's item, and a share after that is dropped: their game may have taken it in without its notice, and with our
+    -- copy gone for good (watchPickups), nothing here had it at all (a report on 1.6.9: "the host doesn't actually get
+    -- it"). A share given here just before the word came was this one's. (Fields: this file is at its 200 locals.)
+    game.pickupShares, game.sharesGiven = {}, {}
+    game.PICKUP_SHARE_S = 16        -- (past the 12 s a share waits out a scene: coop.lua's takeGifts)
+    function game.awaitShare(id)
+        if type(id) ~= "string" or id == "?" or id == "None" then
+            return
+        end
+        local now, came = os.clock(), nil
+        for i = #game.sharesGiven, 1, -1 do
+            local s = game.sharesGiven[i]
+            if now - s.at >= game.PICKUP_SHARE_S then
+                table.remove(game.sharesGiven, i)
+            elseif s.id == id then
+                came = i
+            end
+        end
+        if came then
+            table.remove(game.sharesGiven, came)    -- (its share came first: given already)
+        else
+            game.pickupShares[#game.pickupShares + 1] = { id = id, at = now }
+        end
+    end
+
+    -- What a share of id is to the ground pickups waited for: "wanted" (one was: give it), "given" (it came too late, given
+    -- from the copy already: drop it), or nil (none: as any share).
+    function game.takePickupShare(id)
+        for i, s in ipairs(game.pickupShares) do
+            if s.id == id then
+                table.remove(game.pickupShares, i)
+                return s.given and "given" or "wanted"
+            end
+        end
+        return nil
+    end
+
+    -- The waits run out: given from the copy's item (a thing of the game's item table: a weapon or a piece of gear comes its
+    -- own way), kept a while longer as given. Not in a scene: a share waits one out.
+    function game.pickupSharesDue(pawn)
+        local now, kept = os.clock(), {}
+        local scene = game.inCutscene and game.inCutscene()
+        for _, s in ipairs(game.pickupShares) do
+            local age = now - s.at
+            if age < game.PICKUP_SHARE_S or (scene and not s.given) then
+                kept[#kept + 1] = s
+            elseif s.given then
+                if age < 2 * game.PICKUP_SHARE_S then
+                    kept[#kept + 1] = s
+                end
+            elseif game.itemKinds and game.itemKinds[s.id] then
+                log("The share of " .. s.id .. " the other player picked up never came: given from the pickup here.")
+                game.grantLoot(pawn, s.id, nil, 1)
+                s.given, s.at = true, now
+                kept[#kept + 1] = s
+            end
+        end
+        game.pickupShares = kept
     end
 
     -- On linking, the two bags come to the most of each (the user: "they adjust to the one that has more so no one
@@ -4686,11 +4826,14 @@ return function(api)
                     return out
                 end
                 local ids, kinds = col("ItemId"), col("ItemDetailType")
+                local all = {}          -- (every item's kind: game.pickupSharesDue gives only these)
                 for i = 1, #ids do
+                    all[ids[i]] = kinds[i] or "?"
                     if (kinds[i] or ""):find("Narrative", 1, true) then
                         set[ids[i]] = true
                     end
                 end
+                game.itemKinds = all
                 game.narrative = set
                 log("Quest items in the game's table: " .. tostring(#ids) .. " items read.")
             end)

@@ -297,6 +297,8 @@ Fake.object = object      -- (for a test that needs an object of its own, a clas
 Fake.ITEMS = {
     { "R_500", "Material" },
     { "I_KEY_9", "NarrativeItem" },
+    { "Weapon_Material_01", "Material" },
+    { "Weapon_Material_02", "Material" },
 }
 
 -- The player's skill tree (PBZAbilityNodesComponent), as the bench measured it on 11-07: 32 nodes; ActivateNode by its
@@ -1492,14 +1494,48 @@ function Fake.new(id, scripts, ini, link)
     end })
     pc.bell = bell
     local BACKPACK = "/Script/ProjectPBZ.PBZBackPackSubsystem"
+    -- The game's pickup notices, as the bench found them (11-09): given with the flag on, a thing waits in the queue
+    -- (PushGetPropInfos) till TryToPushPickupUI shows it: a line on the right (pc.tips), or the full-screen card (pc.cards)
+    -- for a thing this player never held, even a moment. Nothing shows while pc.noPickupUI (CanPushPickupUI false) or a
+    -- card is up (pc.cardUp, IsDisplayPickupUI).
+    pc.tips, pc.cards = {}, {}
+    local seen, queue = {}, {}
     local function given(self, count, id, push)
         local key = id.ToString and id:ToString() or id
         local items = rawget(self, "__fields").items
         items[key] = (items[key] or 0) + count
+        if push then
+            queue[#queue + 1] = { id = key, n = count, card = not seen[key] }
+        end
+        seen[key] = true
         for _, fn in ipairs(pc.hooks[BACKPACK .. ":AddPropsToBackPack"] or {}) do
             fn(self, { get = function() return count end }, { get = function() return name(key) end }, { get = function() return push end })
         end
     end
+    put(bag, "PushGetPropInfos", { ForEach = function(_, fn)
+        for i, e in ipairs(queue) do
+            fn(i, { get = function() return { ItemName = name(e.id), Num = e.n, bIsAdd = true } end })
+        end
+    end })
+    defs(pc, bag, {
+        RemovePropsFromBackPack = function(self, count, id)
+            local items, key = rawget(self, "__fields").items, id:ToString()
+            items[key] = math.max(0, (items[key] or 0) - count)
+        end,
+        CanPushPickupUI = function() return not pc.noPickupUI end,
+        IsDisplayPickupUI = function() return pc.cardUp == true end,
+        TryToPushPickupUI = function()
+            for _, e in ipairs(queue) do
+                if e.card then
+                    pc.cards[#pc.cards + 1] = e.id
+                    pc.cardUp = true
+                else
+                    pc.tips[#pc.tips + 1] = e.id .. " + " .. e.n
+                end
+            end
+            queue = {}
+        end,
+    })
     local function gotWeapon(self, id, normal, push, loading)
         for _, fn in ipairs(pc.hooks[BACKPACK .. ":AddWeaponItem"] or {}) do
             fn(self, { get = function() return id end }, { get = function() return normal end }, { get = function() return push end },

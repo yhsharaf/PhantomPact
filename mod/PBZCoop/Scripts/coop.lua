@@ -2531,14 +2531,15 @@ return function(api)
     local giftsWaiting = {}
     local dustWaiting = 0
 
-    handlers.I = function(rest)
+    handlers.I = function(rest, from)
         local name, itemId, kind = rest:match("^(%S+)%s*(%S*)%s*(%S*)")
         -- (Every way on gets the same limits: the item went to the backpack unchecked when this player was there.)
         if name and game.takeRemotePickup and #name <= MAX_CHEST_NAME and #itemId <= MAX_ITEM_NAME and #kind <= 16 then
             local _, pawn = getPlayer1()
             kind = (kind ~= "" and kind ~= "-") and kind or nil
             if valid(pawn) or name:sub(1, 5) ~= "loot:" then
-                game.takeRemotePickup(name, itemId, pawn, kind)
+                local t = peerOf(from).target          -- (the map it lies on: theirs)
+                game.takeRemotePickup(name, itemId, pawn, kind, t and t.Map)
             else
                 giftsWaiting[#giftsWaiting + 1] = { id = itemId, count = 1, kind = kind, loot = true }
             end
@@ -2648,7 +2649,8 @@ return function(api)
     end
     end
 
-    -- (No tip for them: the user didn't want "your partner found something" on screen. The log says what came.)
+    -- (What came shows on the right as the game shows a find, its own notice (the user, 11-09): game.grantLoot. Not a word
+    -- of ours: the user didn't want "your partner found something" on screen.)
     -- A partner's find waits a moment before it's given here: this world's own game can give the same thing for the same
     -- event a little after. (A kill's reward: the host's game gives it at the death, the guest's copy dies at the host's K and
     -- its game gives it too. The share came first and receiveGift drops one only when this world gave first: the guest kept
@@ -3857,6 +3859,14 @@ return function(api)
         end
         if (#giftsWaiting > 0 or dustWaiting > 0) and not game.isDead(pawn) and not net.arena then
             takeGifts(pawn)
+        end
+        -- (What came shows on the right, the game's own notice for a find; a partner's pickup whose share never came is
+        -- given from our copy of it: pbz.lua.)
+        if game.pickupShares and #game.pickupShares > 0 and not game.isDead(pawn) and not net.arena then
+            game.pickupSharesDue(pawn)
+        end
+        if game.tipsWanted and not game.isDead(pawn) then
+            game.showPickupTips(pawn)
         end
         if game.watchGear and now >= (slow.gearAt or 0) and not net.arena then
             slow.gearAt = now + GEAR_S
