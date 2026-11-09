@@ -2996,6 +2996,25 @@ local function playerReports()
         allErrors(s)
     end
     do
+        -- The same, the one spawned for the partner not in yet as it was asked for: its spawner kept, the boss found there
+        -- after. (With nothing kept, no watch was made: two stood there, a bar each, the unpaired one full; a report on 1.6.9.)
+        local s, h, g = pair()
+        s:run(1)
+        local spawned = Session.enemyOn(g, "boss")
+        local bossClass = { GetFName = function() return { ToString = function() return "BP_Monster_ChiLian_C" end } end,
+            IsValid = function() return true end }
+        rawset(spawned, "__classObject", bossClass)
+        net(g).extraBossWatch = { ["sp:boss"] = { spawner = "boss", untilAt = g.now + 120 } }
+        s:run(2)
+        check(rawget(spawned, "__alive") ~= false, "one spawned not in yet when asked: found by its spawner, kept while it's alone")
+        local scene = Fake.enemy(g, "boss_scene", "BP_Monster_Boss_C", 3050.0, 3000.0, 100.0, 5000, 400, true)
+        rawset(scene, "__classObject", bossClass)
+        s:run(2)
+        check(rawget(spawned, "__alive") == false and rawget(scene, "__alive") ~= false,
+            "and with the scene's boss in, the one spawned for the partner goes")
+        allErrors(s)
+    end
+    do
         -- The forest's last boss on the bench: the guest's copy read 0 health before the host's K came, and the K took it
         -- for dead already: no death of the game's ran, so no scene, and the guest's story stayed while the host's went on.
         local s, h, g = pair()

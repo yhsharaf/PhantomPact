@@ -1879,6 +1879,11 @@ return function(api)
                             spawned.untilAt = os.clock() + 120
                             net.extraBossWatch = net.extraBossWatch or {}
                             net.extraBossWatch[name] = spawned
+                            -- (As joinBossFight's: one still standing when the fight ends goes, no death.)
+                            if spawned.addr then
+                                net.spawnedFor = net.spawnedFor or {}
+                                net.spawnedFor[name] = { addr = spawned.addr, fname = spawned.fname, class = spawned.class }
+                            end
                         end
                         log("The host's fight with " .. name .. " came here late: its boss spawned here now.")
                     end
@@ -3221,9 +3226,12 @@ return function(api)
             spawned.untilAt = os.clock() + 120
             net.extraBossWatch = net.extraBossWatch or {}
             net.extraBossWatch[name] = spawned
-            -- (And kept for the whole fight: one still standing when that fight ends without its death goes, endBossFight.)
-            net.spawnedFor = net.spawnedFor or {}
-            net.spawnedFor[name] = { addr = spawned.addr, fname = spawned.fname, class = spawned.class }
+            -- (And kept for the whole fight: one still standing when that fight ends without its death goes, endBossFight. One
+            -- not in yet has no address to know it by.)
+            if spawned.addr then
+                net.spawnedFor = net.spawnedFor or {}
+                net.spawnedFor[name] = { addr = spawned.addr, fname = spawned.fname, class = spawned.class }
+            end
         end
         if turned and isClient() then
             -- (Written alive in this save for the host's fight: dead again when the session ends, unless the host's kill
@@ -3798,6 +3806,18 @@ return function(api)
             for name in pairs(net.partnerBosses) do
                 local boss = enemyByName[name]
                 if valid(boss) and not game.isDead(boss) then
+                    -- (Paired since with another copy of that boss, the one this world's own scene brought in: the bar on the
+                    -- one before comes down. Left, it stood there full and frozen beside this one's; a report on 1.6.9.)
+                    local shown = net.mirrorOn and net.mirrorOn[name]
+                    if shown and shown.addr ~= boss:GetAddress() then
+                        if valid(shown.actor) and shown.actor:GetAddress() == shown.addr
+                            and select(2, pcall(function() return shown.actor:GetFName():ToString() end)) == shown.fname
+                            and game.isMirrorBar and game.isMirrorBar(shown.actor) and game.hideBossBar then
+                            game.hideBossBar(shown.actor)
+                        end
+                        net.mirrorOn[name] = { actor = boss, addr = boss:GetAddress(),
+                            fname = select(2, pcall(function() return boss:GetFName():ToString() end)) }
+                    end
                     game.keepBossBar(boss)
                 end
             end
@@ -4634,7 +4654,12 @@ return function(api)
         end
         net.extraBossAt = now + 1
         for name, mine in pairs(watch) do
-            local dropped = now <= mine.untilAt and game.dropExtraBoss(mine)
+            local dropped = now <= mine.untilAt and game.dropExtraBoss(mine, name)
+            -- (Not found in its first seconds: maybe not in this world's list yet, not gone.)
+            mine.firstLook = mine.firstLook or now
+            if dropped == nil and now - mine.firstLook < 3 then
+                dropped = false
+            end
             if dropped ~= true and (now > mine.untilAt or dropped == nil) then
                 watch[name] = nil           -- (over, or the one spawned here is gone or dead anyway)
             elseif dropped then

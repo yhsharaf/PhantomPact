@@ -661,6 +661,11 @@ return function(api)
                                 class = a:GetClass():GetFName():ToString() }
                         end
                     end)
+                    -- (Not in yet: its spawner is kept, for dropExtraBoss to find it there later. With nothing kept, no watch
+                    -- was made, and the scene's own boss came in beside it, a bar each.)
+                    if ok and not spawned then
+                        spawned = { spawner = id }
+                    end
                 end
                 return { X = at.X, Y = at.Y, Z = at.Z }, beaten, spawned
             end
@@ -682,13 +687,37 @@ return function(api)
     -- A boss spawned here for the partner's fight (spawnBoss's { addr, fname, class }) and then another of its kind from
     -- this world's own fight scene: the one spawned for the partner goes, with no death (a death would run its story), and
     -- the scene's is the one paired. True if it went; false while it's the only one; nil once it's gone or dead anyway.
-    function game.dropExtraBoss(mine)
+    -- (A fresh look, once a second at most while a watch lasts: the cached list missed the one spawned a moment before, the
+    -- watch was let go at its first look, and with this world's own scene's boss in too, two stood there with a bar each,
+    -- the unpaired one full for good; a report on 1.6.9.)
+    -- (name: the boss's id. Another boss going by it is the scene's too, of another class or not.)
+    function game.dropExtraBoss(mine, name)
+        if not mine.addr and mine.spawner then
+            for _, s in ipairs(FindAllOf("AISpawner") or {}) do
+                local sid = nil
+                pcall(function() sid = s.SpawnerID:ToString() end)
+                if sid == mine.spawner or (sid == "None" and s:GetFName():ToString() == mine.spawner) then
+                    pcall(function()
+                        local a = s.SpawnedAI
+                        if valid(a) then
+                            mine.addr, mine.fname = a:GetAddress(), a:GetFName():ToString()
+                            mine.class = a:GetClass():GetFName():ToString()
+                        end
+                    end)
+                    break
+                end
+            end
+            if not mine.addr then
+                return false        -- (still not in: kept watching)
+            end
+        end
         local ours, other = nil, false
-        for _, a in pairs(game.listEnemies() or {}) do
+        for _, a in pairs(game.listEnemies(true) or {}) do
             if valid(a) and not game.isDead(a) then
                 local addr = a:GetAddress()
                 local ok, cls = pcall(function() return a:GetClass():GetFName():ToString() end)
-                if ok and cls == mine.class then
+                local sameId = name ~= nil and game.enemyId(a) == name
+                if ok and (cls == mine.class or sameId) then
                     if addr == mine.addr and a:GetFName():ToString() == mine.fname then
                         ours = a
                     elseif not twin.at(addr, a) and game.isBoss(a, addr) then

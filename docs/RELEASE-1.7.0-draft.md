@@ -56,6 +56,8 @@ works as before.
 - A boss turns to whoever is pressing it harder: a turn the game didn't make no longer keeps it on the host for another 10 s
 - Bells: joining a host further along no longer lights every bell they have (Pangzhen's all lit, fast travel everywhere).
   A host's bell lights for you when you walk up to it
+- Joining a boss fight a step late: no second boss bar stuck at full. The boss brought in for you now gives way to the one
+  your own game's fight scene brings
 - Dying in a boss fight while your partner fights on: you stay down until it's over, and the boss is no longer reset to
   full health a few seconds later (the host's death ended the guest's copy of the fight). A boss's phase scene or an
   execution no longer ends the wait either
@@ -104,6 +106,7 @@ Both players need 1.7.0. Thanks to shilover (Rakka) for the ideas in issue #13, 
 - 首领会还手了:队友的攻击不会再让首领一直被打断。只有架势被打破时才会硬直(只一次),不会在它自己出招时被打断。客人的画面上,首领也不会再因客人的每一击而硬直:客人看到的攻击和房主看到的一样
 - 首领会转向压制它更狠的人:游戏没有执行的转向不会再让它多盯房主 10 秒
 - 钟:加入进度更靠前的房主时,不会再点亮房主所有的钟(庞镇全部点亮、到处都能传送)。房主点亮的钟要等你走到旁边才会为你点亮
+- 晚一步加入首领战:不会再多出一条停在满血的首领血条。为你带来的首领会让位给你自己游戏的战斗动画带来的首领
 - 队友还在首领战中时你倒下:你会一直等到战斗结束,首领不会再在几秒后回满血(房主的死亡曾结束客人那边的战斗)。首领的转阶段动画或处决也不会结束等待
 - 房主在首领战中时加入:按 F3 可立即加入,30 秒后(原来是 3 分钟)无论如何都可以自由行动,不会再站着无法操作
 - 剧情首领:队友先开始的首领战,在你自己的剧情把首领带出来时仍然是你的战斗;小雪重新站起来后不会在客人那边消失;残留的复制体不会再挡住场地旁的钟(“战斗中”)
