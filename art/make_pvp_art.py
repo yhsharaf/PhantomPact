@@ -285,7 +285,6 @@ def banners(only=None):
         "won": ("YOUR TEAM WINS", "你的队伍获胜"), "lost": ("YOUR TEAM FALLS", "你的队伍落败"),
         # (One on one: it's you, not a team.)
         "won_one": ("YOU WIN", "你获胜"), "lost_one": ("YOU FALL", "你落败"),
-        "timeup": ("TIME", "时间到"),
     }
     dark = ("round_lost", "lost", "lost_one", "down", "fell")
     for key, (en, zh) in sets.items():

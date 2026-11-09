@@ -18,7 +18,7 @@ or 0, nor with Resistance_Poise at 9999; whether a boss's armour in its attacks 
 - Everyone fights with the same body: every skill node on, the same health and attack, every weapon at level 30, three
   drinks from the same gourd, at its top level, for the whole match, and no talismans (yours go back in their slots after).
   Every blow does half the usual damage: about six clean hits to bring someone down, so parries and reads decide it
-- The arena's fog walls go up and there are no monsters. A countdown in the game's own brush font, 三 二 一, each beat landing with a jolt of the camera, then 斗 in blood. When the clock runs out, TIME, then the round's result
+- The arena's fog walls go up and there are no monsters. A countdown in the game's own brush font, 三 二 一, each beat landing with a jolt of the camera, then 斗 in blood. When the clock runs out, TIME'S UP (时间到 in the game's brush font), then the round's result
 - Every foe on the game's own boss health bar, with their name, the score and the clock over it, and the gold posture strip
   under it moving with their real posture; round and match banners. Your own bar fills with you between rounds
 - In a team match your teammates' health shows over your own bar, in its look: the health a blow takes stays in red a moment

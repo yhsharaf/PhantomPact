@@ -14,7 +14,7 @@ The 1.7.0 goal item by item, with what proves each: `docs/PVP-1.7.0-checklist.md
 |---|---|
 | Players | 2 to 6, everyone linked, on the same version. 2 players: a duel. More: two teams (Crimson, Azure), each player picks one, three a side at most (each arena has three spots a side) |
 | Modes | **Duel**: best of three rounds, everyone back up each round. **Death**: one life, last team standing |
-| Clock | None, 60, 90 or 120 s a round. At zero the team with more health left (as a share) wins the round; equal is a draw. TIME shows on every screen first, then the round's result |
+| Clock | None, 60, 90 or 120 s a round. At zero the team with more health left (as a share) wins the round; equal is a draw. TIME'S UP shows on every screen first (时间到 in the game's brush font over the ink wash, TIME'S UP under it in English), then the round's result |
 | Arenas | YuCong's Crimson Forest, Hua Qianxiao's stage, the Gold-Masked One's gorge, Mu Xiaokui's meadow: the game's own places, with their boss fog walls up and no monsters. Or **Here**: where the host stands, the sides 8 m either way of them on the first line round from the host's facing (30-degree steps) with floor under both ends and a clear view between them at chest height (`arena.hereYaw`); none, the host's facing |
 | Fair start | everyone a Soul at the top of the game: every skill node on (each one the player hasn't, for the match only), 1360 health, 160 attack, 640 Phantom Edge energy, held there all match; every weapon in the match at level 30; 3 drinks of the same gourd at its top level for the whole match (a drink heals by the gourd's level: 40% of the health at level 0, 50% at 6, the bench 11-08), a refill in it (a bell's sit) taken back; no talismans: each one worn comes off for the match and goes back in its own slot after, and one put on during it comes off again |
 | Damage | every blow at half the game's own (`DAMAGE` in `arenas.lua`): at the top of the game a Sanguine blow took 499 of 1360 on the bench, three to fall; at half, about six. A parry costs the attacker 200 posture, about a third of the 640 (60 before 11-09: swinging at a player who turned every blow aside cost next to nothing). Each player's own `PvPDamage` and `PvPParryPosture` count only in PvPvE: in a match they'd let a player take less |
@@ -114,7 +114,8 @@ the mod's own boss lists (`bosses`, `bossActors`), so nothing that walks the bos
 text in the game's own brush font (BaiGeTianXingTi), drawn at the screen's size so they stay sharp, over an ink ring and a
 wash of ours that keeps them clear of the scene (`LOOK` in `arenaui.lua`; 11-09, the user: "not looking HD", hard to read
 against the scene, then asked whether a first try's bursts and droplets were "kidish and cartoonish": they went). The
-banners are ink-brush pictures of ours; TIME comes before the result of a round the clock ended. The last screens, the red
+banners are ink-brush pictures of ours; TIME'S UP, in the countdown's own look, comes before the result of a round the
+clock ended. The last screens, the red
 殒命 and the golden 生还, are built from the game's own death screen pictures (`CARDS` in `arenaui.lua`). The finishing blow
 brings the game's own boss-kill flourish (`ui.slay`: `W_BossDead`, only its Niagara part started, since an activated
 screen of the game's may take the controls). `tools\netlab\bench\pvp\pvplook.ps1` replays all of it on one copy, no match.

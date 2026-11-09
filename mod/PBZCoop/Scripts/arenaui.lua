@@ -11,7 +11,7 @@ return function(api)
     local COUNT_SIZE = 340          -- the countdown's ring, against a screen 1080 high
     local BANNER_W, BANNER_H = 900, 150
     local BANNER_S = 2.6            -- a banner on screen this long
-    local TIME_S = 1.4              -- TIME, when the clock ended a round, before what the round came to...
+    local TIME_S = 1.4              -- TIME'S UP, when the clock ended a round, before what the round came to...
     local AFTER_TIME_S = 1.9        -- ...that one this long, so it's faded before the next countdown (arena.lua's BETWEEN_S
                                     -- 3.5 s): at the usual 2.6 the countdown cut it off at full strength (the review)
     -- The match's last screens, the winners' and the losers' made and played the same way (the user, 11-07: "Make both
@@ -41,6 +41,7 @@ return function(api)
     local banner = nil              -- { tex, at, until }
     local fightAt = nil             -- 斗's moment
     local death = nil               -- { since, widgets }
+    local timeUp = nil              -- { at, after, rung }: the clock's end on screen, then the banner after it
 
     local function zh()
         return api.lang and api.lang.code == "zh"
@@ -221,7 +222,7 @@ return function(api)
     local LOOK = {
         FONT = "/Game/PBZContent/UI/Fonts/BaiGeTianXingTi_small_Font.BaiGeTianXingTi_small_Font",
         WORD_FONT = "/Game/PBZContent/UI/Fonts/EN_AlverataCYR_Medium_Title_Font.EN_AlverataCYR_Medium_Title_Font",
-        NUMBER_PT = 260, FIGHT_PT = 300, WORD_PT = 30,
+        NUMBER_PT = 260, FIGHT_PT = 300, WORD_PT = 30, TIMEUP_PT = 190, TIMEUP_WORD_PT = 66,
         -- (Linear, as the game takes colours: bone 238 232 220, crimson 204 40 44, blood 168 22 26, gold 232 184 72. Given as
         -- screen values they came out pale, the crimson a salmon pink; the bench, 11-09.)
         BONE = { R = 0.855, G = 0.807, B = 0.716, A = 1 }, CRIMSON = { R = 0.60, G = 0.021, B = 0.025, A = 1 },
@@ -479,6 +480,7 @@ return function(api)
             end
             fightPart()
             fightWordPart()
+            ui.prepareTimeUp()
             part("cd_wash", "pvp/fx_wash.png", 1024, 1024, -2)
             part("cd_ring", "pvp/fx_ring.png", 1024, 1024, 1)
             part("cd_edge", "pvp/fx_vignette.png", 1024, 576, -3)
@@ -582,7 +584,62 @@ return function(api)
         put(part("banner", banner.tex, BANNER_W, BANNER_H, 4), W / 2, 300, BANNER_W, BANNER_H, a, 1.06 - 0.06 * ease(t / 0.3))
     end
 
-    -- byClock: the clock ended the round (the host says so): TIME first, then what it came to.
+    -- The clock ran out (the user, 11-09: "The Times Up or Time Over. Clearly need to be done better", of a banner that read
+    -- TIME): in the countdown's own look, 时间到 in the game's brush font over the ink wash, TIME'S UP under it (in Chinese
+    -- the characters say it), the game's camera shake and its chapter-title sting; then what the round came to, as its
+    -- banner. (TIME'S UP big and in bone, not small and red as the countdown's words: those only say a number everyone
+    -- knows, this has to be read at a glance. Small and red it was hard to read over the fighters; the bench, 11-09.)
+    local function timeUpPart()
+        local p = textPart("tu_cn", 1200, 420, 4)
+        setText(p, "时间到", LOOK.FONT, LOOK.TIMEUP_PT, LOOK.BONE)
+        return p
+    end
+    local function timeUpWordPart()
+        local p = textPart("tu_en", 1100, 170, 5)
+        setText(p, "TIME'S UP", LOOK.WORD_FONT, LOOK.TIMEUP_WORD_PT, LOOK.BONE, 250)
+        return p
+    end
+
+    -- (Made, hidden, as each countdown starts: a text part made at its moment shows nothing for its first frames.)
+    function ui.prepareTimeUp()
+        pcall(function()
+            timeUpPart()
+            timeUpWordPart()
+            part("tu_wash", "pvp/fx_wash.png", 1024, 1024, -2)
+        end)
+    end
+
+    local function drawTimeUp(now)
+        if not timeUp then
+            return
+        end
+        local t = now - timeUp.at
+        if t >= TIME_S then
+            hideAll("tu_")
+            local after = timeUp.after
+            timeUp = nil
+            if after then
+                showBanner(after, AFTER_TIME_S)
+            end
+            return
+        end
+        if not timeUp.rung then
+            timeUp.rung = true
+            playSound("timeup")
+            cameraShake(LOOK.BEAT_SHAKE, 0.9)
+        end
+        local W = screen.w / screen.s
+        local cx, cy, R = W / 2, 470, COUNT_SIZE
+        local out = TIME_S - t < 0.3 and (TIME_S - t) / 0.3 or 1
+        local a = math.min(1, t / 0.08) * out
+        put(part("tu_wash", "pvp/fx_wash.png", 1024, 1024, -2), cx, cy, R * 3.3, R * 2.3,
+            0.88 * math.min(1, t / 0.2) * out, 1 + 0.06 * (1 - ease(t / 0.5)))
+        local k = t < 0.16 and (1.7 - 0.7 * easeBack(t / 0.16)) or (1 + 0.02 * (t - 0.16))
+        putText(timeUpPart(), cx, cy, a, k)
+        putText(timeUpWordPart(), cx, cy + R * 0.7, zh() and 0 or a, 1)
+    end
+
+    -- byClock: the clock ended the round (the host says so): TIME'S UP first, then what it came to.
     function ui.roundOver(round, winner, mine, s1, s2, m, byClock)
         local key = nil
         if winner == 0 then
@@ -591,8 +648,10 @@ return function(api)
             key = winner == mine and "round_won" or "round_lost"
         end
         if byClock then
-            -- (A round that decides the match: TIME alone, the match's own banner comes next.)
-            showBanner("timeup", TIME_S, not (m and m.decidedFor) and key or nil)
+            -- (A round that decides the match: TIME'S UP alone, the match's own banner comes next.)
+            log("PvP: TIME'S UP.")
+            banner = nil
+            timeUp = { at = os.clock(), after = not (m and m.decidedFor) and key or nil }
         elseif key then
             showBanner(key)
         end
@@ -1051,12 +1110,13 @@ return function(api)
     -- Every frame (arena.lua's frameTicks.arenaTime): what moves, the countdown, the banners and the last screens. (At the
     -- arena's tick they moved 30 times a second at 60 FPS, a stutter in the eases; put() makes no call that changes nothing.)
     function ui.animate(m, me)
-        if not (count or fightAt or banner or death or next(motes)) or not measure() then
+        if not (count or fightAt or timeUp or banner or death or next(motes)) or not measure() then
             return
         end
         local now = os.clock()
         local ok, err = pcall(function()
             drawCount(now)
+            drawTimeUp(now)
             drawBanner(now)
             drawDeath(now)
             drawMotes(now)
@@ -1068,7 +1128,7 @@ return function(api)
     end
 
     function ui.clear()
-        count, banner, fightAt = nil, nil, nil
+        count, banner, fightAt, timeUp = nil, nil, nil, nil
         for i in pairs(motes) do
             motes[i] = nil
         end

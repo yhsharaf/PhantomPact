@@ -592,7 +592,7 @@ return function(out, scripts)
     check(hb2.ult.n == 1 and math.abs(hb2.ult.pct - 40) < 0.01, string.format(
         "the Combat Art's charges as they were, 1 and 40%% of the next: %d and %.0f%%", hb2.ult.n, hb2.ult.pct))
     check(countFrom(h.sent, sentGap, "^E K sp:dead1") >= 1, "the dead told again once the match is over")
-    check(count(h.trace, "banner_timeup") == 0, "no TIME in a match the clock didn't end")
+    check(count(h.logs, "TIME'S UP") == 0, "no TIME'S UP in a match the clock didn't end")
     check(count(h.treeCalls, "AllNodes") == 0 and count(g.treeCalls, "AllNodes") == 0
         and count(h.treeCalls, "^DeactivateNode HeiShi1$") == 0, "the whole tree never switched, nor a node of the player's own")
 
@@ -615,7 +615,7 @@ return function(out, scripts)
         string.format("at zero the clock gives it to the host, ahead on health: %d - %d, %s", dm.score[1], dm.score[2], dm.phase))
     check(dg.phase == "finish" and dg.winner == 1, "the guest's world has the same end: " .. tostring(dg.phase))
     check(last(h.sent, "^E AR round"):find(" 1$") ~= nil, "the host says the clock ended it: " .. last(h.sent, "^E AR round"))
-    check(count(h.trace, "banner_timeup") >= 1 and count(g.trace, "banner_timeup") >= 1, "TIME on both screens")
+    check(count(h.logs, "TIME'S UP") >= 1 and count(g.logs, "TIME'S UP") >= 1, "TIME'S UP on both screens")
     Session.command(h, "arena finish 2 1")
     s:run(1)
     check(count(h.sent, "^E AR fin") == fins + 1 and dg.finished == 2, "the host finishes the guest, one life, no more rounds")

@@ -37,10 +37,15 @@ foreach ($k in 'won', 'lost') {
     "stop " + (Ask $g "return UILOOK.stop()")
     Start-Sleep -Milliseconds 1300
 }
+"timeup " + (Ask $g "return UILOOK.timeUp()")
+Shots 'tu' @(0.05, 0.2, 0.5, 0.9, 1.25, 1.8, 2.6)
+Start-Sleep -Milliseconds 1500
+"stop " + (Ask $g "return UILOOK.stop()")
+Start-Sleep -Milliseconds 1300
 "slay " + (Ask $g "return UILOOK.slay()")
 Shots 'slay' @(0.1, 0.35, 0.6, 0.9, 1.3)
 Start-Sleep -Milliseconds 2500
 "stop " + (Ask $g "return UILOOK.stop()")
-foreach ($p in 'cd', 'won', 'lost', 'slay') {
+foreach ($p in 'cd', 'tu', 'won', 'lost', 'slay') {
     python -I "$script:Bench\sheet.py" $script:Shots "$Tag-$p" (Join-Path $script:Shots "$Tag-$p-sheet.jpg") 4 480
 }

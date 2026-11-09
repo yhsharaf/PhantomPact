@@ -21,7 +21,7 @@ fixes we done previously"). The design itself: `docs/PVP.md`.
 | 10 | Teams for more than 2 players | Done; bench with 3 and 6 players (bots) |
 | 11 | Ideas from issue #13 | Done (rounds, health floor, slow-motion hold) |
 | 12 | An execution with a boss's own moves | Done, bench (all four arenas, F pressed for real) |
-| 13 | Timer and no-timer modes | Done, bench 11-08 (TIME) |
+| 13 | Timer and no-timer modes | Done, bench 11-08 (TIME; redone as TIME'S UP 11-09) |
 | 14 | A polished UI, health bars shown perfectly | Done, bench 11-08 (lock-on 11-09) |
 | 15 | Animations, swords, deflect, dodge, parry as in solo play | Done, bench (Phantom Edges on figures 11-08; your play, 11-09) |
 | 16 | The network as efficient as it can be | Done; measured 11-08, see 16 |
@@ -147,6 +147,13 @@ loser dying the game's own way. Every screen cuts to a camera beside the two.
 None, 60, 90 or 120 s a round; at zero the team with more health (as a share) wins the round. TIME shows on every screen,
 then the round's result (11-08; the host says the clock ended it).
 - Bench 11-08: TIME on both screens at zero, then ROUND LOST / ROUND TAKEN.
+- Redone 11-09 (the user: "The Times Up or Time Over. Clearly need to be done better", of a banner that read TIME):
+  the clock's end now has the countdown's look, 时间到 in the game's brush font over the ink wash with TIME'S UP under it,
+  big and in bone (Chinese: the characters alone), the game's camera shake and its chapter-title sting, then the round's
+  banner. Sim: TIME'S UP on both screens, none in a match the clock didn't end. Shot with `pvplook.ps1`. The first shot
+  had TIME'S UP small and red, hard to read over the fighters; made big and bone, the user: "Much better", "Nice".
+  (The English words on the match screen come out in plain letters, not the title font WORD_FONT names: it reads well,
+  left as it is.)
 
 ## 14. The UI
 

@@ -71,6 +71,17 @@ function UILOOK.card(kind)
     return "card " .. kind .. " " .. tostring(ok)
 end
 
+-- The clock's end of a round the player took: TIME'S UP, then ROUND TAKEN.
+function UILOOK.timeUp()
+    local ui = UILOOK.api().arenaui
+    local m = { mode = "duel", score = { 1, 0 }, teams = {}, down = {} }
+    UILOOK.m = m
+    ui.prepareTimeUp()
+    ui.roundOver(1, 1, 1, 1, 0, m, true)
+    PBZ.coop.frameTicks.uilook = function() ui.animate(m, 1) end
+    return "time's up"
+end
+
 function UILOOK.slay()
     UILOOK.api().arenaui.slay()
     return "slay"

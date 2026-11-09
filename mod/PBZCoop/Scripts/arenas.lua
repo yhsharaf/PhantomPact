@@ -165,6 +165,7 @@ data.SOUNDS = {
     heartbeatStop = "/Game/Wwise/Events/Stop/UI/SFX_UI_Plot_NearDeath_Loop_Stop",
     count = "/Game/Wwise/Events/UI/UI_Plot/SFX_UI_Plot_Impact_Po",                     -- each number: its story's 破 impact
     fight = "/Game/Wwise/Events/UI/UI_Plot/SFX_UI_Plot_Impact_Zhan",                   -- 斗: its story's slash (斩) impact
+    timeup = "/Game/Wwise/Events/UI/UI_Plot/SFX_UI_Plot_ChapterName",                  -- TIME'S UP: its chapter title's sting
 }
 
 -- The beaten's stance while the winners come to finish them: the game's own posture-broken stagger for the player's body
