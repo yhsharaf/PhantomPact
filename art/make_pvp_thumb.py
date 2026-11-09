@@ -25,6 +25,7 @@ SHOTS = os.path.join(HERE, "screenshots")
 SRC = os.path.join(SHOTS, "pvp-update-1.7.0.png")           # the game's screen, the foe's bar on it
 PAGE = os.path.join(SHOTS, "pvp-update-1.7.0-page.png")     # the F6 page ("Waiting for player 2 (green) to be ready.")
 OUT = os.path.join(HERE, "thumbnail", "PhantomPact-1.7.0-thumbnail{}.png")
+SHADE = 150             # the dark pool behind the lettering at its middle (of 255)
 
 
 def grade(img):
@@ -115,14 +116,15 @@ def make_thumb(W):
     img = Image.alpha_composite(img, slash((W, H), (px + 20 * k, py + rot.height - 30 * k),
                                            (px + rot.width - 20 * k, py + 40 * k), 4 * k, (255, 60, 60, 220)))
     img = glitch_bands(img, rng, 9, keep=((262 * k, H),))
-    # A soft darkening at the top, so the lettering reads on the bright fog (not over the foe's bar at the very top).
-    shade = Image.new("L", (1, H))
-    for y in range(H):
-        yy = y / k
-        f = 0.0 if yy < 96 else min(1.0, (yy - 96) / 36) * max(0.0, 1 - (yy - 130) / (720 * 0.42)) ** 1.3
-        shade.putpixel((0, y), int(165 * min(1.0, f)))
+    # A soft dark pool behind the lettering alone, so it reads on the bright fog: an ellipse round the title, blurred wide.
+    # (1.6.5's band across the whole width, on this bright snow, read as a black strip edge to edge; the user: "the black
+    # thing is stretching fully".)
+    pool = Image.new("L", (W // 4, H // 4), 0)
+    cx4, cy4, rx, ry = W / 8, 212 * k / 4, 470 * k / 4, 118 * k / 4
+    ImageDraw.Draw(pool).ellipse((cx4 - rx, cy4 - ry, cx4 + rx, cy4 + ry), fill=SHADE)
+    pool = pool.filter(ImageFilter.GaussianBlur(34 * k / 4)).resize((W, H), Image.BILINEAR)
     dark = Image.new("RGBA", (W, H), (14, 6, 8, 255))
-    dark.putalpha(shade.resize((W, H)))
+    dark.putalpha(pool)
     img = Image.alpha_composite(img, dark)
     cx = W / 2
     # (Below the foe's bar and its name line, which end about y 96.)
