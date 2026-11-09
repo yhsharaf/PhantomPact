@@ -187,6 +187,14 @@ host and the host's kill reached the guest; co-op e2e still passes.
 Bosses also get `TakenReductionMultiplier_Poise` (an `AttributeSetBase` attribute, 1.0 by default) set to
 100 / `CoopBossPoise` (default 200, so 0.5): the share of poise damage they take. Poise is the game's interrupt number
 (the `CharacterState.Hitreact.Endure.*` levels and each move's action poise), separate from posture (`Shachi`).
+
+Bosses take `CoopBossHealth` / `CoopBossPosture` where given (else the enemies' numbers). How hard an enemy hits is the
+game's own pair of multipliers on what it deals, for each kind of damage (`DealtVulnerabilityMultiplier_<kind>` to raise,
+`DealtReductionMultiplier_<kind>` to lower; Physical, PhysicalSharp, PhysicalBlunt, Fire, Toxin, Ice, Aqua, Lightning,
+Blood, Chaos), times `CoopEnemyDamage` or `CoopBossDamage`, once a body. Bench, 11-09, a Xigu elite: its `Attack` at x2
+changed nothing; the dealt multiplier at 2 doubled its hits (70 -> 140) and the reduction at 0.5 halved them (70 -> 35, a
+poison tick 4 -> 2); with the umbrella `Elemental` also raised a tick went x4, so it's left out. A broken guard's blow
+(about 200) has no dealt multiplier and stays the game's.
 - **Relay robustness:** Windows refused a rename once (WinError 1450) and killed the old relay. Writing
   `net_status.txt` now retries and skips instead.
 - **Parry reward:** the game's deflect leaves the attacker untouched, so the mod judges it on the defender's side:

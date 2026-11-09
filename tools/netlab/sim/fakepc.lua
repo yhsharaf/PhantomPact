@@ -154,6 +154,13 @@ function Fake.character(pc, class, x, y, z, hp, posture)
         UltimateCharge = attribute(pc, 0), UltimateChargeCount = attribute(pc, 0),
         TakenReductionMultiplier_Poise = attribute(pc, 1),
     }))
+    -- (Each kind of damage it deals has the game's two multipliers, up and down, at 1: scaling.lua's CoopEnemyDamage.)
+    local set = rawget(rawget(a, "__fields").AttributeSetBase, "__fields")
+    for _, kind in ipairs({ "Physical", "PhysicalSharp", "PhysicalBlunt", "Elemental", "Fire", "Toxin", "Ice", "Aqua",
+        "Lightning", "Blood", "Chaos" }) do
+        set["DealtVulnerabilityMultiplier_" .. kind] = attribute(pc, 1)
+        set["DealtReductionMultiplier_" .. kind] = attribute(pc, 1)
+    end
     local cmc = object(pc, "Movement", { MovementMode = 1, Velocity = { X = 0.0, Y = 0.0, Z = 0.0 }, MaxWalkSpeed = 0, AirControl = 0,
         MaxAcceleration = 0, bRunPhysicsWithNoController = false, bOrientRotationToMovement = true })
     defs(pc, cmc, { SetMovementMode = function(self, mode) put(self, "MovementMode", mode) end, DisableMovement = false,

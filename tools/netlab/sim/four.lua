@@ -4888,6 +4888,43 @@ local function scaling()
     q:run(6)
     check(math.abs(poise(q.pcs[1], "boss") - 0.25) < 1e-6, "CoopBossPoise = 400: a quarter")
     allErrors(q)
+
+    -- Bosses' own numbers, and how hard everything hits (a player report on 1.6.9: "options to customize the boss's damage,
+    -- as well as the mobs' health, posture, and damage").
+    -- (How hard it hits: the game's multiplier of the damage it deals, up, the first kind's; scaling.lua's KINDS.)
+    local function attack(pc, id, down)
+        local set = Session.enemyOn(pc, id).AttributeSetBase
+        return (down and set.DealtReductionMultiplier_Physical or set.DealtVulnerabilityMultiplier_Physical).CurrentValue
+    end
+    local d = party(nil, "CoopBossHealth = 300\nCoopBossPosture = 200\nCoopEnemyDamage = 150\nCoopBossDamage = 250\n")
+    d:run(6)
+    local bossHp, thugHp = max(d.pcs[1], "boss"), max(d.pcs[1], "thug1")
+    check(bossHp == 35000 and thugHp == 1500, string.format(        -- (four connected: each adds the first's share again)
+        "the boss with its own health, 300%% (700%% with four); the others the enemies' 150%% (250%%): %.0f, %.0f", bossHp, thugHp))
+    check(everyone(d, function(pc) return math.abs(attack(pc, "thug1") - 1.5) < 1e-6 and math.abs(attack(pc, "boss") - 2.5) < 1e-6 end),
+        string.format("enemies hit at 150%%, the boss at 250%%, on every PC: %.2f, %.2f", attack(d.pcs[1], "thug1"), attack(d.pcs[1], "boss")))
+    local fire = Session.enemyOn(d.pcs[1], "thug1").AttributeSetBase
+    check(fire.DealtVulnerabilityMultiplier_Fire.CurrentValue == 1.5 and fire.DealtVulnerabilityMultiplier_Elemental.CurrentValue == 1,
+        "every kind of damage it deals, but not the elements' all-in-one kind (a tick counts it too)")
+    d:run(6)
+    check(math.abs(attack(d.pcs[1], "thug1") - 1.5) < 1e-6 and math.abs(attack(d.pcs[2], "boss") - 2.5) < 1e-6,
+        "once a body, never on top of itself")
+    local a = Session.enemyOn(d.pcs[1], "thug1").AttributeSetBase.DealtVulnerabilityMultiplier_Physical
+    a.BaseValue, a.CurrentValue = 1, 1                      -- (back at its own number: the game set it again, or a new body)
+    d:run(4)
+    check(math.abs(attack(d.pcs[1], "thug1") - 1.5) < 1e-6, "a body back at its own number is scaled again: " .. attack(d.pcs[1], "thug1"))
+    check(count(d.pcs[1].logs, "hitting at 150%%, bosses at 250%%") >= 1, "and the log says so")
+    allErrors(d)
+    local soft = party(nil, "CoopEnemyDamage = 50\n")
+    soft:run(6)
+    check(attack(soft.pcs[1], "thug1", true) == 0.5 and attack(soft.pcs[1], "thug1") == 1 and attack(soft.pcs[1], "boss", true) == 0.5,
+        "CoopEnemyDamage = 50: half, by the multiplier down; bosses left out take the enemies' number")
+    allErrors(soft)
+    local o = party(nil, "")
+    o:run(6)
+    check(everyone(o, function(pc) return attack(pc, "thug1") == 1 and attack(pc, "boss") == 1 and attack(pc, "boss", true) == 1 end)
+        and select(1, max(o.pcs[1], "boss")) == 12500, "left out: everything hits as the game has it, and bosses take the enemies' 150% (250% with four)")
+    allErrors(o)
 end
 
 -- A QTE that never ends on a guest (Xiaoxue's third phase, failed: the grab's end is the boss's, which the copy doesn't run):

@@ -144,6 +144,11 @@ players should use the same numbers.
 Bosses are also harder to knock out of an attack: `CoopBossPoise = 200` means it takes twice the hits to stagger a boss
 out of a move (100 = normal). Posture is the bar that opens an execution; poise is what stops the interrupts.
 
+Bosses can have their own numbers: `CoopBossHealth` and `CoopBossPosture` (left out, bosses take `CoopEnemyHealth` and
+`CoopEnemyPosture`). And how hard things hit you while your partner is with you: `CoopEnemyDamage` for enemies,
+`CoopBossDamage` for bosses (percent; 100 = normal, 150 = half as hard again, 50 = half). Each PC sets its own damage:
+it's what you take. A broken guard's blow stays the game's.
+
 With 4 or 6 Players, each person connected adds the same again, wherever they are, on another map, loading or down: 200%
 and 160% with two connected, 250% and 190% with three, and it stops there. With five or six, the ghost twins make it harder
 instead of more health. It only goes up, so a boss doesn't lose health when someone dies or

@@ -218,6 +218,23 @@ return function(api)
                 if api.scaling and tonumber(s.coopbosspoise) then
                     api.scaling.bossPoiseCommand(tostring(math.floor(math.max(100, math.min(1000, tonumber(s.coopbosspoise))))))
                 end
+                -- (Bosses' own health and posture, and how hard enemies and bosses hit: a player report on 1.6.9. Left out,
+                -- as before: bosses take the enemies' numbers, and everything hits as the game has it.)
+                local function pct(v, default)
+                    v = tonumber(v)
+                    if not v or v ~= v then
+                        return default
+                    end
+                    return math.floor(math.max(1, math.min(1000, v)))
+                end
+                if api.scaling and api.scaling.bossCommand and (tonumber(s.coopbosshealth) or tonumber(s.coopbossposture)) then
+                    api.scaling.bossCommand(string.format("%d %d", pct(s.coopbosshealth, pct(s.coopenemyhealth, 150)),
+                        pct(s.coopbossposture, pct(s.coopenemyposture, 130))))
+                end
+                if api.scaling and api.scaling.damageCommand and (tonumber(s.coopenemydamage) or tonumber(s.coopbossdamage)) then
+                    api.scaling.damageCommand(string.format("%d %d", pct(s.coopenemydamage, 100),
+                        pct(s.coopbossdamage, pct(s.coopenemydamage, 100))))
+                end
                 if api.difficulty and s.coopdifficulty and s.coopdifficulty ~= "" then
                     api.difficulty.command(s.coopdifficulty)
                 end
