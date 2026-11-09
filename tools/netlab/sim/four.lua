@@ -308,29 +308,29 @@ local function sharing()
     s:run(2)
     local h, a, b, c = s.pcs[1], s.pcs[2], s.pcs[3], s.pcs[4]
     Session.gainItem(h, "R_1", 1)
-    s:run(1)
+    s:run(3.5)                  -- (a share waits 3 s for this world's own gift: takeGifts)
     check(Session.items(a, "R_1") == 1 and Session.items(b, "R_1") == 1 and Session.items(c, "R_1") == 1 and Session.items(h, "R_1") == 1, "what the host gets, every guest gets, once")
     Session.gainItem(b, "R_2", 2)
-    s:run(1)
+    s:run(3.5)                  -- (a share waits 3 s for this world's own gift: takeGifts)
     check(Session.items(h, "R_2") == 2 and Session.items(a, "R_2") == 2 and Session.items(c, "R_2") == 2 and Session.items(b, "R_2") == 2, "what a guest gets, the host and the others get, once")
     Session.gainItem(a, "R_3", 1)
     Session.gainItem(b, "R_3", 1)
-    s:run(1)
+    s:run(3.5)                  -- (a share waits 3 s for this world's own gift: takeGifts)
     check(Session.items(a, "R_3") == 1 and Session.items(b, "R_3") == 1, "the same thing given to two players in a moment stays one each")
     check(Session.items(h, "R_3") == 1 and Session.items(c, "R_3") == 1, "and it's one for those who weren't there, not two")
     Session.gainItem(a, "R_5", 1)
     Session.gainItem(b, "R_5", 1)
     Session.gainItem(c, "R_5", 1)
-    s:run(1)
+    s:run(3.5)                  -- (a share waits 3 s for this world's own gift: takeGifts)
     check(Session.items(h, "R_5") == 1 and Session.items(a, "R_5") == 1 and Session.items(b, "R_5") == 1 and Session.items(c, "R_5") == 1, "from three senders at once, one each too")
     s:run(16)
     Session.gainItem(a, "R_5", 1)
-    s:run(1)
+    s:run(3.5)                  -- (a share waits 3 s for this world's own gift: takeGifts)
     check(Session.items(h, "R_5") == 2 and Session.items(b, "R_5") == 2, "and after the 15 s the same thing counts again")
     Session.gainItem(a, "R_4", 1)
     s:run(0.5)
     Session.gainItem(a, "R_4", 1)
-    s:run(1)
+    s:run(3.5)                  -- (a share waits 3 s for this world's own gift: takeGifts)
     check(Session.items(h, "R_4") == 2 and Session.items(c, "R_4") == 2, "two of a thing from one player are two")
     Session.gainDust(b, 50)
     s:run(1)
@@ -379,7 +379,7 @@ local function sharing()
     s:run(1.5)
     b.pickups[#b.pickups]:K2_DestroyActor()
     Session.gainItem(b, "I_KEY_9")
-    s:run(1.5)
+    s:run(3.5)
     local shared, carded = true, true
     for _, pc in ipairs({ h, a, c }) do
         shared = shared and rawget(pc.pickups[#pc.pickups], "__alive") == false and Session.items(pc, "I_KEY_9") == 1
@@ -388,9 +388,9 @@ local function sharing()
     check(count(b.sent, "^E I keyspot") == 1 and shared, "a quest item one player takes goes from the others' worlds, and they get it too")
     check(carded, "with its card, as the one who picked it up saw")
     Session.gainItem(b, "Item_Herb", 1)
-    s:run(1.5)
+    s:run(3.5)
     Session.gainItem(b, "Item_Herb", 1)
-    s:run(1.5)
+    s:run(3.5)
     check(count(h.pushes, "^Item_Herb true$") == 1 and count(h.pushes, "^Item_Herb false$") == 1,
         "a thing new to the partner shows its card; one they have already comes quietly")
     -- Issue #15: one whose item can't be read (the Snake Tongue, a token half) went out as loot, and the others' copy vanished
@@ -1955,11 +1955,36 @@ local function pickupsFresh()
     s:run(2)
     pickupOn(h, "amber1"):K2_DestroyActor()
     Session.gainItem(h, "R_520", 1)
-    s:run(2)
+    s:run(4)
     check(count(h.sent, "^E I amber1") == 1 and rawget(pickupOn(g, "amber1"), "__alive") == false,
         "the first pickup of a fresh session is told, and the partner's copy goes")
     check(Session.items(g, "R_520") == 1 and Session.items(h, "R_520") == 1, "one pickup in the world is one each")
     allErrors(s)
+
+    -- A kill's reward, given in both worlds: the host's game at the death, the guest's as its copy dies at the host's K, a
+    -- second on. The share came first and the guest kept both (a report on 1.6.9): it waits now, and this world's own drops it.
+    local t, th, tg = pair()
+    Session.moveTo(th, 1500, 450)
+    Session.moveTo(tg, 1500, 150)
+    t:run(3)
+    local copy, theirs = Session.enemyOn(tg, "thug1"), Session.enemyOn(th, "thug1")
+    Fake.setHealth(theirs, 0)
+    Fake.put(theirs, "dead", true)
+    Session.gainItem(th, "R_930", 1)
+    local diedAt, gaveAt, clock = nil, nil, 0
+    t:run(8, function()
+        clock = clock + 1 / 60
+        if not diedAt and field(copy, "dead") == true then
+            diedAt = clock
+        end
+        if diedAt and not gaveAt and clock >= diedAt + 1 then
+            gaveAt = clock
+            Session.gainItem(tg, "R_930", 1)
+        end
+    end)
+    check(gaveAt ~= nil and Session.items(tg, "R_930") == 1 and Session.items(th, "R_930") == 1,
+        "a kill's reward both worlds give is one each, the guest's own a second after the share")
+    allErrors(t)
 end
 
 local function bossReactions()
@@ -3451,7 +3476,7 @@ local function weaponsFound()
     part("a weapon a partner found")
     local s, h, g = pair()
     h.bag:AddWeaponItem(h.env.FName("Tang"), true, true, false, false)
-    s:run(2)
+    s:run(4)
     check(count(g.trace, "AddWeaponItem") >= 1, "it reaches the guest")
     local asked = false
     for _, line in ipairs(g.trace) do

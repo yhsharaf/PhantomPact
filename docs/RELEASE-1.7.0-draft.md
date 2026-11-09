@@ -59,7 +59,8 @@ works as before.
 - Joining a boss fight a step late: no second boss bar stuck at full. The boss brought in for you now gives way to the one
   your own game's fight scene brings
 - Things you pick up no longer come twice to the other player (a Killing Aura Amber, say): their copy on the ground goes
-  again as you take yours
+  again as you take yours. And a kill's reward that both games hand out comes once to the joining player, not twice (what
+  a partner finds now reaches you about 3 s later)
 - Dying in a boss fight while your partner fights on: you stay down until it's over, and the boss is no longer reset to
   full health a few seconds later (the host's death ended the guest's copy of the fight). A boss's phase scene or an
   execution no longer ends the wait either
@@ -109,7 +110,7 @@ Both players need 1.7.0. Thanks to shilover (Rakka) for the ideas in issue #13, 
 - 首领会转向压制它更狠的人:游戏没有执行的转向不会再让它多盯房主 10 秒
 - 钟:加入进度更靠前的房主时,不会再点亮房主所有的钟(庞镇全部点亮、到处都能传送)。房主点亮的钟要等你走到旁边才会为你点亮
 - 晚一步加入首领战:不会再多出一条停在满血的首领血条。为你带来的首领会让位给你自己游戏的战斗动画带来的首领
-- 你捡起的东西不会再让另一位玩家得到两份(比如杀气琥珀):你拿走时,对方地上的那一份也会消失
+- 你捡起的东西不会再让另一位玩家得到两份(比如杀气琥珀):你拿走时,对方地上的那一份也会消失。两边游戏都会给的击杀奖励,加入的玩家也只得到一份(队友找到的东西现在大约晚 3 秒到你手上)
 - 队友还在首领战中时你倒下:你会一直等到战斗结束,首领不会再在几秒后回满血(房主的死亡曾结束客人那边的战斗)。首领的转阶段动画或处决也不会结束等待
 - 房主在首领战中时加入:按 F3 可立即加入,30 秒后(原来是 3 分钟)无论如何都可以自由行动,不会再站着无法操作
 - 剧情首领:队友先开始的首领战,在你自己的剧情把首领带出来时仍然是你的战斗;小雪重新站起来后不会在客人那边消失;残留的复制体不会再挡住场地旁的钟(“战斗中”)

@@ -2555,7 +2555,8 @@ return function(api)
         local id, count, kind = rest:match("^(%S+) (%d+) (%S+)$")
         count = num(count)
         if id and #id <= MAX_ITEM_NAME and #kind <= 16 and count and count >= 1 and count <= MAX_GIFT then
-            giftsWaiting[#giftsWaiting + 1] = { id = id, count = count, kind = kind ~= "-" and kind or nil, from = from }
+            giftsWaiting[#giftsWaiting + 1] = { id = id, count = count, kind = kind ~= "-" and kind or nil, from = from,
+                at = os.clock() }
         end
     end
 
@@ -2648,15 +2649,27 @@ return function(api)
     end
 
     -- (No tip for them: the user didn't want "your partner found something" on screen. The log says what came.)
+    -- A partner's find waits a moment before it's given here: this world's own game can give the same thing for the same
+    -- event a little after. (A kill's reward: the host's game gives it at the death, the guest's copy dies at the host's K and
+    -- its game gives it too. The share came first and receiveGift drops one only when this world gave first: the guest kept
+    -- both, a Killing Aura Amber say; a report on 1.6.9.) Given here meanwhile, receiveGift drops the share: one each. Longer
+    -- while a scene plays (a boss's death), never past SAME_GIFT_S of pbz.lua's that its check goes by. (Its numbers inside
+    -- it: this function is at Lua's 200 locals.)
     local function takeGifts(pawn)
+        local GIFT_HOLD_S, GIFT_HOLD_MAX_S = 3, 12
+        local now, kept = os.clock(), {}
+        local scene = game.inCutscene and game.inCutscene()
         for _, gift in ipairs(giftsWaiting) do
+            local age = now - (gift.at or now - GIFT_HOLD_MAX_S)
             if gift.loot then
                 game.grantLoot(pawn, gift.id, gift.kind)
+            elseif age < GIFT_HOLD_S or (scene and age < GIFT_HOLD_MAX_S) then
+                kept[#kept + 1] = gift
             else
                 game.receiveGift(pawn, gift.id, gift.count, gift.kind, net.party and (gift.from or 1) or nil)
             end
         end
-        giftsWaiting = {}
+        giftsWaiting = kept
         if dustWaiting > 0 and game.addCurrency then
             game.addCurrency(pawn, dustWaiting)
             dustWaiting = 0
