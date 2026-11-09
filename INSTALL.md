@@ -65,8 +65,8 @@ and the co-op messages. Your choices are kept for the next start.
 OFF, Players (2, 4 or 6), and Mode: MULTIPLAYER, or LOCAL for two players on this PC. Mode works from the next time you start the
 game. **Skip Prologue** is red while you're in the prologue: the game skips it itself, when you start a New Game and
 choose its skip. A player who did that gets the healing gourd from the host on joining. It's green once you're past the
-prologue. Revive is coming soon. Enemy difficulty is the game's own setting. With a partner, enemies always get extra health and
-posture on top of it.
+prologue. Revive is coming soon. With a partner, the game is on Hellwalker at least (see [Co-op difficulty](#co-op-difficulty)),
+and enemies get extra health and posture on top of it.
 
 **Going to your partner.** Joining takes you to the host once, even on another map, so a friend with a new save can
 join a host further into the story. Your save stays where you land, so your own story can get ahead of where you were.
@@ -130,6 +130,11 @@ With more than two players:
 - **When you die:** after a few seconds the camera follows your partner until you respawn.
 
 ## Co-op difficulty
+
+While someone plays with you, online or on this PC, the game's own difficulty is Hellwalker: a player on Wayfarer or
+Pathbreaker is raised to it, and their own pick comes back 20 seconds after they're alone again (after a crash too, the
+next time they play alone). 66 Days stays 66 Days. Set `CoopDifficulty` in `PhantomPact.ini` to Pathbreaker, Wayfarer or
+Off to change that; each PC uses its own setting.
 
 Like Elden Ring, enemies and bosses get tougher while your partner is with you: 150% health and 130% posture by
 default. Change `CoopEnemyHealth` / `CoopEnemyPosture` in `PhantomPact.ini` (percent; 100 = normal). Both

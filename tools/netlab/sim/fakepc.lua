@@ -815,6 +815,15 @@ function Fake.story(pc)
             did("tag")
         end,
     })
+    -- The game's difficulty (EDifficultMode: 1 Wayfarer, 2 Pathbreaker, 3 Hellwalker, 4 66 Days); a save starts on Pathbreaker.
+    pc.difficulty = pc.difficulty or 2
+    pc.gameSystem = object(pc, "PBZGameSystem", {})
+    defs(pc, pc.gameSystem, {
+        GetDifficultModeByte = function() return pc.difficulty end,
+        SetDifficultMode = function(_, mode)
+            pc.difficulty = mode            -- (not a story step: did() would count it as one)
+        end,
+    })
     pc.bellManager = object(pc, "BellManager", { ActivateBellIDs = each(pc.bellIds, function(s) return name(s) end) })
     defs(pc, pc.bellManager, {
         ActivateBellByID = function(_, id)
@@ -1863,6 +1872,8 @@ function Fake.new(id, scripts, ini, link)
             return pc.eventPipeline
         elseif class == "BellManager" then
             return pc.bellManager
+        elseif class == "PBZGameSystem" then
+            return pc.gameSystem
         elseif class == "UIVisibilityManager" then
             return pc.uiVisibility
         end

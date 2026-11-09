@@ -1850,6 +1850,35 @@ local function dustOnlyEarned()
     check(Session.dust(h) == before + 130, "and earning goes on being shared after")
     allErrors(s)
 end
+-- The game's own difficulty is Hellwalker while players are together (CoopDifficulty), and each one's pick comes back after.
+local function coopDifficulty()
+    part("the game's difficulty with a partner")
+    local s, h, g = pair(nil, function(_, gpc) gpc.difficulty = 4 end)
+    s:run(2)
+    check(h.difficulty == 3, "the host's Pathbreaker is Hellwalker while they play together")
+    check(g.difficulty == 4, "a guest on 66 Days stays on 66 Days")
+    check(tostring(h.files["difficulty_own.txt"]):match("^2") ~= nil, "the host's own pick is kept in a file")
+    h.difficulty = 1                                -- (Wayfarer picked in the menu during co-op)
+    s:run(2)
+    check(h.difficulty == 3, "a lower pick in the menu is raised again")
+    g.cut = true
+    s:run(10)
+    check(h.difficulty == 3, "a partner gone a moment: still Hellwalker")
+    s:run(30)
+    check(h.difficulty == 2 and h.files["difficulty_own.txt"] == nil, "alone a while: back to the host's own Pathbreaker")
+    check(g.difficulty == 4, "and the guest's 66 Days was never touched")
+    allErrors(s)
+
+    -- A crash in co-op left the save on Hellwalker: the next start, alone, puts the pick back.
+    local t, th = pair(nil, function(hpc, gpc)
+        hpc.files["difficulty_own.txt"] = "1"
+        hpc.difficulty = 3
+        gpc.cut = true
+    end)
+    t:run(40)
+    check(th.difficulty == 1 and th.files["difficulty_own.txt"] == nil, "after a crash in co-op, alone: back to Wayfarer")
+    allErrors(t)
+end
 -- A guest's hit that makes their copy flinch: the host's enemy itself flinches the same way, and its next move doesn't cut the
 -- copy's reaction short.
 local function hitReactions()
@@ -5715,6 +5744,7 @@ return function(print_, scripts)
     hostDiesFirst()
     doorsOpenedBefore()
     dustOnlyEarned()
+    coopDifficulty()
     lateJoiner()
     lateJoinerGuestFight()
     toldOnChange()

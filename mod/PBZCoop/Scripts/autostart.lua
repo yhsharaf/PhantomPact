@@ -218,6 +218,9 @@ return function(api)
                 if api.scaling and tonumber(s.coopbosspoise) then
                     api.scaling.bossPoiseCommand(tostring(math.floor(math.max(100, math.min(1000, tonumber(s.coopbosspoise))))))
                 end
+                if api.difficulty and s.coopdifficulty and s.coopdifficulty ~= "" then
+                    api.difficulty.command(s.coopdifficulty)
+                end
                 if api.pvp then
                     if tonumber(s.pvpdamage) then
                         api.pvp.command("damage " .. s.pvpdamage)
