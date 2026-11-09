@@ -18,6 +18,8 @@ or 0, nor with Resistance_Poise at 9999; whether a boss's armour in its attacks 
 - Everyone fights with the same body: every skill node on, the same health and attack, every weapon at level 30, three
   drinks from the same gourd, at its top level, for the whole match, and no talismans (yours go back in their slots after).
   Every blow does half the usual damage: about six clean hits to bring someone down, so parries and reads decide it
+- The same difficulty for everyone: a match is Hellwalker whatever your `CoopDifficulty`, so nobody gets an easier guard.
+  On 66 Days you stay on 66 Days, with Hellwalker's perfect deflect window for the match
 - The arena's fog walls go up and there are no monsters. A countdown in the game's own brush font, 三 二 一, each beat landing with a jolt of the camera, then 斗 in blood. When the clock runs out, TIME'S UP (时间到 in the game's brush font), then the round's result
 - Every foe on the game's own boss health bar, with their name, the score and the clock over it, and the gold posture strip
   under it moving with their real posture; round and match banners. Your own bar fills with you between rounds
@@ -82,6 +84,7 @@ Both players need 1.7.0. Thanks to shilover (Rakka) for the ideas in issue #13, 
 - 配装选一次就会保存:两把武器和两件杀器,从游戏的 20 把武器和 20 件杀器中任选,有没有都可以
 - 一对一,或最多六人分成赤队和青队(每队最多三人):每个人选队伍,然后按准备
 - 所有人用同样的身体作战:技能全部点满,生命和攻击相同,所有武器都是 30 级,整场比赛同一个葫芦(满级)只能喝三口,不能佩戴护符(结束后会放回原来的槽位)。每一击的伤害是平时的一半:大约六次干净的命中才能击倒对手,胜负取决于弹反和读招
+- 所有人难度相同:无论 `CoopDifficulty` 怎么设,比赛都是 Hellwalker,谁的格挡都不会更容易。选 66 Days 的玩家保持 66 Days,只是比赛期间使用 Hellwalker 的完美弹反判定窗口
 - 场地的雾墙升起,没有怪物。用游戏自己的书法字体倒数 三 二 一,每一拍都伴随镜头的震动,然后是血红的 斗。时间用完时先显示“时间到”,再显示本局结果
 - 每个对手都显示在游戏自己的首领血条上,上方写着名字、比分和时间,血条下的金色架势条随对手真实的架势变化;每局和整场的结果横幅。每局之间你自己的血条也会随之回满
 - 组队比赛中,队友的血条显示在你自己的血条上方,样式相同:被打掉的血会以红色停留片刻再慢慢褪去,倒下的队友血条会清空

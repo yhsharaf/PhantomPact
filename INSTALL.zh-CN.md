@@ -77,7 +77,7 @@ UE4SS 控制台会显示 `Phantom Pact Host: co-op on`(或 Guest),连接成功�
 
 ## 联机难度
 
-有人和你一起玩时(联机或本地分屏),游戏自己的难度为 Hellwalker:选 Wayfarer 或 Pathbreaker 的玩家会被提升到它,独自游玩 20 秒后恢复自己的选择(游戏崩溃后,下次独自游玩时也会恢复)。66 Days 保持不变。在 `PhantomPact.ini` 中把 `CoopDifficulty` 设为 Pathbreaker、Wayfarer 或 Off 可以更改;每台电脑使用自己的设置。
+有人和你一起玩时(联机或本地分屏),游戏自己的难度为 Hellwalker:选 Wayfarer 或 Pathbreaker 的玩家会被提升到它,独自游玩 20 秒后恢复自己的选择(游戏崩溃后,下次独自游玩时也会恢复)。66 Days 保持不变。在 `PhantomPact.ini` 中把 `CoopDifficulty` 设为 Pathbreaker、Wayfarer 或 Off 可以更改;每台电脑使用自己的设置。PvP 比赛(F6)中无论这项怎么设,所有人都是 Hellwalker,谁的格挡都不会更容易;66 Days 在比赛中也保持不变,只是比赛期间使用 Hellwalker 的完美弹反判定窗口。
 
 和《艾尔登法环》一样,有搭档时敌人和首领会更强:默认 150% 血量、130% 架势。可在 `PhantomPact.ini` 修改 `CoopEnemyHealth` 和 `CoopEnemyPosture`(百分比,100 为原版)。双方应使用相同数值。
 

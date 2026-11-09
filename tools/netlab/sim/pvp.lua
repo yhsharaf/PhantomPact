@@ -150,6 +150,19 @@ return function(out, scripts)
         return ok and v or -1
     end
     local attack0 = attack(h)
+    -- 66 Days' perfect deflect window in this player's game (its combat config; difficulty.lua).
+    local function daysWindow(pc)
+        local c = pc.combatConfigs and pc.combatConfigs.Nightmare
+        return c and rawget(c, "__fields")["Deflect Perfect Window Frames"] or 6
+    end
+
+    out("the game's difficulty, the same for everyone in a match:")
+    h.difficulty = 4                            -- (the host plays 66 Days)
+    Session.command(g, "difficulty off")        -- (the guest keeps its own mode with a partner, Wayfarer)
+    g.difficulty = 1
+    s:run(1.5)
+    check(h.difficulty == 4 and g.difficulty == 1, "before the match: the host on 66 Days, the guest on its own Wayfarer: "
+        .. h.difficulty .. "/" .. g.difficulty)
 
     out("lobby:")
     Session.command(h, "arena place 0")
@@ -171,6 +184,11 @@ return function(out, scripts)
     check(h.env.PBZ.net.arena == true and g.env.PBZ.net.arena == true, "both trim the network (net.arena)")
     check(h.env.PBZ.net.pvp == true and g.env.PBZ.net.pvp == true, "both fight (net.pvp)")
     s:run(3)
+    check(g.difficulty == 3 and g.files["difficulty_own.txt"] == "1 3",
+        "in the match the guest's Wayfarer is Hellwalker, CoopDifficulty off or not, its own kept: " .. g.difficulty .. ", "
+        .. tostring(g.files["difficulty_own.txt"]))
+    check(h.difficulty == 4 and daysWindow(h) == 8, "the host stays on 66 Days, with Hellwalker's 8-frame perfect deflect: "
+        .. h.difficulty .. ", " .. daysWindow(h))
     local hm, gm = ha.match, ga.match
     check(hm and gm and hm.id == gm.id, "the same match on both")
     check(hm and (hm.phase == "count" or hm.phase == "fight"), "the host counts down or fights: " .. tostring(hm and hm.phase))
@@ -576,6 +594,10 @@ return function(out, scripts)
     s:run(5)
     check(not h.env.PBZ.net.arena and not g.env.PBZ.net.arena, "the network is whole again")
     check(not h.env.PBZ.net.pvp and not g.env.PBZ.net.pvp, "nobody fights after it")
+    check(g.difficulty == 1 and g.files["difficulty_own.txt"] == nil, "home: the guest's own Wayfarer again: " .. g.difficulty)
+    check(h.difficulty == 4 and daysWindow(h) == 6, "and the host's 66 Days with its own 6-frame window again: "
+        .. h.difficulty .. ", " .. daysWindow(h))
+    Session.command(g, "difficulty hellwalker")     -- (as the ini has it, for the rest)
     -- (The game's DeactivateAllNodes took a player's own nodes too, and nothing put them back: the next save kept that.)
     check(onNodes(h) == OWN and h.slots.HeiShi == true, "home: the host's own three nodes on, its talisman slot open: " .. onNodes(h))
     check(table.concat(hList, ",") == "AC_Deflect,None,None,None" and talismanCalls[#talismanCalls] == "on AC_Deflect 0 (1 open)",
@@ -597,15 +619,19 @@ return function(out, scripts)
         and count(h.treeCalls, "^DeactivateNode HeiShi1$") == 0, "the whole tree never switched, nor a node of the player's own")
 
     out("Death, a 60 s clock, decided by the clock:")
+    Session.command(g, "difficulty pathbreaker")    -- (the guest's CoopDifficulty Pathbreaker, its own pick Wayfarer)
+    g.difficulty = 1
     Session.command(h, "arena mode death")
     Session.command(h, "arena timer 60")
     Session.command(g, "arena ready")
     s:run(1.5)
+    check(g.difficulty == 2, "with a partner the guest's Wayfarer is its CoopDifficulty, Pathbreaker: " .. g.difficulty)
     Session.command(h, "arena start")
     s:run(7)
     local dm, dg = ha.match, ga.match
     check(dm and dg and dm.mode == "death" and dm.timer == 60 and dm.phase == "fight" and dg.phase == "fight",
         "a Death match with a 60 s clock is on: " .. tostring(dm and dm.mode) .. " " .. tostring(dm and dm.timer))
+    check(g.difficulty == 3, "in it, Hellwalker: " .. g.difficulty)
     local fins = count(h.sent, "^E AR fin")
     Fake.setHealth(g.pawn, 700)         -- (the guest behind on health as the clock runs out)
     s:run(30)
@@ -622,6 +648,10 @@ return function(out, scripts)
     s:run(16)
     check(ha.match == nil and ga.match == nil, "both home after the results")
     s:run(5)
+    check(g.difficulty == 2 and g.files["difficulty_own.txt"] == "1 2",
+        "home, the partner still there: back down to Pathbreaker, its own Wayfarer kept for when it's alone: "
+        .. g.difficulty .. ", " .. tostring(g.files["difficulty_own.txt"]))
+    Session.command(g, "difficulty hellwalker")
 
     out("a guest leaving ends it:")
     Session.command(g, "arena ready")

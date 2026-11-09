@@ -134,7 +134,8 @@ With more than two players:
 While someone plays with you, online or on this PC, the game's own difficulty is Hellwalker: a player on Wayfarer or
 Pathbreaker is raised to it, and their own pick comes back 20 seconds after they're alone again (after a crash too, the
 next time they play alone). 66 Days stays 66 Days. Set `CoopDifficulty` in `PhantomPact.ini` to Pathbreaker, Wayfarer or
-Off to change that; each PC uses its own setting.
+Off to change that; each PC uses its own setting. A PvP match (F6) is Hellwalker for everyone whatever the setting, so
+nobody gets an easier guard; 66 Days stays 66 Days there too, with Hellwalker's perfect deflect window for the match.
 
 Like Elden Ring, enemies and bosses get tougher while your partner is with you: 150% health and 130% posture by
 default. Change `CoopEnemyHealth` / `CoopEnemyPosture` in `PhantomPact.ini` (percent; 100 = normal). Both

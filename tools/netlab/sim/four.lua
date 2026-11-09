@@ -1878,6 +1878,16 @@ local function coopDifficulty()
     t:run(40)
     check(th.difficulty == 1 and th.files["difficulty_own.txt"] == nil, "after a crash in co-op, alone: back to Wayfarer")
     allErrors(t)
+
+    -- A crash in a PvP match that held a Pathbreaker at Hellwalker ("2 3": the pick, the mode it held): back to it.
+    local u, uh = pair(nil, function(hpc, gpc)
+        hpc.files["difficulty_own.txt"] = "2 3"
+        hpc.difficulty = 3
+        gpc.cut = true
+    end)
+    u:run(40)
+    check(uh.difficulty == 2 and uh.files["difficulty_own.txt"] == nil, "after a crash in a PvP match, alone: back to Pathbreaker")
+    allErrors(u)
 end
 -- A guest's hit that makes their copy flinch: the host's enemy itself flinches the same way, and its next move doesn't cut the
 -- copy's reaction short.

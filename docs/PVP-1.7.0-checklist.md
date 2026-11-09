@@ -17,7 +17,7 @@ fixes we done previously"). The design itself: `docs/PVP.md`.
 | 6 | No monsters in a match; the network sends only what PvP needs | Done; sim and bench |
 | 7 | Only 3 drinks, all from the same gourd | Done, bench 11-08 (a 4th, a skill node's, taken off 11-09) |
 | 8 | Duel (3 rounds, the winner in gold, the loser's death) and Death mode | Done, bench |
-| 9 | Everyone at the same level, max level, weapons too, "or anything else" | Done, bench 11-08 (talismans, Combat Art: see 9) |
+| 9 | Everyone at the same level, max level, weapons too, "or anything else" | Done, bench 11-08 (talismans, Combat Art, difficulty: see 9) |
 | 10 | Teams for more than 2 players | Done; bench with 3 and 6 players (bots) |
 | 11 | Ideas from issue #13 | Done (rounds, health floor, slow-motion hold) |
 | 12 | An execution with a boss's own moves | Done, bench (all four arenas, F pressed for real) |
@@ -121,6 +121,15 @@ slow motion held off (it slowed only the dodger's game). Health comes home as it
 - Fixed 11-09 (the user's own play): Q (the Combat Art) did nothing in a match: it spends the bag's charges, everyone started
   with none, and blows on a figure build none. Each round starts with all three now, as the health; each player's own come
   home. On the bench Q fired the weapon's Combat Art at once (the host's launched the guest).
+- Added 11-09: the game's difficulty the same for everyone. Each mode's combat config read from the game: for a player they
+  differ only in the perfect deflect window (Wayfarer 10 frames, Pathbreaker 8, Hellwalker 8, 66 Days 6), the window on a
+  break (14, 12, 6, 6) and how long a broken player reels (Wayfarer 2 s, the rest 3); no player attribute modifiers on any.
+  Co-op's Hellwalker (952cc2f) left out `CoopDifficulty = Off` or lower and 66 Days. A match now holds everyone at
+  Hellwalker whatever the setting, the own mode back after; 66 Days is never lowered and gets Hellwalker's 8-frame window in
+  its config for the match, in memory only. Sim: pvp (66 Days with 8 frames in the match, 6 after; a Wayfarer with the
+  setting off at Hellwalker in it and back after; a Pathbreaker setting back to Pathbreaker after), four (a crash in a match
+  puts the own mode back). Bench: see the 11-09 results (the window is read live: a perfect deflect costs no posture, an
+  ordinary one about 45, so it counts in a match).
 
 ## 10. Teams
 
@@ -234,6 +243,7 @@ Two copies on one PC, the bench's test save (`tools/netlab/bench/pvp`).
 
 | What | Script | Result |
 |---|---|---|
+| The difficulty the same for everyone in a match | scratchpad `fairbench.ps1` (bench only), 17:30-17:43 | the bench's PvP test save is itself on 66 Days. The host on 66 Days, the guest put on Wayfarer with `difficulty off`: in a duel the host stayed on 66 Days with an 8-frame perfect deflect window, the guest was on Hellwalker; after it the host's window was 6 again and the guest back on Wayfarer, no `difficulty_own.txt` left. Whether the game reads the window live (`pvpdeflect2.ps1`, the guard held 0.9 s through a heavy blade's blow; the window set in Hellwalker's config, which the match copies into 66 Days'): pressed about 150 and 50 ms before the blow, at 1 frame an ordinary deflect costing 44-45 posture, at 40 frames nothing, as with the game's own forced perfect deflect. The first duel after linking saw none of the guest's swings (no 8-frame baseline) |
 | The goal's own checks, again after the 1.6.9 merge | `pvpgoal.ps1` on 952cc2f, 16:21-16:26 | F6 pressed for real opened the page on both copies; one team each, nothing stops the start; in a Death match both at 1360 health, 160 attack, 640 posture, the same Hulu with 3 drinks, 32/32 skill nodes, all 8 weapons at 30; the 60 s clock decided round 1 ("round 1 to Crimson, 1 - 0" in both worlds); F pressed for real played Mu Xiaokui's finishing move, the game's 斩 on the loser's screen, then 殒命; both home with their own 850 health, 2 drinks and no nodes; the 120 s clock ran |
 | The user's own play (host) against the guest (`spar.lua`) | live | after 2a2853a: lock-on on the foe's body; every swing shown (the guest's figure played 30 attacks to its 26+ swings); Q (the Combat Art) fired, 3/3 charges each round; R 3 drinks, no 4th; a timed parry cost the attacker 200 posture, a held or mashed guard only blocked |
 | The countdown and the last screens | `pvplook.ps1` (no match) | after 15072cb: every beat of 三 二 一 and 斗 shot, sharp and readable over snow, moss and rock; 生还 and 殒命 with their glow, embers and ash; the game's own 斩 at the finishing blow, its screen never activated |

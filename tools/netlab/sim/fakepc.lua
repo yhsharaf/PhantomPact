@@ -1800,6 +1800,17 @@ function Fake.new(id, scripts, ini, link)
         if found[path] then
             return found[path]
         end
+        -- Each mode's combat config, as the game has it: its perfect deflect window (the bench, 11-09).
+        local mode = path:match("^/PBZCombatAsset/Config/GlobalConfig_Combat_(%a+)%.")
+        local frames = mode and ({ Handicapped = 8, Easy = 10, Normal = 8, Hard = 8, Nightmare = 6 })[mode]
+        if frames then
+            local c = object(pc, "PDA_GlobalCombatConfig_C", { ["Deflect Perfect Window Frames"] = frames })
+            rawset(c, "__path", path)
+            found[path] = c
+            pc.combatConfigs = pc.combatConfigs or {}
+            pc.combatConfigs[mode] = c
+            return c
+        end
         if path:find("^/PBZCombatAsset/ActorData/Move/") then
             local m = pc.montages[path]
             if m == nil then
