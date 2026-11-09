@@ -11,7 +11,7 @@ in `tools/netlab/bench/pvp`). A trace of every item against the code and the evi
 | 1 | Rename the old PvP button to PvPvE (PvP with enemies) | Done, bench 11-08 |
 | 2 | A separate F6 key for the new PvP | Done, bench |
 | 3 | Presets: any weapon, skill or special skill, saved, loaded each match | Done (skills: all on for everyone, see 3); bench: see 3 |
-| 4 | A countdown before the fight, a Phantom Blade Zero look | Done, bench |
+| 4 | A countdown before the fight, a Phantom Blade Zero look | Done, bench (redone 11-09) |
 | 5 | The four boss arenas, their own fog walls | Done, bench (all four, 11-07; a real win opens one, 11-09) |
 | 6 | No monsters in a match; the network sends only what PvP needs | Done; sim and bench |
 | 7 | Only 3 drinks, all from the same gourd | Done, bench 11-08 (a 4th, a skill node's, taken off 11-09) |
@@ -52,10 +52,16 @@ Skills are not a choice: every skill node is on for everyone in a match (item 9)
 
 ## 4. The countdown
 
-三 二 一 in brush strokes over a crimson ink circle, then 斗; nobody moves till then (the input held, a shield on). Over each
+三 二 一 in the game's own brush font over a crimson ink ring, then 斗 in blood; nobody moves till then (the input held, a shield on). Over each
 countdown the round: ROUND ONE, ROUND TWO, FINAL ROUND, or ONE LIFE in Death (`arenaui.lua`). The guest's countdown is
 shortened by the host's word's age, so both start together (the log says "the fight is on" in each world).
 - Bench: ONE LIFE, ROUND TWO and FINAL ROUND countdowns in shots (11-07, 11-08).
+- Redone 11-09 (the user: "no visual effects", "2 is too long", "some are not looking HD", hard to read against the scene;
+  then, of a first try's bursts, droplets and rays: "kidish and cartoonish for a serious triple AAA game or not", "there is
+  visual effects in the game much better"). The numbers are text in the game's own brush font at the screen's size, bone
+  white with a dark edge, over an ink wash that swells at each beat; each beat the game's own camera shake and its story's
+  破 impact; 斗 in blood, the ring bursting open, the screen's edge red a moment, the perfect deflect's shake and the 斩
+  impact. Bench: `pvplook.ps1` on the guest, every beat shot, sharp and readable over moss and rock.
 
 ## 5. The arenas
 
@@ -137,6 +143,9 @@ match (11-08: they ran from the bench's bell to the players). Fixed 11-08: the g
 moves with their real posture (it stood full all match); a foe's figure made again had its old bar left up, frozen; a
 round's refill left the player's own bar empty and the near-death look on (refilled the game's way now); the drink tip
 showed on a fresh game's first fall.
+- 11-09: the last screens get a soft glow in their colour, a few rising embers for the winners, a slow red pulse at the
+  screen's edge and falling ash for the losers; the finishing blow brings the game's own boss-kill 斩 in smoke, on every
+  screen (only its Niagara part started: an activated screen of the game's may take the controls). Bench: `pvplook.ps1`.
 - Fixed 11-09 (the user's own play): a lock-on (the middle button) on a foe turned the camera to the map's origin, not the
   foe: a figure is a copy of the player's class, whose only lock point is the player's own camera rig's, set in the world and
   moved by that camera alone. It's on the figure's body's middle now, as an enemy's lock point is.

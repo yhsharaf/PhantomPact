@@ -20,9 +20,9 @@ The 1.7.0 goal item by item, with what proves each: `docs/PVP-1.7.0-checklist.md
 | Damage | every blow at half the game's own (`DAMAGE` in `arenas.lua`): at the top of the game a Sanguine blow took 499 of 1360 on the bench, three to fall; at half, about six. A parry costs the attacker 200 posture, about a third of the 640 (60 before 11-09: swinging at a player who turned every blow aside cost next to nothing). Each player's own `PvPDamage` and `PvPParryPosture` count only in PvPvE: in a match they'd let a player take less |
 | Loadout | a preset of your own, kept between matches (`pvp_preset.txt`): two weapons and two Phantom Edges, any of the game's 20 and 20, owned or not |
 | Start | the host picks the mode, the clock and the arena on the F6 page; everyone picks a team and presses READY; the host presses START |
-| Countdown | 三 二 一 in brush strokes, then 斗: nobody moves till then |
+| Countdown | 三 二 一 in the game's own brush font over a crimson ink ring, each beat with the game's camera shake and an impact, then 斗 in blood: nobody moves till then |
 | Down | health can't go below 1: at 1 you fall, out of the round. So does a fall from the arena, and a rest at a bell. A team with nobody up loses the round. Down, the camera follows a teammate still up, or else a foe; a team that lost the match watches the winners come for them |
-| The end | the blow that decides the match is slowed nearly to a stop, and leaves the losers on their feet, dazed (the game's own posture-broken stagger, held on its hunch). The winners get about 5 s to finish them: F near them plays a boss's move (below). Then the winners get a golden 生还 and the losers the game's red 殒命, both made and played the same way (the game's own dark edge over the scene, the calligraphy fading in at one size), and everyone goes back where they were, with what they had |
+| The end | the blow that decides the match is slowed nearly to a stop, and leaves the losers on their feet, dazed (the game's own posture-broken stagger, held on its hunch). The winners get about 5 s to finish them: F near them plays a boss's move (below), and its blow brings the game's own boss-kill flourish, 斩 drawn in smoke, on every screen. Then the winners get a golden 生还 and the losers the game's red 殒命, both made and played the same way (the game's own dark edge over the scene, the calligraphy fading in at one size, a soft glow in its colour; a few rising embers for the winners, a slow red pulse at the screen's edge and falling ash for the losers), and everyone goes back where they were, with what they had |
 | Leaving | F6, then LEAVE twice. A player not heard from for 8 s ends the match for everyone |
 
 ## The finishing move
@@ -110,9 +110,14 @@ strip under it with `ForSeq_UpdateShachi`, from the foe's own posture said with 
 bot, an older version; unfed it stood full all match). A figure made again has its old bar taken down by that figure, found
 again by address and name (a clone put away is never destroyed, and its bar stayed up frozen: `game.dropFoeBar`). A player's figure on
 a boss bar gets no `Character` (the bench), so pbz.lua knows each bar by the widget the HUD made for it, and keeps it out of
-the mod's own boss lists (`bosses`, `bossActors`), so nothing that walks the bosses sees a player. The countdown and banners are
-ink-brush pictures of ours; TIME comes before the result of a round the clock ended. The last screens, the red 殒命 and the golden
-生还, are built from the game's own death screen pictures (`CARDS` in `arenaui.lua`).
+the mod's own boss lists (`bosses`, `bossActors`), so nothing that walks the bosses sees a player. The countdown's numbers are
+text in the game's own brush font (BaiGeTianXingTi), drawn at the screen's size so they stay sharp, over an ink ring and a
+wash of ours that keeps them clear of the scene (`LOOK` in `arenaui.lua`; 11-09, the user: "not looking HD", hard to read
+against the scene, then asked whether a first try's bursts and droplets were "kidish and cartoonish": they went). The
+banners are ink-brush pictures of ours; TIME comes before the result of a round the clock ended. The last screens, the red
+殒命 and the golden 生还, are built from the game's own death screen pictures (`CARDS` in `arenaui.lua`). The finishing blow
+brings the game's own boss-kill flourish (`ui.slay`: `W_BossDead`, only its Niagara part started, since an activated
+screen of the game's may take the controls). `tools\netlab\bench\pvp\pvplook.ps1` replays all of it on one copy, no match.
 
 In a team match each teammate has a bar over the player's own, in its look (the game's player bar follows only its own
 player): the dark frame cut away at its right end, the bone fill, the name in the player's lobby colour (`art/pvp/mate_*`,
@@ -270,7 +275,7 @@ fell 110 m and lost round 1.
 - `arena.lua`: the match (the host's side, each player's own side, the events, putting things back).
 - `arenas.lua`: the arenas, the weapon lists, the stats, the finishing moves.
 - `arenaui.lua`: the countdown, banners, each foe on the game's own boss bar (its name text says who, the score and the
-  clock: the user wants the game's own bar design, so ours went), and the last screens; each teammate's bar over the player's own
+  clock: the user wants the game's own bar design, so ours went), the last screens and the finishing 斩; each teammate's bar over the player's own
   (On screen, above).
 - `pvppanel.lua`: the F6 page (lobby and loadout).
 - `pvp.lua`: the fight itself, for PvPvE and the arena: hostile figures, parries, teams.

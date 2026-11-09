@@ -1,7 +1,8 @@
 """Builds PvP's pictures (mod/PBZCoop/art/panel/pvp_* and mod/PBZCoop/art/pvp/*): the F6 page in the panels' own look, and the
-match's countdown, banners and bars. The countdown's 三 二 一 and 斗 are painted stroke by stroke with a dry brush (this PC has no
-brush font), over a crimson ink circle, in the game's black, bone and blood. Arena cards come from the game's own arenas,
-photographed on the bench (art/pvp_src). Needs Pillow and Windows' Microsoft YaHei: python art/make_pvp_art.py"""
+match's banners, bars and effects. The countdown's 三 二 一 and 斗 are text in the game's own brush font now (arenaui.lua);
+here are the crimson ink ring under them, the wash that keeps them readable and the last screens' glow, embers and ash, in
+the game's black, bone and blood. Arena cards come from the game's own arenas, photographed on the bench (art/pvp_src).
+Needs Pillow and Windows' Microsoft YaHei: python art/make_pvp_art.py (python art/make_pvp_art.py fx: the effects only)"""
 import math
 import os
 import random
@@ -166,49 +167,6 @@ def enso(size, rng, color=DEEP):
     return ink(m, color)
 
 
-def hstroke(m, rng, x0, x1, y, w, rise=0.03):
-    """A horizontal stroke, as a brush makes it: landing at an angle from above left, lighter along the way, pressed and
-    turned down at the end."""
-    L = x1 - x0
-    pts = [(x0 - w * 0.2, y - w * 0.55), (x0 + w * 0.25, y + w * 0.05), (x0 + L * 0.12, y - L * rise * 0.15),
-           (x0 + L * 0.45, y - L * rise * 0.55), (x0 + L * 0.8, y - L * rise * 0.9), (x1 - w * 0.25, y - L * rise),
-           (x1, y - L * rise + w * 0.45)]
-    ws = [w * 0.25, w * 1.08, w * 0.9, w * 0.78, w * 0.82, w * 1.08, w * 0.4]
-    stroke(m, pts, ws, rng, bristles=64, dry=0.35)
-
-
-def numeral(n, size=600, seed=7):
-    rng = random.Random(seed + n)
-    m = Image.new("L", (size, size), 0)
-    w = size * 0.13
-    if n == 1:
-        hstroke(m, rng, size * 0.12, size * 0.88, size * 0.52, w * 1.05, 0.04)
-    elif n == 2:
-        hstroke(m, rng, size * 0.26, size * 0.72, size * 0.36, w * 0.8, 0.035)
-        hstroke(m, rng, size * 0.12, size * 0.88, size * 0.70, w, 0.03)
-    else:
-        hstroke(m, rng, size * 0.24, size * 0.74, size * 0.26, w * 0.75, 0.04)
-        hstroke(m, rng, size * 0.30, size * 0.68, size * 0.50, w * 0.68, 0.035)
-        hstroke(m, rng, size * 0.10, size * 0.90, size * 0.78, w, 0.03)
-    return ink(m, BONE)
-
-
-def dou(size=600, seed=11):
-    """斗: two dots, the cross stroke, and the long vertical that ends in a needle point."""
-    rng = random.Random(seed)
-    m = Image.new("L", (size, size), 0)
-    w = size * 0.11
-    stroke(m, [(size * 0.24, size * 0.16), (size * 0.30, size * 0.21), (size * 0.36, size * 0.27)],
-           [w * 0.45, w * 0.95, w * 0.5], rng)
-    stroke(m, [(size * 0.26, size * 0.38), (size * 0.32, size * 0.43), (size * 0.38, size * 0.49)],
-           [w * 0.45, w * 0.95, w * 0.5], rng)
-    hstroke(m, rng, size * 0.08, size * 0.92, size * 0.62, w * 0.95, 0.05)
-    stroke(m, [(size * 0.64, size * 0.06), (size * 0.66, size * 0.12), (size * 0.665, size * 0.45),
-               (size * 0.668, size * 0.78), (size * 0.67, size * 0.97)],
-           [w * 0.7, w * 1.05, w * 0.9, w * 0.6, w * 0.08], rng, dry=0.4)
-    return ink(m, CRIMSON)
-
-
 def caption(text, size=34, color=BONE, gap=10, face=None, w=None, bold=True):
     f = (face or font)(size, bold)
     probe = ImageDraw.Draw(Image.new("RGBA", (10, 10)))
@@ -234,24 +192,77 @@ def caption(text, size=34, color=BONE, gap=10, face=None, w=None, bold=True):
     return img
 
 
-def countdown():
-    """3 2 1 斗, each over its own ink circle, and the words beneath (for the eye that doesn't read the strokes)."""
-    big = 640 * K // 2 * 2
-    for n, words, zh in ((3, "THREE", "三"), (2, "TWO", "二"), (1, "ONE", "一")):
-        img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
-        img.alpha_composite(enso(big, random.Random(40 + n)))
-        num = numeral(n, int(big * 0.72), seed=3)
-        img.alpha_composite(num, ((big - num.size[0]) // 2, (big - num.size[1]) // 2))
-        save_hud(img, "count_%d" % n)
-        save_hud(caption(words, 24, BONE, gap=16), "count_%d_words" % n)
-        save_hud(caption(zh, 24, BONE, gap=0, face=chinese), "zh_count_%d_words" % n)
-    img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
-    img.alpha_composite(enso(big, random.Random(77), color=(30, 4, 6, 255)))
-    ch = dou(int(big * 0.78))
-    img.alpha_composite(ch, ((big - ch.size[0]) // 2, (big - ch.size[1]) // 2))
-    save_hud(img, "count_fight")
-    save_hud(caption("FIGHT", 30, CRIMSON, gap=20), "count_fight_words")
-    save_hud(caption("斗", 30, CRIMSON, gap=0, face=chinese), "zh_count_fight_words")
+def radial(size, f, step=4):
+    """An L mask of size (w, h) whose value at each point is 255 * f(r), r the distance from the middle against the
+    half-diagonal (0 in the middle, 1 at the corners); worked out every `step` pixels."""
+    w, h = size
+    m = Image.new("L", (w, h), 0)
+    px = m.load()
+    hd = math.hypot(w / 2, h / 2)
+    for y in range(0, h, step):
+        for x in range(0, w, step):
+            v = int(255 * max(0.0, min(1.0, f(math.hypot(x - w / 2, y - h / 2) / hd))))
+            for yy in range(min(step, h - y)):
+                for xx in range(min(step, w - x)):
+                    px[x + xx, y + yy] = v
+    return m
+
+
+def fx():
+    """The countdown's and the last screens' effects (11-09, the user: "no visual effects", "not looking HD", hard to read
+    against the scene; then, of bursts, droplets and rays, "kidish and cartoonish"). White masks, tinted in the game
+    (crimson, blood, gold), and drawn big: the wash behind the numbers, the ring, a glow, an ember, a flake of ash and the
+    screen's edge. The numbers themselves are text in the game's own brush font (arenaui.lua), sharp at any size, and the
+    finishing blow has the game's own 斩."""
+    from PIL import ImageChops
+    white = (255, 255, 255, 255)
+    rng = random.Random(1109)
+    S = 1024 * K
+    c = S / 2
+    # The wash: a soft ink blot behind the numbers, so they read over moss, rock or sky.
+    m = Image.new("L", (S, S), 0)
+    d = ImageDraw.Draw(m)
+    for _ in range(14):
+        a, rr = rng.uniform(0, 6.3), rng.uniform(0.0, 0.12) * S
+        r = rng.uniform(0.17, 0.27) * S
+        x, y = c + rr * math.cos(a), c + rr * math.sin(a)
+        d.ellipse((x - r, y - r, x + r, y + r), fill=255)
+    m = m.filter(ImageFilter.GaussianBlur(S * 0.06))
+    grain = Image.effect_noise((S, S), 90).filter(ImageFilter.GaussianBlur(S * 0.004))
+    m = Image.blend(m, grain, 0.10).point(lambda v: int(min(255, max(0, (v - 20) * 1.15)) * 0.86))
+    wash = Image.new("RGBA", (S, S), (6, 4, 6, 0))
+    wash.putalpha(m)
+    save_hud(wash, "fx_wash")
+    # The ring, one sweep of the brush as before, white now and four times the pixels.
+    save_hud(enso(S, random.Random(43), color=white), "fx_ring")
+    # A glow (the light behind 生还 and 殒命) and an ember (a bright core in a soft halo).
+    for name, G, f in (("fx_glow", 512 * K, lambda r: math.exp(-(r / 0.42) ** 2)),
+                       ("fx_ember", 64 * K, lambda r: 0.55 * math.exp(-(r / 0.3) ** 2) + 1.4 * math.exp(-(r / 0.1) ** 2))):
+        img = Image.new("RGBA", (G, G), white[:3] + (0,))
+        img.putalpha(radial((G, G), f, step=K))
+        save_hud(img, name)
+    # Ash for the fallen: a torn flake, soft at its edge, a little see-through in places.
+    A = 64 * K
+    m = Image.new("L", (A, A), 0)
+    d = ImageDraw.Draw(m)
+    pts = []
+    for i in range(11):
+        a = i / 11 * 6.283 + rng.uniform(-0.15, 0.15)
+        r = A * rng.uniform(0.2, 0.36) * (1.0 if i % 3 else 0.62)
+        pts.append((A / 2 + r * math.cos(a) * 1.2, A / 2 + r * math.sin(a) * 0.78))
+    d.polygon(pts, fill=255)
+    grain = Image.effect_noise((A, A), 70).filter(ImageFilter.GaussianBlur(A * 0.02))
+    m = ImageChops.multiply(m.filter(ImageFilter.GaussianBlur(A * 0.025)), grain.point(lambda v: min(255, 90 + v)))
+    flake = Image.new("RGBA", (A, A), white[:3] + (0,))
+    flake.putalpha(m)
+    save_hud(flake, "fx_ash")
+    # The screen's edge: clear in the middle, full at the corners (the red flash of 斗, the fallen's pulse).
+    def edge(r):
+        t = min(1.0, max(0.0, (r - 0.35) / 0.65))
+        return t * t * (3 - 2 * t)
+    vig = Image.new("RGBA", (1024 * K, 576 * K), white[:3] + (0,))
+    vig.putalpha(radial((1024 * K, 576 * K), edge, step=6).filter(ImageFilter.GaussianBlur(4)))
+    save_hud(vig, "fx_vignette")
 
 
 def smear(w, h, color, seed):
@@ -544,7 +555,12 @@ def mate_bars():
 
 
 if __name__ == "__main__":
-    countdown()
+    import sys
+    if sys.argv[1:] == ["fx"]:          # only the effects: everything else redrawn changes its brush strokes' grain
+        fx()
+        print("PvP effects written to", os.path.normpath(HUD))
+        sys.exit(0)
+    fx()
     banners()
     mate_bars()
     player_rows()

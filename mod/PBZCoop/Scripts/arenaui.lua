@@ -8,7 +8,7 @@ return function(api)
     local coop = api.coop
 
     local Z = 460
-    local COUNT_SIZE = 300          -- the countdown's picture, against a screen 1080 high
+    local COUNT_SIZE = 340          -- the countdown's ring, against a screen 1080 high
     local BANNER_W, BANNER_H = 900, 150
     local BANNER_S = 2.6            -- a banner on screen this long
     local TIME_S = 1.4              -- TIME, when the clock ended a round, before what the round came to...
@@ -112,10 +112,11 @@ return function(api)
         return p
     end
 
-    -- Centred at x, y (screen units, 1080 high), drawn w x h, at opacity a and size k (1: as drawn). Each call made only when
-    -- what it sets has moved (under half a pixel, or 0.005 of opacity, is nothing): five calls a picture at every tick were
-    -- most of the match screen's cost, now it's drawn every frame. (A picture made again starts with nothing known.)
-    local function put(p, x, y, w, h, a, k)
+    -- Centred at x, y (screen units, 1080 high), drawn w x h, at opacity a and size k (1: as drawn), turned ang degrees and
+    -- tinted (a colour: the effects are white masks) if asked. Each call made only when what it sets has moved (under half a
+    -- pixel, or 0.005 of opacity, is nothing): five calls a picture at every tick were most of the match screen's cost, now
+    -- it's drawn every frame. (A picture made again starts with nothing known.)
+    local function put(p, x, y, w, h, a, k, ang, tint)
         if not p then
             return
         end
@@ -123,6 +124,16 @@ return function(api)
         local px, py, op = x * screen.s, y * screen.s, a or 1
         local last = p.last or {}
         p.last = last
+        if ang and (not last.ang or math.abs(ang - last.ang) >= 0.1) then
+            if pcall(function() p.widget:SetRenderTransformAngle(ang) end) then
+                last.ang = ang
+            end
+        end
+        if tint and last.tint ~= tint then
+            if pcall(function() p.widget.Circle:SetColorAndOpacity(tint) end) then
+                last.tint = tint
+            end
+        end
         if not last.x or math.abs(px - last.x) >= 0.5 or math.abs(py - last.y) >= 0.5 then
             if pcall(function() p.widget:SetPositionInViewport({ X = px, Y = py }, false) end) then
                 last.x, last.y = px, py
@@ -190,6 +201,223 @@ return function(api)
         return 1 - (1 - t) * (1 - t)
     end
 
+    -- Overshoots, then settles: a number punched onto the screen.
+    local function easeBack(t)
+        local u = math.max(0, math.min(1, t)) - 1
+        return 1 + u * u * (2.70158 * u + 1.70158)
+    end
+
+    -- The countdown's and the last screens' look (11-09, the user: "no visual effects", "2 is too long", "some are not looking
+    -- HD", "the win and death also have no vfx", "the readability with environments ... is a bit hard"; then, of a first try
+    -- with starbursts, flung droplets and gold rays: "kidish and cartoonish for a serious triple AAA game or not", "there is
+    -- visual effects in the game much better"). So, restrained, and the game's own where it has them: the numbers are text
+    -- in its ink-brush font (BaiGeTianXingTi, the 生还 of pbz.lua's death card), drawn at the screen's own size so they stay
+    -- sharp, bone white with a dark edge and a shadow, over a soft ink wash that swells at each beat like ink in water and
+    -- keeps them clear of the scene; each beat lands with the game's own camera shake and its story's 破 impact; 斗 in
+    -- blood, the ring bursting open, the screen's edge red a moment, a heavier shake (the perfect deflect's) and the 斩
+    -- impact. The finishing blow brings the game's own boss-kill flourish, 斩 drawn in smoke (ui.slay). The last screens
+    -- get a soft glow in their colour, the winners a few rising embers, the fallen a slow red pulse at the screen's edge
+    -- and falling ash. Pictures: art/make_pvp_art.py fx(), white masks tinted here.
+    local LOOK = {
+        FONT = "/Game/PBZContent/UI/Fonts/BaiGeTianXingTi_small_Font.BaiGeTianXingTi_small_Font",
+        WORD_FONT = "/Game/PBZContent/UI/Fonts/EN_AlverataCYR_Medium_Title_Font.EN_AlverataCYR_Medium_Title_Font",
+        NUMBER_PT = 260, FIGHT_PT = 300, WORD_PT = 30,
+        -- (Linear, as the game takes colours: bone 238 232 220, crimson 204 40 44, blood 168 22 26, gold 232 184 72. Given as
+        -- screen values they came out pale, the crimson a salmon pink; the bench, 11-09.)
+        BONE = { R = 0.855, G = 0.807, B = 0.716, A = 1 }, CRIMSON = { R = 0.60, G = 0.021, B = 0.025, A = 1 },
+        BLOOD = { R = 0.39, G = 0.008, B = 0.010, A = 1 }, INK = { R = 0.004, G = 0.001, B = 0.001, A = 1 },
+        GOLD = { R = 0.807, G = 0.479, B = 0.065, A = 1 }, WHITE = { R = 1, G = 1, B = 1, A = 1 },
+        ASH = { R = 0.010, G = 0.008, B = 0.008, A = 1 },
+        BEAT_SHAKE = "/PBZCombatAsset/Config/HitReact/CameraShake/ShakeLevel1.ShakeLevel1_C",
+        FIGHT_SHAKE = "/PBZCombatAsset/Config/HitReact/DeflectEffect/CameraShakes/BP_CameraShake_Deflect_Strong_Perfect"
+            .. ".BP_CameraShake_Deflect_Strong_Perfect_C",
+        WIN_SHAKE = "/PBZCombatAsset/Config/HitReact/CameraShake/ShakeLevel2.ShakeLevel2_C",
+        LOSE_SHAKE = "/PBZCombatAsset/Config/HitReact/CameraShake/CameraShake_PlayerHit_Level3.CameraShake_PlayerHit_Level3_C",
+        MOTES = 32,                 -- embers or ash on screen at once, at most
+    }
+
+    -- One of the game's own objects by path (a font, a camera shake), loaded if it isn't yet; found again each time.
+    local function gameObject(path)
+        local o = StaticFindObject(path)
+        if not valid(o) and type(LoadAsset) == "function" then
+            pcall(LoadAsset, (path:gsub("%.[^.]*$", "")))
+            o = StaticFindObject(path)
+        end
+        return valid(o) and o or nil
+    end
+
+    -- A line of text in one of the game's fonts: the one-image widget with a TextBlock put in its canvas, centred in a box
+    -- w x h, its picture hidden. Made once (again after a map change), as part() makes a picture. (The bench, 11-09: a
+    -- TextBlock added to W_PaintSize's CanvasPanel draws at once, in the game's brush font.)
+    local function textPart(name, w, h, z)
+        local p = parts[name]
+        if p and (p.map ~= coop.net.localMap or (os.clock() - (p.seenAt or -1e9) >= 0.5
+            and not (api.status and api.status.onScreen(p.widget)))) then
+            parts[name], p = nil, nil
+        elseif p and os.clock() - (p.seenAt or -1e9) >= 0.5 then
+            p.seenAt = os.clock()
+        end
+        if p then
+            return p
+        end
+        local widget = hud.newImage("pvp/fx_glow.png", w, h, Z + (z or 0))
+        if not widget then
+            return nil
+        end
+        local ok = pcall(function()
+            widget:SetVisibility(2)
+            widget.Circle:SetVisibility(1)
+            local tb = StaticConstructObject(StaticFindObject("/Script/UMG.TextBlock"), widget.WidgetTree,
+                FName("PPText_" .. name))
+            local slot = widget.WidgetTree.RootWidget:AddChild(tb)
+            slot:SetAnchors({ Minimum = { X = 0.5, Y = 0.5 }, Maximum = { X = 0.5, Y = 0.5 } })
+            slot:SetAlignment({ X = 0.5, Y = 0.5 })
+            slot:SetPosition({ X = 0, Y = 0 })
+            slot:SetAutoSize(true)
+            tb:SetJustification(1)
+        end)
+        if not ok then
+            pcall(function() widget:RemoveFromParent() end)
+            return nil
+        end
+        p = { widget = widget, w = w, h = h, map = coop.net.localMap, madeAt = os.clock() }
+        parts[name] = p
+        return p
+    end
+
+    -- What a text part says, in which of the game's fonts, how big (points on a screen 1080 high: the game scales them with
+    -- the screen and draws the glyphs at that size, so they stay sharp), its colour, the gap between its letters (in
+    -- thousandths of its height), a dark edge and a shadow. Set only when it changes.
+    local function setText(p, text, fontPath, pt, color, spacing)
+        if not p then
+            return
+        end
+        local key = text .. "|" .. fontPath .. "|" .. pt .. "|" .. (spacing or 0)
+        if p.key == key and p.color == color then
+            return
+        end
+        pcall(function()
+            local tb = p.widget.WidgetTree.RootWidget:GetChildAt(1)
+            if p.key ~= key then
+                tb:SetText(FText(text))
+                local f = tb.Font
+                local fo = gameObject(fontPath)
+                if fo then
+                    f.FontObject = fo
+                end
+                f.Size = pt
+                pcall(function() f.LetterSpacing = spacing or 0 end)
+                pcall(function()
+                    f.OutlineSettings.OutlineSize = math.max(2, math.floor(pt * 0.024 + 0.5))
+                    f.OutlineSettings.OutlineColor = LOOK.INK
+                end)
+                tb:SetFont(f)
+                pcall(function()
+                    tb:SetShadowOffset({ X = pt * 0.02, Y = pt * 0.03 })
+                    tb:SetShadowColorAndOpacity({ R = 0, G = 0, B = 0, A = 0.75 })
+                end)
+                p.key = key
+            end
+            if p.color ~= color then
+                tb:SetColorAndOpacity({ SpecifiedColor = color, ColorUseRule = 0 })
+                p.color = color
+            end
+        end)
+    end
+
+    -- A text part centred at x, y (screen units), at opacity a and size k (a render scale, only for the moment of a punch:
+    -- its size is its points). Shown once it has had a frame to be laid out.
+    local function putText(p, x, y, a, k)
+        if not p then
+            return
+        end
+        local px, py, op = x * screen.s, y * screen.s, a or 1
+        local last = p.last or {}
+        p.last = last
+        if not last.x or math.abs(px - last.x) >= 0.5 or math.abs(py - last.y) >= 0.5 then
+            if pcall(function() p.widget:SetPositionInViewport({ X = px, Y = py }, false) end) then
+                last.x, last.y = px, py
+            end
+        end
+        if not last.a or math.abs(op - last.a) >= 0.005 then
+            if pcall(function() p.widget:SetRenderOpacity(op) end) then
+                last.a = op
+            end
+        end
+        local kk = k or 1
+        if not last.k or math.abs(kk - last.k) >= 0.002 then
+            if pcall(function() p.widget:SetRenderScale({ X = kk, Y = kk }) end) then
+                last.k = kk
+            end
+        end
+        local on = op > 0.01 and os.clock() - (p.madeAt or 0) > 0.05
+        if last.shown ~= on then
+            hud.show(p.widget, on)
+            last.shown = on
+        end
+    end
+
+    -- The winners' embers and the fallen's ash: each its own picture, moved every frame till its life is out (its own fall,
+    -- drift and sway, fading at the end). By slot; a picture by its layer too.
+    local motes = {}
+    local function mote(m)
+        for i = 1, LOOK.MOTES do
+            if not motes[i] then
+                motes[i] = m
+                return
+            end
+        end
+    end
+
+    local function drawMotes(now)
+        for i = 1, LOOK.MOTES do
+            local m = motes[i]
+            if m then
+                local name = "mote" .. m.z .. "_" .. i
+                local t = now - m.born
+                if t >= m.life then
+                    motes[i] = nil
+                    hide(name)
+                else
+                    local f = t / m.life
+                    local a = m.alpha * (f < 0.6 and 1 or 1 - (f - 0.6) / 0.4) * (m.fadeIn and math.min(1, t / m.fadeIn) or 1)
+                    if m.flicker then
+                        a = a * (0.72 + 0.28 * math.sin(t * 17 + i * 2.3))
+                    end
+                    put(part(name, m.tex, 64, 64, m.z), m.x + m.vx * t + (m.sway or 0) * math.sin(t * 2.6 + i),
+                        m.y + m.vy * t + 0.5 * (m.g or 0) * t * t, m.size, m.size, a, 1, (m.spin or 0) * t, m.tint)
+                end
+            end
+        end
+    end
+
+    local function clearMotes()
+        for i in pairs(motes) do
+            motes[i] = nil
+        end
+        hideAll("mote")
+    end
+
+    -- The game's own camera shake (its hit reactions', its perfect deflect's).
+    local function cameraShake(path, scale)
+        pcall(function()
+            local cls, pc = gameObject(path), api.getPlayer1()
+            if cls and valid(pc) then
+                pc.PlayerCameraManager:StartCameraShake(cls, scale or 1, 0, { Pitch = 0, Yaw = 0, Roll = 0 })
+            end
+        end)
+    end
+
+    -- One of the match's sounds (arenas.lua's SOUNDS), on this player's body.
+    local function playSound(key)
+        local d = api.arenaData
+        local path = d and d.SOUNDS and d.SOUNDS[key]
+        local _, pawn = api.getPlayer1()
+        if path and valid(pawn) and api.game.playSound then
+            api.game.playSound(path, pawn)
+        end
+    end
+
     ------------------------------------------------------------------ the countdown
 
     function ui.countdown(seconds, round, m)
@@ -208,27 +436,88 @@ return function(api)
         count = { start = os.clock(), total = seconds, round = round, which = which }
         fightAt = nil
         banner = nil
+        ui.prepareCount()
     end
 
     function ui.fight(seconds)
         fightAt = os.clock()
         ui.fightFor = seconds or 1.0          -- (arena.lua's FIGHT_SHOW_S: 斗 on screen this long)
+        ui.fightLanded = false
         count = nil
+    end
+
+    -- Each number, 斗 and their words its own text part, made (hidden) as the countdown starts: one changed at a beat laid
+    -- itself out again there, and the number was missing for the first tenth of its second (the bench, 11-09).
+    local NUMBERS = { "一", "二", "三" }
+    local WORDS = { "ONE", "TWO", "THREE" }
+    local function numberPart(k)
+        local p = textPart("cd_n" .. k, 600, 600, 4)
+        setText(p, NUMBERS[k], LOOK.FONT, LOOK.NUMBER_PT, LOOK.BONE)
+        return p
+    end
+    local function wordPart(k)
+        local p = textPart("cd_w" .. k, 600, 120, 5)
+        setText(p, WORDS[k], LOOK.WORD_FONT, LOOK.WORD_PT, LOOK.BONE, 600)
+        return p
+    end
+    local function fightPart()
+        local p = textPart("cd_dou", 600, 600, 4)
+        setText(p, "斗", LOOK.FONT, LOOK.FIGHT_PT, LOOK.CRIMSON)
+        return p
+    end
+    local function fightWordPart()
+        local p = textPart("cd_wf", 600, 120, 5)
+        setText(p, "FIGHT", LOOK.WORD_FONT, LOOK.WORD_PT + 6, LOOK.CRIMSON, 700)
+        return p
+    end
+
+    function ui.prepareCount()
+        pcall(function()
+            for k = 1, 3 do
+                numberPart(k)
+                wordPart(k)
+            end
+            fightPart()
+            fightWordPart()
+            part("cd_wash", "pvp/fx_wash.png", 1024, 1024, -2)
+            part("cd_ring", "pvp/fx_ring.png", 1024, 1024, 1)
+            part("cd_edge", "pvp/fx_vignette.png", 1024, 576, -3)
+        end)
     end
 
     local function drawCount(now)
         local W = screen.w / screen.s
         local cx, cy = W / 2, 470
+        local R = COUNT_SIZE
         if count then
             local t = now - count.start
             local left = count.total - t
             local n = math.max(1, math.min(3, math.ceil(left)))
             local into = 1 - (left - (n - 1))           -- 0..1 through this number
-            local a = into < 0.18 and ease(into / 0.18) or (into > 0.82 and 1 - ease((into - 0.82) / 0.18) or 1)
-            local k = 1.32 - 0.32 * ease(math.min(1, into / 0.22))
-            put(part("count", "pvp/count_" .. n .. ".png", COUNT_SIZE, COUNT_SIZE, 2), cx, cy, COUNT_SIZE, COUNT_SIZE, a, k)
-            local words = part("count_words", "pvp/" .. worded("count_" .. n .. "_words") .. ".png", 260, 46, 3)
-            put(words, cx, cy + COUNT_SIZE * 0.52, 260, 46, a)
+            -- A beat lands: the game's camera shake and its story's 破.
+            if count.beat ~= n then
+                count.beat = n
+                playSound("count")
+                cameraShake(LOOK.BEAT_SHAKE, 0.7)
+            end
+            -- The wash under it all, swelling at each beat like ink dropped in water and settling; the ring turning slowly,
+            -- a small pulse at each beat.
+            local swell = 1 - ease(into / 0.5)
+            put(part("cd_wash", "pvp/fx_wash.png", 1024, 1024, -2), cx, cy, R * 2.3, R * 2.3,
+                math.min(0.95, 0.84 * ease(t / 0.25) + 0.1 * swell), 1 + 0.09 * swell + 0.015 * math.sin(t * 2))
+            put(part("cd_ring", "pvp/fx_ring.png", 1024, 1024, 1), cx, cy, R, R, ease(t / 0.2),
+                1 + 0.05 * (1 - ease(into / 0.25)), t * 14, LOOK.CRIMSON)
+            hide("cd_edge")
+            -- The number punched in, held, gone at the beat's end; its word under it in English (in Chinese the number says
+            -- it).
+            local na = into < 0.08 and into / 0.08 or (into > 0.86 and 1 - (into - 0.86) / 0.14 or 1)
+            local nk = into < 0.14 and (1.9 - 0.9 * easeBack(into / 0.14)) or (1 + 0.03 * (into - 0.14))
+            for k = 1, 3 do
+                putText(numberPart(k), cx, cy, k == n and na or 0, k == n and nk or 1)
+                putText(wordPart(k), cx, cy + R * 0.6, (k == n and not zh()) and na or 0, 1)
+            end
+            putText(fightPart(), cx, cy, 0, 1)
+            putText(fightWordPart(), cx, cy, 0, 1)
             -- The round over the numbers.
             if count.which then
                 local ba = math.min(1, t / 0.3)
@@ -238,16 +527,34 @@ return function(api)
                 hide("round")
             end
         elseif fightAt and now - fightAt < (ui.fightFor or 1.0) then
-            local t, half = now - fightAt, (ui.fightFor or 1.0) / 2
-            local a = t < half and 1 or 1 - ease((t - half) / half)
-            local k = 1.6 - 0.6 * ease(math.min(1, t / 0.16))
-            put(part("count", "pvp/count_fight.png", COUNT_SIZE, COUNT_SIZE, 2), cx, cy, COUNT_SIZE, COUNT_SIZE, a, k)
-            put(part("count_words", "pvp/" .. worded("count_fight_words") .. ".png", 260, 56, 3), cx, cy + COUNT_SIZE * 0.52,
-                260, 56, a)
+            local t, dur = now - fightAt, ui.fightFor or 1.0
+            -- 斗 lands: a heavier shake (the perfect deflect's) and the story's 斩 impact.
+            if not ui.fightLanded then
+                ui.fightLanded = true
+                playSound("fight")
+                cameraShake(LOOK.FIGHT_SHAKE, 1.0)
+            end
+            -- The wash spreading out and gone, the ring bursting open, the screen's edge red a moment.
+            put(part("cd_wash", "pvp/fx_wash.png", 1024, 1024, -2), cx, cy, R * 2.3, R * 2.3, 0.86 * (1 - ease(t / 0.4)),
+                1 + 0.25 * ease(t / 0.4))
+            local rf = t / 0.3
+            put(part("cd_ring", "pvp/fx_ring.png", 1024, 1024, 1), cx, cy, R, R, rf < 1 and (1 - rf) or 0, 1 + 0.6 * ease(rf),
+                nil, LOOK.BLOOD)
+            local vf = t / 0.25
+            put(part("cd_edge", "pvp/fx_vignette.png", 1024, 576, -3), W / 2, 540, W, 1080, vf < 1 and 0.35 * (1 - vf) or 0,
+                1, nil, LOOK.BLOOD)
+            -- 斗 punched in hard, held, gone.
+            local na = t < 0.06 and t / 0.06 or (t > dur * 0.6 and 1 - (t - dur * 0.6) / (dur * 0.4) or 1)
+            local nk = t < 0.12 and (2.4 - 1.4 * easeBack(t / 0.12)) or 1
+            for k = 1, 3 do
+                putText(numberPart(k), cx, cy, 0, 1)
+                putText(wordPart(k), cx, cy, 0, 1)
+            end
+            putText(fightPart(), cx, cy, na, nk)
+            putText(fightWordPart(), cx, cy + R * 0.62, zh() and 0 or na, 1)
             hide("round")
         else
-            hide("count")
-            hide("count_words")
+            hideAll("cd_")
             hide("round")
         end
     end
@@ -572,7 +879,7 @@ return function(api)
     end
 
     local function card(parts)
-        death = { since = os.clock(), widgets = {} }
+        death = { since = os.clock(), widgets = {}, kind = parts == CARDS.won and "won" or "lost" }
         for i, d in ipairs(parts) do
             local ours = not d[1]:find("^/")
             local t = ours and hud.texture(d[1]) or gameTexture(d[1])
@@ -581,7 +888,8 @@ return function(api)
                 local okS, wide = pcall(function() return t:Blueprint_GetSizeX() / t:Blueprint_GetSizeY() end)
                 local h = 1080 * (d[2] or 1)
                 local w = h * ((okS and wide and wide > 0) and wide or (d[2] and 1 or 16 / 9))
-                local widget = hud.newImage(t, w, h, Z + 20 + i)
+                -- (The game's dark edge under the effects, the calligraphy over them: drawCardFx.)
+                local widget = hud.newImage(t, w, h, Z + (i == 1 and 20 or 30 + i))
                 if widget then
                     pcall(function() widget:SetRenderOpacity(0) end)
                     death.widgets[#death.widgets + 1] = { widget = widget, w = w, h = h, dy = d[3], fade = d[4] }
@@ -600,10 +908,48 @@ return function(api)
         return card(CARDS.won)
     end
 
+    -- The last screens' effects, in their colour: the game's camera shake as they land and a soft glow behind the
+    -- calligraphy; the winners' embers rising, the fallen's screen edge beating slowly red and ash falling.
+    local function drawCardFx(now)
+        local W = screen.w / screen.s
+        local cx, cy = W / 2, 550
+        local t = now - death.since
+        local won = death.kind == "won"
+        local tint = won and LOOK.GOLD or LOOK.BLOOD
+        if not death.landed then
+            death.landed = true
+            cameraShake(won and LOOK.WIN_SHAKE or LOOK.LOSE_SHAKE, 1.0)
+        end
+        put(part("cf_glow", "pvp/fx_glow.png", 512, 512, 23), cx, cy, 780, 780,
+            math.min(1, t / 0.8) * (0.22 + 0.05 * math.sin(t * 2.2)), 1, nil, tint)
+        if won then
+            hide("cf_edge")
+            if now >= (death.nextMote or 0) then
+                death.nextMote = now + 0.16
+                mote({ born = now, life = 2.2 + 1.4 * math.random(), x = cx + (math.random() - 0.5) * 760,
+                    y = cy + 230 + math.random() * 140, vx = (math.random() - 0.5) * 30, vy = -(50 + 80 * math.random()),
+                    g = -12, size = 5 + 7 * math.random(), tex = "pvp/fx_ember.png", tint = LOOK.GOLD, sway = 14,
+                    alpha = 0.8, flicker = true, fadeIn = 0.4, z = 40 })
+            end
+        else
+            local beat = math.max(0, math.sin(t * 4.4)) ^ 6
+            put(part("cf_edge", "pvp/fx_vignette.png", 1024, 576, 24), W / 2, 540, W, 1080,
+                math.min(1, t / 0.6) * (0.22 + 0.14 * beat), 1, nil, LOOK.BLOOD)
+            if now >= (death.nextMote or 0) then
+                death.nextMote = now + 0.14
+                mote({ born = now, life = 3 + 2 * math.random(), x = (0.05 + 0.9 * math.random()) * W,
+                    y = 60 + math.random() * 220, vx = (math.random() - 0.5) * 30, vy = 45 + 60 * math.random(), g = 0,
+                    size = 6 + 12 * math.random(), tex = "pvp/fx_ash.png", tint = LOOK.ASH, sway = 25,
+                    spin = math.random(-60, 60), alpha = 0.75, fadeIn = 0.4, z = 40 })
+            end
+        end
+    end
+
     local function drawDeath(now)
         if not death then
             return
         end
+        drawCardFx(now)
         local W = screen.w / screen.s
         for _, d in ipairs(death.widgets) do
             local a = math.min(1, (now - death.since) / d.fade)
@@ -632,6 +978,35 @@ return function(api)
         end
     end
 
+    -- The finishing blow lands: the game's own boss-kill flourish on every screen, 斩 drawn in smoke and gone in a second
+    -- (W_BossDead, its NS_UI_BossKill_001), as the game marks a boss slain. Only its Niagara part is started, not the
+    -- screen itself: an activated screen of the game's may take the controls. Taken off after, unless the map went with it
+    -- (as usable() drops a picture).
+    function ui.slay()
+        pcall(function()
+            local cls, pc = gameObject("/Game/PBZContent/UI/InGame/Dead/W_BossDead.W_BossDead_C"), api.getPlayer1()
+            if not (cls and valid(pc)) then
+                return
+            end
+            local w = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary"):Create(pc, cls, pc)
+            if not valid(w) then
+                return
+            end
+            w:AddToViewport(Z + 50)
+            w:SetVisibility(3)
+            local fx = w.WidgetTree.RootWidget:GetChildAt(0)
+            if valid(fx) and fx:GetClass():GetFName():ToString() == "NiagaraSystemWidget" then
+                fx:ActivateSystem(true)
+            end
+            local map = coop.net.localMap
+            api.game.after(3.5, function()
+                if map == coop.net.localMap and api.status ~= nil and api.status.onScreen(w) then
+                    pcall(function() w:RemoveFromParent() end)
+                end
+            end)
+        end)
+    end
+
     local function dropDeath()
         for _, d in ipairs(death and death.widgets or {}) do
             if valid(d.widget) then
@@ -639,6 +1014,8 @@ return function(api)
             end
         end
         death = nil
+        hideAll("cf_")
+        clearMotes()
     end
 
     ------------------------------------------------------------------ each frame, and away
@@ -674,7 +1051,7 @@ return function(api)
     -- Every frame (arena.lua's frameTicks.arenaTime): what moves, the countdown, the banners and the last screens. (At the
     -- arena's tick they moved 30 times a second at 60 FPS, a stutter in the eases; put() makes no call that changes nothing.)
     function ui.animate(m, me)
-        if not (count or fightAt or banner or death) or not measure() then
+        if not (count or fightAt or banner or death or next(motes)) or not measure() then
             return
         end
         local now = os.clock()
@@ -682,6 +1059,7 @@ return function(api)
             drawCount(now)
             drawBanner(now)
             drawDeath(now)
+            drawMotes(now)
         end)
         if not ok and err ~= ui.lastError then
             ui.lastError = err
@@ -691,6 +1069,9 @@ return function(api)
 
     function ui.clear()
         count, banner, fightAt = nil, nil, nil
+        for i in pairs(motes) do
+            motes[i] = nil
+        end
         mates = {}
         -- Off the screen for good, not only hidden: the next match may be on another map (usable says why).
         for name, p in pairs(parts) do

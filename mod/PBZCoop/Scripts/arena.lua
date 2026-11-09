@@ -2180,6 +2180,9 @@ return function(api)
             end
             slowBeat(m)
             sound("finisher")
+            if ui() and ui().slay then
+                ui().slay()
+            end
         end)
         log(string.format("PvP: %s finishes %s (%s).", playerName(by), playerName(victim), f and f.key or "?"))
         if ui() and ui().finisher then

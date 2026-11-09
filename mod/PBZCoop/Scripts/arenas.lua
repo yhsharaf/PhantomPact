@@ -163,6 +163,8 @@ data.SOUNDS = {
     defeat = STINGERS .. "Mus_MountainRoad_Stinger_XinZangZhouSuo_01",          -- the fallen's 殒命 (心脏骤缩)
     heartbeat = "/Game/Wwise/Events/UI/UI_Plot/SFX_UI_Plot_NearDeath_Loop",     -- the fallen waiting for it
     heartbeatStop = "/Game/Wwise/Events/Stop/UI/SFX_UI_Plot_NearDeath_Loop_Stop",
+    count = "/Game/Wwise/Events/UI/UI_Plot/SFX_UI_Plot_Impact_Po",                     -- each number: its story's 破 impact
+    fight = "/Game/Wwise/Events/UI/UI_Plot/SFX_UI_Plot_Impact_Zhan",                   -- 斗: its story's slash (斩) impact
 }
 
 -- The beaten's stance while the winners come to finish them: the game's own posture-broken stagger for the player's body
