@@ -234,7 +234,23 @@ trip), a Duel "here".
 - Not built, from issue #13: a centre the host saves per map for Here. (The quick rematch is built, 11-09: 11.)
 - Decided, not built (`docs/PVP.md`, "Scope, decided"): split screen has no F6 page; everyone linked plays (leave the
   session to sit out); the F6 page takes a mouse; one finishing move a match.
-- Releasing 1.7.0 (the zip, GitHub, Nexus) waits for your go-ahead: nothing is pushed or posted.
+- Releasing 1.7.0 (the zip, GitHub, Nexus) waits for your go-ahead: nothing is pushed or posted. The zip is built and
+  checked locally (11-10, `tools/make-release.ps1`): `dist/PhantomPact-1.7.0.zip` from 8bdfc97, 5692 KB, SHA-256
+  E9AE1C514D8CA91459FE1854C524A0BE4D1623C1C22FB7B2ED0A2B24DC821292, Windows Defender clean, file types Nexus takes,
+  its 34 scripts and the ini byte for byte the commit's. The 11-09 builds are kept beside it, out of date
+  (`PhantomPact-1.7.0-da821db.zip`, `PhantomPact-1.7.0-d1bdf5a.zip`).
+- 1.6.9's player reports, on this branch too: the stun-lock (aae17cc), the double bar (2444e2b), items twice (6a7c2bb,
+  f41c7eb), a partner's finds on the right and their pickups staying taken (03feb1a, BUGHUNT 219), the damage options
+  (d1bdf5a). Three adversarial reviews of those (11-09/10; the third: 12 agents, each finding run in the sim and put
+  to a skeptic, 9 of 9 confirmed) found more faults, all fixed. Pickups (BUGHUNT 219): a copy not loaded here, a kill's
+  reward taking a pickup's wait or giving the word its count, two guests at one pickup, one's own take before the look
+  or after a run, a word before the first look, a script error that left a copy to take (older). Damage (COOP_GUIDE.md's
+  options): a number changed across 100 or back to it, a boss known by its bar alone and a player joining between its
+  fights, ghost twins. Known, not changed, as on the code before: a word over 16 s late (the link down between a take
+  and the look), a party guest's late word after a freeze, a party guest's own find a moment before another's take of
+  the same thing, a new enemy at a dead boss's address within 30 s. Open: "the guest can't deal damage to some bosses"
+  (BUGHUNT 220): not reproduced on the bench. da821db, a fix for a cause that fits, was taken back (546bc1b): the
+  reviews found it held real flow steps. The boss's name or the guest's UE4SS.log would settle it.
 - Known, not changed: the game's `SetWeaponForceHide` takes four arguments and `moves.lua` passes three, so hiding a
   figure's Phantom Edge for a partner with none ("E -") never worked (a co-op look, since 1.5.2). The bench saves own no edge,
   so the fix couldn't be seen; left as it was.
