@@ -282,6 +282,8 @@ def banners(only=None):
         "round_won": ("ROUND TAKEN", "本回合胜"), "round_lost": ("ROUND LOST", "本回合负"), "round_draw": ("DRAW", "平局"),
         "down": ("YOU'RE DOWN", "你倒下了"), "fell": ("YOU FELL", "你坠落了"),
         "finish": ("PRESS F TO FINISH", "按 F 处决"),
+        # (The host's, on the last screens: a rematch where they stand, issue #13.)
+        "again": ("PRESS F TO REMATCH", "按 F 再战一场"),
         "won": ("YOUR TEAM WINS", "你的队伍获胜"), "lost": ("YOUR TEAM FALLS", "你的队伍落败"),
         # (One on one: it's you, not a team.)
         "won_one": ("YOU WIN", "你获胜"), "lost_one": ("YOU FALL", "你落败"),
@@ -558,6 +560,10 @@ if __name__ == "__main__":
     if sys.argv[1:] == ["fx"]:          # only the effects: everything else redrawn changes its brush strokes' grain
         fx()
         print("PvP effects written to", os.path.normpath(HUD))
+        sys.exit(0)
+    if sys.argv[1:2] == ["banners"]:    # only these banners (each one's grain comes from its own key: the others stay as they are)
+        banners(only=sys.argv[2:] or None)
+        print("PvP banners written to", os.path.normpath(HUD))
         sys.exit(0)
     fx()
     banners()

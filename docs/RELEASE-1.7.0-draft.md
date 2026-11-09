@@ -40,6 +40,8 @@ or 0, nor with Resistance_Poise at 9999; whether a boss's armour in its attacks 
   dies the way the game shows a death
 - The winners get a golden 生还, the losers the game's red 殒命, both shown the same way, and everyone goes back where they
   were with their own weapons, levels, gourd, skills and health. Nothing in a match is saved
+- Rematch: on those last screens the host can press F (B or Circle) for another match right there: the same mode, clock,
+  arena and teams, from 0 – 0 with three drinks again, and no loading screens. Everyone goes home after the last one
 - One thing a match does leave: its Phantom Edges at level 30 give the game's "Skill Over Strength" achievement (a Phantom
   Edge at its top level) to a player who doesn't have it yet
 - The network carries only the players in a match (no enemy traffic), moves are sent the frame they start, and a perfect
@@ -99,6 +101,7 @@ Both players need 1.7.0. Thanks to shilover (Rakka) for the ideas in issue #13, 
 - 每局开始时,你的战技(Q)次数都是满的
 - 决定胜负的一击会慢放,败者不会倒下,而是站着失去架势。胜者有大约五秒钟按 F(手柄按 B 或 ○)终结对手:所有画面切到两人身旁的镜头(镜头会避开岩石和墙壁),胜者用该场地首领自己的招式终结对手(余聪的突刺、花千笑的醉步滑行与斩击、金面人的突刺与上挑、木小葵的双刀冲刺;此地会从四招中抽一招),并从让这一招正好打中对手的位置出招。命中的一刻几乎静止,屏幕上浮现游戏击败首领时那个烟雾凝成的“斩”字,败者以游戏自己的死亡方式倒下
 - 胜者看到金色的“生还”,败者看到游戏自己的红色“殒命”,两者以同样的方式呈现,所有人回到原来的地方,武器、等级、葫芦、技能和生命都会还原。比赛中的一切都不会存档
+- 再战:在最后的画面上,房主可以按 F(手柄按 B 或 ○)就地再来一场:同样的模式、时间、场地和队伍,从 0 比 0 开始,葫芦重新有三口,没有读取画面。最后一场结束后所有人才回去
 - 比赛唯一会留下的:比赛中的杀器都是 30 级,还没有游戏的杀器满级成就(Skill Over Strength)的玩家会因此获得它
 - 比赛中网络只传送玩家的数据(没有敌人的数据),招式在开始的那一帧就会发出;比赛中没有完美闪避的慢动作,所有人的游戏以同样的速度运行
 

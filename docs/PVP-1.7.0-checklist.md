@@ -19,7 +19,7 @@ fixes we done previously"). The design itself: `docs/PVP.md`.
 | 8 | Duel (3 rounds, the winner in gold, the loser's death) and Death mode | Done, bench |
 | 9 | Everyone at the same level, max level, weapons too, "or anything else" | Done, bench 11-08 (talismans, Combat Art, difficulty: see 9) |
 | 10 | Teams for more than 2 players | Done; bench with 3 and 6 players (bots) |
-| 11 | Ideas from issue #13 | Done (rounds, health floor, slow-motion hold) |
+| 11 | Ideas from issue #13 | Done (rounds, health floor, slow-motion hold, a quick rematch) |
 | 12 | An execution with a boss's own moves | Done, bench (all four arenas, F pressed for real) |
 | 13 | Timer and no-timer modes | Done, bench 11-08 (TIME; redone as TIME'S UP 11-09) |
 | 14 | A polished UI, health bars shown perfectly | Done, bench 11-08 (lock-on 11-09) |
@@ -158,6 +158,10 @@ side; fixed 11-08, a fourth started on top of the first). A team is out when all
 
 Rounds (the Duel), a health floor instead of death mid-match (`Health_Min = 1`), the perfect dodge's slow motion held off in
 a match.
+- 11-09, a quick rematch: on the last screens the host's F (from 1.5 s in, so a finishing blow's F held on isn't one),
+  PRESS F TO REMATCH low on the host's screen (`banner_again`). Everyone stays where they are, round 1 at 0 – 0, the gourd's
+  3 drinks back, the finished player up; the trip home waits for the last match and puts back what was there before the
+  first (`arena.again`, `AR again`). Sim: pvp, 19 checks. Not played on the bench yet.
 
 ## 12. The execution
 
@@ -227,8 +231,7 @@ trip), a Duel "here".
 - Real players on separate PCs, 4 to 6 of them: this PC runs two game copies; players 3 to 6 were relay_cli bots. A real
   link was stood in for by `relay_cli netem` (16).
 - A verdict from you on the finished whole (the countdown, the boss finishers, the bars): you asked for no more videos.
-- Not built, from issue #13: a quick rematch in the same arena (each match goes home, so a boss arena means two trips), and
-  a centre the host saves per map for Here.
+- Not built, from issue #13: a centre the host saves per map for Here. (The quick rematch is built, 11-09: 11.)
 - Decided, not built (`docs/PVP.md`, "Scope, decided"): split screen has no F6 page; everyone linked plays (leave the
   session to sit out); the F6 page takes a mouse; one finishing move a match.
 - Releasing 1.7.0 (the zip, GitHub, Nexus) waits for your go-ahead: nothing is pushed or posted.

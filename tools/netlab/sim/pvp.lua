@@ -588,10 +588,60 @@ return function(out, scripts)
     check(count(g.logs, "finishes") == 1 and count(h.logs, "finishes") == 1, "both worlds play the move")
     local clock = (h.env.os and h.env.os.clock) or os.clock
     check(hm.finishUntil > clock() + 2, "the result waits for the move: " .. string.format("%.1f s", hm.finishUntil - clock()))
-    s:run(6)
+    -- Again (issue #13): the host's F from a moment into the last screens (arena.again, what F calls), a rematch where
+    -- they stand: round 1 at 0 - 0, nothing of the match's setup done twice, the trip home after the last match.
+    out("again, from the last screens:")
+    for _ = 1, 240 do
+        if hm.phase ~= "finish" then
+            break
+        end
+        s:run(0.05)
+    end
+    check(hm.phase == "result" and ha.again() == false and count(h.sent, "^E AR again") == 0,
+        "not as the last screens come (a finishing blow's F held on isn't one): " .. tostring(ha.match and ha.match.phase))
+    s:run(1.6)
+    check(ga.again() == false and count(g.sent, "^E AR again") == 0, "the guest can't call it")
+    local againFrom = #h.sent
+    Fake.setHealth(g.pawn, 1)           -- (as a finishing move leaves the beaten)
+    check(hm.phase == "result" and ha.again() == true, "the host can, 1.5 s in (now: " .. tostring(hm.phase) .. ")")
+    s:run(0.5)
+    check(countFrom(h.sent, againFrom, "^E AR again") == 1, "told once: " .. last(h.sent, "^E AR again"))
+    check(hm.phase == "count" and gm.phase == "count" and hm.round == 1 and gm.round == 1, string.format(
+        "round 1 counts down on both: %s %d / %s %d", hm.phase, hm.round, gm.phase, gm.round))
+    check(hm.score[1] == 0 and hm.score[2] == 0 and gm.score[1] == 0 and gm.score[2] == 0, "at 0 - 0 on both")
+    check(gm.finished == nil and hm.winner == nil and gm.winner == nil and not gm.down[2], "the last match's end forgotten")
+    check(gourd(h) == "3/3 level 6" and gourd(g) == "3/3 level 6",
+        "the gourd's 3 drinks back for both (the host drank one): " .. gourd(h) .. ", " .. gourd(g))
+    local againHp, againMax = Fake.health(g.pawn)
+    check(math.abs(againHp - againMax) < 0.5, string.format("the guest, finished, up and whole: %.0f of %.0f", againHp, againMax))
+    check(h.env.PBZ.net.arena == true and g.env.PBZ.net.pvp == true and g.difficulty == 3,
+        "still the match's network and Hellwalker: no trip home between")
+    check((h.files["pvp_restore.txt"] or ""):find("worn = 0:AC_Deflect", 1, true) ~= nil
+        and (h.files["pvp_restore.txt"] or ""):find("charges = 1 40.00", 1, true) ~= nil,
+        "the journal still has what was there before the first match")
+    s:run(3.5)
+    check(hm.phase == "fight" and gm.phase == "fight", "the second match's fight is on: " .. hm.phase .. "/" .. gm.phase)
+    Session.command(g, "arena down")
+    s:run(1)
+    check(hm.score[1] == 1 and gm.score[1] == 1, "1 - 0 on both")
+    s:run(7.5)
+    check(hm.round == 2 and hm.phase == "fight" and gm.phase == "fight", "round 2: " .. hm.round .. " " .. hm.phase)
+    Session.command(g, "arena down")
+    s:run(1)
+    check(hm.score[1] == 2 and gm.score[1] == 2, "2 - 0 to the host")
+    s:run(3)
+    check(hm.phase == "finish" and gm.phase == "finish", "the finishing window again: " .. hm.phase .. "/" .. gm.phase)
+    -- (No blow this time: the window runs out, the last screens, and this time nobody calls it: home.)
+    for _ = 1, 240 do
+        if hm.phase ~= "finish" then
+            break
+        end
+        s:run(0.05)
+    end
     check(hm.phase == "result" or ha.match == nil, "the results: " .. tostring(ha.match and ha.match.phase))
     s:run(8)
     check(ha.match == nil and ga.match == nil, "both went home")
+    check(count(h.logs, "again, match 2") == 1 and count(g.logs, "again, match 2") == 1, "one rematch on both, logged")
     s:run(5)
     check(not h.env.PBZ.net.arena and not g.env.PBZ.net.arena, "the network is whole again")
     check(not h.env.PBZ.net.pvp and not g.env.PBZ.net.pvp, "nobody fights after it")

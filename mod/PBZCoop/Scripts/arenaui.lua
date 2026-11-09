@@ -584,6 +584,21 @@ return function(api)
         put(part("banner", banner.tex, BANNER_W, BANNER_H, 4), W / 2, 300, BANNER_W, BANNER_H, a, 1.06 - 0.06 * ease(t / 0.3))
     end
 
+    -- The host's PRESS F TO REMATCH (arena.again, issue #13), from a moment into the last screens till the trip home. Low
+    -- on the screen and over the card's dark edge: at the banners' height it lay over the calligraphy.
+    local function drawAgain(m, now)
+        local after = api.arena.AGAIN_AFTER_S or 1.5
+        local from, till = m and m.resultAt and m.resultAt + after, m and m.homeAt and m.homeAt - 0.3
+        if not (from and till and m.phase == "result" and coop.isHost() and now >= from and now < till) then
+            hide("again")
+            return
+        end
+        local a = math.min(ease((now - from) / 0.35), math.min(1, (till - now) / 0.3))
+        local W = screen.w / screen.s
+        put(part("again", "pvp/" .. worded("banner_again") .. ".png", BANNER_W, BANNER_H, 45), W / 2, 960,
+            BANNER_W * 0.7, BANNER_H * 0.7, a)
+    end
+
     -- The clock ran out (the user, 11-09: "The Times Up or Time Over. Clearly need to be done better", of a banner that read
     -- TIME): in the countdown's own look, 时间到 in the game's brush font over the ink wash, TIME'S UP under it (in Chinese
     -- the characters say it), the game's camera shake and its chapter-title sting; then what the round came to, as its
@@ -1110,7 +1125,8 @@ return function(api)
     -- Every frame (arena.lua's frameTicks.arenaTime): what moves, the countdown, the banners and the last screens. (At the
     -- arena's tick they moved 30 times a second at 60 FPS, a stutter in the eases; put() makes no call that changes nothing.)
     function ui.animate(m, me)
-        if not (count or fightAt or timeUp or banner or death or next(motes)) or not measure() then
+        local last = m and m.phase == "result"
+        if not (count or fightAt or timeUp or banner or death or next(motes) or last) or not measure() then
             return
         end
         local now = os.clock()
@@ -1118,6 +1134,7 @@ return function(api)
             drawCount(now)
             drawTimeUp(now)
             drawBanner(now)
+            drawAgain(m, now)
             drawDeath(now)
             drawMotes(now)
         end)

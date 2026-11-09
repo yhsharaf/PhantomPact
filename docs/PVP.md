@@ -24,6 +24,7 @@ The 1.7.0 goal item by item, with what proves each: `docs/PVP-1.7.0-checklist.md
 | Countdown | 三 二 一 in the game's own brush font over a crimson ink ring, each beat with the game's camera shake and an impact, then 斗 in blood: nobody moves till then |
 | Down | health can't go below 1: at 1 you fall, out of the round. So does a fall from the arena, and a rest at a bell. A team with nobody up loses the round. Down, the camera follows a teammate still up, or else a foe; a team that lost the match watches the winners come for them |
 | The end | the blow that decides the match is slowed nearly to a stop, and leaves the losers on their feet, dazed (the game's own posture-broken stagger, held on its hunch). The winners get about 5 s to finish them: F near them plays a boss's move (below), and its blow brings the game's own boss-kill flourish, 斩 drawn in smoke, on every screen. Then the winners get a golden 生还 and the losers the game's red 殒命, both made and played the same way (the game's own dark edge over the scene, the calligraphy fading in at one size, a soft glow in its colour; a few rising embers for the winners, a slow red pulse at the screen's edge and falling ash for the losers), and everyone goes back where they were, with what they had |
+| Again | on the last screens the host can press F (B or Circle on a pad) from 1.5 s in till they end, PRESS F TO REMATCH low on the host's screen: a rematch where everyone stands, the same mode, clock, arena and teams, from round 1 at 0 – 0, the gourd's 3 drinks back. Nobody goes home in between (a boss arena's two loading screens saved), and nothing of the match's setup is done twice: the trip home comes after the last match and puts back what was there before the first (issue #13) |
 | Leaving | F6, then LEAVE twice. A player not heard from for 8 s ends the match for everyone |
 
 ## The finishing move
@@ -143,6 +144,7 @@ same version (the F6 page says who doesn't).
 | `AR round <id> <round> <winner> <crimson> <azure> <clock>` | host | a round's result and the score (`winner` 0 = draw; `clock` 1: the clock ended it) |
 | `AR end <id> <winner> <crimson> <azure>` | host | the match's result; the finishing window opens |
 | `AR fin <id> <victim> <move> <x> <y> <z> <yaw>` | winner | a finishing move on a fallen player, and where the winner stands for it |
+| `AR again <id>` | host | a rematch where everyone stands, from the last screens: round 1 at 0 – 0 |
 | `AR home <id>` | host | everyone goes back |
 | `AR quit <id> <why>` | anyone | leaves, or the host calls it off |
 
@@ -282,7 +284,9 @@ fell 110 m and lost round 1.
 - `pvppanel.lua`: the F6 page (lobby and loadout).
 - `pvp.lua`: the fight itself, for PvPvE and the arena: hostile figures, parries, teams.
 - `art/make_pvp_art.py`: every picture above.
-- `tools/netlab/sim/pvp.lua`: in the simulator, a whole duel with the finishing move, a guest leaving a match, and three
+- `tools/netlab/sim/pvp.lua`: in the simulator, a whole duel with the finishing move, then a rematch from its last screens
+  (the host's F, not before 1.5 s, never the guest's; round 1 at 0 – 0, the gourd full again, the finished guest up and
+  whole, then home after the second match with what was there before the first), a guest leaving a match, and three
   players in two teams, a fallen one watching their teammate; the gourd (3 of 3 at level 6, a refill taken back, all of it
   back after), the health back as it was, a guest's 4 s gap in a match (no retell till the end), TIME on both screens when
   the clock ends a round, and five players (four a side refused) (`python -I tools/netlab/luasim.py pvp`; `all.ps1` runs it).

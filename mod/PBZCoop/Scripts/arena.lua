@@ -18,6 +18,7 @@
 --   AR fin <id> <victim> <move> <x> <y> <z> <yaw>                     a winner: the finishing blow on a fallen player
 --                                                                      (move: arenas.lua's FINISHERS; where they stand)
 --   AR home <id>                                                       host: everyone goes back
+--   AR again <id>                                                      host: a rematch where they stand, round 1 at 0 - 0
 --   AR quit <id> <why>                                                 anyone: leaving, or called off
 
 return function(api)
@@ -2003,6 +2004,7 @@ return function(api)
 
     function arena.showResult(m)
         m.phase = "result"
+        m.resultAt = os.clock()
         if myTeam() == m.winner then
             sound("victory")
             -- 生还 made and played as the losers' 殒命 (arenaui); the game's own screen turned golden if that can't be had.
@@ -2016,6 +2018,70 @@ return function(api)
                 ui().deathCard()
             end
         end
+    end
+
+    -- Again (issue #13): a rematch where they stand, from the last screens, with no trip home and back (a boss arena's two
+    -- loads). The same mode, clock, arena and teams, from round 1 at 0 - 0, its countdown and all. Nothing of the match's
+    -- setup is done twice: the journal, the save veto, the loadout and the levels stay, as between rounds, so the trip home
+    -- waits for the last match and puts back what was there before the first. Each world clears what the end left: the last
+    -- screens, the heartbeat, the finishing move's camera, a watch, the slow beat; the gourd's 3 drinks back; one the
+    -- finishing move felled, or down, up again (startRound). The host's F from a moment into the last screens (a finishing
+    -- blow's F held on wasn't meant to start another), and AR again tells the rest. (Fields, not locals: as coop.lua's.)
+    arena.AGAIN_AFTER_S = 1.5
+    function arena.rematch(m, age)
+        if ui() then
+            ui().clear()
+        end
+        if m.heartbeat then
+            sound("heartbeatStop")
+            m.heartbeat = nil
+        end
+        if game.endCinema then
+            game.endCinema()
+        end
+        if m.watching and game.spectate then
+            game.spectate(nil)
+        end
+        net.arenaWatching, m.watching = nil, nil
+        local felled = m.finished == mySlot() or m.down[mySlot()]
+        m.score = { 0, 0 }
+        m.winner, m.decidedFor, m.finished = nil, nil, nil
+        m.finishUntil, m.finishBy, m.homeAt, m.resultAt = nil, nil, nil, nil
+        m.slowUntil, m.slowDilation, m.heldUntil = nil, nil, nil
+        m.drinksLeft = data.DRINKS
+        m.again = (m.again or 0) + 1
+        local _, pawn = pawnNow()
+        if valid(pawn) then
+            pcall(function() api.gs():SetGlobalTimeDilation(pawn, 1.0) end)
+            local g = arena.gourdOf(pawn)
+            if g then
+                pcall(function()
+                    g:SetCurrentTime(data.DRINKS)
+                    g:SetDisplayTime(data.DRINKS)
+                end)
+            end
+            letGo(pawn)
+            if felled then
+                m.downSelf = true           -- (up again in startRound)
+            end
+        end
+        for _, p in ipairs(coop.partners()) do
+            if valid(p.ghost) then
+                letGo(p.ghost)
+            end
+        end
+        log(string.format("PvP: again, match %d in this arena.", m.again + 1))
+        startRound(m, 1, age)
+    end
+
+    function arena.again()
+        local m = arena.match
+        if not (m and coop.isHost() and m.phase == "result" and os.clock() >= (m.resultAt or math.huge) + arena.AGAIN_AFTER_S) then
+            return false
+        end
+        coop.sendEvent("AR", "again", m.id)
+        arena.rematch(m, 0)
+        return true
     end
 
     -- The finishing blow, from the winner on a beaten enemy (F in the finishing window, or a command): the arena's boss's
@@ -2734,6 +2800,17 @@ return function(api)
         end
     end
 
+    -- (A world whose finishing window runs a little behind the host's is still in it: again from there too.)
+    function AR.again(rest, slot)
+        if coop.isHost() or slot ~= 1 then
+            return
+        end
+        local m = sameMatch(rest:match("^(%d+)"))
+        if m and (m.phase == "result" or m.phase == "finish") then
+            arena.rematch(m, net.moveAge and net.moveAge() or 0)
+        end
+    end
+
     function AR.quit(rest, slot)
         -- (origin: whose quit the host passes on, at its end. Without it, with three or more players everyone else named the
         -- host: "the host left", "the host's world never finished...", for another player's; the review of 1.7.0.)
@@ -2979,6 +3056,8 @@ return function(api)
             end
         elseif cmd == "finish" then
             log("PvP finish: " .. tostring(arena.finish(tonumber(a1), data.FINISHERS[tonumber(a2) or 0] and tonumber(a2))))
+        elseif cmd == "again" then
+            log("PvP again: " .. tostring(arena.again()))
         elseif cmd == "preset" and a1 ~= "" then
             arena.savePreset({ main = { a1, a2 }, edge = { a3, a4 } })
             log("PvP loadout: " .. table.concat(arena.preset.main, ", ") .. " | " .. table.concat(arena.preset.edge, ", "))
