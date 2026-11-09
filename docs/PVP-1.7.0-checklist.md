@@ -3,8 +3,9 @@
 Each item of the 1.7.0 goal, where it's built, and what proves it: the simulator (`python -I tools/netlab/luasim.py pvp`,
 `four`, `two`) and the bench (two game copies on one PC, `C:\PBZDev`, with relay_cli bots for players 3 to 6; the scripts are
 in `tools/netlab/bench/pvp`). A trace of every item against the code and the evidence, with a critic over it, was run on
-11-08; what it found open is fixed below or listed under "Still open". Branch `pvp-1.7.0`, from v1.6.6 (bf93706), with
-1.6.7 and 1.6.8 merged in. The design itself: `docs/PVP.md`.
+11-08; what it found open is fixed below or listed under "Still open". Branch `pvp-1.7.0`, from v1.6.6 (bf93706: its first
+PvP commit, 99588f0, sits on it), with 1.6.7, 1.6.8 and 1.6.9 merged in (70fe1e5, at the user's word: "1.7.0 should have the
+fixes we done previously"). The design itself: `docs/PVP.md`.
 
 | # | The goal said | State |
 |---|---|---|
@@ -69,6 +70,10 @@ YuCong's Crimson Forest, Hua Qianxiao's stage, the Gold-Masked One's gorge, Mu X
 A boss's arena opens once every player's save has that boss beaten. The game's own fog walls close for the match and open
 after. Bench 11-07: a match in each of the four, the trip, the spots, a closed wall 21 to 40 m from the middle, the finishing
 move, home.
+- Bench 11-09 (the 1.7.0 thumbnail's shoot): a Duel in the Crimson Forest on both copies, fight on in both worlds 24 s
+  after START. Its arena needs only YuCong's last phase's records (P3_1/2/3): on the late-game save her first phase kneels
+  there, inert. A save where that first phase was killed by hand starts her prison scene on arrival, and the match is called
+  off as designed (arena.storyBegan): never kill her outside her own fight.
 - Bench 11-09 (`pvprealwin.ps1`): a real win opens the arena. On the late-game save (the story past the four, their fights
   never fought), the Gold-Masked One at 1 health took one real blow and died the game's way: his record dead at once, still
   dead after a trip had the game save and after a restart, his arena open in the mod (`goldmask`), and at the gorge no boss
@@ -97,6 +102,14 @@ The game's own Hulu for everyone, 3 drinks for the whole match, at its top level
 
 Duel: best of three, everyone up each round, a draw adds a round. Death: one life. The winners get a golden 生还, the losers
 the game's red 殒命; the loser's death is the finishing move (item 12) and the game's own death animation.
+- Bench 11-06 (two copies, Here): a Duel end to end: lobby, countdown, real blows, rounds, the fall, 生还 for the winner and
+  殒命 for the loser, home with everything as it was.
+- Bench 11-07 (`pvpgoal.ps1`): a Death match with a 60 s clock decided by the clock and finished with F pressed for real;
+  a 120 s clock; a no-clock Duel end to end. (`pvpteams.ps1`, three players with a bot): a 1 against 2 Duel, a team out
+  only when all of it is down, and a 2 against 1 Death, both winners in gold. (`pvparenas.ps1 -Mode death`): a Death match
+  in each of the four arenas, finished with F pressed for real.
+- Sim (`luasim.py pvp`): rounds 1 to 3 of a Duel to 2 - 1, the finishing window and move, the results and home; a Death
+  match with a 60 s clock ended by it, TIME on both screens.
 - Fixed 11-08: a Death draw with both sides down started the next round at the floor's 1 health, down again at once.
 
 ## 9. Everyone the same
@@ -214,4 +227,7 @@ Two copies on one PC, the bench's test save (`tools/netlab/bench/pvp`).
 
 | What | Script | Result |
 |---|---|---|
+| The user's own play (host) against the guest (`spar.lua`) | live | after 2a2853a: lock-on on the foe's body; every swing shown (the guest's figure played 30 attacks to its 26+ swings); Q (the Combat Art) fired, 3/3 charges each round; R 3 drinks, no 4th; a timed parry cost the attacker 200 posture, a held or mashed guard only blocked |
+| The countdown and the last screens | `pvplook.ps1` (no match) | after 15072cb: every beat of 三 二 一 and 斗 shot, sharp and readable over snow, moss and rock; 生还 and 殒命 with their glow, embers and ash; the game's own 斩 at the finishing blow, its screen never activated |
+| The Crimson Forest | the thumbnail's shoot | a Duel there on both copies, fight on in both worlds 24 s after START (save with YuCong's last phase beaten) |
 | A boss beaten by a real blow | `pvprealwin.ps1` | the Gold-Masked One on the late-game save, one real blow at 1 health: record dead at once, after the game's save, and after a restart; his arena open (`goldmask`); at the gorge no boss, the spawner's flag dead |
