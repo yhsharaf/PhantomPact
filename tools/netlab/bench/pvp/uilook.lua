@@ -71,6 +71,18 @@ function UILOOK.card(kind)
     return "card " .. kind .. " " .. tostring(ok)
 end
 
+-- The last screens as the host has them, PRESS F TO REMATCH under the card from 1.5 s in (arenaui's drawAgain; on a
+-- copy with co-op off, as on a host's). The screens last 6 s, as a match's.
+function UILOOK.again(kind)
+    local ui = UILOOK.api().arenaui
+    local ok = kind == "won" and ui.victoryCard() or ui.deathCard()
+    local now = os.clock()
+    local m = { mode = "duel", score = { 2, 1 }, teams = {}, down = {}, phase = "result", resultAt = now, homeAt = now + 6 }
+    UILOOK.m = m
+    PBZ.coop.frameTicks.uilook = function() ui.animate(m, 1) end
+    return "again " .. kind .. " " .. tostring(ok)
+end
+
 -- The clock's end of a round the player took: TIME'S UP, then ROUND TAKEN.
 function UILOOK.timeUp()
     local ui = UILOOK.api().arenaui

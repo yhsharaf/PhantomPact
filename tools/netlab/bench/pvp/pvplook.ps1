@@ -1,6 +1,7 @@
 # The match screen's look on one copy, with no match: its UI script and arena data loaded again from the dev mod folder
-# (uilook.lua), then the countdown, the winners' and the losers' last screens and the finishing 斩 played and shot at set
-# moments (shots\<Tag>-cd-*, -won-*, -lost-*, -slay-*; the number is hundredths of a second in). -Sync first copies the
+# (uilook.lua), then the countdown, the winners' and the losers' last screens, the host's PRESS F TO REMATCH under them,
+# and the finishing 斩 played and shot at set moments (shots\<Tag>-cd-*, -won-*, -lost-*, -againwon-*, -againlost-*,
+# -slay-*; the number is hundredths of a second in; the rematch's only on the host's copy, -Copy host). -Sync first copies the
 # repo's arenaui.lua, arenas.lua and art\pvp into that folder (a copy started later loads them as they are). Only touches
 # C:\PBZDev and $env:TEMP\pvpbench.
 param([string]$Tag = 'look', [ValidateSet('guest', 'host')][string]$Copy = 'guest', [switch]$Sync)
@@ -37,6 +38,12 @@ foreach ($k in 'won', 'lost') {
     "stop " + (Ask $g "return UILOOK.stop()")
     Start-Sleep -Milliseconds 1300
 }
+foreach ($k in 'won', 'lost') {
+    "again " + (Ask $g "return UILOOK.again('$k')")
+    Shots "again$k" @(1.3, 1.7, 2.2, 3.5, 5.6)
+    "stop " + (Ask $g "return UILOOK.stop()")
+    Start-Sleep -Milliseconds 1300
+}
 "timeup " + (Ask $g "return UILOOK.timeUp()")
 Shots 'tu' @(0.05, 0.2, 0.5, 0.9, 1.25, 1.8, 2.6)
 Start-Sleep -Milliseconds 1500
@@ -46,6 +53,6 @@ Start-Sleep -Milliseconds 1300
 Shots 'slay' @(0.1, 0.35, 0.6, 0.9, 1.3)
 Start-Sleep -Milliseconds 2500
 "stop " + (Ask $g "return UILOOK.stop()")
-foreach ($p in 'cd', 'tu', 'won', 'lost', 'slay') {
+foreach ($p in 'cd', 'tu', 'won', 'lost', 'againwon', 'againlost', 'slay') {
     python -I "$script:Bench\sheet.py" $script:Shots "$Tag-$p" (Join-Path $script:Shots "$Tag-$p-sheet.jpg") 4 480
 }
