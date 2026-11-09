@@ -1534,8 +1534,9 @@ return function(api)
             local card = not quiet and (before == 0 or game.isNarrative(itemId))
             pcall(function() bp:AddPropsToBackPack(count, FName(itemId), card) end)
             local after = game.itemCount(bp, itemId)
-            -- (Not when quiet: GiveItem is the player blueprint's own helper, with no way to keep its card down.)
-            if after <= before and not itemId:find("^[RI]_%d") and not quiet then
+            -- (Not when quiet: GiveItem is the player blueprint's own helper, with no way to keep its card down. Only when the
+            -- count didn't move at all: one that fell, a fourth amber shard made into an amber as it came, got a second.)
+            if after == before and not itemId:find("^[RI]_%d") and not quiet then
                 pcall(function() pawn:GiveItem(FName(itemId), count) end)
                 after = game.itemCount(bp, itemId)
             end
@@ -4705,8 +4706,12 @@ return function(api)
     -- item's pickup is often a step of its own: the partner's copy vanished with the step, and nothing given. So a quest
     -- item comes to everyone like any find, with its card. game.shareQuestItems = false is the old rule (each their own).
     game.shareQuestItems = true
+    -- (The table read all the same: watchPickups tells a pickup only once it's read, and shared, nothing else read it. No
+    -- pickup was told, the partner's copy stayed, and the second to pick it up had two, a Killing Aura Amber say: a report
+    -- on 1.6.9, a slip of 1.6.7's.)
     function game.keptApart(id)
-        return not game.shareQuestItems and game.isNarrative(id)
+        local quest = game.isNarrative(id)
+        return not game.shareQuestItems and quest
     end
 
     -- A dialogue is open: a talk with an NPC (a hand-in too). Story steps, and a partner's scene skip, wait for it.

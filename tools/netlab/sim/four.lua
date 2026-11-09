@@ -1935,6 +1935,33 @@ end
 -- guest's hit doesn't force their copy's flinch on the host's boss in the middle of a move of its own; between moves one gets
 -- through now and then; a posture break always does. And the guest's boss copy, in a flinch of its own, still plays the host's
 -- next move (thrown away, the guest was never hit back).
+-- A fresh session, the game's item table read by nothing yet: the first pickup is told all the same, and the partner's copy
+-- goes. (With quest items shared, nothing read the table, and a pickup was told only once it was read: none was, the
+-- partner's copy stayed, and the second to pick it up had two, a Killing Aura Amber say; a report on 1.6.9.)
+local function pickupsFresh()
+    part("a pickup in a fresh session")
+    local s, h, g = pair()
+    local function pickupOn(pc, id)
+        for _, p in ipairs(pc.pickups) do
+            if rawget(p, "__name") == id then
+                return p
+            end
+        end
+    end
+    Fake.pickup(h, "amber1", "R_520", 250.0, 0.0, 100.0)
+    Fake.pickup(g, "amber1", "R_520", 250.0, 0.0, 100.0)
+    Session.moveTo(h, 250, 150)
+    Session.moveTo(g, 250, -150)
+    s:run(2)
+    pickupOn(h, "amber1"):K2_DestroyActor()
+    Session.gainItem(h, "R_520", 1)
+    s:run(2)
+    check(count(h.sent, "^E I amber1") == 1 and rawget(pickupOn(g, "amber1"), "__alive") == false,
+        "the first pickup of a fresh session is told, and the partner's copy goes")
+    check(Session.items(g, "R_520") == 1 and Session.items(h, "R_520") == 1, "one pickup in the world is one each")
+    allErrors(s)
+end
+
 local function bossReactions()
     part("a boss's reaction to a partner's hits")
     local s, h, g = pair()
@@ -5763,6 +5790,7 @@ return function(print_, scripts)
     syncRaces()
     hitReactions()
     bossReactions()
+    pickupsFresh()
     rests()
     sits()
     sitsForTwo()

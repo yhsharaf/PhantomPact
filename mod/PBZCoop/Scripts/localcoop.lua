@@ -2398,7 +2398,7 @@ return function(api)
             if okI and id ~= "" and id ~= "None" then
                 local before = game.itemCount(bp, id)
                 pcall(function() bp:AddPropsToBackPack(1, FName(id), true) end)
-                if game.itemCount(bp, id) <= before then
+                if game.itemCount(bp, id) == before then     -- (not one that fell: a shard made into an amber as it came)
                     pcall(function() pawn:GiveItem(FName(id), 1) end)
                 end
                 pcall(function() p:K2_DestroyActor() end)
