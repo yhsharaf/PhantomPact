@@ -3004,6 +3004,21 @@ local function playerReports()
         end
         s:run(20)
         check(not g.storyMarks["load.flag1"], "hundreds of flags new at once (a load) aren't sent")
+        -- The host's own world loaded (another map): the dozens of flow steps its setting up runs, under the flood's 200,
+        -- aren't news either. Marked done on a guest whose world hadn't run them, they skip its setting up there for good (a
+        -- report on 1.6.9, maybe: a boss the guest couldn't hurt, even as host after). A step of play after it goes as before.
+        h.map = "Map_Other"
+        s:run(2)
+        for i = 1, 40 do
+            h.eventPipeline.ExecuteNodeGuid:Add(string.format("LOAD%028d", i))
+        end
+        s:run(14)
+        check(not g.storyGuids[string.format("LOAD%028d", 1)] and count(h.logs, "with this world's load") >= 1,
+            "a load's own flow steps (40, under the flood's 200) aren't sent")
+        s:run(20)
+        h.eventPipeline.ExecuteNodeGuid:Add("PLAY0123456789ABCDEF0123456789AB")
+        s:run(14)
+        check(g.storyGuids["PLAY0123456789ABCDEF0123456789AB"] ~= nil, "a step of play after it is")
         allErrors(s)
 
         local o, oh, og = pair("FollowHostStory = Off\n")

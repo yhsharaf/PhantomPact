@@ -5,6 +5,8 @@ Not posted. For the user to edit and post, on GitHub and Nexus.
 Unproven, so not claimed below: boss copies taking next to no poise in the host's moves (468a4e1), and 1.6.7's
 CoopBossPoise. On the bench (11-07) a thug's light-hit flinch didn't change with TakenReductionMultiplier_Poise at 1, 0.01
 or 0, nor with Resistance_Poise at 9999; whether a boss's armour in its attacks reads them still needs a boss to test on.
+Also unproven, so not claimed: the guest who can't hurt some bosses (a 1.6.9 report). The host no longer tells a guest the
+flow steps of its own world's load (docs/BUGHUNT.md 220), a cause that would fit; it wasn't reproduced.
 
 ## To post
 

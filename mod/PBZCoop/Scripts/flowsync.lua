@@ -17,6 +17,7 @@ return function(api)
     local LOOK_S = 6                -- host: what its flow added is looked for this often
     local CHUNK = 600               -- characters of items in one event
     local FLOOD = 200               -- more new at once than this is a world loaded or restored, not play: the new baseline
+    local LOAD_S = 20               -- host: flow steps this long after its own world loaded (a new body or map) are its setting up
     -- Never sent: the game's mode, the screen's own state, and the states of a moment (a fight, a dodge, a lock-on).
     local SKIP = { "^GameMode%.", "^UI%.", "^State%.", "^Combat%.", "^Battle%.", "^Input%.", "^Camera%.", "^Ability%.",
         "^Status%.", "^Buff%.", "^Player%.State" }
@@ -129,6 +130,12 @@ return function(api)
         if not cur then
             return
         end
+        -- (This world loaded, a trip or another map: a new body, or the map changed, since the last look.)
+        local body, map = pawn:GetAddress(), coop.net and coop.net.localMap
+        if flow.body and (body ~= flow.body or map ~= flow.map) then
+            flow.loadedAt = now
+        end
+        flow.body, flow.map = body, map
         if flow.told == nil or (game.inPrologue and game.inPrologue()) then
             -- What was there at the link (the story table's rows cover a guest behind on that), and nothing of the prologue:
             -- marked done on a guest before they ran, its steps never ran there, the one giving back the gear among them.
@@ -175,6 +182,15 @@ return function(api)
                 log(string.format("Story flow: %d new %s at once (a load?): taken as this world's state, not sent.",
                     count[kind], kind == "t" and "flags" or "flow steps"))
             end
+        end
+        -- (Nor the flow steps of this world's own load, under FLOOD: its setting up runs them by the dozen, 74 on the bench
+        -- 11-09. Marked done on a guest whose world hadn't run them, they skip its setting up there, for good in its save; a
+        -- boss armed by one would stay unarmed there, which may be a report on 1.6.9: "for some bosses, after the host
+        -- enters, the guest can't deal damage; when the guest becomes the host, still can't". Flags and bells go as before;
+        -- a step of play after LOAD_S goes too.)
+        if flow.loadedAt and now - flow.loadedAt < LOAD_S and count.n > 0 then
+            flow.told.n, new.n = cur.n, {}
+            log(string.format("Story flow: %d new flow steps with this world's load: taken as its state, not sent.", count.n))
         end
         local seen = flow.seen or { t = {}, n = {}, b = {} }
         for _, kind in ipairs({ "t", "n", "b" }) do
