@@ -312,7 +312,7 @@ WORDS = {
         "prefix": "", "face": font, "title": "PvP", "sub": "DUELS IN THE ARENAS OF THE BOSSES YOU HAVE BEATEN",
         "mode": "MODE", "clock": "CLOCK", "arena": "ARENA", "players": "PLAYERS", "loadout": "YOUR LOADOUT",
         "modes": {"duel": ("Duel", "Best of three rounds"), "death": ("Death", "One life, last team standing")},
-        "clocks": {"0": ("No clock", "Fight to the fall"), "60": ("60 s a round", "Most health left wins"),
+        "clocks": {"0": ("No Timer", "Fight to the fall"), "60": ("60 s a round", "Most health left wins"),
                    "90": ("90 s a round", "Most health left wins"), "120": ("120 s a round", "Most health left wins")},
         "slots": {"main1": "WEAPON I", "main2": "WEAPON II", "edge1": "PHANTOM EDGE I", "edge2": "PHANTOM EDGE II"},
         "pick": {"main": "CHOOSE A WEAPON", "edge": "CHOOSE A PHANTOM EDGE"},

@@ -162,7 +162,7 @@ return function()
         { "^Waiting to hear the host's match %(the host needs Phantom Pact (.+)%)%.$", "正在等待房主的对决信息(房主需要 Phantom Pact %1)。" },
         { "^Duel, best of three, ", "决斗,三局两胜," },
         { "^Death, one life, ", "死斗,一条命," },
-        { "no clock%. ", "不限时。" },
+        { "no timer%. ", "不限时。" },
         { "(%d+) s a round%. ", "每回合 %1 秒。" },
         { "Crimson team%. ", "赤队。" },
         { "Azure team%. ", "青队。" },

@@ -1375,7 +1375,7 @@ return function(api)
         m.leftAt = os.clock()
         local a = data.arena(m.place)
         tip(string.format("%s, %s. %s team. To %s.", m.mode == "duel" and "Duel, best of three" or "Death, one life",
-            m.timer > 0 and (m.timer .. " s a round") or "no clock", teamName(myTeam()), a.name))
+            m.timer > 0 and (m.timer .. " s a round") or "no timer", teamName(myTeam()), a.name))
         if ui() then
             ui().matchStarted(m, mySlot())
         end
@@ -2989,7 +2989,7 @@ return function(api)
             local m = arena.match
             local a = data.arena(arena.place)
             local why = arena.blocker()
-            log(string.format("PvP: %s, %s, %s; %s.%s", arena.mode, arena.timer > 0 and (arena.timer .. " s") or "no clock",
+            log(string.format("PvP: %s, %s, %s; %s.%s", arena.mode, arena.timer > 0 and (arena.timer .. " s") or "no timer",
                 a and a.name or "?", m and string.format("match %d %s, round %d, %d - %d", m.id, m.phase, m.round, m.score[1],
                 m.score[2]) or "no match", why and (" " .. why) or ""))
         end

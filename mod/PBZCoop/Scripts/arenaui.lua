@@ -628,7 +628,7 @@ return function(api)
 
     ------------------------------------------------------------------ the bars, the score, the clock
 
-    -- Seconds left this round, or nil with no clock.
+    -- Seconds left this round, or nil with no timer.
     local function clockLeft(m, now)
         if m.endsAt and (m.phase == "fight" or m.phase == "out") then
             return math.max(0, m.endsAt - now)
