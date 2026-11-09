@@ -1123,12 +1123,17 @@ return function(api)
             matched[id] = e.actor
             used[e.addr] = true
         end
-        -- (The host's boss only ever paired with a boss here, by the game's own codex: a late joiner's world with no copy of
-        -- it had an ordinary enemy paired, which played the boss's moves under its bar (player report 11-09: Tie Gui as a
-        -- mob with Jing Ye's name), and hits on it reached nothing.)
+        -- (The host's boss only ever paired with one of its own kind here: a late joiner's world with no copy of it had
+        -- another enemy paired by the id, which played the boss's moves under its bar (player report 11-09: Tie Gui as a mob
+        -- with Jing Ye's name), and hits on it reached nothing. By class, not by the codex's boss mark: some story bosses
+        -- are of an ordinary enemy's class.)
         local function fits(id, e)
             local r = net.remoteEnemies[id]
-            return not (r and r.Boss and game.isBoss) or game.isBoss(e.actor, e.addr)
+            if not (r and r.Boss and r.Class) then
+                return true
+            end
+            e.class = e.class or enemyClass(e.actor)
+            return e.class == r.Class
         end
         for _, id in ipairs(ids) do
             local e = byId[id]

@@ -3396,7 +3396,7 @@ return function(api)
     -- Only what was earned goes out: a rise across a new body (a respawn, a trip to a partner, a load: the dust read low, then
     -- the saved amount back) or while down isn't, and the count starts again from there. Each was sent whole
     -- as a gain and paid to everyone, over and over (player report 11-09: three players, an hour, 600k and 1.5m).
-    game.dustWatch = { addr = nil, quietUntil = 0, QUIET_S = 10 }
+    game.dustWatch = { addr = nil, quietUntil = 0, QUIET_S = 10, AFTER_DOWN_S = 5 }
     function game.watchCurrency(pawn, sendEvent)
         local d = dust(pawn)
         if d == nil then
@@ -3411,7 +3411,8 @@ return function(api)
         -- (Not a scene: a boss's dust comes in its death scene, and the partners' share of it was lost.)
         local down = game.isDead(pawn)
         if down then
-            w.quietUntil = math.max(w.quietUntil, now + 1)     -- (and a moment after getting up)
+            w.quietUntil = math.max(w.quietUntil, now + w.AFTER_DOWN_S)     -- (and a while after getting up: a respawn here
+            -- takes 3 s and keeps the body, so a wallet given back with it came after it)
         end
         local still = down or now < w.quietUntil
         if lastDust ~= nil and not still then
