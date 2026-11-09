@@ -1753,6 +1753,103 @@ local function holdingForTwo()
     allErrors(v)
 end
 
+
+-- A player report (11-08): with two players, a host who dies in a boss fight before the guest doesn't watch the guest and
+-- wait, as a guest who dies first does.
+local function hostDiesFirst()
+    part("the host dies first in a boss fight")
+    local s, h, g = pair()
+    bossStart(s)
+    check(g.env.PBZ.game.bossFightActive(), "the guest sees the host's boss fight")
+    -- (The guest in it, as in the report: a hit of its own on the boss. A copy's bar alone isn't being in it, since 1.7.0's
+    -- net.fightingHere: at the black wall, by a bell or far off, it kept a dead player waiting on nobody.)
+    local copy = Session.enemyOn(g, "boss")
+    swing(g, copy, select(1, Fake.health(copy)) - 50)
+    s:run(5)
+    Session.die(h)
+    h.hudLayout:UnRegisterBossHPBar(Session.enemyOn(h, "boss"))     -- (the game takes its bar down as its player dies)
+    s:run(6)
+    check(field(h.deathWidget, "NotTick") == true, "the host, down with the guest still fighting, waits")
+    check(h.env.PBZ.game.isSpectating(), "and watches the guest")
+    check(g.env.PBZ.game.bossFightActive(), "and the guest's fight goes on")
+    s:run(10)
+    check(field(h.deathWidget, "NotTick") == true and h.env.PBZ.game.isSpectating(), "still, 16 s on")
+    bossEnd(s)
+    s:run(8)
+    check(field(h.deathWidget, "NotTick") == false, "the boss dies: the host's respawn goes on")
+
+    local t, th, tg = pair()
+    bossStart(t)
+    t:run(5)
+    Session.die(tg)
+    tg.hudLayout:UnRegisterBossHPBar(Session.enemyOn(tg, "boss"))
+    t:run(6)
+    check(field(tg.deathWidget, "NotTick") == true and tg.env.PBZ.game.isSpectating(), "the other way round: the guest waits and watches")
+
+    local u, uh, ug = pair()
+    bossStart(u)
+    local ucopy = Session.enemyOn(ug, "boss")
+    swing(ug, ucopy, select(1, Fake.health(ucopy)) - 50)
+    u:run(5)
+    Session.die(uh)
+    uh.hudLayout:UnRegisterBossHPBar(Session.enemyOn(uh, "boss"))
+    u:run(6)
+    check(field(uh.deathWidget, "NotTick") == true, "again: the host down first waits")
+    Session.die(ug)
+    ug.hudLayout:UnRegisterBossHPBar(Session.enemyOn(ug, "boss"))
+    u:run(12)
+    check(field(uh.deathWidget, "NotTick") == false and field(ug.deathWidget, "NotTick") == false,
+        "the guest goes down too: nobody's left to wait for, and both respawn")
+    allErrors(u)
+    allErrors(s)
+    allErrors(t)
+end
+-- A player report (11-09): a door the host opened before the guest got there, or before it had loaded in the guest's world,
+-- stayed shut for the guest (a hand-in door, the Phantom Tavern's): only F3 got them past.
+local function doorsOpenedBefore()
+    part("doors the host opened before the guest came")
+    local s, h, g = pair()
+    local function door(pc, name, open)
+        local d = Fake.switch(pc, name, 330.0, 0.0, 100.0)
+        Fake.put(d, "SwitchWithoutPlaySequence", function(self) Fake.put(self, "CurSwitchState", true) end)
+        Fake.put(d, "CurSwitchState", open)
+        return d
+    end
+    local hostDoor = door(h, "BP_Block_Door_C_UAID_7", true)       -- (open in the host's world all along)
+    local guestDoor = door(g, "BP_Block_Door_C_UAID_7", false)
+    door(h, "BP_SlenderDoor_C_UAID_9", true)
+    s:run(22)
+    check(field(guestDoor, "CurSwitchState") == true, "a door open in the host's world before is opened in the guest's too")
+    local late = door(g, "BP_SlenderDoor_C_UAID_9", false)         -- (loaded here only now)
+    s:run(3)
+    check(field(late, "CurSwitchState") == true, "and one that loads in the guest's world later, as it does")
+    check(field(hostDoor, "CurSwitchState") == true, "(the host's stays open)")
+    allErrors(s)
+end
+-- A player report (11-09): three players, an hour, the host at 1.5m dust, the guests at 600k. A wallet's rise across a death
+-- (or a new body) went out whole as a gain and was paid to everyone.
+local function dustOnlyEarned()
+    part("only earned dust is shared")
+    local s, h, g = pair()
+    s:run(12)                                       -- (past the quiet after a new body)
+    local function set(pc, v) Fake.put(pc.pawn, "ConsciousnessDust", v) end
+    local before = Session.dust(h)
+    set(g, Session.dust(g) + 100)                   -- (a kill's pay on the guest)
+    s:run(2)
+    check(Session.dust(h) == before + 100, "a guest's earned dust reaches the host")
+    Session.die(g)
+    s:run(1)
+    set(g, Session.dust(g) + 50000)                 -- (its wallet back after the death, or a new body's saved amount)
+    s:run(2)
+    Session.revive(g)
+    s:run(3)
+    check(Session.dust(h) == before + 100, "a rise while down isn't sent as a gain")
+    s:run(12)
+    set(g, Session.dust(g) + 30)
+    s:run(2)
+    check(Session.dust(h) == before + 130, "and earning goes on being shared after")
+    allErrors(s)
+end
 -- A guest's hit that makes their copy flinch: the host's enemy itself flinches the same way, and its next move doesn't cut the
 -- copy's reaction short.
 local function hitReactions()
@@ -2904,6 +3001,27 @@ local function playerReports()
         s:run(8)
         check(h.env.PBZ.game.bossFightActive() and #net(h).ownBosses() == 1,
             "and the guest's F 0 leaves it: the host's bar and walls stay")
+        allErrors(s)
+    end
+    do
+        -- A player report (11-09): the host died in the fight, and the guest's boss, one its save had beaten, was killed
+        -- on the spot; the host's next try was at nothing on the guest's screen.
+        local s, h, g = pair()
+        Session.moveTo(h, 3000, 2800)
+        Session.moveTo(g, 3000, 2700)
+        s:run(3)
+        bossStart(s)
+        s:run(4)
+        local copy = Session.enemyOn(g, "boss")
+        net(g).broughtBack["sp:boss"] = true
+        Session.die(h)
+        h.hudLayout:UnRegisterBossHPBar(Session.enemyOn(h, "boss"))     -- (the game takes the bar down as its player dies)
+        s:run(8)
+        check(field(copy, "dead") ~= true, "the host dies in the fight: the guest's boss, brought back for it, isn't put down")
+        Session.die(g)
+        g.hudLayout:UnRegisterBossHPBar(copy)
+        s:run(15)
+        check(field(copy, "dead") ~= true, "both go down and the fight is lost: still there for the next try")
         allErrors(s)
     end
     do
@@ -5594,6 +5712,9 @@ return function(print_, scripts)
     aiming()
     holding()
     holdingForTwo()
+    hostDiesFirst()
+    doorsOpenedBefore()
+    dustOnlyEarned()
     lateJoiner()
     lateJoinerGuestFight()
     toldOnChange()

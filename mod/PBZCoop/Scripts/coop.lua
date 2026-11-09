@@ -1150,11 +1150,23 @@ return function(api)
             matched[id] = e.actor
             used[e.addr] = true
         end
+        -- (The host's boss only ever paired with one of its own kind here: a late joiner's world with no copy of it had
+        -- another enemy paired by the id, which played the boss's moves under its bar (player report 11-09: Tie Gui as a mob
+        -- with Jing Ye's name), and hits on it reached nothing. By class, not by the codex's boss mark: some story bosses
+        -- are of an ordinary enemy's class.)
+        local function fits(id, e)
+            local r = net.remoteEnemies[id]
+            if not (r and r.Boss and r.Class) then
+                return true
+            end
+            e.class = e.class or enemyClass(e.actor)
+            return e.class == r.Class
+        end
         for _, id in ipairs(ids) do
             local e = byId[id]
             -- (Not a body: matched to a host enemy that's alive, its death here was sent on as the guest's kill, GK, and
             -- killed the host's, a fresh one after a rest too.)
-            if e and not used[e.addr] and not isDead(e.actor) then
+            if e and not used[e.addr] and not isDead(e.actor) and fits(id, e) then
                 take(id, e)
             end
         end
@@ -1164,7 +1176,7 @@ return function(api)
                 -- (Still the same kind: another enemy can be at a gone one's address, and was steered as the host's.)
                 local want = net.remoteEnemies[id] and net.remoteEnemies[id].Class
                 e.class = e.class or (want and enemyClass(e.actor))
-                if not want or e.class == want then
+                if (not want or e.class == want) and fits(id, e) then
                     take(id, e)
                 end
             end
@@ -1188,7 +1200,7 @@ return function(api)
                         end
                     end
                 end
-                if best then
+                if best and fits(id, best) then
                     take(id, best)
                 end
             end
@@ -1843,6 +1855,32 @@ return function(api)
                             end
                         end
                         log("Boss " .. name .. " is up again on the host: back here too.")
+                    end
+                end
+            end
+        end
+        -- The boss of a fight of the host's that this player came to late (F3, or walking in): spawned when the fight began only
+        -- if its arena was loaded here then, and never after, so they fought nothing, or an enemy paired in its place (player
+        -- report 11-09). Spawned now that they're by it.
+        for name in pairs(net.pendingBosses) do
+            local r = net.remoteEnemies[name]
+            if enemyByName[name] == nil and r and r.Boss and (r.Hp or 0) > 0 and net.partnerBosses[name] and not net.hostKilled[name]
+                and name:sub(1, 3) == "sp:" and distance(net.localLoc, r) <= PARTNER_REACH_CM and asked < bring.PER_ROUND
+                and game.spawnBoss then
+                local b = net.bringing[name] or { since = now, askedAt = -1e9 }
+                net.bringing[name] = b
+                if now - b.since >= bring.AFTER_S and now - b.askedAt >= bring.AGAIN_S then
+                    b.askedAt = now
+                    asked = asked + 1
+                    local at, turned, spawned = game.spawnBoss(name, true)
+                    if at then
+                        net.broughtBack[name] = turned or net.broughtBack[name]
+                        if type(spawned) == "table" then
+                            spawned.untilAt = os.clock() + 120
+                            net.extraBossWatch = net.extraBossWatch or {}
+                            net.extraBossWatch[name] = spawned
+                        end
+                        log("The host's fight with " .. name .. " came here late: its boss spawned here now.")
                     end
                 end
             end
@@ -4421,8 +4459,13 @@ return function(api)
         -- they stood shut in by the walls with it. (The bar came back every second, and the walls stayed shut for nobody.)
         -- (Or no F 1 heard at all, with a fight of theirs shown here: a B held up while this player was cut off came after
         -- the fight was over, and with nothing to end it its bar stayed up for good.)
+        -- (2: down in it, waiting for it. Their fight goes on here, though they're nobody to wait for.)
+        local down = on == "2"
+        if down and from == nil then
+            net.hostDownAt = os.clock()     -- (the host down in its fight: what ends next is a loss, see putDownLeftBosses)
+        end
         local theirs = false
-        if on ~= "1" and not was then
+        if on ~= "1" and not down and not was then
             local whose = net.party and (from or 1) or nil
             for name in pairs(net.partnerBosses) do
                 theirs = theirs or whose == nil or net.fightOf[name] == whose
@@ -4431,10 +4474,11 @@ return function(api)
         -- (Not from a partner who's down while this player is still in that fight: their game takes the bar down as they die,
         -- and ending the fight here let their held respawn go, its R death putting the boss back at full health (the report
         -- "After my teammate died, he instantly respawned, and the boss's HP was restored to full" on 1.6.6). One on 1.7.0
-        -- says F 1 while held; this is for one on 1.6.7 or older.)
+        -- says F 1 while held in it and F 2 while down waiting (down, above); this is for one on 1.6.8 or older, whose F 0
+        -- comes as they die.)
         local t = p.target
-        local down = t ~= nil and t.MaxHp ~= nil and t.MaxHp > 0 and t.Hp ~= nil and t.Hp <= 0
-        if (was or theirs) and on ~= "1" and not (down and net.fightingHere(localPawn())) then
+        local fell = t ~= nil and t.MaxHp ~= nil and t.MaxHp > 0 and t.Hp ~= nil and t.Hp <= 0
+        if (was or theirs) and on ~= "1" and not down and not (fell and net.fightingHere(localPawn())) then
             if from == nil and isClient() then
                 -- (The host's fights are all over: none comes back at this player's death. Only those the host told of:
                 -- this player's own, announced to the host, stay theirs, and its kill still runs the boss's real death.)
@@ -4470,10 +4514,16 @@ return function(api)
     -- it beaten (brought back for the fight). Left, it stood with its own AI for good: this player was "in combat" at every
     -- bell near it and shut out of the next boss's arena. Its K could miss it: a phase not paired with the host's id, or one
     -- not loaded then. By its name, or another phase of it (game.phaseGroup).
+    -- (A fight the host lost, not left: the host down when it ended, or a little before (F 2, or its line at 0 health). The
+    -- boss lives on there and the host comes back for it: one brought back here stays. Put down at once, the boss was gone
+    -- from the guest's world on the host's next try, its hits at nothing (player report 11-09).)
+    net.LOST_FIGHT_S = 120
     function net.putDownLeftBosses(over)
+        local lost = (net.hostDownAt and os.clock() - net.hostDownAt < net.LOST_FIGHT_S)
+            or (net.target and net.target.Hp and net.target.MaxHp and net.target.MaxHp > 0 and net.target.Hp <= 0)
         local groups = {}
         for name in pairs(over) do
-            if net.hostKilled[name] or net.broughtBack[name] then
+            if net.hostKilled[name] or (net.broughtBack[name] and not lost) then
                 groups[(game.phaseGroup and game.phaseGroup(name)) or name] = name
             end
         end
@@ -4528,12 +4578,18 @@ return function(api)
             net.fightHereAt = now
         end
         local fighting = now - (net.fightHereAt or -FIGHT_GAP_S) < FIGHT_GAP_S
+        -- Down in the fight and waiting for it (F 2): the game took this player's bar down as they died, and "no fight"
+        -- ended the partner's copy of it, so their bar went, they told "no fight" back, and this player, the host above all
+        -- (whose world the boss is), stopped waiting and respawned at once (player report 11-08). Not a fight to wait on
+        -- either: two players both down don't hold each other.
+        local down = not fighting and net.deadSince ~= nil and net.holdLooking == true
         -- (Told again after a gap, a join or a sync start (fightToldAt 0), "no fight" too, once: only a change was ever
         -- said, and a fight's end missed in a gap was never heard.)
-        if fighting ~= net.toldFighting or (fighting and now >= (net.fightToldAt or 0)) or net.fightToldAt == 0 then
+        if fighting ~= net.toldFighting or down ~= (net.toldDown == true) or ((fighting or down) and now >= (net.fightToldAt or 0))
+            or net.fightToldAt == 0 then
             local again = fighting and net.toldFighting == false
-            net.toldFighting, net.fightToldAt = fighting, now + FIGHT_TOLD_S
-            sendEvent("F", fighting and 1 or 0)
+            net.toldFighting, net.toldDown, net.fightToldAt = fighting, down, now + FIGHT_TOLD_S
+            sendEvent("F", fighting and 1 or (down and 2 or 0))
             if again then
                 -- (A fight back on with no new bar: a boss up again after a fall, its bar up all along (Xiaoxue). Its B is
                 -- told again, so the others' copy has its bar, walls and the boss's whole death, not a quiet kill.)
