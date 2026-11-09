@@ -34,8 +34,8 @@ if (-not $NoStart) {
     "netem pid $($netem.Id): $Via"
     $c = Start-DevGame -Role Guest -Instance 2 -Port 47811 -Settings @{ ThisPcOnly = 'On' }
     Save-Copy $c "$script:Scratch\pvp-guest.json"
-    "host in: " + (Wait-DevGameplay $h -TimeoutSec 300 -AfterCrash)
-    "guest in: " + (Wait-DevGameplay $c -TimeoutSec 300 -AfterCrash)
+    "host in: " + (Enter-Game $h)
+    "guest in: " + (Enter-Game $c)
     Start-Sleep -Seconds 15
 }
 $h = Load-Copy "$script:Scratch\pvp-host.json"

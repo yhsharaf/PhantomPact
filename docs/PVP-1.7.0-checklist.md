@@ -12,17 +12,17 @@ in `tools/netlab/bench/pvp`). A trace of every item against the code and the evi
 | 2 | A separate F6 key for the new PvP | Done, bench |
 | 3 | Presets: any weapon, skill or special skill, saved, loaded each match | Done (skills: all on for everyone, see 3); bench: see 3 |
 | 4 | A countdown before the fight, a Phantom Blade Zero look | Done, bench |
-| 5 | The four boss arenas, their own fog walls | Done, bench (all four, 11-07) |
+| 5 | The four boss arenas, their own fog walls | Done, bench (all four, 11-07; a real win opens one, 11-09) |
 | 6 | No monsters in a match; the network sends only what PvP needs | Done; sim and bench |
-| 7 | Only 3 drinks, all from the same gourd | Done, bench 11-08 |
+| 7 | Only 3 drinks, all from the same gourd | Done, bench 11-08 (a 4th, a skill node's, taken off 11-09) |
 | 8 | Duel (3 rounds, the winner in gold, the loser's death) and Death mode | Done, bench |
-| 9 | Everyone at the same level, max level, weapons too, "or anything else" | Done, bench 11-08 (talismans: see 9) |
+| 9 | Everyone at the same level, max level, weapons too, "or anything else" | Done, bench 11-08 (talismans, Combat Art: see 9) |
 | 10 | Teams for more than 2 players | Done; bench with 3 and 6 players (bots) |
 | 11 | Ideas from issue #13 | Done (rounds, health floor, slow-motion hold) |
 | 12 | An execution with a boss's own moves | Done, bench (all four arenas, F pressed for real) |
 | 13 | Timer and no-timer modes | Done, bench 11-08 (TIME) |
-| 14 | A polished UI, health bars shown perfectly | Done, bench 11-08 |
-| 15 | Animations, swords, deflect, dodge, parry as in solo play | Done, bench (Phantom Edges on figures 11-08) |
+| 14 | A polished UI, health bars shown perfectly | Done, bench 11-08 (lock-on 11-09) |
+| 15 | Animations, swords, deflect, dodge, parry as in solo play | Done, bench (Phantom Edges on figures 11-08; your play, 11-09) |
 | 16 | The network as efficient as it can be | Done; measured 11-08, see 16 |
 
 ## 1. PvPvE
@@ -63,6 +63,11 @@ YuCong's Crimson Forest, Hua Qianxiao's stage, the Gold-Masked One's gorge, Mu X
 A boss's arena opens once every player's save has that boss beaten. The game's own fog walls close for the match and open
 after. Bench 11-07: a match in each of the four, the trip, the spots, a closed wall 21 to 40 m from the middle, the finishing
 move, home.
+- Bench 11-09 (`pvprealwin.ps1`): a real win opens the arena. On the late-game save (the story past the four, their fights
+  never fought), the Gold-Masked One at 1 health took one real blow and died the game's way: his record dead at once, still
+  dead after a trip had the game save and after a restart, his arena open in the mod (`goldmask`), and at the gorge no boss
+  and his spawner's own flag dead. (The 11-07 records were written by hand; a boss killed by GE_Kill then came back alive
+  after a restart.)
 
 ## 6. No monsters; the network
 
@@ -78,6 +83,9 @@ The game's own Hulu for everyone, 3 drinks for the whole match, at its top level
 0, 45% at 3, 50% at 6), made to hold just 3; a refill (a bell's sit) taken back; all of it as it was after.
 - Bench 11-08 (`pvpfair.ps1`): both 3/3 at level 6 in the match; a real drink 300 -> 980 of 1360 (+680, 50%); 2 left into
   round 2; home 2/2 at level 0 as before.
+- Fixed 11-09 (the user's own play on the bench): every skill node on for the match gave the gourd's extra drink (the bag's
+  MedicineExtraUsage, a node's), a 4th; the HUD read R 4. And turning the nodes off after took nothing back: a match left a
+  drink more for good (R 3 over a gourd of 2 at home). None in a match now, each player's own back after; the journal has it.
 
 ## 8. The modes
 
@@ -91,6 +99,9 @@ Every skill node on (for the match only), 1360 health, 160 attack, 640 Phantom E
 match at level 30 in every world (a blow's damage goes by the defender's level of the attacker's weapon); every blow at half
 the game's own; the gourd as in 7; talismans off for the match, each back in its own slot after (11-08); the perfect dodge's
 slow motion held off (it slowed only the dodger's game). Health comes home as it was (fixed 11-08: a match was a free heal).
+- Fixed 11-09 (the user's own play): Q (the Combat Art) did nothing in a match: it spends the bag's charges, everyone started
+  with none, and blows on a figure build none. Each round starts with all three now, as the health; each player's own come
+  home. On the bench Q fired the weapon's Combat Art at once (the host's launched the guest).
 
 ## 10. Teams
 
@@ -126,6 +137,9 @@ match (11-08: they ran from the bench's bell to the players). Fixed 11-08: the g
 moves with their real posture (it stood full all match); a foe's figure made again had its old bar left up, frozen; a
 round's refill left the player's own bar empty and the near-death look on (refilled the game's way now); the drink tip
 showed on a fresh game's first fall.
+- Fixed 11-09 (the user's own play): a lock-on (the middle button) on a foe turned the camera to the map's origin, not the
+  foe: a figure is a copy of the player's class, whose only lock point is the player's own camera rig's, set in the world and
+  moved by that camera alone. It's on the figure's body's middle now, as an enemy's lock point is.
 
 ## 15. Movement and combat
 
@@ -133,6 +147,13 @@ The other players' figures play their real moves the frame they start; the guard
 and the dodge show as they happen; weapons drawn and held as theirs. A foe's move plays whole, from its start, on your screen
 (no catch-up: your world judges the blows on you). Fixed 11-08: a foe's figure held this PC's own Phantom Edge (a figure is
 made from this PC's bag), so a foe's edge skill drew yours; it holds theirs now, and drawing it stays its own abilities'.
+- Fixed 11-09 (the user's own play, with the guest poking every two seconds): a swing started again in the last one's
+  recovery restarts the same ability, never inactive, so it was never sent: the foe's pokes went unseen on their figure, but
+  for the ones after a blow of yours, while their blows landed. Told again by its montage starting over, and the figure's
+  copy of the last one cancelled for it: 80 such swings played in one match after.
+- 11-09: a parry is one press at the right time: within 0.25 s of the blow, not long before a slow one, and never right
+  after a click that met nothing (0.8 s): random clicking only blocks. A parry costs the attacker 200 posture (60 before:
+  a third of the bar now, so four in a row break a spammer). A held guard only blocks; the swing plays out.
 
 ## 16. The network, measured
 
@@ -157,13 +178,13 @@ trip), a Duel "here".
 - Decided, not built (`docs/PVP.md`, "Scope, decided"): split screen has no F6 page; everyone linked plays (leave the
   session to sit out); the F6 page takes a mouse; one finishing move a match.
 - Releasing 1.7.0 (the zip, GitHub, Nexus) waits for your go-ahead: nothing is pushed or posted.
-- Whether a real win leaves the boss arenas' records dead: no save that beat the four in play has been read (the bench's
-  records were written by hand). A world that shows the boss's story at the arena calls the match off (`arena.storyBegan`).
 - Known, not changed: the game's `SetWeaponForceHide` takes four arguments and `moves.lua` passes three, so hiding a
   figure's Phantom Edge for a partner with none ("E -") never worked (a co-op look, since 1.5.2). The bench saves own no edge,
   so the fix couldn't be seen; left as it was.
 - The "Skill Over Strength" achievement: the upgrade to level 30 gives it to a player without it (a Phantom Edge at 30).
-  Holding the match's edges at 29 would avoid it, but you asked for max level: your call.
+  Kept at 30, the top level the goal asked for, and said in the release notes (11-09). Nothing in the game stops just that
+  one: an empty achievement table (the bench's way) marks the game's ACH_066 instead, so the only way round it is the
+  edges at 29 (`data.WEAPON_LEVEL` in `arenas.lua` is one number for weapons and edges both). Yours to overrule.
 
 ## Bench results, 11-08
 
@@ -179,3 +200,9 @@ Two copies on one PC, the bench's test save (`tools/netlab/bench/pvp`).
 | A foe's posture strip; a remade figure | `pvpbars2.ps1` | the strip under the host's health on the guest's screen at full, then at half within 0.4 s of the host's posture going to half; the host's figure made again: one bar, on the new figure; none at home |
 | Two loadouts; the foes' Phantom Edges | `pvpload.ps1` | picked on each page's own picker, kept in `pvp_preset.txt`; each player's in hand in the match, and on their figure in the other world, Phantom Edge too (before the fix the figure held this PC's own edge); all eight match weapons at level 30 in both worlds (before the lending fix a foe's were never in the other bag); home with their own weapons, nothing lent left, levels as before, still so 12 s on |
 | A Phantom Edge's skill against a foe | `pvpedge.ps1 -Vk 0x11` | the guest's BrutalAxe skill (Left Ctrl, the game's own binding) on the host: before the fix nothing on the host's screen and no damage (`GA_BrutalAxe_Normal_C` was never sent); after, the swing on the guest's figure and the host 1360 -> 962 |
+
+## Bench results, 11-09
+
+| What | Script | Result |
+|---|---|---|
+| A boss beaten by a real blow | `pvprealwin.ps1` | the Gold-Masked One on the late-game save, one real blow at 1 health: record dead at once, after the game's save, and after a restart; his arena open (`goldmask`); at the gorge no boss, the spawner's flag dead |

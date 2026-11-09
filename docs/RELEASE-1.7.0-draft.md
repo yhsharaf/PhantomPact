@@ -23,10 +23,13 @@ or 0, nor with Resistance_Poise at 9999; whether a boss's armour in its attacks 
   under it moving with their real posture; round and match banners. Your own bar fills with you between rounds
 - In a team match your teammates' health shows over your own bar, in its look: the health a blow takes stays in red a moment
   and drains, and a fallen teammate's bar empties
-- Parries are the game's own deflect, timed: raise your guard as their blow comes and it's turned aside for nothing, your
-  foe staggers and loses posture, and they see your blade turn theirs aside. A guard already held only blocks. Your guard
+- Parries are the game's own deflect, timed: raise your guard just as their blow comes (within a quarter of a second) and
+  it's turned aside for nothing, your foe staggers and loses a third of their posture, and they see your blade turn theirs
+  aside. A guard already held, or raised long before a slow blow, only blocks, and so does clicking at random. Your guard
   and your dodges show on the other screens as you make them: a blow into your guard no longer looks like it landed there.
-  Each foe holds their own weapons and Phantom Edges on your screen
+  Each foe holds their own weapons and Phantom Edges on your screen, and every swing they throw shows, one after another
+- Lock on to a foe with the middle mouse button (right stick) as on any enemy: the camera follows them
+- Your Combat Art (Q) has all its charges at the start of every round
 - The blow that wins the match plays in slow motion and leaves the losers on their feet, dazed. The winners then have about
   five seconds to finish them with F (B or Circle on a pad): every screen cuts to a camera beside the two that keeps clear of rocks and walls, and
   the winner finishes them with the arena's boss's own move (YuCong's lunge, Hua Qianxiao's drunken slide and cut, the
@@ -34,6 +37,8 @@ or 0, nor with Resistance_Poise at 9999; whether a boss's armour in its attacks 
   blow lands on them. The moment it lands slows nearly to a stop, and the loser dies the way the game shows a death
 - The winners get a golden 生还, the losers the game's red 殒命, both shown the same way, and everyone goes back where they
   were with their own weapons, levels, gourd, skills and health. Nothing in a match is saved
+- One thing a match does leave: its Phantom Edges at level 30 give the game's "Skill Over Strength" achievement (a Phantom
+  Edge at its top level) to a player who doesn't have it yet
 - The network carries only the players in a match (no enemy traffic), moves are sent the frame they start, and a perfect
   dodge's slow motion is off in a match, so every game runs at the same speed
 
@@ -79,9 +84,12 @@ Both players need 1.7.0. Thanks to shilover (Rakka) for the ideas in issue #13, 
 - 场地的雾墙升起,没有怪物。水墨笔触的倒数 三 二 一,然后 斗。时间用完时先显示“时间到”,再显示本局结果
 - 每个对手都显示在游戏自己的首领血条上,上方写着名字、比分和时间,血条下的金色架势条随对手真实的架势变化;每局和整场的结果横幅。每局之间你自己的血条也会随之回满
 - 组队比赛中,队友的血条显示在你自己的血条上方,样式相同:被打掉的血会以红色停留片刻再慢慢褪去,倒下的队友血条会清空
-- 弹反就是游戏自己的弹刀,讲究时机:在对方的攻击到来时举起架势,这一击就会被无损地弹开,对手会失衡并损失架势,对方也会看到你的刀弹开了他的刀。一直举着的架势只是格挡。你的架势和闪避会在你做出的那一刻显示在其他人的画面上:打在你架势上的攻击不会再看起来像是命中了。在你的画面上,每个对手拿的都是他们自己的武器和杀器
+- 弹反就是游戏自己的弹刀,讲究时机:在对方的攻击到来的瞬间(四分之一秒内)举起架势,这一击就会被无损地弹开,对手会失衡并损失三分之一的架势,对方也会看到你的刀弹开了他的刀。一直举着的架势、对慢招过早举起的架势,以及乱按,都只是格挡。你的架势和闪避会在你做出的那一刻显示在其他人的画面上:打在你架势上的攻击不会再看起来像是命中了。在你的画面上,每个对手拿的都是他们自己的武器和杀器,他们挥出的每一刀都会显示
+- 像锁定敌人一样用鼠标中键(右摇杆)锁定对手:镜头会跟着对手
+- 每局开始时,你的战技(Q)次数都是满的
 - 决定胜负的一击会慢放,败者不会倒下,而是站着失去架势。胜者有大约五秒钟按 F(手柄按 B 或 ○)终结对手:所有画面切到两人身旁的镜头(镜头会避开岩石和墙壁),胜者用该场地首领自己的招式终结对手(余聪的突刺、花千笑的醉步滑行与斩击、金面人的突刺与上挑、木小葵的双刀冲刺;此地会从四招中抽一招),并从让这一招正好打中对手的位置出招。命中的一刻几乎静止,败者以游戏自己的死亡方式倒下
 - 胜者看到金色的“生还”,败者看到游戏自己的红色“殒命”,两者以同样的方式呈现,所有人回到原来的地方,武器、等级、葫芦、技能和生命都会还原。比赛中的一切都不会存档
+- 比赛唯一会留下的:比赛中的杀器都是 30 级,还没有游戏的杀器满级成就(Skill Over Strength)的玩家会因此获得它
 - 比赛中网络只传送玩家的数据(没有敌人的数据),招式在开始的那一帧就会发出;比赛中没有完美闪避的慢动作,所有人的游戏以同样的速度运行
 
 **PvPvE。** “更多”里原来的 PvP 开关现在叫 PvPvE:在开放世界交手,敌人照样在场,玩法不变。

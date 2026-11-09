@@ -27,8 +27,10 @@ return function(api)
     local STAGGER_TAG = "CharacterState.Hitreact.State.Normal.Heavy"
     local RESTAT_S = 2.0            -- a hostile ghost's stats copied again this often in a match (ours change as it sets up)
     -- In a match each world works out the damage its own player takes, so a player's own PvPDamage and PvPParryPosture
-    -- would make it unfair: there the match's own numbers count for everyone (arena.lua says the damage).
-    local MATCH_PARRY_POSTURE = 60
+    -- would make it unfair: there the match's own numbers count for everyone (arena.lua says the damage). A parry takes
+    -- about a third of the 640 posture (four in a row break it, regen and all): at 60, a tenth, swinging at a player who
+    -- turned every blow aside cost next to nothing (a player's report, 11-09).
+    local MATCH_PARRY_POSTURE = 200
 
     local pvp = {
         on = false,
@@ -177,6 +179,12 @@ return function(api)
     local FACING_DEG = 70           -- their move aimed within this of us (its yaw comes with their M), or it wasn't at us
     local BLOCK_POSTURE = 20        -- our guard's answer that cost more posture than this, in a tick, was a block
     local GUARD_LEAD_S = 0.15       -- a guard raised this long before their attack came still met it (a read of it)
+    -- One press, at the right time (a player's ask, 11-09): the guard raised at most PARRY_WINDOW_S before the blow met it
+    -- (the start of its answer), so a slow blow can't be parried by pressing as its move begins; and none in WHIFF_S after a
+    -- press that met no blow, so clicking at random only blocks. (The bench, 11-07: pressed 60 to 220 ms after a light
+    -- attack began, the game turned its blow aside 0 to 50 ms later; held from before it, 0.4 s and more.)
+    local PARRY_WINDOW_S = 0.25
+    local WHIFF_S = 0.8
     local guard = { addr = nil, pos = 0, posture = nil }    -- our guard's last answer to a blow; our posture a tick ago
     local function watchDeath(pawn)
         local hp = game.getHealth(pawn)
@@ -285,6 +293,8 @@ return function(api)
             return
         end
         local at, met = pawn:K2_GetActorLocation(), now - pos
+        local prevMeet = guard.meetAt       -- (the guard's answer before this one: the press rule below)
+        guard.meetAt = met
         local best, bestOff = nil, math.huge
         for slot, ghost in pairs(open) do
             local s = swings[slot]
@@ -310,6 +320,13 @@ return function(api)
         if (hp and s.hp and hp < s.hp - 0.5) or (posture and before and posture < before - BLOCK_POSTURE)
             or (game.guardUpAt or -1e9) < s.at - GUARD_LEAD_S then
             return          -- (a block: our guard was up before their attack, or the game took it out of our posture)
+        end
+        -- One press, at the right time: not long before the blow, nor a click on top of one that met nothing (no answer of
+        -- the guard came between the press before it and this one).
+        local press, prev = game.guardUpAt or -1e9, game.guardPrevAt
+        local whiffed = prev ~= nil and press - prev < WHIFF_S and not (prevMeet and prevMeet >= prev - 0.05 and prevMeet <= press)
+        if met - press > PARRY_WINDOW_S or whiffed then
+            return          -- (a block: the guard up too early for this blow, or a click after one that met nothing)
         end
         local cost = pvp.teams and MATCH_PARRY_POSTURE or pvp.parryPosture
         if net.party then

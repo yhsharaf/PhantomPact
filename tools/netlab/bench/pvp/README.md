@@ -32,7 +32,7 @@ Every event it hears goes to `heard.txt`.
 | Script | What it proves |
 |---|---|
 | `pvpstart.ps1 [-Two]` | Takes the bench, installs this checkout's mod and main.dll on C:\PBZDev, starts the copies (no keys pressed). `-Two`: a host and a guest on loopback; otherwise one copy with co-op off |
-| `pvpcycle.ps1` | The two copies onto this checkout's code: stopped, saves put back, installed, started, both in the game (after-crash keys: RIGHT before RETURN, never New Game) |
+| `pvpcycle.ps1` | The two copies onto this checkout's code: stopped, saves put back, installed, started, both in the game (RETURN on the title menu only, read from the game's own screens: no key blind) |
 | `pvpcycle3.ps1` | The same with the host's party at 4, for a third player (`pvpbot.ps1`) after |
 | `pvprestore.ps1` | The saves back to the pre-PvP backup, exactly: files the backup lacks are moved aside, not deleted |
 | `pvpbot.ps1`, `pvpbots.ps1` | Stand-in players: relay_cli bots joined to the host as guests, each with its own `say.txt` and `heard.txt` |
@@ -55,6 +55,8 @@ Every event it hears goes to `heard.txt`.
 | `pvptalref.ps1` | A talisman given to the host the game's way (a slot node, AC_Deflect worn), off for the match and back in its slot after, one put on mid-match off again; the guest downed by real blows, round 2's refill the game's way (`game.refillHow`), its own bar and the near-death look, the health home as before |
 | `pvpbars2.ps1` | The host's boss bar on the guest's screen: its gold posture strip at full, then at half as the host's posture goes to half; the host's figure made again with one bar still up; none at home |
 | `pvpedge.ps1 [-Vk 0x11]` | A Phantom Edge used in a match: the game's own key for it (its bindings read first: Left Ctrl), pressed for real on the guest in front of the host's figure; frames of both windows, the host's health, the figures' weapons |
+| `pvprealwin.ps1 [-Id <spawner tail>] [-Map ... -X -Y -Z]` | Whether a boss beaten by a real blow stays beaten across a restart (what the arenas' unlock reads): the late save planted (saves backed up first), the boss's health to 1 and a real blow, its record and its spawner's flag before and after, a trip so the game saves, the copy restarted, the record and the arena again; pvprestore.ps1 after |
+| `pvpaudit.ps1 [-Tag zh]` | Every screen a match shows, on both copies, for a look at how it all reads: the F6 page and its picker, each countdown, the fight's bars, TIME and the round's result, a player down and watching, the final round, the deciding blow, PRESS F, the finishing move, the last cards, home |
 | `pvpload.ps1` | Two different loadouts picked on each copy's F6 page (its own press): `pvp_preset.txt`, each in hand in a match on its own body and the other's figure, every match weapon at level 30 in both worlds, then each player's own weapons, bag and levels back |
 
 ## Helpers
@@ -72,3 +74,5 @@ Every event it hears goes to `heard.txt`.
 | `figabil.lua` | `FIGABIL.watch(s)`: what the foe figure runs (GA_Hun abilities, montage) every frame through its swing |
 | `keymap.lua` | `KEYMAP.list(pattern)`: the game's own key bindings |
 | `abilprobe.lua` | `ABIL.watch(s)`, `ABIL.seen()`: every ability that runs on this player in that time, by class, and whether `game.isMoveName` sends it (how the edges' `GA_<edge>_*` skills were found) |
+| `spar.lua` | `SPAR.start(seconds, gap)`: this copy's player as a sparring partner in every match fight: it steps in to 2 m from the nearest foe's figure and swings every `gap` s or so (a second swing a third of the time), its own health kept up; a `[SPAR]` log line a swing (what the foe played, its own move and posture). `SPAR.stop()` |
+| `figstate.lua` | `FIGSTATE.watch(s, slot)`: a foe's figure every frame, read only: a `[FIGSTATE]` line at each change of its time dilation, montage, running GA_Hun abilities, hit state; `FIGSTATE.counts()`: its attacks begun and begun again, against the swings its player threw |

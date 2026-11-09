@@ -91,6 +91,34 @@ function Has-Player($g) {
     Ask $g 'local g=StaticFindObject("/Script/ProjectPBZ.Default__PBZBlueprintFunctionLibrary") if g:ShouldShowPSOPrecompileScreen() and g:GetPSOPrecompilesRemaining()<=2 and not g:IsPSOPrecompileComplete() then g:NotifyPSOPrecompileSkippedByPlayer() end local _,p=PBZ.getPlayer1() return "pawn="..tostring(PBZ.valid(p))' 3
 }
 
+# The game's screens up now: its activatable widgets that are on and shown (as localcoop.lua reads them).
+$script:ScreensLua = 'local out = {} for _, w in ipairs(FindAllOf("CommonActivatableWidget") or {}) do pcall(function() if w:IsValid() and w:IsActivated() and w:IsVisible() then out[#out+1] = w:GetClass():GetFName():ToString() end end) end return #out > 0 and table.concat(out, " ") or "none"'
+function Screens($g) { Ask $g $script:ScreensLua 4 }
+
+# Into the game from the title screen, never blind: RETURN only while the title menu (WB_StartMenu_V2_C, over its video
+# and the tips layer) is the one screen up, CONTINUE its first entry. Anything over it (the new game question after a
+# crash, OK selected) and the shader screen are left alone: a copy stuck there is for a look. Blind keys
+# (Wait-DevGameplay -AfterCrash) once went on into the game's own settings menu. $true once the mod sees a
+# player; each change of screens is written out.
+function Enter-Game($g, [int]$TimeoutSec = 300) {
+    $end = (Get-Date).AddSeconds($TimeoutSec)
+    $last = ''
+    while ((Get-Date) -lt $end) {
+        if (-not (Alive $g)) { Write-Host "  the copy exited"; return $false }
+        if ((Has-Player $g) -eq 'pawn=true') { return $true }
+        $s = Screens $g
+        if ($s -and $s -ne $last) { Write-Host "  screens: $s"; $last = $s }
+        $rest = @(($s -split ' ') | Where-Object { $_ -and $_ -notin 'W_StartMenu_Video_C', 'W_TIpsLayer_C' })
+        if ($rest.Count -eq 1 -and $rest[0] -eq 'WB_StartMenu_V2_C') {
+            Write-Host ("  " + (Key $g 0x0D) + " on the title menu")
+            Start-Sleep -Seconds 10
+        }
+        Start-Sleep -Seconds 2
+    }
+    Write-Host "  not in after $TimeoutSec s (screens: $last)"
+    return $false
+}
+
 function Load-Tools($g) {
     $l = $script:Lab
     Ask $g "dofile(`"$l/perf.lua`") dofile(`"$l/pair.lua`") dofile(`"$l/fights.lua`") dofile(`"$l/real.lua`") dofile(`"$l/aggro.lua`") dofile(`"$l/twitch.lua`") return 1" 10

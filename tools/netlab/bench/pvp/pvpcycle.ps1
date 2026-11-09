@@ -1,5 +1,5 @@
 # The two bench copies onto this worktree's latest code: stop them, saves back to the pre-PvP backup, install, start, wait
-# for both in the game (after-crash keys: RIGHT before RETURN, never New Game). Only ever touches C:\PBZDev.
+# for both in the game (RETURN on the title menu only, read from the game's screens). Only ever touches C:\PBZDev.
 . (Join-Path $PSScriptRoot 'pvplib.ps1')
 # The scripts beside this one from $PSScriptRoot, the copies' handles from the work folder ($script:Scratch).
 foreach ($f in 'pvp-host.json', 'pvp-guest.json') {
@@ -14,5 +14,5 @@ if ((Get-Content 'C:\PBZDev\bench.lock\owner.txt' -ErrorAction SilentlyContinue)
 }
 & "$PSScriptRoot\pvpstart.ps1" -Two
 $h = Load-Copy "$script:Scratch\pvp-host.json"; $c = Load-Copy "$script:Scratch\pvp-guest.json"
-"host in: " + (Wait-DevGameplay $h -TimeoutSec 300 -AfterCrash)
-"guest in: " + (Wait-DevGameplay $c -TimeoutSec 300 -AfterCrash)
+"host in: " + (Enter-Game $h)
+"guest in: " + (Enter-Game $c)

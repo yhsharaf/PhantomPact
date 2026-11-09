@@ -208,6 +208,16 @@ return function(out, scripts)
     Fake.put(h.gourd, "CurrentTime", 3)         -- (and the gourd fills again: a bell's sit does)
     s:run(1.5)
     check(gourd(h) == "2/3 level 6", "a drink stays drunk: a refill in the match is taken back: " .. gourd(h))
+    -- (The extra drink a skill node gives would be a fourth, and it stayed after the match: the bench, 11-09.)
+    local hb, gb = rawget(h.bag, "__fields"), rawget(g.bag, "__fields")
+    check(hb.MedicineExtraUsage == 0 and gb.MedicineExtraUsage == 0,
+        "no extra drink in the match, the node's taken off: " .. hb.MedicineExtraUsage .. "/" .. gb.MedicineExtraUsage)
+    check((h.files["pvp_restore.txt"] or ""):find("extra = 1", 1, true) ~= nil
+        and (h.files["pvp_restore.txt"] or ""):find("charges = 1 40.00", 1, true) ~= nil,
+        "the journal has the extra drink and the Combat Art's charges as they were")
+    -- (Q did nothing in a match: no charges, and blows on a figure build none; the bench, 11-09.)
+    check(hb.ult.n == 3 and gb.ult.n == 3, "the Combat Art full for both at the round's start: " .. hb.ult.n .. "/" .. gb.ult.n)
+    hb.ult.n, gb.ult.n = 1, 0      -- (both spend some)
 
     out("a gap in the match (a loading screen's worth): the world's news waits for the end:")
     h.env.PBZ.net.deadSent["sp:dead1"] = true   -- (an enemy dead before the match, told then)
@@ -342,6 +352,33 @@ return function(out, scripts)
     check(parries() == 1, "nor a guard answer as the guest's move began, before its blow could have come: " .. parries())
     blow("parry")
     check(parries() == 2, "and the next deflect in reach, facing the host, is one again: " .. parries())
+    -- One press, at the right time (a player's ask, 11-09): not long before the blow, nor a click after one that met nothing.
+    local function slowBlow(pressAt, defenceAt)         -- (seconds after the guest's attack begins)
+        Fake.running(g, g.pawn, "GA_Hun_Tang_A_C", true)
+        s:run(pressAt)
+        Fake.running(h, h.pawn, STANCE, true)
+        s:run(defenceAt - pressAt)
+        Session.startMove(h, DEFENCE)
+        s:run(0.4)
+        Fake.running(g, g.pawn, "GA_Hun_Tang_A_C", false)
+        Fake.running(h, h.pawn, STANCE, false)
+        Session.endMove(h)
+        s:run(1.6)
+    end
+    slowBlow(0.05, 0.75)
+    check(parries() == 2, "pressed as a slow blow's move began, 0.7 s before it came: a block, no stagger: " .. parries())
+    slowBlow(0.6, 0.75)
+    check(parries() == 3, "pressed just before it came (0.15 s): a parry: " .. parries())
+    for _ = 1, 3 do                 -- (clicks at random, none meeting a blow)
+        Fake.running(h, h.pawn, STANCE, true)
+        s:run(0.1)
+        Fake.running(h, h.pawn, STANCE, false)
+        s:run(0.15)
+    end
+    blow("parry")
+    check(parries() == 3, "a timed press right after clicks that met nothing: only a block: " .. parries())
+    blow("parry")
+    check(parries() == 4, "the next timed press, after one that met a blow, is a parry again: " .. parries())
     Fake.running(g, g.pawn, "GA_Hun_ShachiHook_Passive_C", false)
 
     out("a foe's Phantom Edge on their figure:")
@@ -498,6 +535,8 @@ return function(out, scripts)
     check(gm.score[1] == 1, "the guest hears the score")
     s:run(4.5)
     check(hm.round == 2 and gm.round == 2, "round 2 counts down: " .. hm.round .. "/" .. gm.round)
+    check(rawget(h.bag, "__fields").ult.n == 3 and rawget(g.bag, "__fields").ult.n == 3,
+        "the Combat Art full again for round 2, as the health")
     check(tip.opacity == 1.0 and tipSearches <= 8, string.format(
         "the tip back for round 2, looked for about once a second while the guest was down: %s, %d searches",
         tostring(tip.opacity), tipSearches))
@@ -547,6 +586,11 @@ return function(out, scripts)
     check(math.abs((Fake.health(h.pawn)) - 600) < 0.5, "and the health it had before, not a free heal: " .. tostring((Fake.health(h.pawn))))
     check(count(h.trace, "PBZHUDLayout ForSeq_UpdatePlayerHP 0%.6") >= 1, "and its own bar told so, 600 of 1000, not the match's last")
     check(gourd(h) == gourd0 and gourd(g) == gourd0, "the gourd as it was, its drinks, size and level: " .. gourd(h) .. ", " .. gourd(g))
+    local hb2 = rawget(h.bag, "__fields")
+    check(hb2.MedicineExtraUsage == 1 and rawget(g.bag, "__fields").MedicineExtraUsage == 1,
+        "the extra drink each owns back, no more: " .. hb2.MedicineExtraUsage)
+    check(hb2.ult.n == 1 and math.abs(hb2.ult.pct - 40) < 0.01, string.format(
+        "the Combat Art's charges as they were, 1 and 40%% of the next: %d and %.0f%%", hb2.ult.n, hb2.ult.pct))
     check(countFrom(h.sent, sentGap, "^E K sp:dead1") >= 1, "the dead told again once the match is over")
     check(count(h.trace, "banner_timeup") == 0, "no TIME in a match the clock didn't end")
     check(count(h.treeCalls, "AllNodes") == 0 and count(g.treeCalls, "AllNodes") == 0

@@ -217,8 +217,9 @@ return function(api)
 
     -- The game's own record of each spawner's enemy (SGameAIWorldSubsystem.SpawnerSaveData, kept for every map): a boss's
     -- arena is open once one of its spawners says dead (arenas.lua lists the last phase's), unless this world showed that
-    -- fight unfinished this session (arena.refused, by arena.storyBegan). (Not every one: whether a real win leaves all its
-    -- records dead is unproven, and a stricter rule could close the arena to players who did win; the backstop catches a
+    -- fight unfinished this session (arena.refused, by arena.storyBegan). (Not every one: a real win left the Gold-Masked
+    -- One's one record dead through a restart, the bench 11-09, but whether a win leaves every phase's record of a boss of
+    -- phases dead is unproven, and a stricter rule could close the arena to players who did win; the backstop catches a
     -- fight left half done instead.)
     function arena.readUnlocked()
         local open = {}
@@ -697,6 +698,43 @@ return function(api)
                 g:SetMaxTime(data.DRINKS)
             end
         end)
+        arena.setExtraDrinks(pawn, 0)
+    end
+
+    -- The gourd's extra drinks (the bag's MedicineExtraUsage, a skill node's: the HUD counts them with the gourd's, and they
+    -- can be drunk), to n: none in a match, whose drinks are 3 in all. Every node on for the match added one, a fourth
+    -- drink, and turning the nodes off took nothing back: a match left its players a drink more for good (the bench,
+    -- 11-09: the HUD's count 2, 4 in the match, 3 at home over a gourd of 2). The game's own calls, so the HUD follows.
+    function arena.setExtraDrinks(pawn, n)
+        local bp = valid(pawn) and game.backpackOf(pawn)
+        if not bp then
+            return
+        end
+        pcall(function()
+            local now = bp:GetMedicineExtraUsage()
+            if now > n then
+                bp:RemoveMedicineExtraUsage(now - n)
+            elseif now < n then
+                bp:AddMedicineExtraUsage(n - now)
+            end
+        end)
+    end
+
+    -- The Combat Art's charges (Q: the bag's ultimate charges) to n whole ones and pct of the next, the game's own way (the
+    -- HUD follows): what's there used up, then n given. A match started with none and its blows on a figure build none, so
+    -- Q did nothing in a match (a player's report, 11-09): each round starts with the most there are (three, every node
+    -- on), as the health; the player's own back at home. (The bench, 11-09: ChangeUltimatePercentage adds that share of
+    -- one, a hundred a charge, stopping at the top; UseUltimateCharge takes them.)
+    function arena.setCharges(pawn, n, pct)
+        local bp = valid(pawn) and game.backpackOf(pawn)
+        if not bp then
+            return
+        end
+        pcall(function()
+            bp:UseUltimateCharge(bp:GetCurrentUltimateCharge())
+            bp:ChangeUltimatePercentage(-bp:GetUltimateChargePercentage())
+            bp:ChangeUltimatePercentage((n or 0) * 100 + (pct or 0))
+        end)
     end
 
     -- The talismans this player wears (the game's accessories: the bag's AssemblyAccessory, a name a slot, "None" in an
@@ -865,6 +903,12 @@ return function(api)
             pcall(function() saved.gourdMax = g.MaxTime end)
             pcall(function() saved.gourdLevel = g.CurrentLevel end)
         end
+        -- (The gourd's extra drinks and the Combat Art's charges too, before the tree adds to them: setExtraDrinks, setCharges.)
+        pcall(function()
+            local b = game.backpackOf(pawn)
+            saved.extra = b:GetMedicineExtraUsage()
+            saved.charges = { b:GetCurrentUltimateCharge(), b:GetUltimateChargePercentage() }
+        end)
         -- Talismans (the game's accessories) off for the match, each noted by its slot: what one gives (a ring's easier
         -- deflect, say) is its wearer's alone, and the match opens all four slots to everyone. Off before the tree, while the
         -- slots are still only this player's, from the last one back (in case the game closes up the list); then the slots
@@ -927,7 +971,9 @@ return function(api)
             levels = #levels > 0 and table.concat(levels, ",") or "-", nodes = table.concat(saved.nodes or {}, ","),
             added = #(saved.added or {}) > 0 and table.concat(saved.added, ",") or "-",
             worn = #worn > 0 and table.concat(worn, ",") or "-",
-            gourd = saved.gourdLevel and string.format("%d %d %d", saved.gourdLevel, saved.gourdMax or 0, saved.drinks or 0) or "-" })
+            gourd = saved.gourdLevel and string.format("%d %d %d", saved.gourdLevel, saved.gourdMax or 0, saved.drinks or 0) or "-",
+            extra = saved.extra or "-",
+            charges = saved.charges and string.format("%d %.2f", saved.charges[1], saved.charges[2]) or "-" })
         -- The drinks once the gourd is the match's: a moment later (the game writes the count as it swaps). Its level and its
         -- size too, each on its own, and from then held (holdDrinks).
         game.after(0.5, function()
@@ -940,6 +986,7 @@ return function(api)
                     g:SetCurrentTime(data.DRINKS)
                     g:SetDisplayTime(data.DRINKS)
                 end)
+                arena.setExtraDrinks(now, 0)
                 m.drinksLeft = data.DRINKS
             end
         end)
@@ -1116,6 +1163,13 @@ return function(api)
                             end)
                         end)
                     end
+                end
+                -- (The gourd's extra drinks and the Combat Art's charges as they were, the match's nodes off by now.)
+                if valid(p) and s.extra then
+                    arena.setExtraDrinks(p, s.extra)
+                end
+                if valid(p) and s.charges then
+                    arena.setCharges(p, s.charges[1], s.charges[2])
                 end
                 if valid(p) then
                     game.setMinHealth(p, 0)     -- (the game's own floor again, the health back first)
@@ -1416,6 +1470,8 @@ return function(api)
             hold(pawn, true)
             shield(pawn, true)
             keepFair(pawn)
+            -- (The Combat Art full each round, as the health: setCharges.)
+            pcall(function() arena.setCharges(pawn, game.backpackOf(pawn):GetMaxUltimateCharge(), 0) end)
             -- (Death: one life, so another round only follows a draw, and its health goes on as it was; but one who fell in
             -- it, both sides down at once, starts up: at the floor's 1 they were down again at once, a draw each round.)
             local hp, maxhp = game.getHealth(pawn)
@@ -2816,6 +2872,14 @@ return function(api)
                     end
                 end)
             end
+        end
+        -- (The gourd's extra drinks and the Combat Art's charges as they were, the match's nodes off.)
+        if tonumber(j.extra) then
+            arena.setExtraDrinks(pawn, tonumber(j.extra))
+        end
+        local cn, cp = (j.charges or ""):match("^(%d+) ([%d.]+)$")
+        if cn then
+            arena.setCharges(pawn, tonumber(cn), tonumber(cp))
         end
         -- (The talismans too, if a save in the match kept them off: each back in its own slot, if that slot is empty and the
         -- talisman isn't worn. Now: the trip home below saves the game.)

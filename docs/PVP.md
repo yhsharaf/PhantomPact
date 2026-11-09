@@ -17,7 +17,7 @@ The 1.7.0 goal item by item, with what proves each: `docs/PVP-1.7.0-checklist.md
 | Clock | None, 60, 90 or 120 s a round. At zero the team with more health left (as a share) wins the round; equal is a draw. TIME shows on every screen first, then the round's result |
 | Arenas | YuCong's Crimson Forest, Hua Qianxiao's stage, the Gold-Masked One's gorge, Mu Xiaokui's meadow: the game's own places, with their boss fog walls up and no monsters. Or **Here**: where the host stands, the sides 8 m either way of them on the first line round from the host's facing (30-degree steps) with floor under both ends and a clear view between them at chest height (`arena.hereYaw`); none, the host's facing |
 | Fair start | everyone a Soul at the top of the game: every skill node on (each one the player hasn't, for the match only), 1360 health, 160 attack, 640 Phantom Edge energy, held there all match; every weapon in the match at level 30; 3 drinks of the same gourd at its top level for the whole match (a drink heals by the gourd's level: 40% of the health at level 0, 50% at 6, the bench 11-08), a refill in it (a bell's sit) taken back; no talismans: each one worn comes off for the match and goes back in its own slot after, and one put on during it comes off again |
-| Damage | every blow at half the game's own (`DAMAGE` in `arenas.lua`): at the top of the game a Sanguine blow took 499 of 1360 on the bench, three to fall; at half, about six. A parry costs the attacker 60 posture. Each player's own `PvPDamage` and `PvPParryPosture` count only in PvPvE: in a match they'd let a player take less |
+| Damage | every blow at half the game's own (`DAMAGE` in `arenas.lua`): at the top of the game a Sanguine blow took 499 of 1360 on the bench, three to fall; at half, about six. A parry costs the attacker 200 posture, about a third of the 640 (60 before 11-09: swinging at a player who turned every blow aside cost next to nothing). Each player's own `PvPDamage` and `PvPParryPosture` count only in PvPvE: in a match they'd let a player take less |
 | Loadout | a preset of your own, kept between matches (`pvp_preset.txt`): two weapons and two Phantom Edges, any of the game's 20 and 20, owned or not |
 | Start | the host picks the mode, the clock and the arena on the F6 page; everyone picks a team and presses READY; the host presses START |
 | Countdown | 三 二 一 in brush strokes, then 斗: nobody moves till then |
@@ -218,8 +218,10 @@ memory took key presses posted to its window (a posted mouse button never reache
 So the game turns aside every blow that meets a guard, held or not, and a stagger for each would make holding the guard the
 whole match's answer. A parry is the timed one, as in a fighting game. `pvp.lua` opens a swing at each foe attack's `M` (by
 its ability class) and settles it at this player's next Defence move. The guard raised after that attack came (150 ms of
-grace, for a read of it), nothing lost and the foe in reach (3.5 m): a parry, sent that moment (`V parry`). The attacker
-staggers and loses 60 posture, and their figure staggers here. A guard held from before, an answer that cost posture, a hit
+grace, for a read of it) and at most 0.25 s before the blow met it, never right after a click that met nothing (for
+0.8 s: a player asked, 11-09, that random clicking or pressing long before a slow blow not count), nothing lost and the foe
+in reach (3.5 m): a parry, sent that moment (`V parry`). The attacker
+staggers and loses 200 posture in a match, and their figure staggers here. A guard held from before, an answer that cost posture, a hit
 or a blow that never came: the game's own block or nothing, no stagger. The rule before looked for any running ability on
 the foe's figure, and every figure always runs a passive (`GA_Hun_ShachiHook_Passive_C`), so its swing never ended and not
 one parry was ever judged in a match.
@@ -254,9 +256,10 @@ Xiaokui's scene, the forest's), and a fight left half done starts its next phase
 killed a shielded guest 3 s after set-up, 11-07, on a save whose records were written by hand). So a world that shows its
 boss's story at the arena anyway (a scene that takes the camera, the game's own boss bar near the middle, or a death before
 the fight) calls the match off for everyone, and that arena stays closed for that player till the game restarts
-(`arena.storyBegan`). Whether a real win leaves these records dead is not proven: no save that beat the four in play has
-been read; one that did would settle it. Any enemy near the arena is moved aside for the match and put back after; the
-boss's fog walls go up. Spots: three a side, 8 m from the middle, facing each other.
+(`arena.storyBegan`). A real win leaves its record dead (the bench, 11-09, `pvprealwin.ps1`: the Gold-Masked One on the
+late-game save, one real blow at 1 health; dead at once, after the game's save and after a restart, his arena open, no boss
+at the gorge). Any enemy near the arena is moved aside for the match and put back after; the boss's fog walls go up. Spots:
+three a side, 8 m from the middle, facing each other.
 
 Getting there (and home): a spot within 50 m on the same map is a hop; anything further is the game's own trip, whose loading
 screen sets the player down once the ground is in. A 280 m hop on the bench landed before the gorge's floor had loaded: the host

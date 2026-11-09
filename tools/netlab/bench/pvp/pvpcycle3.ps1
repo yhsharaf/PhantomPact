@@ -13,5 +13,5 @@ if ((Get-Content 'C:\PBZDev\bench.lock\owner.txt' -ErrorAction SilentlyContinue)
 }
 & "$PSScriptRoot\pvpstart.ps1" -Two -HostSettings @{ PartySize = 4 }
 $h = Load-Copy "$script:Scratch\pvp-host.json"; $c = Load-Copy "$script:Scratch\pvp-guest.json"
-"host in: " + (Wait-DevGameplay $h -TimeoutSec 300 -AfterCrash)
-"guest in: " + (Wait-DevGameplay $c -TimeoutSec 300 -AfterCrash)
+"host in: " + (Enter-Game $h)
+"guest in: " + (Enter-Game $c)

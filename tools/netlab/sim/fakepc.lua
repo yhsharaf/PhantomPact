@@ -1440,6 +1440,38 @@ function Fake.new(id, scripts, ini, link)
         end
     end })
     pc.bag = bag
+    -- The gourd's extra drinks (MedicineExtraUsage: a skill node's, the player owns one) and the Combat Art's charges (Q),
+    -- through the game's own calls as the bench measured them (11-09): a share of a charge, a hundred to one, stopping at
+    -- the top; UseUltimateCharge takes them.
+    put(bag, "MedicineExtraUsage", 1)
+    put(bag, "ult", { n = 1, pct = 40, max = 3 })
+    defs(pc, bag, {
+        GetMedicineExtraUsage = function(self) return rawget(self, "__fields").MedicineExtraUsage end,
+        AddMedicineExtraUsage = function(self, n)
+            put(self, "MedicineExtraUsage", rawget(self, "__fields").MedicineExtraUsage + n)
+        end,
+        RemoveMedicineExtraUsage = function(self, n)
+            put(self, "MedicineExtraUsage", math.max(0, rawget(self, "__fields").MedicineExtraUsage - n))
+        end,
+        GetCurrentUltimateCharge = function(self) return rawget(self, "__fields").ult.n end,
+        GetUltimateChargePercentage = function(self) return rawget(self, "__fields").ult.pct end,
+        GetMaxUltimateCharge = function(self) return rawget(self, "__fields").ult.max end,
+        UseUltimateCharge = function(self, n)
+            local u = rawget(self, "__fields").ult
+            u.n = math.max(0, u.n - n)
+        end,
+        ChangeUltimatePercentage = function(self, p)
+            local u = rawget(self, "__fields").ult
+            u.pct = u.pct + p
+            while u.pct >= 100 and u.n < u.max do
+                u.n, u.pct = u.n + 1, u.pct - 100
+            end
+            if u.n >= u.max then
+                u.pct = math.min(u.pct, 100)
+            end
+            u.pct = math.max(0, u.pct)
+        end,
+    })
     local BELL_HEAL = "/Script/ProjectPBZ.MelodiousBell:RestoreHealth"
     local bell = object(pc, "Bell")
     defs(pc, bell, { RestoreHealth = function()

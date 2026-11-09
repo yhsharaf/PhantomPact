@@ -2173,6 +2173,26 @@ return function(api)
         if not asc then
             return
         end
+        -- The same move started again while it still ran (a swing in the last one's recovery): the game restarts its
+        -- ability, which never stops being active, so only its montage starting over from its beginning tells. Told again
+        -- then, but for the guard's (a figure can't start the stance). A player's report, 11-09: a foe's pokes a couple of
+        -- seconds apart went unseen on its figure but for the ones after a blow of theirs, the pokes' blows landing all
+        -- the same. (The montage by address and position: nothing kept across frames.)
+        local again = false
+        pcall(function()
+            local ai = pawn.Mesh:GetAnimInstance()
+            local m = ai:GetCurrentActiveMontage()
+            local addr = valid(m) and m:GetAddress() or nil
+            local pos = addr and ai:Montage_GetPosition(m) or 0
+            local was = game.ownMontage
+            again = addr ~= nil and was ~= nil and was.addr == addr and pos < 0.15 and was.pos > 0.35
+            if addr then
+                game.ownMontage = was or {}
+                game.ownMontage.addr, game.ownMontage.pos = addr, pos
+            else
+                game.ownMontage = nil
+            end
+        end)
         local nowActive = {}
         forEachSpec(asc, function(spec)
             -- (The ability read only for a running one: a wrapper made for each of a couple of hundred, every frame in a
@@ -2186,12 +2206,14 @@ return function(api)
                 if game.isMoveName(name) then
                     local path = cls:GetFullName():gsub("^%S+ ", "")
                     nowActive[path] = true
-                    if not activeLocal[path] then
+                    if not activeLocal[path] or (again and not game.isGuardMove(name)) then
                         -- The facing at the start of the move, so the ghost swings where the player aimed.
                         sendEvent("M", path, string.format("%.1f", pawn:K2_GetActorRotation().Yaw))
                         localMoveAt = os.clock()
                         if name:find("Stance", 1, true) then
-                            game.guardUpAt = localMoveAt        -- (pvp.lua: a parry is a guard raised to meet the blow)
+                            -- (pvp.lua: a parry is a guard raised to meet the blow; the press before it tells a click that
+                            -- met nothing from one that met a blow.)
+                            game.guardPrevAt, game.guardUpAt = game.guardUpAt, localMoveAt
                         end
                     end
                 end
@@ -2315,6 +2337,30 @@ return function(api)
         local asc = abilitySystem(ghost)
         if not asc then
             return
+        end
+        -- The same move again while the figure's copy of the last one still runs (told again as it starts over: see
+        -- watchLocalPlayer): that one is cancelled first, as the player's own game restarts it. Refused as already active,
+        -- the new one never played (a player's report, 11-09).
+        local name, running = cls:GetFName():ToString(), {}
+        forEachSpec(asc, function(spec)
+            if (tonumber(spec.ActiveCount) or 0) > 0 then
+                pcall(function()
+                    if spec.Ability:GetClass():GetFName():ToString() == name then
+                        for _, list in ipairs({ spec.NonReplicatedInstances, spec.ReplicatedInstances }) do
+                            pcall(function()
+                                list:ForEach(function(_, i)
+                                    running[#running + 1] = i:get()
+                                end)
+                            end)
+                        end
+                    end
+                end)
+            end
+        end)
+        for _, inst in ipairs(running) do
+            if valid(inst) then
+                pcall(function() inst:K2_CancelAbility() end)
+            end
         end
         -- (A yaw off the wire: "nan" and "1e999" read as numbers, and went into the ghost's rotation.)
         if yaw and not (yaw == yaw and math.abs(yaw) <= 720) then
@@ -2905,6 +2951,22 @@ return function(api)
             set.Attack.CurrentValue = game.GHOST_ATTACK
             set.ShachiAttack.BaseValue = 0
             set.ShachiAttack.CurrentValue = 0
+        end)
+        game.lockPointOnBody(ghost)
+    end
+
+    -- Locked onto, the camera looks at the target's lock point (an enemy's NBLockOnTargetLocation, on its body's middle).
+    -- A figure is a copy of the player's class, whose only one is the player's own camera rig's (LockViewTarget), set in
+    -- the world and moved by that camera alone: on a figure it stayed at the map's origin, and a lock on a foe in a match
+    -- turned the camera there, not to the foe (a player's report, 11-09). On the figure's body's middle, as an enemy's.
+    function game.lockPointOnBody(ghost)
+        pcall(function()
+            local c = ghost:GetComponentByClass(StaticFindObject("/Script/AdvancedThirdPersonCamera.ATPCLockOnTargetLocationComponent"))
+            if valid(c) then
+                c:SetAbsolute(false, false, false)
+                c:K2_SetRelativeLocationAndRotation({ X = 0.0, Y = 0.0, Z = 0.0 }, { Pitch = 0.0, Yaw = 0.0, Roll = 0.0 },
+                    false, {}, true)
+            end
         end)
     end
 
