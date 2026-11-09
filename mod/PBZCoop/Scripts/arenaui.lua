@@ -11,7 +11,9 @@ return function(api)
     local COUNT_SIZE = 300          -- the countdown's picture, against a screen 1080 high
     local BANNER_W, BANNER_H = 900, 150
     local BANNER_S = 2.6            -- a banner on screen this long
-    local TIME_S = 1.4              -- TIME, when the clock ended a round, before what the round came to
+    local TIME_S = 1.4              -- TIME, when the clock ended a round, before what the round came to...
+    local AFTER_TIME_S = 1.9        -- ...that one this long, so it's faded before the next countdown (arena.lua's BETWEEN_S
+                                    -- 3.5 s): at the usual 2.6 the countdown cut it off at full strength (the review)
     -- The match's last screens, the winners' and the losers' made and played the same way (the user, 11-07: "Make both
     -- victory and defeat play same way", "without that black background and same size", "Make sure it doesn't stretch or
     -- expands"): the game's own dark edge over the scene, then the calligraphy fading in, each picture at its own shape and
@@ -260,7 +262,7 @@ return function(api)
 
     local function drawBanner(now)
         if banner and now >= banner.till and banner.after then
-            showBanner(banner.after)
+            showBanner(banner.after, AFTER_TIME_S)
         end
         if not banner or now >= banner.till then
             hide("banner")
@@ -282,7 +284,8 @@ return function(api)
             key = winner == mine and "round_won" or "round_lost"
         end
         if byClock then
-            showBanner("timeup", TIME_S, key)
+            -- (A round that decides the match: TIME alone, the match's own banner comes next.)
+            showBanner("timeup", TIME_S, not (m and m.decidedFor) and key or nil)
         elseif key then
             showBanner(key)
         end
@@ -328,6 +331,18 @@ return function(api)
         return nil
     end
 
+    -- The slot's own record, found as coop.playerBody finds its body (with two players the other one is net; in a party the
+    -- host is net on a guest, the rest net.peers): health and posture come with the position, a body here or not. (Matched
+    -- by its ghost, a missing body matched every partner with none and read someone else's health, a foe's too; then only a
+    -- body that was there, and a ghost made again froze the bar: the reviews of 1.7.0.)
+    local function recordOf(slot)
+        local net = coop.net
+        if not net.party then
+            return (slot == 1 or slot == 2) and net or nil
+        end
+        return slot == 1 and net or net.peers[slot]
+    end
+
     local function healthOf(slot, me)
         local hp, maxhp
         if slot == me then
@@ -336,30 +351,30 @@ return function(api)
                 hp, maxhp = api.game.getHealth(pawn)
             end
         else
-            -- The slot's own record, found as coop.playerBody finds its body (with two players the other one is net; in a
-            -- party the host is net on a guest, the rest net.peers): health comes with the position, a body here or not.
-            -- (Matched by its ghost, a missing body matched every partner with none and read someone else's health, a foe's
-            -- too; then only a body that was there, and a ghost made again froze the bar: the reviews of 1.7.0.) No record
-            -- yet: nil, health not known.
-            local net = coop.net
-            local p
-            if not net.party then
-                p = (slot == 1 or slot == 2) and net or nil
-            else
-                p = slot == 1 and net or net.peers[slot]
-            end
+            local p = recordOf(slot)
             local t = p and p.target
             if t then
                 hp, maxhp = t.Hp, t.MaxHp
             end
         end
+        -- (No record yet: nil, health not known.)
         if hp and maxhp and maxhp > 0 then
             return math.max(0, math.min(1, hp / maxhp))
         end
         return nil
     end
 
-    -- The foes' bars are the game's: slot -> { addr = the body's address, checkAt, last = the share shown }.
+    -- A foe's posture as a share of its top, said with their place (moves.lua's BIT.POSTURE), or nil when it isn't said (an
+    -- older version, a bot): not known here. Their figure's own is no measure: pvp.lua keeps it full here, and their real
+    -- one is on their PC.
+    local function postureOf(slot)
+        local p = recordOf(slot)
+        return p and p.postureShare or nil
+    end
+
+    -- The foes' bars are the game's: slot -> { addr = the body's address, fname, cname = its name and its class's (to find it
+    -- again when its bar comes down: hideFoeBar), checkAt, last = the share shown, label, shachi = the posture strip as
+    -- shown (hundredths; -1 hidden) }.
     local foeBars = {}
     local FOE_CHECK_S = 1.0
 
@@ -386,12 +401,22 @@ return function(api)
         return text
     end
 
-    local function hideFoeBar(slot)
-        local body = coop.playerBody and coop.playerBody(slot)
-        if valid(body) and api.game.hideFoeBar then
-            api.game.hideFoeBar(body)
-        end
+    -- A foe's bar taken down: the one put up for the figure the slot had then, not always its body now. (Looked up again by
+    -- the slot, a figure made again had the new body's bar taken down, which wasn't up, and the old one stayed, frozen: a
+    -- clone put away is never destroyed, so the game never drops its bar itself. A slot with no body left its bar up, past
+    -- the match too.) hud: this tick's, or nil.
+    local function hideFoeBar(slot, hud)
+        local fb = foeBars[slot]
         foeBars[slot] = nil
+        if not fb then
+            return
+        end
+        local body = coop.playerBody and coop.playerBody(slot)
+        if valid(body) and body:GetAddress() == fb.addr and api.game.hideFoeBar then
+            api.game.hideFoeBar(body)
+        elseif api.game.dropFoeBar then
+            api.game.dropFoeBar(fb.addr, fb.fname, fb.cname, hud)
+        end
     end
 
     local function drawBars(m, me, now)
@@ -423,9 +448,13 @@ return function(api)
                 local fb = foeBars[slot]
                 if not fb or fb.addr ~= addr or (now >= fb.checkAt and not api.game.foeBar(addr, hudNow())) then
                     if fb and fb.addr ~= addr then
-                        hideFoeBar(slot)
+                        hideFoeBar(slot, hudNow())
                     end
                     fb = { addr = addr, checkAt = now + FOE_CHECK_S, last = -1, retryAt = 0 }
+                    -- (Its name and its class's with it, to find this figure again when its bar comes down: hideFoeBar.)
+                    pcall(function()
+                        fb.fname, fb.cname = body:GetFName():ToString(), body:GetClass():GetFName():ToString()
+                    end)
                     foeBars[slot] = fb
                     api.game.showFoeBar(body, foeName(slot), hudNow())
                 elseif now >= fb.checkAt then
@@ -444,6 +473,22 @@ return function(api)
                     if label ~= fb.label and now >= (fb.retryAt or 0) then
                         if api.game.setFoeName(addr, label, hudNow()) then
                             fb.label = label
+                        else
+                            fb.retryAt = now + 0.5
+                        end
+                    end
+                    -- The gold posture strip under it: their posture's share, said with their place (moves.lua), or hidden
+                    -- while it isn't known here (never fed, it stood full all match). Once the match is decided only a new
+                    -- bar's is set: on the winners' screens the beaten's bars break then (ui.decided), and that's left.
+                    -- (In twentieths, and a foe's at most every 0.3 s: each setting asks for the HUD, a search of every object,
+                    -- and their posture moves near every tick in a fight; the bar eases between settings itself.)
+                    local share = postureOf(slot)
+                    local shachi = share and math.floor(share * 20 + 0.5) * 5 or -1
+                    if shachi ~= fb.shachi and (not m.decidedFor or fb.shachi == nil) and now >= (fb.retryAt or 0)
+                        and now >= (fb.shachiAt or 0) and api.game.setFoeShachi then
+                        fb.shachiAt = now + 0.3
+                        if api.game.setFoeShachi(addr, share, hudNow()) then
+                            fb.shachi = shachi
                         else
                             fb.retryAt = now + 0.5
                         end

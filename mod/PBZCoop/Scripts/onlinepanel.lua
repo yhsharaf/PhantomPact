@@ -131,8 +131,15 @@ return function(api)
             save({ PvP = word })
             api.pvp.command(on and "on" or "off")
             local net = api.coop.net
+            -- (A host's click goes to everyone: a guest follows the host's rules (rules.lua, from 1.6.5; the bench, 11-08: the
+            -- guest's came on with the host's click). A guest gets here only under a host too old to say its rules, so
+            -- there the partner does need it on too.)
             if on and net.enabled and not net.partnerGone and net.target then
-                api.status.notify("pvp", "your partner needs PvPvE on too, or their moves won't show here.")
+                if api.coop.isHost() then
+                    api.status.notify("pvp", "PvPvE on for everyone: the host's rules count for all.")
+                else
+                    api.status.notify("pvp", "your partner needs PvPvE on too, or their moves won't show here.")
+                end
             end
         elseif row == "compass" then
             save({ PartnerCompass = word })

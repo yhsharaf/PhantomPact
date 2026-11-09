@@ -91,6 +91,9 @@ window, so nothing takes the focus.
 `dev-start.ps1 -Role Host` restarts nothing: stop your old copies first. Only ever stop a process whose path is under
 `C:\PBZDev`.
 
+`bench\pvp\` holds the PvP (F6) match scripts of 1.7.0, with relay_cli bots as the third to sixth players: its own README
+says what each proves.
+
 ### The whole story
 
 The retail build keeps its QA commands: construct `PBZCheatManager` on the player controller (`STORY.gm()`), then

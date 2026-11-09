@@ -216,7 +216,10 @@ return function(api)
     ------------------------------------------------------------------ which arenas this save has
 
     -- The game's own record of each spawner's enemy (SGameAIWorldSubsystem.SpawnerSaveData, kept for every map): a boss's
-    -- arena is open once one of its spawners says dead.
+    -- arena is open once one of its spawners says dead (arenas.lua lists the last phase's), unless this world showed that
+    -- fight unfinished this session (arena.refused, by arena.storyBegan). (Not every one: whether a real win leaves all its
+    -- records dead is unproven, and a stricter rule could close the arena to players who did win; the backstop catches a
+    -- fight left half done instead.)
     function arena.readUnlocked()
         local open = {}
         local ok = pcall(function()
@@ -234,7 +237,7 @@ return function(api)
                 local key = k:get()
                 key = type(key) == "string" and key or key:ToString()
                 local which = want[key]
-                if which then
+                if which and not (arena.refused or {})[which] then
                     local alive = true
                     pcall(function() alive = v:get().IsAlive end)
                     if alive == false then
@@ -696,7 +699,46 @@ return function(api)
         end)
     end
 
-    -- Everything the match changes, noted first; then the weapons, the loadout, every skill node, the gourd.
+    -- The talismans this player wears (the game's accessories: the bag's AssemblyAccessory, a name a slot, "None" in an
+    -- empty one), as { slot, id }: the slot counted from 0, as TakeOffAccessory and AssembleAccessory count it. (Counted
+    -- here, not by the list's own index, so it holds whichever way UE4SS numbers the list.)
+    function arena.talismansOf(pawn)
+        local out, n = {}, 0
+        local bp = valid(pawn) and game.backpackOf(pawn)
+        pcall(function()
+            bp.AssemblyAccessory:ForEach(function(_, e)
+                local id = e:get():ToString()
+                if id ~= "None" and id ~= "" then
+                    out[#out + 1] = { slot = n, id = id }
+                end
+                n = n + 1
+            end)
+        end)
+        return out
+    end
+
+    -- No talismans in a match (looked at every second, as the drinks are): one put on through the game's menu during it, in
+    -- a slot the match opened, comes off again. From the moment setup took this player's off (m.bare).
+    function arena.holdTalismans(m)
+        if not m.bare then
+            return
+        end
+        local _, pawn = pawnNow()
+        local worn = arena.talismansOf(pawn)
+        if #worn == 0 then
+            return
+        end
+        local bp = game.backpackOf(pawn)
+        for i = #worn, 1, -1 do
+            pcall(function() bp:TakeOffAccessory(worn[i].slot) end)
+        end
+        if not m.bareSaid then
+            m.bareSaid = true
+            tip("no talismans in a match: yours come back after it.")
+        end
+    end
+
+    -- Everything the match changes, noted first; then the weapons, the loadout, the talismans, every skill node, the gourd.
     local function setup(pawn, m)
         setVeto(true)
         -- (The health as it is, given back at home: a match is no free heal.)
@@ -748,14 +790,22 @@ return function(api)
                 local kind, id = key:match("^(%a+):(.+)$")
                 local main = kind == "main"
                 local owned = (main and saved.mainOwned or saved.edgeOwned)[id]
+                -- (The mod's own add, game.granting: as one found, pbz.lua's shared-items hook sent each lent weapon to the
+                -- partner, whose world got it after the match, its own restore long done, and kept it: the bench, 11-08.)
+                game.granting = true
                 pcall(function()
                     if not owned then
-                        bp:AddWeaponItem(FName(id), main, false, true, false)
+                        -- (WeaponID, bIsNormalWeapon, bPushWidget, bIsAddByLoadData, bAutoEquipment. Not as from load data:
+                        -- that adds nothing. The bench, 11-08: a foe's weapons lent so stayed unowned at level 0 all match, so
+                        -- their blows landed at the defender's own level of them; only this player's own, put on by
+                        -- PushEquippedWeapons, were in the bag. Lent this way: owned at level 1 at once, then raised.)
+                        bp:AddWeaponItem(FName(id), main, false, false, false)
                         saved.loans[#saved.loans + 1] = key
                     else
                         saved.levels[key] = bp:GetWeaponLevel(FName(id), main)
                     end
                 end)
+                game.granting = false
             end
             local main, edge = {}, {}
             for i = 1, 2 do
@@ -815,6 +865,21 @@ return function(api)
             pcall(function() saved.gourdMax = g.MaxTime end)
             pcall(function() saved.gourdLevel = g.CurrentLevel end)
         end
+        -- Talismans (the game's accessories) off for the match, each noted by its slot: what one gives (a ring's easier
+        -- deflect, say) is its wearer's alone, and the match opens all four slots to everyone. Off before the tree, while the
+        -- slots are still only this player's, from the last one back (in case the game closes up the list); then the slots
+        -- open are counted (saved.slots), and restore puts each back in its own.
+        saved.worn = arena.talismansOf(pawn)
+        local bag = game.backpackOf(pawn)
+        for i = #saved.worn, 1, -1 do
+            local slot = saved.worn[i].slot
+            pcall(function() bag:TakeOffAccessory(slot) end)
+        end
+        local okSlots, slots = pcall(function() return bag:GetCanAssembleAccessoryNum() end)
+        saved.slots = okSlots and type(slots) == "number" and slots or nil
+        if m then
+            m.bare = true
+        end
         -- Each skill node this player hasn't is put on for the match, one at a time, the game's way of buying one (called on
         -- the tree it costs nothing and needs no node before it; the bench, 11-07). Never the whole tree on and off: the
         -- game's DeactivateAllNodes took the player's own nodes too, their levels with them, and none of its ways back
@@ -853,10 +918,15 @@ return function(api)
         for key, level in pairs(saved.levels) do
             levels[#levels + 1] = key .. "=" .. tostring(level)
         end
+        local worn = {}
+        for _, w in ipairs(saved.worn or {}) do
+            worn[#worn + 1] = w.slot .. ":" .. w.id
+        end
         journal({ map = saved.map, at = string.format("%.0f %.0f %.0f %.0f", saved.at.X, saved.at.Y, saved.at.Z, saved.yaw or 0),
             loans = #saved.loans > 0 and table.concat(saved.loans, ",") or "-", arena = saved.arenaAt,
             levels = #levels > 0 and table.concat(levels, ",") or "-", nodes = table.concat(saved.nodes or {}, ","),
             added = #(saved.added or {}) > 0 and table.concat(saved.added, ",") or "-",
+            worn = #worn > 0 and table.concat(worn, ",") or "-",
             gourd = saved.gourdLevel and string.format("%d %d %d", saved.gourdLevel, saved.gourdMax or 0, saved.drinks or 0) or "-" })
         -- The drinks once the gourd is the match's: a moment later (the game writes the count as it swaps). Its level and its
         -- size too, each on its own, and from then held (holdDrinks).
@@ -950,6 +1020,52 @@ return function(api)
                         log("PvP: the skill tree isn't as it was before the match: " .. table.concat(wrong, ", ") .. ".")
                     end
                 end
+                -- (The talismans back, each in the slot it was in, now the match's slots are shut: only then does a slot's
+                -- number mean what it did. Not one worn already: a load in the match brings back the save's. None with fewer
+                -- slots open than before the match: said, and they stay in the bag. Looked at again in a moment.)
+                local back = {}
+                if valid(p) and s.worn and #s.worn > 0 then
+                    local wearing = {}
+                    for _, w in ipairs(arena.talismansOf(p)) do
+                        wearing[w.id] = true
+                    end
+                    for _, w in ipairs(s.worn) do
+                        if not wearing[w.id] then
+                            back[#back + 1] = w
+                        end
+                    end
+                end
+                if #back > 0 then
+                    local bag = game.backpackOf(p)
+                    local okSlots, open = pcall(function() return bag:GetCanAssembleAccessoryNum() end)
+                    open = okSlots and type(open) == "number" and open or nil
+                    if open and s.slots and open < s.slots then
+                        log(string.format("PvP: %d talisman slots open, %d before the match: %d talismans stay in the bag.",
+                            open, s.slots, #back))
+                    else
+                        for _, w in ipairs(back) do
+                            pcall(function() bag:AssembleAccessory(FName(w.id), w.slot) end)
+                        end
+                        game.after(0.5, function()
+                            local _, q = pawnNow()
+                            if arena.match then
+                                return          -- (a new match took them off again)
+                            end
+                            local seen, lost = {}, {}
+                            for _, w in ipairs(arena.talismansOf(q)) do
+                                seen[w.id] = w.slot
+                            end
+                            for _, w in ipairs(back) do
+                                if seen[w.id] ~= w.slot then
+                                    lost[#lost + 1] = w.id .. " (slot " .. w.slot .. ")"
+                                end
+                            end
+                            if #lost > 0 then
+                                log("PvP: talismans not back in their slots after the match: " .. table.concat(lost, ", ") .. ".")
+                            end
+                        end)
+                    end
+                end
                 -- (A stat still at the value the match held it to gets the player's own back: the base was written back
                 -- above, but the game works a stat out again only when an effect on it changes, and on the bench (11-07)
                 -- both players came home with the match's 160 attack over their own 100, stronger or weaker than their
@@ -968,7 +1084,12 @@ return function(api)
                 if valid(p) and s.attrs then
                     local _, maxhp = game.getHealth(p)
                     if maxhp then
-                        game.setHealth(p, s.hp and math.max(1, math.min(s.hp, maxhp)) or maxhp)
+                        -- (The bar and the low health look too, as a round's refill: the match's last blow left them low.)
+                        if game.refillPlayer then
+                            game.refillPlayer(p, s.hp and math.max(1, math.min(s.hp, maxhp)) or maxhp)
+                        else
+                            game.setHealth(p, s.hp and math.max(1, math.min(s.hp, maxhp)) or maxhp)
+                        end
                     end
                     -- (The match's gourd by name: its level, its size, then its drinks, as they were.)
                     local g = arena.gourdOf(p)
@@ -1206,6 +1327,51 @@ return function(api)
         end
     end
 
+    -- A boss arena where this world's own story with its boss runs: a scene that took the camera, the game's own boss bar
+    -- on a boss near the middle (a foe's bar is never one: game.showFoeBar), or (died) this player's death before the fight,
+    -- everyone shielded and held till then. Its records said beaten but the fight there was never finished: the bench, 11-07,
+    -- a YuCong whose first phase was killed and his records written after started his prison scene as the players landed,
+    -- and it killed the guest 3 s after set-up. Parking bodies stops no scene, and parkEnemies hides a bar the game raises.
+    -- That arena is closed for this world till the game restarts, and the match off for everyone. True if it was.
+    function arena.storyBegan(m, died)
+        if not (m and arena.match == m and (m.place or 0) > 0) then
+            return false
+        end
+        -- (A death is told at the respawn, seconds after it: only one before round 1's fight with no down of this player's
+        -- in the match at all is the story's. A real fall mid-fight told in the next round's countdown closed a beaten
+        -- arena; the review of 1.7.0.)
+        local why = died and (m.phase == "there" or m.phase == "count") and (m.round or 1) <= 1 and not m.downAt
+            and "killed you before the fight" or nil
+        if not why and not died then
+            if game.inCutscene() then
+                why = "began a scene"
+            else
+                local mid = middleOf(m)
+                for _, b in ipairs(game.bossActors and game.bossActors() or {}) do
+                    local l = locOf(b)
+                    if l and l.X and flatDist(l, mid) <= PARK_CM then
+                        why = "began its fight"
+                        break
+                    end
+                end
+            end
+        end
+        if not why then
+            return false
+        end
+        local a = data.arena(m.place)
+        arena.refused = arena.refused or {}
+        arena.refused[a.key] = true
+        arena.unlocked[a.key] = nil
+        log("PvP: " .. a.boss .. "'s story here " .. why .. ": this world never finished that fight. The match is off.")
+        coop.sendEvent("AR", "quit", m.id, "story")
+        arena.quit("your world never finished its fight with " .. a.boss .. ": that arena is closed for you", true)
+        if arena.setPick and net.enabled then
+            arena.setPick(nil, nil)     -- (the lobby told: this player's arenas without it)
+        end
+        return true
+    end
+
     -- At the arena, the world in: set up, parked, walls up, held still, and told.
     local function arrive(m, pawn)
         m.phase = "there"
@@ -1254,7 +1420,13 @@ return function(api)
             -- it, both sides down at once, starts up: at the floor's 1 they were down again at once, a draw each round.)
             local hp, maxhp = game.getHealth(pawn)
             if m.mode == "duel" or round == 1 or (hp or 0) <= DOWN_HP then
-                game.setHealth(pawn, maxhp or data.STATS.Health_Max)
+                -- (The game's own refill, the player's bar and low health look with it: written by hand they stayed empty and
+                -- near death from the last round's fall till a blow, the bench 11-07. pbz.lua refillPlayer.)
+                if game.refillPlayer then
+                    game.refillPlayer(pawn, maxhp or data.STATS.Health_Max)
+                else
+                    game.setHealth(pawn, maxhp or data.STATS.Health_Max)
+                end
                 if game.setPosture then
                     game.setPosture(pawn, data.STATS.Shachi_Max)
                 end
@@ -1427,6 +1599,9 @@ return function(api)
             return
         end
         m.phase = "fight"
+        -- (Each world's own moment, in its log: over a slow link the guest's countdown is shortened by the host's word's
+        -- age, so both start together; the bench compares these.)
+        log(string.format("PvP: round %d, the fight is on.", m.round or 1))
         local _, pawn = pawnNow()
         if valid(pawn) then
             hold(pawn, false)
@@ -1489,6 +1664,10 @@ return function(api)
             if valid(pawn) and now - m.leftAt > (m.trip and 3 or 0.3) and os.clock() >= (net.quietUntil or 0) then
                 local l = locOf(pawn)
                 if l and game.mapName(pawn) == mapOf(m) and flatDist(l, spotOf(m, mySlot())) <= 5000 then
+                    -- (This world's own story with the arena's boss as the player lands: never set up in it.)
+                    if arena.storyBegan(m) then
+                        return
+                    end
                     arrive(m, pawn)
                 end
             end
@@ -1507,11 +1686,17 @@ return function(api)
             if now >= areaAt and now >= (net.quietUntil or 0) then
                 areaAt = now + AREA_S
                 m.fogAt = now + AREA_S / 2
+                -- (Looked at before the parking hides the boss bar: the game's own fight with the arena's boss isn't one
+                -- to fight around.)
+                if arena.storyBegan(m) then
+                    return
+                end
                 parkEnemies(middleOf(m))
             elseif m.fogAt and now >= m.fogAt then
                 m.fogAt = nil
                 game.setBossFog(middleOf(m), true, true)        -- (said once, as they first close: arrive)
                 arena.holdDrinks(m)
+                arena.holdTalismans(m)
                 if now >= (m.guidesAt or 0) then
                     m.guidesAt = now + 5.0
                     arena.bellGuides(true)
@@ -1536,11 +1721,14 @@ return function(api)
         watchTeam(m, now)
         -- The game's tip to drink, off while this player can't drink: down, beaten (the match decided, on the clock too), or
         -- held through their own finishing move. It stayed up by the gourd through the deciding blow, the dazed wait and the
-        -- move (the bench, 11-07). Looked up only when that changes.
+        -- move (the bench, 11-07). Hidden as that starts, again 0.3 s on, then every AREA_S while it lasts: the game makes
+        -- the tip's widget only as it first shows the tip in a game, a moment after the blow, so the one call as a guest fell
+        -- for the first time in a fresh game found nothing to hide (the bench, 11-07 20:13; its later falls hid it).
         local team = myTeam()
         local cant = (m.down[mySlot()] or (m.decidedFor and team ~= m.decidedFor)
             or ((m.phase == "finish" or m.phase == "result") and team ~= m.winner) or now < (m.heldUntil or 0)) and true or nil
-        if cant ~= m.hintHidden and game.potionHint then
+        if game.potionHint and (cant ~= m.hintHidden or (cant and now >= (m.hintAt or 0))) then
+            m.hintAt = now + (cant == m.hintHidden and AREA_S or 0.3)
             m.hintHidden = cant
             game.potionHint(not cant)
         end
@@ -2271,6 +2459,9 @@ return function(api)
             return
         end
         if kind == "death" then
+            if arena.storyBegan(m, true) then
+                return
+            end
             arena.quit("you died", false)
         elseif kind == "sit" then
             local _, pawn = pawnNow()
@@ -2485,7 +2676,12 @@ return function(api)
     end
 
     function AR.quit(rest, slot)
-        local id, why = rest:match("^(%d+)%s*(%S*)")
+        -- (origin: whose quit the host passes on, at its end. Without it, with three or more players everyone else named the
+        -- host: "the host left", "the host's world never finished...", for another player's; the review of 1.7.0.)
+        local id, why, origin = rest:match("^(%d+)%s*(%S*)%s*(%d*)")
+        if slot == 1 and tonumber(origin) then
+            slot = tonumber(origin)
+        end
         local waiting = arena.pendingStart
         if waiting and tostring(waiting.id) == tostring(id) then
             arena.pendingStart = nil            -- (called off before it began here)
@@ -2497,9 +2693,10 @@ return function(api)
         end
         local who = playerName(slot)
         local said = why == "lost" and "a player was lost" or why == "trip" and (who .. " couldn't get to the arena")
-            or why == "late" and "not everyone got to the arena in time" or (who .. " left")
+            or why == "late" and "not everyone got to the arena in time"
+            or why == "story" and (who .. "'s world never finished that arena's boss fight") or (who .. " left")
         if coop.isHost() then
-            coop.sendEvent("AR", "quit", m.id, why ~= "" and why or "left")
+            coop.sendEvent("AR", "quit", m.id, why ~= "" and why or "left", slot)
         end
         arena.goHome(said)
     end
@@ -2618,6 +2815,17 @@ return function(api)
                         nodes:DeactivateNode(FName(id), a)
                     end
                 end)
+            end
+        end
+        -- (The talismans too, if a save in the match kept them off: each back in its own slot, if that slot is empty and the
+        -- talisman isn't worn. Now: the trip home below saves the game.)
+        local taken, wearing = {}, {}
+        for _, w in ipairs(arena.talismansOf(pawn)) do
+            taken[w.slot], wearing[w.id] = true, true
+        end
+        for slot, id in (j.worn or ""):gmatch("(%d+):([^,]+)") do
+            if not taken[tonumber(slot)] and not wearing[id] then
+                pcall(function() bp:AssembleAccessory(FName(id), tonumber(slot)) end)
             end
         end
         local x, y, z = (j.at or ""):match("^(%S+) (%S+) (%S+)")

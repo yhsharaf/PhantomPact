@@ -16,15 +16,17 @@ or 0, nor with Resistance_Poise at 9999; whether a boss's armour in its attacks 
 - Pick your loadout once and it's kept: two weapons and two Phantom Edges, any of the game's 20 and 20, owned or not
 - One on one, or up to six players in two teams of up to three (Crimson and Azure): everyone picks a team and presses READY
 - Everyone fights with the same body: every skill node on, the same health and attack, every weapon at level 30, three
-  drinks from the same gourd, at its top level, for the whole match. Every blow does half the usual damage: about six clean hits to bring
-  someone down, so parries and reads decide it
+  drinks from the same gourd, at its top level, for the whole match, and no talismans (yours go back in their slots after).
+  Every blow does half the usual damage: about six clean hits to bring someone down, so parries and reads decide it
 - The arena's fog walls go up and there are no monsters. A countdown in brush strokes, 三 二 一, then 斗. When the clock runs out, TIME, then the round's result
-- Every foe on the game's own boss health bar, with their name, the score and the clock over it; round and match banners
+- Every foe on the game's own boss health bar, with their name, the score and the clock over it, and the gold posture strip
+  under it moving with their real posture; round and match banners. Your own bar fills with you between rounds
 - In a team match your teammates' health shows over your own bar, in its look: the health a blow takes stays in red a moment
   and drains, and a fallen teammate's bar empties
 - Parries are the game's own deflect, timed: raise your guard as their blow comes and it's turned aside for nothing, your
   foe staggers and loses posture, and they see your blade turn theirs aside. A guard already held only blocks. Your guard
-  and your dodges show on the other screens as you make them: a blow into your guard no longer looks like it landed there
+  and your dodges show on the other screens as you make them: a blow into your guard no longer looks like it landed there.
+  Each foe holds their own weapons and Phantom Edges on your screen
 - The blow that wins the match plays in slow motion and leaves the losers on their feet, dazed. The winners then have about
   five seconds to finish them with F (B or Circle on a pad): every screen cuts to a camera beside the two that keeps clear of rocks and walls, and
   the winner finishes them with the arena's boss's own move (YuCong's lunge, Hua Qianxiao's drunken slide and cut, the
@@ -58,6 +60,8 @@ works as before.
 - A teammate's drink glow and other copied effects end when they should
 - A QTE you get stuck in during a boss's scene lets you go, and the host skipping a scene no longer ends yours mid-QTE
 - Items lying where you stood no longer vanish for your partner when you teleport, respawn or rest away from them
+- Shared items: once your partner's new game handed them the healing gourd, what you found could stop reaching them until
+  they found something themselves
 - In PvP, a match no longer resets your skill tree (it could take your nodes and lock talisman slots), and you come home
   with your own attack, not the match's
 
@@ -71,11 +75,11 @@ Both players need 1.7.0. Thanks to shilover (Rakka) for the ideas in issue #13, 
   金面人之谷、木小葵之野,或者此地(房主所在的地方)。所有玩家都打败了该首领后,这个首领的场地才会开放
 - 配装选一次就会保存:两把武器和两件杀器,从游戏的 20 把武器和 20 件杀器中任选,有没有都可以
 - 一对一,或最多六人分成赤队和青队(每队最多三人):每个人选队伍,然后按准备
-- 所有人用同样的身体作战:技能全部点满,生命和攻击相同,所有武器都是 30 级,整场比赛同一个葫芦(满级)只能喝三口。每一击的伤害是平时的一半:大约六次干净的命中才能击倒对手,胜负取决于弹反和读招
+- 所有人用同样的身体作战:技能全部点满,生命和攻击相同,所有武器都是 30 级,整场比赛同一个葫芦(满级)只能喝三口,不能佩戴护符(结束后会放回原来的槽位)。每一击的伤害是平时的一半:大约六次干净的命中才能击倒对手,胜负取决于弹反和读招
 - 场地的雾墙升起,没有怪物。水墨笔触的倒数 三 二 一,然后 斗。时间用完时先显示“时间到”,再显示本局结果
-- 每个对手都显示在游戏自己的首领血条上,上方写着名字、比分和时间;每局和整场的结果横幅
+- 每个对手都显示在游戏自己的首领血条上,上方写着名字、比分和时间,血条下的金色架势条随对手真实的架势变化;每局和整场的结果横幅。每局之间你自己的血条也会随之回满
 - 组队比赛中,队友的血条显示在你自己的血条上方,样式相同:被打掉的血会以红色停留片刻再慢慢褪去,倒下的队友血条会清空
-- 弹反就是游戏自己的弹刀,讲究时机:在对方的攻击到来时举起架势,这一击就会被无损地弹开,对手会失衡并损失架势,对方也会看到你的刀弹开了他的刀。一直举着的架势只是格挡。你的架势和闪避会在你做出的那一刻显示在其他人的画面上:打在你架势上的攻击不会再看起来像是命中了
+- 弹反就是游戏自己的弹刀,讲究时机:在对方的攻击到来时举起架势,这一击就会被无损地弹开,对手会失衡并损失架势,对方也会看到你的刀弹开了他的刀。一直举着的架势只是格挡。你的架势和闪避会在你做出的那一刻显示在其他人的画面上:打在你架势上的攻击不会再看起来像是命中了。在你的画面上,每个对手拿的都是他们自己的武器和杀器
 - 决定胜负的一击会慢放,败者不会倒下,而是站着失去架势。胜者有大约五秒钟按 F(手柄按 B 或 ○)终结对手:所有画面切到两人身旁的镜头(镜头会避开岩石和墙壁),胜者用该场地首领自己的招式终结对手(余聪的突刺、花千笑的醉步滑行与斩击、金面人的突刺与上挑、木小葵的双刀冲刺;此地会从四招中抽一招),并从让这一招正好打中对手的位置出招。命中的一刻几乎静止,败者以游戏自己的死亡方式倒下
 - 胜者看到金色的“生还”,败者看到游戏自己的红色“殒命”,两者以同样的方式呈现,所有人回到原来的地方,武器、等级、葫芦、技能和生命都会还原。比赛中的一切都不会存档
 - 比赛中网络只传送玩家的数据(没有敌人的数据),招式在开始的那一帧就会发出;比赛中没有完美闪避的慢动作,所有人的游戏以同样的速度运行
@@ -94,6 +98,7 @@ Both players need 1.7.0. Thanks to shilover (Rakka) for the ideas in issue #13, 
 - 队友喝药的光效等复制的特效会按时结束
 - 在首领的过场中卡住的 QTE 会放开你,房主跳过过场时也不会在你 QTE 进行中结束你的过场
 - 你传送、复活或坐火离开后,你身边的物品不会再在队友那边消失
+- 共享物品:队友的新游戏发给他们药葫芦之后,你拾取的东西可能不再分享给队友,直到他们自己拾取了东西
 - PvP 比赛不会再重置你的技能树(之前可能让你失去节点并锁住护符槽),回来后的攻击力也是你自己的,而不是比赛中的
 
 双方都需要 1.7.0。感谢 shilover(Rakka)在 issue #13 中提出的想法,也感谢所有提交反馈和日志的玩家。

@@ -1481,7 +1481,9 @@ return function(api)
             log("Shared loot: weapon " .. itemId)
         elseif kind == "medicine" and itemId == "Hulu" then
             -- (Never the starting healing gourd: the game hands it out itself as the prologue ends, equipped. Pushed in from
-            -- the partner beforehand, unequipped, a new game's player had it in the bag and none to drink from.)
+            -- the partner beforehand, unequipped, a new game's player had it in the bag and none to drink from.) (The flag down
+            -- first: left up, every later find of this player's went unshared.)
+            game.granting = false
             return
         elseif kind == "medicine" then
             -- (MedicineID, bAutoEquip, bShowPickupUI.)
@@ -1746,11 +1748,68 @@ return function(api)
         end
     end
 
+    -- A foe's bar taken down by the figure it was put up for, when that isn't the slot's body any more (arenaui.lua): a
+    -- figure made again had the new body's bar taken down, which wasn't up, and the old one stayed, frozen, its address
+    -- still marked here (a boss given that address later was no boss to the mod: the hook above passes over it). A clone
+    -- put away (coop.lua's destroyGhost) is never destroyed, so the HUD's own OnBossActorDestroyed never takes its bar: it's
+    -- found again by address and name, as coop.lua takes one back, and unregistered. One that's gone has its bar, if the
+    -- HUD still shows it, collapsed. fname, cname: the figure's name and its class's; hud: this tick's, or nil.
+    function game.dropFoeBar(addr, fname, cname, hud)
+        local want = addr and foeBars[addr]
+        if not want then
+            return
+        end
+        foeBars[addr] = nil
+        hud = valid(hud) and hud or FindFirstOf("PBZHUDLayout")
+        if not valid(hud) then
+            return          -- (no HUD, mid-load: its bars went with it)
+        end
+        for _, a in ipairs((cname and FindAllOf(cname)) or {}) do
+            if valid(a) and a:GetAddress() == addr and a:GetFName():ToString() == fname then
+                pcall(function() hud:UnRegisterBossHPBar(a) end)
+                return
+            end
+        end
+        if type(want) == "number" then
+            for _, bar in ipairs(bossBarList(hud)) do
+                if bar:GetAddress() == want then
+                    pcall(function() bar:SetVisibility(1) end)
+                end
+            end
+        end
+    end
+
+    -- The gold posture strip under its health (BreakmeterBar), moved by the bar's own ForSeq_UpdateShachi: a figure's bar
+    -- has no Character, so nothing of the game's moves it, and unfed it stood full all match. share: the foe's posture as a
+    -- share of its top, or nil when it isn't known here: the strip hidden (hidden, not collapsed: the bar keeps its shape).
+    -- False if there's no bar.
+    function game.setFoeShachi(addr, share, hud)
+        local bar = game.foeBar(addr, hud)
+        if not bar then
+            return false
+        end
+        local strip = nil
+        pcall(function() strip = bar.BreakmeterBar end)
+        if valid(strip) then
+            pcall(function() strip:SetVisibility(share and 3 or 2) end)
+        end
+        if share then
+            pcall(function() bar:ForSeq_UpdateShachi(math.max(0, math.min(1, share))) end)
+        end
+        return true
+    end
+
     -- The bar breaking as a boss's posture does: the game's own animation and its sparks (NS_UI_ShaChiBar_Break_001),
-    -- for a PvP match's deciding blow.
+    -- for a PvP match's deciding blow. (Its posture strip shown first: hidden for want of a value, it broke unseen.)
     function game.breakFoeBar(addr)
         local bar = game.foeBar(addr)
         if bar then
+            pcall(function()
+                local strip = bar.BreakmeterBar
+                if valid(strip) then
+                    strip:SetVisibility(3)
+                end
+            end)
             pcall(function() bar:PlayAnimation(bar.ShachiEmpty, 0, 1, 0, 1, false) end)
             pcall(function() bar.NS_UI_ShaChiBar_Break_001:ActivateSystem(true) end)
         end
@@ -2072,8 +2131,27 @@ return function(api)
     -- equipment's always-on part, not something the player did: a match's Phantom Edges turn theirs on as it's set up,
     -- they went as moves, and the other world gave one to the player's figure and started it there, where it called into
     -- nothing (the bench, 11-07: GA_Hun_ShachiHook_Passive_C, then a guest's game gone at PBZ.exe+0x153e1a6, a call to 0).
+    -- A Phantom Edge's own too: its skills are GA_<edge>_* (GA_BrutalAxe_Normal_C, GA_TigerCannon_Dash_C), not Hun's, so
+    -- one was never sent, a foe's figure never played it, and its blow never landed in a match (the bench, 11-08). Known by
+    -- the edges the game has (arenas.lua's list, kept in game.edgeWords); never an execution (it needs a victim the other
+    -- world hasn't).
     function game.isMoveName(name)
-        return name:find("^GA_Hun") ~= nil and name:find("Passive", 1, true) == nil
+        if name:find("Passive", 1, true) then
+            return false
+        end
+        if name:find("^GA_Hun") then
+            return true
+        end
+        local words = game.edgeWords
+        if not words and api.arenaData then
+            words = {}
+            for _, e in ipairs(api.arenaData.edges or {}) do
+                words[e.id] = true
+            end
+            game.edgeWords = words
+        end
+        local word = words and name:match("^GA_(%w+)_")
+        return word ~= nil and words[word] == true and name:find("Execution", 1, true) == nil
     end
 
     -- A guard's answer to a blow, by its montage's name or path: the game plays Hun_<weapon>_DefenceNormal_* for a deflect
@@ -3512,6 +3590,93 @@ return function(api)
         end
     end
 
+    -- This player's own health bar, told by hand what the health is now and shown a moment, as for a real change (the HUD's
+    -- own ForSeq_UpdatePlayerHP, as local co-op tells player 2's). Health written by hand reaches no listener: the bar follows
+    -- only the game's own changes. (The HUD found each time, never kept across frames.)
+    function game.showPlayerHealth(pawn)
+        local hp, maxhp = nil, nil
+        if valid(pawn) then
+            hp, maxhp = game.getHealth(pawn)
+        end
+        local hud = hp and maxhp and maxhp > 0 and FindFirstOf("PBZHUDLayout")
+        if not valid(hud) then
+            return false            -- (no HUD, mid-load: a call on nothing is a crash in UE4SS, not an error)
+        end
+        local ok = pcall(function() hud:ForSeq_UpdatePlayerHP(math.min(1.0, math.max(0.0, hp / maxhp))) end)
+        pcall(function() hud["Need To Show"](hud) end)
+        return ok
+    end
+
+    -- This player's health to hp, shown as the game shows a change of its own. Written by hand (setHealth) it reaches neither
+    -- the player's bar nor the game's low health look: on the bench (11-07) a duel's player refilled for the next round stood
+    -- at full health with an empty bar and the near-death look on till the next blow (issue #13 had warned of the bar). So
+    -- it's filled the game's way first, which tells both: the game's own recovery effects (REFILL_EFFECTS, health alone
+    -- first; one that would stay on is taken off at once, so nothing heals on after), else a loaded bell's own step, as
+    -- restHere (no sit hook hears it: in a match a sit is a forfeit). Then hp written, if that didn't reach it or a lower one
+    -- is wanted (home: the health from before the match; the look stays off), and the bar told where the game didn't.
+    -- game.refillHow says which way it went: full (nothing to fill), an effect's name, bell, or hand.
+    game.REFILL_EFFECTS = {
+        "/Game/PBZContent/DataTable/Character/GameplayEffects/GE_RevocerHealth",
+        "/Game/PBZContent/DataTable/Character/GameplayEffects/GE_RevocerHealthAndAnger",
+    }
+    function game.refillPlayer(pawn, hp)
+        local maxhp = valid(pawn) and select(2, game.getHealth(pawn)) or nil
+        if not (maxhp and maxhp > 0) then
+            return
+        end
+        local function filled()
+            local now = game.getHealth(pawn)
+            return now ~= nil and now >= maxhp - 0.5
+        end
+        local how = filled() and "full" or nil
+        local a = nil
+        if not how then
+            pcall(function()
+                a = StaticFindObject("/Script/GameplayAbilities.Default__AbilitySystemBlueprintLibrary")
+                    :GetAbilitySystemComponent(pawn)
+            end)
+        end
+        for _, path in ipairs((not how and valid(a)) and game.REFILL_EFFECTS or {}) do
+            local short = path:match("([^/]+)$")
+            -- (Only one already in memory: they're the game's own and normally are. Never loaded here: round 1's refill
+            -- comes right after the arena's trip, the moment a load once took UE4SS down (arena.lua's preload); the bell's
+            -- step or the bar told by hand covers one that isn't. The review of 1.7.0.)
+            local cls = StaticFindObject(path .. "." .. short .. "_C")
+            if valid(cls) then
+                pcall(function()
+                    local handle = a:BP_ApplyGameplayEffectToSelf(cls, 1, a:MakeEffectContext())
+                    if handle then
+                        a:RemoveActiveGameplayEffect(handle, -1)
+                    end
+                end)
+            end
+            if filled() then
+                how = short
+                break
+            end
+        end
+        if not how then
+            local bell = FindFirstOf("MelodiousBell")
+            if valid(bell) then
+                restingHere = true
+                pcall(function() bell:RestoreHealth() end)
+                restingHere = false
+                how = filled() and "bell" or nil
+            end
+        end
+        local want = math.max(1, math.min(hp or maxhp, maxhp))
+        game.setHealth(pawn, want)
+        if how == nil or how == "full" or want < maxhp - 0.5 then
+            game.showPlayerHealth(pawn)
+        end
+        if how == nil and not game.refillSaid then
+            game.refillSaid = true
+            log("Health refilled by hand: neither the game's recovery effects nor a bell's step filled it. The bar is told, " ..
+                "the low health look may stay till the next change.")
+        end
+        game.refillHow = how or "hand"
+    end
+
     ------------------------------------------------------------------ spectating
 
     -- While the local player is dead, the camera can follow the other player's ghost. The game's death screen is
@@ -3873,7 +4038,9 @@ return function(api)
 
     -- The game's own tip by the gourd at low health ("Press R to use Medicine and recover HP!", W_TutorialBar_Hint_Potion_C)
     -- hidden or shown again: a match hides it while this player is down or beaten (arena.lua), when they can't drink. (Its
-    -- widget is always shown, only its bubble comes and goes, so its opacity it is: the bench, 11-07.)
+    -- widget is always shown, only its bubble comes and goes, so its opacity it is: the bench, 11-07. But only once the game
+    -- has made it, as it first shows the tip in a game: one made after a call here comes at full opacity, so arena.lua asks
+    -- again while the tip is to stay off.)
     function game.potionHint(show)
         for _, w in ipairs(FindAllOf("W_TutorialBar_Hint_Potion_C") or {}) do
             if valid(w) then
@@ -4232,7 +4399,9 @@ return function(api)
     local giftsHooked = false
 
     local function given(id, count, kind, send)
-        if game.granting or os.clock() < ownUntil or id == "None" or count < 1 or game.keptApart(id) then
+        -- (Nor in a PvP match: there's no loot in one, and what it adds, a lent weapon, is the match's own: the bench, 11-08.)
+        if game.granting or os.clock() < ownUntil or id == "None" or count < 1 or game.keptApart(id)
+            or (api.arena and api.arena.match) then
             return
         end
         givenHere[id .. "x" .. count] = os.clock()

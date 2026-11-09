@@ -63,10 +63,73 @@ return function(out, scripts)
     s:run(2)
     local ha, ga = h.env.PBZ.arena, g.env.PBZ.arena
     check(ha ~= nil and ga ~= nil, "both have the arena module")
+
+    out("which boss arenas a save opens (its spawners' records, SpawnerSaveData):")
+    do
+        local data = dofile(scripts .. "/arenas.lua")
+        local yc, mxk
+        for _, a in ipairs(data.arenas) do
+            if a.key == "yucong" then yc = a elseif a.key == "muxiaokui" then mxk = a end
+        end
+        check(yc and #yc.unlock == 3 and mxk and #mxk.unlock == 1, "YuCong lists his last phase's three bodies, Mu Xiaokui one")
+        -- The world's records as the game's TMap hands them over: a key, and a record with IsAlive.
+        local records = {}
+        local saves = { IsValid = function() return true end, SpawnerSaveData = { ForEach = function(_, fn)
+            for key, alive in pairs(records) do
+                fn({ get = function() return key end }, { get = function() return { IsAlive = alive } end })
+            end
+        end } }
+        local find = h.env.FindFirstOf
+        h.env.FindFirstOf = function(class)
+            if class == "PBZAISaveGameWorldSubsystem" then
+                return saves
+            end
+            return find(class)
+        end
+        records[yc.unlock[1]], records[yc.unlock[2]] = true, true
+        check(not ha.readUnlocked().yucong, "his bodies alive: not open")
+        records[yc.unlock[2]] = false
+        check(ha.readUnlocked().yucong == true, "one of his last phase's bodies dead: open")
+        records[mxk.unlock[1]] = false
+        check(ha.readUnlocked().muxiaokui == true, "a boss of one listed spawner opens on it (Mu Xiaokui)")
+        ha.refused = { yucong = true }
+        check(not ha.readUnlocked().yucong and ha.unlocked.muxiaokui == true,
+            "an arena this world showed unfinished stays closed this session, the others open")
+        ha.refused = nil
+        h.env.FindFirstOf = find
+        ha.readUnlocked()
+        check(next(ha.unlocked) == nil, "no records: none open (the sim's world, as before)")
+        check(ha.storyBegan ~= nil and ha.storyBegan({ place = 1, phase = "count" }, true) == false,
+            "a match this player isn't in: nothing called off")
+    end
     -- Their skill trees, as the game has them: the host bought three nodes, one of them a talisman slot's; the guest none.
     local OWN = "HeiShi1,HeiShi2,MemoryFlower1"
     local all = #Fake.tree(h, { "HeiShi1", "HeiShi2", "MemoryFlower1" })
     Fake.tree(g, {})
+    -- The host wears a talisman in its first slot (the bag's AssemblyAccessory: a name a slot, "None" in an empty one), its
+    -- one slot open by HeiShi2; the game's own calls on them, in order.
+    local hList, talismanCalls = { "AC_Deflect", "None", "None", "None" }, {}
+    local function openSlots()
+        local n = 0
+        for _ in pairs(h.slots) do
+            n = n + 1
+        end
+        return n
+    end
+    Fake.put(h.bag, "AssemblyAccessory", { ForEach = function(_, fn)
+        for i, id in ipairs(hList) do
+            fn(i, { get = function() return h.env.FName(id) end })
+        end
+    end })
+    Fake.put(h.bag, "GetCanAssembleAccessoryNum", openSlots)
+    Fake.put(h.bag, "TakeOffAccessory", function(_, slot)
+        talismanCalls[#talismanCalls + 1] = "off " .. slot
+        hList[slot + 1] = "None"
+    end)
+    Fake.put(h.bag, "AssembleAccessory", function(_, id, slot)
+        talismanCalls[#talismanCalls + 1] = string.format("on %s %d (%d open)", id:ToString(), slot, openSlots())
+        hList[slot + 1] = id:ToString()
+    end)
     local function onNodes(pc)
         local ids = {}
         for id in pairs(pc.treeOn) do
@@ -116,6 +179,12 @@ return function(out, scripts)
     check(hm and hm.phase == "fight" and gm.phase == "fight", "the fight is on: " .. tostring(hm and hm.phase) .. "/" ..
         tostring(gm and gm.phase))
     check(onCount(h) == all and onCount(g) == all, "every skill node on for both: " .. onCount(h) .. "/" .. onCount(g))
+    check(table.concat(hList, ",") == "None,None,None,None" and talismanCalls[1] == "off 0",
+        "the host's talisman off for the match, by its slot: " .. table.concat(hList, ","))
+    check((h.files["pvp_restore.txt"] or ""):find("worn = 0:AC_Deflect", 1, true) ~= nil, "the journal has it, by slot")
+    hList[3] = "AC_PowerWeapon_2"           -- (one put on during the match, in a slot the match opened)
+    s:run(2.5)
+    check(hList[3] == "None" and talismanCalls[#talismanCalls] == "off 2", "one put on in the match comes off again")
     local enemyEvents = 0
     for i = sentBefore + 1, #h.sent do
         local line = h.sent[i]
@@ -275,14 +344,169 @@ return function(out, scripts)
     check(parries() == 2, "and the next deflect in reach, facing the host, is one again: " .. parries())
     Fake.running(g, g.pawn, "GA_Hun_ShachiHook_Passive_C", false)
 
-    out("round 1, the guest goes down:")
-    Session.command(g, "arena down")
+    out("a foe's Phantom Edge on their figure:")
+    -- (A figure is made from this PC's bag, so in a match its Phantom Edge was this player's own, and its abilities, which run
+    -- for real in PvP, drew that one. The guest had none before the match, "E -", and the host hid its figure's.)
+    local CANNON, HOOK = "/PBZCombatAsset/ActorData/Weapon/Cannon.Cannon", "/PBZCombatAsset/ActorData/Weapon/Hook.Hook"
+    local function figureGear()
+        return rawget(rawget(h.env.PBZ.net.ghost, "__fields"), "Character Weapons Component")
+    end
+    local function gearField(name)
+        return rawget(rawget(figureGear(), "__fields"), name)
+    end
+    local function figureEdge()
+        local cfg = gearField("edgeConfig")
+        return cfg and tostring(rawget(cfg, "__path")):match("[^.]+$") or "-"
+    end
+    Fake.put(figureGear(), "edgeConfig", h.env.StaticFindObject(HOOK))     -- (the host's own, from its bag)
+    Session.holdEdge(g, CANNON, false)
+    s:run(1.5)
+    check(figureEdge() == "Cannon", "the guest's figure on the host's screen holds the guest's Phantom Edge, not the host's: "
+        .. figureEdge())
+    check(gearField("edgeHidden") ~= true, "and shows it: not still hidden from before the match")
+    Session.holdEdge(g, CANNON, true)
     s:run(1)
+    check(gearField("edgeArmed") ~= true, "the guest's word doesn't draw it on the figure: in PvP its own abilities do")
+    Fake.put(figureGear(), "edgeArmed", true)          -- (its own ability drew it as the guest's skill began)
+    Session.holdEdge(g, HOOK, true)
+    Session.edgeMove(g, "/PBZCombatAsset/ActorData/Move/Show.Show")
+    s:run(1)
+    check(figureEdge() == "Cannon" and gearField("edgeArmed") == true,
+        "changed while drawn: the skill on the figure keeps its weapon, and nothing puts it away under it")
+    check(count(g.sent, "^%u Z ") == 0, "no Z in a match: the figure's own ability plays its weapon's moves")
+    Fake.put(figureGear(), "edgeArmed", false)         -- (the skill over: its ability put it away)
+    Session.holdEdge(g, HOOK, false)
+    s:run(1)
+    check(figureEdge() == "Hook", "put away, the figure takes the one the guest holds now: " .. figureEdge())
+    Fake.put(rawget(g.pawn, "__fields").edgeAnim, "montage", nil)
+    Fake.put(rawget(g.pawn, "__fields")["Character Weapons Component"], "edgeConfig", nil)     -- (none again)
+    -- Its skills: GA_<edge>_*, not Hun's (the bench, 11-08: GA_BrutalAxe_Normal_C was never sent, so its blow never landed).
+    local edgeSent = count(g.sent, "^%u M .*GA_BrutalAxe_Normal")
+    Fake.running(g, g.pawn, "GA_BrutalAxe_Normal_C", true)
+    Fake.running(g, g.pawn, "GA_Talent_EnableTenacity_C", true)
+    Fake.running(g, g.pawn, "GA_BrutalAxe_Execution_C", true)
+    s:run(0.3)
+    Fake.running(g, g.pawn, "GA_BrutalAxe_Normal_C", false)
+    Fake.running(g, g.pawn, "GA_Talent_EnableTenacity_C", false)
+    Fake.running(g, g.pawn, "GA_BrutalAxe_Execution_C", false)
+    s:run(0.5)
+    check(count(g.sent, "^%u M .*GA_BrutalAxe_Normal") == edgeSent + 1,
+        "a Phantom Edge's skill goes out as a move in a match: " .. (count(g.sent, "^%u M .*GA_BrutalAxe_Normal") - edgeSent))
+    check(count(g.sent, "^%u M .*GA_Talent") == 0 and count(g.sent, "^%u M .*Execution") == 0,
+        "nor a talent nor an execution: " .. count(g.sent, "^%u M .*GA_Talent") .. ", " .. count(g.sent, "^%u M .*Execution"))
+
+    out("the host on the guest's boss bar: its posture strip, and its figure made again:")
+    do
+        -- The fake HUD lists no bars (GetBossHPBarInstances is {}): here it makes one widget an actor, as the game's
+        -- RegisterBossHandles keeps them, and only UnRegisterBossHPBar drops one (a clone put away is never destroyed, so
+        -- the game's OnBossActorDestroyed never comes for it).
+        local hud = g.hudLayout
+        local f = rawget(hud, "__fields")
+        local realUp, realDown, realList = f.RegisterBossHPBar, f.UnRegisterBossHPBar, f.GetBossHPBarInstances
+        local up, bars = {}, {}
+        local function field(o, k)
+            return o and rawget(rawget(o, "__fields"), k)
+        end
+        Fake.put(hud, "RegisterBossHPBar", function(self, b)
+            local a = b:GetAddress()
+            if not up[a] then
+                local strip = Fake.object(g, "PBZAnimProgressBar_C", { shown = true }, true)
+                Fake.put(strip, "SetVisibility", function(st, v) Fake.put(st, "shown", v ~= 1 and v ~= 2) end)
+                local bar = Fake.object(g, "WB_BossHPBar_C", { BreakmeterBar = strip, shachi = 1.0,
+                    BossName = Fake.object(g, "PBZCommonLocText", {}, true) }, true)
+                Fake.put(bar, "ForSeq_UpdateShachi", function(w, v) Fake.put(w, "shachi", v) end)
+                up[a] = bar
+                bars[#bars + 1] = bar
+            end
+            return realUp(self, b)
+        end)
+        Fake.put(hud, "UnRegisterBossHPBar", function(self, b)
+            local a = b:GetAddress()
+            for i = #bars, 1, -1 do
+                if bars[i] == up[a] then
+                    table.remove(bars, i)
+                end
+            end
+            up[a] = nil
+            return realDown(self, b)
+        end)
+        Fake.put(hud, "GetBossHPBarInstances", function()
+            local list = {}
+            for i, bar in ipairs(bars) do
+                list[i] = { get = function() return bar end }
+            end
+            return list
+        end)
+        s:run(2)                                    -- (no bar found: the guest's tick puts it up again, now one)
+        local net = g.env.PBZ.net
+        local old = net.ghost
+        local oldAddr = old and old:GetAddress()
+        local bar = oldAddr and up[oldAddr]
+        check(bar ~= nil and #bars == 1, "the host's figure on the game's boss bar: " .. #bars)
+        hgame.setPosture(h.pawn, 320)               -- (half the match's 640: blows, a parry)
+        s:run(1)
+        local share = net.postureShare
+        check(share ~= nil and math.abs(share - 0.5) < 0.02, "the host's posture comes with its place: " .. tostring(share))
+        check(math.abs((field(bar, "shachi") or -1) - 0.5) < 0.02 and field(field(bar, "BreakmeterBar"), "shown") == true,
+            "and moves the gold strip under the host's health: " .. tostring(field(bar, "shachi")))
+        hgame.setPosture(h.pawn, 640)
+        -- The figure made again, the old one put away and not taken back: a new body (a trip, a party's change).
+        local unpark = net.unparkClone
+        net.unparkClone = function() return nil end
+        Session.command(g, "ghost clone")
+        s:run(3)
+        net.unparkClone = unpark
+        local newAddr = net.ghost and net.ghost:GetAddress()
+        check(newAddr ~= nil and newAddr ~= oldAddr and old:IsValid(), "a new figure, the old one put away, still there")
+        check(up[oldAddr] == nil, "the old figure's bar taken down, not left up frozen")
+        check(g.env.PBZ.game.foeBar(oldAddr) == nil, "and its address no foe's any more (a boss given it later is a boss)")
+        check(newAddr ~= nil and up[newAddr] ~= nil and #bars == 1, "one bar, the new figure's: " .. #bars)
+        Fake.put(hud, "RegisterBossHPBar", realUp)
+        Fake.put(hud, "UnRegisterBossHPBar", realDown)
+        Fake.put(hud, "GetBossHPBarInstances", realList)
+    end
+
+    out("round 1, the guest goes down:")
+    -- (As a real blow leaves a player: at the floor's 1, the game's own bar empty and its near-death look on.)
+    Fake.setHealth(g.pawn, 1)
+    local bellSteps, sits = count(g.trace, "Bell RestoreHealth"), count(g.sent, "^E SIT")
+    -- The game's drink tip (W_TutorialBar_Hint_Potion_C), made by the game only as it first shows the tip in a game, a
+    -- moment after the blow: here the frame after the guest's world hid the tip as it fell (the bench, 11-07 20:13).
+    local tip = { __alive = true, opacity = 1.0 }
+    function tip.IsValid() return true end
+    function tip.GetClass(self) return self end
+    function tip.GetFName() return Fake.name("W_TutorialBar_Hint_Potion_C") end
+    function tip.SetRenderOpacity(self, v) self.opacity = v end
+    local tipSearches, findAll = 0, g.env.FindAllOf
+    g.env.FindAllOf = function(class)
+        if class == "W_TutorialBar_Hint_Potion_C" then
+            tipSearches = tipSearches + 1
+        end
+        return findAll(class)
+    end
+    Session.command(g, "arena down")
+    s:run(1, function()
+        if gm.hintHidden and not tip.made then
+            tip.made = true
+            g.spawned[#g.spawned + 1] = tip
+        end
+    end)
+    check(tip.made and tip.opacity == 0.0, "the game's drink tip, made after the guest's world hid it as it fell, is hidden too: "
+        .. tostring(tip.opacity))
     check(count(g.sent, "^E AR down") == 1, "the guest says it's down")
     check(hm.score[1] == 1 and hm.score[2] == 0, "the host scores it 1 - 0: " .. hm.score[1] .. " - " .. hm.score[2])
     check(gm.score[1] == 1, "the guest hears the score")
     s:run(4.5)
     check(hm.round == 2 and gm.round == 2, "round 2 counts down: " .. hm.round .. "/" .. gm.round)
+    check(tip.opacity == 1.0 and tipSearches <= 8, string.format(
+        "the tip back for round 2, looked for about once a second while the guest was down: %s, %d searches",
+        tostring(tip.opacity), tipSearches))
+    -- (Written by hand, the refill left the bar empty and the near-death look on till a blow: the bench, 11-07.)
+    local ghp, gmax = Fake.health(g.pawn)
+    check(math.abs(ghp - gmax) < 0.5 and count(g.trace, "Bell RestoreHealth") > bellSteps,
+        string.format("round 2: the guest filled the game's way, %.0f of %.0f (%s; the sim's effects heal nobody)", ghp, gmax,
+            tostring(g.env.PBZ.game.refillHow)))
+    check(count(g.sent, "^E SIT") == sits and count(g.logs, "rested at a bell") == 0, "a refill, not a sit: no SIT, no forfeit")
     s:run(3.5)
     check(hm.phase == "fight" and gm.phase == "fight", "round 2 is on")
 
@@ -315,10 +539,13 @@ return function(out, scripts)
     check(not h.env.PBZ.net.pvp and not g.env.PBZ.net.pvp, "nobody fights after it")
     -- (The game's DeactivateAllNodes took a player's own nodes too, and nothing put them back: the next save kept that.)
     check(onNodes(h) == OWN and h.slots.HeiShi == true, "home: the host's own three nodes on, its talisman slot open: " .. onNodes(h))
+    check(table.concat(hList, ",") == "AC_Deflect,None,None,None" and talismanCalls[#talismanCalls] == "on AC_Deflect 0 (1 open)",
+        "the host's talisman back in its own slot, once the match's slots were shut: " .. table.concat(hList, ","))
     check(onNodes(g) == "", "the guest's tree as it was, nothing on: " .. onNodes(g))
     check(math.abs(attack(h) - attack0) < 0.5, string.format("and its attack its own again, %.0f, not the match's: %.0f",
         attack0, attack(h)))
     check(math.abs((Fake.health(h.pawn)) - 600) < 0.5, "and the health it had before, not a free heal: " .. tostring((Fake.health(h.pawn))))
+    check(count(h.trace, "PBZHUDLayout ForSeq_UpdatePlayerHP 0%.6") >= 1, "and its own bar told so, 600 of 1000, not the match's last")
     check(gourd(h) == gourd0 and gourd(g) == gourd0, "the gourd as it was, its drinks, size and level: " .. gourd(h) .. ", " .. gourd(g))
     check(countFrom(h.sent, sentGap, "^E K sp:dead1") >= 1, "the dead told again once the match is over")
     check(count(h.trace, "banner_timeup") == 0, "no TIME in a match the clock didn't end")

@@ -59,7 +59,8 @@ Sections follow: state (40 bytes), sure event, quick event, enemy line, hello (v
 two players another player (a slot and 40 bytes).
 
 The state's flags, set by the mod: 1 walking, 2 in a scene, 4 falling, 8 flying (ladders, wall runs); 0x10 and 0x20 how they move
-(1 walk, 2 jog, 3 sprint; none from an older version), 0x40 in the guard stance, 0x80 in a move. The relay's own: 0x4000 this
+(1 walk, 2 jog, 3 sprint; none from an older version), 0x40 in the guard stance, 0x80 in a move, 0x100 to 0x2000 the posture's
+share of its top, 1 to 63 (0: not said; from 1.7.0, for a foe's gold strip on the boss bar). The relay's own: 0x4000 this
 sample teleported, 0x8000 nothing new for longer than it guesses ahead.
 
 A session is the sender's clock in ms, always moving on, new per `link.reset()`, so a late packet of an older session can be

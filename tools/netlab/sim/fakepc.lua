@@ -1424,6 +1424,8 @@ function Fake.new(id, scripts, ini, link)
             end
         end,
         GetBossHPBarInstances = function() return {} end,
+        ForSeq_UpdatePlayerHP = false,      -- (the player's own bar, told by hand: traced, so a test can see it)
+        ["Need To Show"] = false,
     })
     pc.hudLayout = hudLayout
     local gourd = object(pc, "Gourd", { CurrentTime = 2, MaxTime = 2, CurrentLevel = 0 })

@@ -81,8 +81,9 @@ return function(api)
     -- held up the deaths queued behind them.
     local stance = { CHECK_S = 0.1, at = 0, sent = nil, bits = nil }
     -- The flags' bits: 0x10 and 0x20 how they move (1 walking, 2 jogging, 3 sprinting; none: not said), 0x40 in the guard
-    -- stance, 0x80 in a move.
-    local BIT = { STANCE = 0x40, MOVE = 0x80, GAITS = { w = 1, j = 2, s = 3, "w", "j", "s" } }
+    -- stance, 0x80 in a move; 0x100 to 0x2000 their posture (Shachi) as a share of its top, 1 to 63 (0: not said), for the
+    -- gold strip on a foe's boss bar (arenaui.lua). (No version before reads those six; the native's own are 0x4000 up.)
+    local BIT = { STANCE = 0x40, MOVE = 0x80, POSTURE = 0x100, GAITS = { w = 1, j = 2, s = 3, "w", "j", "s" } }
     -- A move played here goes on this long after their place says they're in none, then ends: it's what a lost "U - 0" left
     -- (all three of its copies gone in a burst), a looping one playing on for good. Longer than their place is played
     -- behind, so a move whose U came ahead of its place isn't cut.
@@ -117,7 +118,17 @@ return function(api)
             end
             -- And how they move: the ghost walks, jogs and sprints with them (game.setGhostGait), where it only jogged.
             stance.gait = game.gait and game.gait(pawn) or "j"
+            -- And their posture's share (BIT.POSTURE), with this ten times a second. Its top asked once a second (a read
+            -- through UE4SS); the posture itself is a read of memory (game.getPosture).
+            if now >= (stance.topAt or 0) then
+                stance.topAt = now + 1.0
+                local ok, top = pcall(function() return pawn.AttributeSetBase.Shachi_Max.CurrentValue end)
+                stance.top = ok and type(top) == "number" and top > 0 and top or nil
+            end
+            local posture = stance.top and game.getPosture and game.getPosture(pawn)
+            local share = posture and math.max(0, math.min(1, posture / stance.top))
             stance.bits = (BIT.GAITS[stance.gait] or 2) * 0x10 + (stance.sent and BIT.STANCE or 0)
+                + (share and (1 + math.floor(share * 62 + 0.5)) * BIT.POSTURE or 0)
         end
         local m = ai:GetCurrentActiveMontage()
         local inMove = valid(m)
@@ -391,6 +402,10 @@ return function(api)
     -- Every place heard from a player that says how they move (see stance): only what changed is done.
     function net.heardMoveBits(p, flags)
         gaitTo(p, BIT.GAITS[(flags >> 4) & 3])
+        -- Their posture's share of its top (BIT.POSTURE), or nil when it isn't said (an older version, a bot): a foe's gold
+        -- strip on the boss bar (arenaui.lua's postureOf).
+        local q = (flags >> 8) & 0x3F
+        p.postureShare = q > 0 and (q - 1) / 62 or nil
         local on = flags & BIT.STANCE ~= 0
         if on ~= (p.stance == true) then
             stanceTo(p, on)
@@ -620,25 +635,34 @@ return function(api)
                 cwc:SetArmed(slot, theirs.partnerArmed)
             end
         end
-        if theirs.edgePath == "-" and not net.pvp then
+        -- (In PvP too. There the figure's own abilities (M) draw its Phantom Edge, open it and fire it, but they take the one in
+        -- its slot, and the figure has that from this PC's bag: in a match this player's own loadout's, not the foe's. So the
+        -- weapon is set there as well. Whether it's drawn stays the abilities' own: their word comes after the M, by the sure
+        -- lane, and put it away under the skill it was drawn for. Nor is it changed while drawn: a skill on the figure keeps
+        -- its weapon to the end.)
+        if theirs.edgePath == "-" then
             if theirs.edgeHiddenOn ~= ghost:GetAddress() then      -- (each new figure starts with it shown)
                 theirs.edgeHiddenOn = ghost:GetAddress()
                 pcall(function() cwc:SetWeaponForceHide(edgeSlot(), 0, true) end)
             end
-        elseif theirs.edgePath and not net.pvp then
+        elseif theirs.edgePath then
             slot = edgeSlot()
             if theirs.edgeHiddenOn then
                 theirs.edgeHiddenOn = nil
                 pcall(function() cwc:SetWeaponForceHide(slot, 0, false) end)
             end
-            if now >= (theirs.edgeSwapAt or 0) and heldConfig(cwc, slot) ~= theirs.edgePath then
+            if now >= (theirs.edgeSwapAt or 0) and not (net.pvp and cwc:IsArmed(slot) == true)
+                and heldConfig(cwc, slot) ~= theirs.edgePath then
                 theirs.edgeSwapAt = now + GEAR_SWAP_S
                 local cfg = weaponConfig(theirs.edgePath)
                 if cfg then
-                    cwc:SetSlotWeapon(slot, 0, cfg)
+                    -- (At its current place in the slot, as the weapon above: the one in hand isn't always the first. With
+                    -- a match's loadout on, the bench's players held their second, TigerCannon.)
+                    cwc:SetSlotWeapon(slot, math.max(cwc:GetCurrentWeaponIndex(slot, false) or 0, 0), cfg)
+                    log("The ghost's Phantom Edge is now " .. theirs.edgePath:match("([^.]+)$") .. ".")
                 end
             end
-            if (cwc:IsArmed(slot) == true) ~= theirs.edgeArmed then
+            if not net.pvp and (cwc:IsArmed(slot) == true) ~= theirs.edgeArmed then
                 cwc:SetArmed(slot, theirs.edgeArmed)
             end
         end

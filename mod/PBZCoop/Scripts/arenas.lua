@@ -27,7 +27,10 @@ end
 local data = { spots = spots }
 data.PER_SIDE = 3               -- players a side at most: the spots above
 
--- unlock: spawner save keys (map name and spawner object, as the game's SpawnerSaveData has them): any one dead opens it.
+-- unlock: spawner save keys (map name and spawner object, as the game's SpawnerSaveData has them): any one dead opens it,
+-- unless that world showed the fight unfinished this session (arena.storyBegan). A boss of phases lists its last phase's: Mu
+-- Xiaokui's MuXiaoKuiP2_Seq046new, YuCong's three bodies YuCong_P3_1/2/3 (by SpawnerID, the bench's spawner survey of 11-06).
+-- His first phase (the kneeling BP_Monster_YuCong_P1_C and a BP_Monster_YuCong_C: SanTouMoOu, YuCong_Seqs028) isn't listed.
 data.arenas = {
     {
         key = "yucong",
@@ -38,9 +41,9 @@ data.arenas = {
         center = { X = 17300, Y = 153100, Z = -1932 },
         line = 0,               -- the teams face each other along this yaw
         reach = 2600,           -- the fight stays within this of the middle
-        unlock = { "PBZ_Fujizhilin_WPBP_AISpawner_C_UAID_E89C25A75433A3D602_1516000262",
-            "PBZ_Fujizhilin_WPBP_AISpawner_C_UAID_E89C25A75433A5D602_1440794636",
-            "PBZ_Fujizhilin_WPBP_AISpawner_C_UAID_E89C25A75433A5D602_1442751637" },
+        unlock = { "PBZ_Fujizhilin_WPBP_AISpawner_C_UAID_E89C25A75433A3D602_1516000262",   -- YuCong_P3_1
+            "PBZ_Fujizhilin_WPBP_AISpawner_C_UAID_E89C25A75433A5D602_1440794636",          -- YuCong_P3_2
+            "PBZ_Fujizhilin_WPBP_AISpawner_C_UAID_E89C25A75433A5D602_1442751637" },        -- YuCong_P3_3
     },
     {
         key = "huaqianxiao",

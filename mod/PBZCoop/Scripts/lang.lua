@@ -27,6 +27,7 @@ return function()
         -- PvP (F6)
         ["Putting the last match back: a moment."] = "正在还原上一场对决,请稍候。",
         ["too late to finish them: the match is over."] = "来不及处决了:对决已经结束。",
+        ["no talismans in a match: yours come back after it."] = "对决中不能佩戴护符:结束后会还给你。",
         -- the partner
         ["your partner is down."] = "队友倒下了。",
         ["your partner is back."] = "队友回来了。",
@@ -35,6 +36,7 @@ return function()
         ["your partner rested at a bell: you're rested too."] = "队友在钟旁休息了:你也恢复了。",
         ["your partner rested at a bell: you're rested, and so is the boss."] = "队友在钟旁休息了:你恢复了,首领也恢复了。",
         ["your partner needs PvPvE on too, or their moves won't show here."] = "队友也要开启 PvPvE,否则这里看不到对方的动作。",
+        ["PvPvE on for everyone: the host's rules count for all."] = "PvPvE 已为所有人开启:房主的规则对所有人生效。",
         ["partner disconnected."] = "队友已断开连接。",
         ["your partner turned co-op sync off."] = "队友关闭了联机同步。",
         ["PvPvE is off with more than two players (F6 PvP has teams)."] = "超过两名玩家时 PvPvE 关闭(F6 的 PvP 可以分队)。",
@@ -177,6 +179,10 @@ return function()
         { "^back from the match: (.+) was lost%.$", "%1 断线了,对决结束,已返回。" },
         { "^back from the match: (.+) left%.$", "%1 离开了,对决结束,已返回。" },
         { "^back from the match: (.+) couldn't get to the arena%.$", "%1 无法前往战场,对决取消,已返回。" },
+        { "^back from the match: your world never finished its fight with (.+): that arena is closed for you%.$",
+            "你的世界还没打完与 %1 的战斗:这个战场对你关闭,对决取消,已返回。" },
+        { "^back from the match: (.+)'s world never finished that arena's boss fight%.$",
+            "%1 的世界还没打完这个战场的首领战,对决取消,已返回。" },
         { "^back from the match: (.+)%.$", "对决结束,已返回:%1。" },
     }
 

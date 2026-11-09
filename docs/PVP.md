@@ -6,6 +6,8 @@ Two ways to fight each other:
   decides, as before. The ini key stays `PvP` so old ini files keep working.
 - **PvP** (F6): a match in one of four boss arenas, or where the host stands, with nothing else in it. This file is about this one.
 
+The 1.7.0 goal item by item, with what proves each: `docs/PVP-1.7.0-checklist.md`.
+
 ## What a match is
 
 | | |
@@ -14,7 +16,7 @@ Two ways to fight each other:
 | Modes | **Duel**: best of three rounds, everyone back up each round. **Death**: one life, last team standing |
 | Clock | None, 60, 90 or 120 s a round. At zero the team with more health left (as a share) wins the round; equal is a draw. TIME shows on every screen first, then the round's result |
 | Arenas | YuCong's Crimson Forest, Hua Qianxiao's stage, the Gold-Masked One's gorge, Mu Xiaokui's meadow: the game's own places, with their boss fog walls up and no monsters. Or **Here**: where the host stands, the sides 8 m either way of them on the first line round from the host's facing (30-degree steps) with floor under both ends and a clear view between them at chest height (`arena.hereYaw`); none, the host's facing |
-| Fair start | everyone a Soul at the top of the game: every skill node on (each one the player hasn't, for the match only), 1360 health, 160 attack, 640 Phantom Edge energy, held there all match; every weapon in the match at level 30; 3 drinks of the same gourd at its top level for the whole match (a drink heals by the gourd's level: 40% of the health at level 0, 50% at 6, the bench 11-08), a refill in it (a bell's sit) taken back |
+| Fair start | everyone a Soul at the top of the game: every skill node on (each one the player hasn't, for the match only), 1360 health, 160 attack, 640 Phantom Edge energy, held there all match; every weapon in the match at level 30; 3 drinks of the same gourd at its top level for the whole match (a drink heals by the gourd's level: 40% of the health at level 0, 50% at 6, the bench 11-08), a refill in it (a bell's sit) taken back; no talismans: each one worn comes off for the match and goes back in its own slot after, and one put on during it comes off again |
 | Damage | every blow at half the game's own (`DAMAGE` in `arenas.lua`): at the top of the game a Sanguine blow took 499 of 1360 on the bench, three to fall; at half, about six. A parry costs the attacker 60 posture. Each player's own `PvPDamage` and `PvPParryPosture` count only in PvPvE: in a match they'd let a player take less |
 | Loadout | a preset of your own, kept between matches (`pvp_preset.txt`): two weapons and two Phantom Edges, any of the game's 20 and 20, owned or not |
 | Start | the host picks the mode, the clock and the arena on the F6 page; everyone picks a team and presses READY; the host presses START |
@@ -77,6 +79,18 @@ A player who is down says so (`AR down`); the host counts.
 A foe's move plays whole on your screen, from its start, a moment after they began it (the network's delay): no catch-up that
 cuts its wind-up short. Your world judges the blows on you, so it's the swing you see that you parry or dodge, all of it.
 
+A foe's figure holds the foe's own weapons, Phantom Edges too: a figure is made from this PC's bag, so in a match its
+Phantom Edge was this player's own, and its abilities, which run for real in PvP, drew that one (every bench match had one
+loadout, so it never showed). The edge is set from the foe's word (`E`), never while drawn; drawing it and its moves are
+the figure's own abilities, so no `Z` goes in a match (moves.lua's `dressGhost`). And an edge's skills go as moves at all
+now: they're `GA_<edge>_*` (`GA_BrutalAxe_Normal_C`), not Hun's, and only `GA_Hun*` went, so a foe's edge skill never
+played on their figure and never landed (the bench, 11-08: a BrutalAxe swing on the guest's screen, nothing on the host's).
+`game.isMoveName` takes the game's edges by name from `arenas.lua`; never a passive or an execution.
+
+The game's tip to drink is hidden while a player can't drink (down, beaten, held through their own finishing move), and
+hidden again every second meanwhile: the game makes its widget only as it first shows the tip in a game, a moment after
+the blow, so on a fresh game's first fall the one hide found nothing (the bench, 11-07).
+
 ## Scope, decided
 
 - Online only: split screen (`Role = Local`) has no F6 page. Both players there share one world, where a foe is a figure of
@@ -91,7 +105,10 @@ cuts its wind-up short. Your world judges the blows on you, so it's the swing yo
 
 Each foe is on the game's own boss health bar (`PBZHUDLayout:RegisterBossHPBar`), white health over gold posture, at the
 top, as a boss fight shows its boss. Its name text (`BossName`, the game's own font) says who, and over the first foe's bar the
-score (YOU 1 – 0) and the round's clock; its health is moved with the bar's own `ForSeq_UpdateHealth`. A player's figure on
+score (YOU 1 – 0) and the round's clock; its health is moved with the bar's own `ForSeq_UpdateHealth`, and the gold posture
+strip under it with `ForSeq_UpdateShachi`, from the foe's own posture said with their place (hidden while it isn't known: a
+bot, an older version; unfed it stood full all match). A figure made again has its old bar taken down by that figure, found
+again by address and name (a clone put away is never destroyed, and its bar stayed up frozen: `game.dropFoeBar`). A player's figure on
 a boss bar gets no `Character` (the bench), so pbz.lua knows each bar by the widget the HUD made for it, and keeps it out of
 the mod's own boss lists (`bosses`, `bossActors`), so nothing that walks the bosses sees a player. The countdown and banners are
 ink-brush pictures of ours; TIME comes before the result of a round the clock ended. The last screens, the red 殒命 and the golden
@@ -122,7 +139,8 @@ same version (the F6 page says who doesn't).
 | `AR home <id>` | host | everyone goes back |
 | `AR quit <id> <why>` | anyone | leaves, or the host calls it off |
 
-Health goes with the position (the state sample), which is how the bars move at 125 a second.
+Health goes with the position (the state sample), which is how the bars move at 125 a second; so does the posture's share of
+its top, in the state's flags (0x100 to 0x2000, 1 to 63; 0 not said), which no earlier version reads (`docs/NETCODE.md`).
 
 ## The network during a match
 
@@ -150,7 +168,12 @@ start):
   player didn't own goes back with `DisposeWeapon`;
 - every weapon's level that the match raised (`ResetWeaponToLevel` puts it back: no dust, nothing given);
 - their gourd: which one, how many drinks, its size and its level (the match's gourd known by name, `arena.gourdOf`);
-- their health: they come home with what they had, not full;
+- their talismans (the game's accessories): which one was in which slot (the bag's `AssemblyAccessory`). Each comes off with
+  the game's `TakeOffAccessory` before the skill tree, and goes back with `AssembleAccessory` into the same slot once the
+  match's slots are shut again (`arena.talismansOf`, `arena.holdTalismans`);
+- their health: they come home with what they had, not full. A round's refill and the health at home go the game's own way
+  (`game.refillPlayer`: its recovery effect, else a bell's own step, not counted as a sit), so the player's own bar and the
+  near-death look follow; written by hand they stayed empty and near death till the next blow (the bench, 11-07);
 - their skill nodes: each one the player hasn't goes on for the match, one at a time (`ActivateNode`, the game's buy, which
   costs nothing called on the tree), and only those go off after it (`DeactivateNode`). The player's own nodes are never
   touched. (The bench, 11-07: the game's `DeactivateAllNodes` takes the player's own nodes and their levels too, and neither
@@ -164,6 +187,15 @@ world knows them. Raised with the game's own `UpgradeWeapon` and put back with `
 no dust, nothing in the bag). Tried and dropped: `ResetWeaponToLevel` won't raise (asked for 30, the weapons stayed at 1), and
 the bag's own level field written by hand (`MainWeaponInfos`' `WeaponLevel`, `ShaqiWeaponInfos`' `ShaChiWeaponLevel`) reads
 back right, but a match after either crashed the bench host within a second, a call to an empty function pointer.
+
+Lending (fixed 11-08): a weapon is lent with `AddWeaponItem(id, normal, false, false, false)`. Its fourth flag is
+`bIsAddByLoadData`, and as from load data it added nothing: a foe's weapons stayed unowned at level 0 in every other world
+all match, so their blows landed at whatever level the defender happened to own them (only a player's own loadout, put on by
+`PushEquippedWeapons`, was in the bag). Every bench match before had one loadout for everyone, which hid it. On the bench,
+11-08, two different loadouts: each in hand on its own player and on that player's figure in the other world, every match
+weapon at 30 in both worlds. Lent outside load data, a weapon is also what co-op's shared items hook takes for a find, and it
+sent each to the partner, whose world got it after the match, its own restore long done, and kept it: the lending is the
+mod's own add now (`game.granting`), and nothing is shared during a match at all (pbz.lua's `given`).
 
 Known: the upgrade to 30 gives a player who doesn't have it the game's "Skill Over Strength" achievement (a Phantom Edge to
 level 30), as it did the bench player.
@@ -215,9 +247,16 @@ motion stayed off in the match (time 1.00 throughout).
 | The Gold-Masked One's gorge | PBZ_Xigu_WP | -20900, 291300 | the Gold-Masked One is beaten |
 | Mu Xiaokui's meadow | PBZ_Zhengdaodaying_WP | -68100, 77200 | Mu Xiaokui is beaten |
 
-A boss arena is offered only when every player's own save has its boss beaten (the game's `SpawnerSaveData`): going there before
-plays the boss's story (seen on the bench: Mu Xiaokui's scene, the forest's). Any enemy near the arena is moved aside for the match
-and put back after; the boss's fog walls go up. Spots: three a side, 8 m from the middle, facing each other.
+A boss arena is offered only when every player's own save has its boss beaten (the game's `SpawnerSaveData`): a spawner
+`arenas.lua` lists for it reads dead, and for a boss of phases those are its last phase's (YuCong's three bodies,
+`YuCong_P3_1/2/3`; Mu Xiaokui's `MuXiaoKuiP2_Seq046new`). Going there before plays the boss's story (seen on the bench: Mu
+Xiaokui's scene, the forest's), and a fight left half done starts its next phase as the players land (YuCong's prison scene
+killed a shielded guest 3 s after set-up, 11-07, on a save whose records were written by hand). So a world that shows its
+boss's story at the arena anyway (a scene that takes the camera, the game's own boss bar near the middle, or a death before
+the fight) calls the match off for everyone, and that arena stays closed for that player till the game restarts
+(`arena.storyBegan`). Whether a real win leaves these records dead is not proven: no save that beat the four in play has
+been read; one that did would settle it. Any enemy near the arena is moved aside for the match and put back after; the
+boss's fog walls go up. Spots: three a side, 8 m from the middle, facing each other.
 
 Getting there (and home): a spot within 50 m on the same map is a hop; anything further is the game's own trip, whose loading
 screen sets the player down once the ground is in. A 280 m hop on the bench landed before the gorge's floor had loaded: the host
