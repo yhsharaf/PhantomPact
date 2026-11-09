@@ -121,14 +121,61 @@ return function(api)
         return ok and v == true
     end
 
+    -- What's open in the host's world goes out again now and then, not only as it opens (player report 11-09): a door the
+    -- host opened before a guest was on the map, or before it had loaded there, was never told again, and the guest stood
+    -- at it shut (a hand-in door, the Phantom Tavern's at Pangzhen), F3 their only way past. A name not loaded here yet is
+    -- kept a while and opened when it is.
+    local OFFER_S, OFFER_BATCH, PENDING_S = 20, 8, 120
+    local openNow, pending = {}, {}             -- host: open shared switches as last looked at; guest: name -> since
+    blockers.offerAt = 0
+
+    local function openHere(s, name)
+        pcall(function() s:SwitchWithoutPlaySequence() end)
+        switchSeen[name] = true
+        blockers.broken = blockers.broken + 1
+        log("The other player opened " .. name .. ": open here too.")
+    end
+
+    local function offerOpen(now)
+        if coop.isHost and not coop.isHost() or now < blockers.offerAt then
+            return
+        end
+        blockers.offerAt = now + OFFER_S
+        local batch = {}
+        for name in pairs(openNow) do
+            batch[#batch + 1] = name
+            if #batch >= OFFER_BATCH then
+                coop.sendEvent("SWO", table.concat(batch, " "))
+                batch = {}
+            end
+        end
+        if #batch > 0 then
+            coop.sendEvent("SWO", table.concat(batch, " "))
+        end
+    end
+
     local function watchSwitches(here)
         if net.localMap ~= switchMap then
-            switchSeen, switchMap = {}, net.localMap
+            switchSeen, switchMap, openNow, pending = {}, net.localMap, {}, {}
+        end
+        local now = os.clock()
+        for name, since in pairs(pending) do
+            if now - since > PENDING_S then
+                pending[name] = nil
+            end
         end
         for _, s in ipairs(FindAllOf("PBZSwitchBase") or {}) do
             if valid(s) and sharedSwitch(s) then
                 local name, open = nameOf(s), isOpen(s)
+                if name and pending[name] then
+                    pending[name] = nil
+                    if not open then
+                        openHere(s, name)
+                        open = true
+                    end
+                end
                 if name then
+                    openNow[name] = open or nil
                     local was = switchSeen[name]
                     switchSeen[name] = open
                     if was == false and open then
@@ -144,9 +191,18 @@ return function(api)
         end
     end
 
+    -- One name, or (the host's again-and-again) several, space apart.
     coop.handlers.SWO = function(rest, from)
-        local name = type(rest) == "string" and rest:match("^([%w_]+)$")
-        if not name or #name > MAX_NAME then
+        if type(rest) ~= "string" or #rest > (MAX_NAME + 1) * OFFER_BATCH then
+            return
+        end
+        local want = {}
+        for name in rest:gmatch("%S+") do
+            if #name <= MAX_NAME and name:match("^[%w_]+$") then
+                want[name] = true
+            end
+        end
+        if next(want) == nil then
             return
         end
         local p = coop.peerOf(from)
@@ -154,16 +210,21 @@ return function(api)
         if not (t and t.Map and t.Map == net.localMap) then
             return
         end
+        if switchMap ~= net.localMap then
+            switchSeen, switchMap, openNow, pending = {}, net.localMap, {}, {}
+        end
         for _, s in ipairs(FindAllOf("PBZSwitchBase") or {}) do
-            if valid(s) and nameOf(s) == name and sharedSwitch(s) then
-                if not isOpen(s) then
-                    pcall(function() s:SwitchWithoutPlaySequence() end)
-                    switchSeen[name] = true
-                    blockers.broken = blockers.broken + 1
-                    log("The other player opened " .. name .. ": open here too.")
+            local name = valid(s) and nameOf(s)
+            if name and want[name] then
+                want[name] = nil
+                if sharedSwitch(s) and not isOpen(s) then
+                    openHere(s, name)
                 end
-                return
             end
+        end
+        local now = os.clock()
+        for name in pairs(want) do
+            pending[name] = pending[name] or now      -- (not loaded here yet: opened when it is)
         end
     end
 
@@ -193,6 +254,7 @@ return function(api)
                 local pawn = coop.localPawn()
                 if valid(pawn) then
                     watchSwitches(pawn:K2_GetActorLocation())
+                    offerOpen(os.clock())
                 end
             end
         end)

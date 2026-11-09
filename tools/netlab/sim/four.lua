@@ -1695,6 +1695,52 @@ local function hostDiesFirst()
     allErrors(s)
     allErrors(t)
 end
+-- A player report (11-09): a door the host opened before the guest got there, or before it had loaded in the guest's world,
+-- stayed shut for the guest (a hand-in door, the Phantom Tavern's): only F3 got them past.
+local function doorsOpenedBefore()
+    part("doors the host opened before the guest came")
+    local s, h, g = pair()
+    local function door(pc, name, open)
+        local d = Fake.switch(pc, name, 330.0, 0.0, 100.0)
+        Fake.put(d, "SwitchWithoutPlaySequence", function(self) Fake.put(self, "CurSwitchState", true) end)
+        Fake.put(d, "CurSwitchState", open)
+        return d
+    end
+    local hostDoor = door(h, "BP_Block_Door_C_UAID_7", true)       -- (open in the host's world all along)
+    local guestDoor = door(g, "BP_Block_Door_C_UAID_7", false)
+    door(h, "BP_SlenderDoor_C_UAID_9", true)
+    s:run(22)
+    check(field(guestDoor, "CurSwitchState") == true, "a door open in the host's world before is opened in the guest's too")
+    local late = door(g, "BP_SlenderDoor_C_UAID_9", false)         -- (loaded here only now)
+    s:run(3)
+    check(field(late, "CurSwitchState") == true, "and one that loads in the guest's world later, as it does")
+    check(field(hostDoor, "CurSwitchState") == true, "(the host's stays open)")
+    allErrors(s)
+end
+-- A player report (11-09): three players, an hour, the host at 1.5m dust, the guests at 600k. A wallet's rise across a death
+-- (or a new body) went out whole as a gain and was paid to everyone.
+local function dustOnlyEarned()
+    part("only earned dust is shared")
+    local s, h, g = pair()
+    s:run(12)                                       -- (past the quiet after a new body)
+    local function set(pc, v) Fake.put(pc.pawn, "ConsciousnessDust", v) end
+    local before = Session.dust(h)
+    set(g, Session.dust(g) + 100)                   -- (a kill's pay on the guest)
+    s:run(2)
+    check(Session.dust(h) == before + 100, "a guest's earned dust reaches the host")
+    Session.die(g)
+    s:run(1)
+    set(g, Session.dust(g) + 50000)                 -- (its wallet back after the death, or a new body's saved amount)
+    s:run(2)
+    Session.revive(g)
+    s:run(3)
+    check(Session.dust(h) == before + 100, "a rise while down isn't sent as a gain")
+    s:run(12)
+    set(g, Session.dust(g) + 30)
+    s:run(2)
+    check(Session.dust(h) == before + 130, "and earning goes on being shared after")
+    allErrors(s)
+end
 -- A guest's hit that makes their copy flinch: the host's enemy itself flinches the same way, and its next move doesn't cut the
 -- copy's reaction short.
 local function hitReactions()
@@ -2635,6 +2681,27 @@ local function playerReports()
         h.hudLayout:UnRegisterBossHPBar(Session.enemyOn(h, "boss"))     -- (the host walks out of it)
         s:run(8)
         check(field(copy, "dead") == true, "the host's fight over: a copy brought back for it isn't left standing on the guest")
+        allErrors(s)
+    end
+    do
+        -- A player report (11-09): the host died in the fight, and the guest's boss, one its save had beaten, was killed
+        -- on the spot; the host's next try was at nothing on the guest's screen.
+        local s, h, g = pair()
+        Session.moveTo(h, 3000, 2800)
+        Session.moveTo(g, 3000, 2700)
+        s:run(3)
+        bossStart(s)
+        s:run(4)
+        local copy = Session.enemyOn(g, "boss")
+        net(g).broughtBack["sp:boss"] = true
+        Session.die(h)
+        h.hudLayout:UnRegisterBossHPBar(Session.enemyOn(h, "boss"))     -- (the game takes the bar down as its player dies)
+        s:run(8)
+        check(field(copy, "dead") ~= true, "the host dies in the fight: the guest's boss, brought back for it, isn't put down")
+        Session.die(g)
+        g.hudLayout:UnRegisterBossHPBar(copy)
+        s:run(15)
+        check(field(copy, "dead") ~= true, "both go down and the fight is lost: still there for the next try")
         allErrors(s)
     end
     do
@@ -5286,6 +5353,8 @@ return function(print_, scripts)
     aiming()
     holding()
     hostDiesFirst()
+    doorsOpenedBefore()
+    dustOnlyEarned()
     lateJoiner()
     lateJoinerGuestFight()
     toldOnChange()
