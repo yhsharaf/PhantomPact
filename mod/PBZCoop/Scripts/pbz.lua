@@ -4380,7 +4380,30 @@ return function(api)
 
     local watched = {}            -- pickup name -> { itemId } for pickups near the local player last tick
     local takenHere = {}          -- pickup name -> true once the local player took it (until the next bell rest)
-    game.goneHere = {}            -- map id -> { pickup name -> true }: what the other player took (game.takeRemotePickup)
+    game.goneHere = {}            -- save and map -> { pickup name -> who }: what a partner took (game.takeRemotePickup)
+    game.nearPickups = {}         -- pickup name -> { item, at }: those out of the look's reach but within a run, last look
+    game.saveSlot = nil           -- the save this world is (its slot), read as each map comes: goneHere is that save's alone
+
+    -- goneHere's key for a map: this save's and that map's. (Not across saves: another one loaded in the same game had every
+    -- pickup a partner took on its maps gone with nothing given; the review of 11-09.)
+    function game.goneKey(map)
+        return map and ((game.saveSlot or "") .. "|" .. tostring(map)) or nil
+    end
+
+    -- The save this world is, from the game's save system: game.saveSlot, read as a map comes, or by a partner's word that
+    -- came first. (Before this world's first look, as it loads in, a word filed what was taken under no save, and the copy
+    -- that came back after, looked for under the save's name, was there to take again: the review of 11-10.)
+    function game.readSaveSlot()
+        pcall(function()
+            local sys = FindFirstOf("PBZSaveLoadSubsystem")
+            if valid(sys) then
+                local s = sys:GetContinueSlotName()
+                pcall(function() s = s:ToString() end)
+                game.saveSlot = type(s) == "string" and s or game.saveSlot
+            end
+        end)
+        return game.saveSlot
+    end
 
     local function pickupItemId(p)
         local ok, id = pcall(function() return p.ItemId:ToString() end)
@@ -4398,6 +4421,7 @@ return function(api)
     local watchedMap = nil
     local pickupSpots = {}        -- pickup address -> { name, loc }
     function game.watchPickups(pawn, report)
+        game.pickupReport = report    -- (game.takeRemotePickup tells one this look won't)
         if not maySearch() then
             return false          -- the caller comes back in a tenth of a second
         end
@@ -4405,16 +4429,17 @@ return function(api)
         local here = pawn:K2_GetActorLocation()
         local all = FindAllOf("PBZPickupActor") or {}
         local map = game.mapName(pawn)
-        if map ~= watchedMap or (#all == 0 and next(watched) ~= nil) then
+        if map ~= watchedMap or (#all == 0 and (next(watched) ~= nil or next(game.nearPickups) ~= nil)) then
             if map ~= watchedMap then
                 takenHere = {}    -- pickup names are only unique within a map
                 pickupSpots = {}
+                game.readSaveSlot()
             end
             watchedMap = map
-            watched = {}
+            watched, game.nearPickups = {}, {}
         end
         local present, spots, newOnes = {}, {}, 0
-        local gone = game.goneHere[api.coop and api.coop.net.localMap or map]
+        local gone = game.goneHere[game.goneKey(api.coop and api.coop.net.localMap or map)]
         for _, p in ipairs(all) do
             local addr = p:GetAddress()
             local spot = pickupSpots[addr]
@@ -4438,7 +4463,7 @@ return function(api)
                 local okP, pickable = pcall(function() return p.bIsPickable end)
                 local okL, loc = pcall(function() return p:K2_GetActorLocation() end)
                 if (not okP or pickable ~= false) and okL and loc.X then
-                    present[spot.name] = { actor = p, loc = loc }
+                    present[spot.name] = { actor = p, loc = loc, spot = spot }
                 end
             end
         end
@@ -4465,17 +4490,35 @@ return function(api)
                 present[name] = nil
             end
         end
-        watched = {}
+        -- (Gone since the last look from within a run of this player, out of the look's reach then, with its thing given here
+        -- since: this player ran to it and took it between two looks. Untold, a partner who took it too gave a third player
+        -- two; and taken for a copy not loaded at the partner's word, theirs came here as a second: the review of 11-10.)
+        for name, info in pairs(game.nearPickups) do
+            local given = game.lastGiven[info.item]
+            if present[name] == nil and not takenHere[name] and not jumped and given and given.at >= info.at then
+                takenHere[name] = true
+                if not game.keptApart(info.item) and game.narrative ~= nil then
+                    report(name, info.item)
+                end
+            end
+        end
+        watched, game.nearPickups = {}, {}
         for name, p in pairs(present) do
             if distance(p.loc, here) <= PICKUP_WATCH_CM then
                 watched[name] = { itemId = pickupItemId(p.actor), loc = p.loc }
+            else
+                p.spot.item = p.spot.item or pickupItemId(p.actor)      -- (read once a pickup)
+                if p.spot.item ~= "?" and p.spot.item ~= "None" then
+                    game.nearPickups[name] = { item = p.spot.item, at = os.clock() }
+                end
             end
         end
     end
 
     -- The other player took this pickup: remove our copy and give us the same item, so loot is shared. map: the map it
-    -- lies on, as they said it (net's map id), or nil.
-    function game.takeRemotePickup(name, itemId, pawn, kind, map)
+    -- lies on, as they said it (net's map id), or nil; from: who (a party's slot), or nil; held, n: what a ground pickup held
+    -- and how many their game gave, as they said it, or nil.
+    function game.takeRemotePickup(name, itemId, pawn, kind, map, from, held, n)
         if takenHere[name] then
             -- Both players grabbed it within the same moment: each already has theirs, as in single-player.
             log("The other player took " .. name .. " too; you already have yours.")
@@ -4487,23 +4530,76 @@ return function(api)
             log("The other player took " .. name .. " (" .. tostring(itemId) .. "): a quest item, left here for you to take.")
             return
         end
-        -- (Gone for good while the session lasts: a copy destroyed was made again when its area streamed back in, a bell trip
-        -- away and back, and lay there to be taken a second time; nor was one loaded after this word came ever taken. A
-        -- report on 1.6.9. watchPickups.)
-        local key = map or (api.coop and api.coop.net.localMap) or watchedMap
-        if key then
-            game.goneHere[key] = game.goneHere[key] or {}
-            game.goneHere[key][name] = true
+        -- (A ground pickup's gone for good while the session lasts, on this save: a copy destroyed was made again when its area
+        -- streamed back in, a bell trip away and back, and lay there to be taken a second time; nor was one loaded after this
+        -- word came ever taken. A report on 1.6.9. watchPickups. Another partner's word for one gone here already: their
+        -- share is the same thing, noted to be one each (receiveGift): two guests who took one gave the host two, the review
+        -- of 11-09. The same partner's word again is theirs come back in their world: its share theirs, the review of 11-10.)
+        local ground = itemId == "?"
+        held = held ~= "-" and held ~= "?" and held ~= "None" and held or nil
+        if ground and game.saveSlot == nil then
+            game.readSaveSlot()
         end
+        local key = game.goneKey(map or (api.coop and api.coop.net.localMap) or watchedMap)
+        if ground and key then
+            local gone = game.goneHere[key]
+            local by = gone and gone[name]
+            if by then
+                if held and by ~= (from or true) then
+                    game.dupShares[#game.dupShares + 1] = { id = held, count = n, from = from, at = os.clock() }
+                end
+                return
+            end
+            game.goneHere[key] = gone or {}
+            game.goneHere[key][name] = from or true
+        end
+        -- (This player took it too, in the same moment: the word here before this world's own look told takenHere. Each has
+        -- theirs, and the partner's share is "given here too": waited for, it came as a second, the review of 11-09. Told
+        -- the others as the look tells a take, that look only telling one in reach at the look before: a third player's
+        -- share of it is the same thing then. Untold, the host got two: the review of 11-10.)
+        local function mineToo(item)
+            takenHere[name] = true
+            log("The other player took " .. name .. " too; you already have yours.")
+            if not watched[name] and game.pickupReport and item and item ~= "?" then
+                game.pickupReport(name, item)
+            end
+        end
+        local found = false
         for _, p in ipairs(FindAllOf("PBZPickupActor") or {}) do
             if valid(p) and p:GetFName():ToString() == name then
-                watched[name] = nil
-                if itemId == "?" then
-                    game.awaitShare(pickupItemId(p))        -- (its item comes by T: what our copy held is waited for)
+                found = true
+                -- (Ours taken already: unpickable, or moved off its spot, destroyed and found still till it's collected.)
+                local okP, pickable = pcall(function() return p.bIsPickable end)
+                local spot = pickupSpots[p:GetAddress()]
+                local okL, loc = pcall(function() return p:K2_GetActorLocation() end)
+                local item = pickupItemId(p)
+                if (okP and pickable == false) or (spot and spot.name == name and okL and loc and loc.X
+                    and distance(loc, spot.loc) > PICKUP_JUMP_CM) then
+                    mineToo(item ~= "?" and item or held)
+                    return
                 end
+                watched[name] = nil
+                -- (Gone first: a fault in what follows had left our copy there to take, the review of 11-10. Its item comes
+                -- by T: what it held is waited for.)
                 p:K2_DestroyActor()
+                if ground then
+                    game.awaitShare(item ~= "?" and item or held, n, from)
+                end
                 break
             end
+        end
+        -- (Our copy not loaded when the word came: what it held comes with the word, waited for all the same. Else its share
+        -- met the 15 s checks, dropped there if this world had the same thing lately, and the copy was destroyed as it
+        -- loaded: nothing given at all. The review of 11-09. But one this world had loaded within a run of this player at its
+        -- last look, gone since, with its thing just given here: this player took it too, the word before the next look.
+        -- One each, as above; waited for, the partner's share came as a second, the review of 11-10.)
+        if ground and not found and held then
+            local mine = game.lastGiven[held]
+            if mine and os.clock() - mine.at < 5 and (watched[name] or game.nearPickups[name]) then
+                mineToo(held)
+                return
+            end
+            game.awaitShare(held, n, from)
         end
         if itemId and itemId ~= "?" then
             game.grantLoot(pawn, itemId, kind)
@@ -4582,7 +4678,15 @@ return function(api)
             return
         end
         givenHere[id .. "x" .. count] = os.clock()
+        game.lastGiven[id] = { n = count, at = os.clock() }
         send(id, count, kind or "-")
+    end
+
+    -- How many of id the game just gave this player (its pickup's word says it: game.takeRemotePickup), else 1.
+    game.lastGiven = {}
+    function game.pickupCount(id)
+        local g = game.lastGiven[id]
+        return (g and os.clock() - g.at < 3) and g.n or 1
     end
 
     function game.hookGifts(send)
@@ -4667,36 +4771,65 @@ return function(api)
     end
 
     -- from: who it came from, with more than two players: two partners given the same thing in a moment are one thing too.
-    function game.receiveGift(pawn, id, count, kind, from)
+    -- more: another share of the same thing is still on its way here (coop.lua's takeGifts); at: when this one came.
+    function game.receiveGift(pawn, id, count, kind, from, more, at)
         if game.keptApart(id) then
             return          -- (a quest item, with the old rule: each player picks up their own, see game.keptApart)
         end
-        local key = id .. "x" .. count
+        local key, now = id .. "x" .. count, os.clock()
+        -- (A second partner's share of one pickup, gone here already at the first one's word: the same thing, one each.)
+        if game.takeDupShare(id, from, count) then
+            log("Two players took the same pickup of " .. id .. ": one each.")
+            return
+        end
+        local here = givenHere[key]
         -- (The share of a ground pickup of the partner's: our copy went with their word, so nothing here gave it, whatever
-        -- this world was given lately. Two players finding the same herb in a moment lost one. game.awaitShare.)
-        local pickup = game.takePickupShare(id)
+        -- this world was given lately: two players finding the same herb in a moment lost one. game.awaitShare. But a share
+        -- of what this world gave as it came, not as many as the pickup held (or, not knowing that, with another share of
+        -- it still on its way), is that event's (a kill's reward both games give): given here too, the wait left for the
+        -- pickup's own. The review of 11-09: a kill's reward took a pickup's wait, and the pickup's share came on top. Only
+        -- as it came: their word's count is their game's last give of the thing, and a reward between their take and their
+        -- look gave it the reward's; this world's own find of a while before took the pickup's share for it then, the
+        -- review of 11-10.)
+        local wait = game.pickupWaitFor(id, from, count)
+        if wait and here and now - here < SAME_GIFT_S and here >= (at or now) - game.SAME_EVENT_S then
+            local w = game.pickupShares[wait]
+            if (w.count and w.count ~= count) or (not w.count and more) then
+                wait = nil
+            end
+        end
+        local pickup = nil
+        if wait then
+            pickup = table.remove(game.pickupShares, wait).given and "given" or "wanted"
+        end
         if pickup == "given" then
             log("The share for " .. id .. " came after it was given from the pickup here: one each.")
             return
         end
-        local here = givenHere[key]
-        if pickup == nil and here and os.clock() - here < SAME_GIFT_S then
+        if pickup == nil and here and now - here < SAME_GIFT_S then
             log("The game gave " .. id .. " here too: one each.")
             return
         end
         if from and pickup == nil then
             local last = gotFrom[key]
-            if last and last.from ~= from and os.clock() - last.at < SAME_GIFT_S then
+            if last and last.from ~= from and now - last.at < SAME_GIFT_S then
                 log("Two players got " .. id .. ": one each.")
                 return
             end
-            gotFrom[key] = { from = from, at = os.clock() }
+            gotFrom[key] = { from = from, at = now }
         end
         if gearKnown then
             gearKnown[id] = true
         end
         if pickup == nil then
-            game.sharesGiven[#game.sharesGiven + 1] = { id = id, at = os.clock() }
+            -- (Old ones off as each comes: only a ground pickup's word took them off, and with none for long the list grew
+            -- by every share; the review of 11-10.)
+            for i = #game.sharesGiven, 1, -1 do
+                if now - game.sharesGiven[i].at >= game.PICKUP_SHARE_S then
+                    table.remove(game.sharesGiven, i)
+                end
+            end
+            game.sharesGiven[#game.sharesGiven + 1] = { id = id, from = from, at = now }
         end
         game.grantLoot(pawn, id, kind, count)
     end
@@ -4706,38 +4839,68 @@ return function(api)
     -- copy's item, and a share after that is dropped: their game may have taken it in without its notice, and with our
     -- copy gone for good (watchPickups), nothing here had it at all (a report on 1.6.9: "the host doesn't actually get
     -- it"). A share given here just before the word came was this one's. (Fields: this file is at its 200 locals.)
-    game.pickupShares, game.sharesGiven = {}, {}
+    game.pickupShares, game.sharesGiven, game.dupShares = {}, {}, {}
     game.PICKUP_SHARE_S = 16        -- (past the 12 s a share waits out a scene: coop.lua's takeGifts)
-    function game.awaitShare(id)
+    game.SAME_EVENT_S = 3           -- this world's own give this long before a share came is the same event's
+    -- (A partner's: their share alone answers it, where who it is is known. count: how many their game gave, for the copy's.)
+    function game.awaitShare(id, count, from)
         if type(id) ~= "string" or id == "?" or id == "None" then
             return
         end
-        local now, came = os.clock(), nil
+        local now = os.clock()
+        -- (Old ones off first, then the look: taken off below the one found as it went, its place pointed past the list,
+        -- and the word stopped there, our copy still to take. The review of 11-10.)
+        for i = #game.sharesGiven, 1, -1 do
+            if now - game.sharesGiven[i].at >= game.PICKUP_SHARE_S then
+                table.remove(game.sharesGiven, i)
+            end
+        end
         for i = #game.sharesGiven, 1, -1 do
             local s = game.sharesGiven[i]
-            if now - s.at >= game.PICKUP_SHARE_S then
-                table.remove(game.sharesGiven, i)
-            elseif s.id == id then
-                came = i
+            if s.id == id and (from == nil or s.from == nil or s.from == from) then
+                table.remove(game.sharesGiven, i)    -- (its share came first: given already)
+                return
             end
         end
-        if came then
-            table.remove(game.sharesGiven, came)    -- (its share came first: given already)
-        else
-            game.pickupShares[#game.pickupShares + 1] = { id = id, at = now }
-        end
+        game.pickupShares[#game.pickupShares + 1] = { id = id, count = count, from = from, at = now }
     end
 
-    -- What a share of id is to the ground pickups waited for: "wanted" (one was: give it), "given" (it came too late, given
-    -- from the copy already: drop it), or nil (none: as any share).
-    function game.takePickupShare(id)
+    -- The ground pickup waited for that a share of id (count of it) from this partner answers: one still waiting for as
+    -- many first, then one still waiting, then one given from the copy already (a share after that is dropped). Its index
+    -- in pickupShares, or nil.
+    function game.pickupWaitFor(id, from, count)
+        local other, given = nil, nil
         for i, s in ipairs(game.pickupShares) do
-            if s.id == id then
-                table.remove(game.pickupShares, i)
-                return s.given and "given" or "wanted"
+            if s.id == id and (from == nil or s.from == nil or s.from == from) then
+                if s.given then
+                    given = given or i
+                elseif count == nil or s.count == nil or s.count == count then
+                    return i
+                else
+                    other = other or i
+                end
             end
         end
-        return nil
+        return other or given
+    end
+
+    -- A second word of another partner's for one pickup gone here (game.takeRemotePickup): their share of it, now, is the same
+    -- thing. True (and taken off the list) if this is that: as many as their word said. (By item alone, a find of theirs of
+    -- the same thing just before their take was taken for it, and the pickup's own share came as a thing of its own: the
+    -- review of 11-10.)
+    function game.takeDupShare(id, from, count)
+        local now = os.clock()
+        for i = #game.dupShares, 1, -1 do
+            local d = game.dupShares[i]
+            if now - d.at >= SAME_GIFT_S then
+                table.remove(game.dupShares, i)
+            elseif d.id == id and (from == nil or d.from == nil or d.from == from)
+                and (count == nil or d.count == nil or d.count == count) then
+                table.remove(game.dupShares, i)
+                return true
+            end
+        end
+        return false
     end
 
     -- The waits run out: given from the copy's item (a thing of the game's item table: a weapon or a piece of gear comes its
@@ -4755,7 +4918,7 @@ return function(api)
                 end
             elseif game.itemKinds and game.itemKinds[s.id] then
                 log("The share of " .. s.id .. " the other player picked up never came: given from the pickup here.")
-                game.grantLoot(pawn, s.id, nil, 1)
+                game.grantLoot(pawn, s.id, nil, s.count or 1)
                 s.given, s.at = true, now
                 kept[#kept + 1] = s
             end

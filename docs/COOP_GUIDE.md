@@ -191,7 +191,13 @@ Bosses also get `TakenReductionMultiplier_Poise` (an `AttributeSetBase` attribut
 Bosses take `CoopBossHealth` / `CoopBossPosture` where given (else the enemies' numbers). How hard an enemy hits is the
 game's own pair of multipliers on what it deals, for each kind of damage (`DealtVulnerabilityMultiplier_<kind>` to raise,
 `DealtReductionMultiplier_<kind>` to lower; Physical, PhysicalSharp, PhysicalBlunt, Fire, Toxin, Ice, Aqua, Lightning,
-Blood, Chaos), times `CoopEnemyDamage` or `CoopBossDamage`, once a body. Bench, 11-09, a Xigu elite: its `Attack` at x2
+Blood, Chaos), times `CoopEnemyDamage` or `CoopBossDamage`, once a body. A number changed (`hitscale`, or the ini when
+co-op starts again from the panel) takes the old one back first, back at 100 too; a body the game set again (a difficulty
+switch) is scaled again from its new number; a ghost twin hits as its original; a boss known only by its bar hits as a
+boss while the bar is up, and gets a boss's health and posture as it comes up, kept after, and a player joining between
+its fights raises it by a boss's numbers, not again on top (the reviews of 11-09/10). Known, older: an enemy that gets a
+dead boss's address in its first 30 s is taken for that boss (the boss test is kept by address that long). Bench, 11-09,
+a Xigu elite: its `Attack` at x2
 changed nothing; the dealt multiplier at 2 doubled its hits (70 -> 140) and the reduction at 0.5 halved them (70 -> 35, a
 poison tick 4 -> 2); with the umbrella `Elemental` also raised a tick went x4, so it's left out. A broken guard's blow
 (about 200) has no dealt multiplier and stays the game's.

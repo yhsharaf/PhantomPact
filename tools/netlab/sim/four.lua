@@ -2075,6 +2075,27 @@ local function pickupsShown()
     s:run(3)
     check(rawget(late, "__alive") == false, "a copy loaded after the guest's word came: gone as it loads")
 
+    -- Both take the same pickup in the same moment, the guest's word here before the host's own look saw its copy go (the
+    -- copy taken, unpickable, still found): one each. Waited for, the guest's share came as a second (the review of 11-09).
+    both("matE", "Weapon_Material_02", 220.0, 40.0)
+    s:run(2)
+    local hE, gE = Session.items(h, "Weapon_Material_02"), Session.items(g, "Weapon_Material_02")
+    Fake.put(pickupOn(h, "matE"), "bIsPickable", false)
+    Session.gainItem(h, "Weapon_Material_02", 1)
+    Fake.put(pickupOn(g, "matE"), "bIsPickable", false)
+    Session.gainItem(g, "Weapon_Material_02", 1)
+    h.env.PBZ.game.takeRemotePickup("matE", "?", h.pawn, nil, nil)
+    s:run(25)
+    check(Session.items(h, "Weapon_Material_02") - hE == 1 and Session.items(g, "Weapon_Material_02") - gE == 1,
+        string.format("both take one pickup in a moment, the word before this world's look: one each, %d and %d",
+            Session.items(h, "Weapon_Material_02") - hE, Session.items(g, "Weapon_Material_02") - gE))
+    -- What a partner took is this save's alone: another save loaded in the same game has that pickup as its own.
+    local keep = h.env.PBZ.game.saveSlot
+    h.env.PBZ.game.saveSlot = "AnotherSave"
+    local other = Fake.pickup(h, "matB", "Weapon_Material_02", 250.0, -100.0, 100.0)
+    s:run(3)
+    check(rawget(other, "__alive") ~= false, "another save's pickup of the same name isn't taken for one the partner took")
+    h.env.PBZ.game.saveSlot = keep
     -- A note's card isn't put up mid-play by us: the game's own next pickup shows it, the lines with it.
     local pushes, cards = count(h.trace, "TryToPushPickupUI"), #h.cards
     Session.gainItem(g, "R_77", 1)
@@ -2085,6 +2106,330 @@ local function pickupsShown()
             #h.cards - cards, count(h.trace, "TryToPushPickupUI") - pushes, Session.items(h, "R_77")))
     Session.gainItem(h, "Weapon_Material_01", 1)     -- (the host's own next find: the game shows them all)
     check(#h.cards == cards + 1 and h.tips[#h.tips] == "Weapon_Material_01 + 1", "and the host's own next find shows them")
+    allErrors(s)
+
+    -- A party of three: two guests take the same pickup in a moment. The host, who took nothing, gets one: the second word
+    -- finds it gone here already, and the second share is "two players got it" (the review of 11-09: the host got two).
+    local p3 = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest" }, 3, ENEMIES)
+    p3:run(4)
+    local ph, pa, pb = p3.pcs[1], p3.pcs[2], p3.pcs[3]
+    Session.moveTo(ph, 250, 0)
+    Session.moveTo(pa, 250, 150)
+    Session.moveTo(pb, 250, -150)
+    p3:run(3)
+    for _, pc in ipairs(p3.pcs) do
+        Fake.pickup(pc, "herbP", "Weapon_Material_02", 600.0, 0.0, 100.0)
+    end
+    Session.moveTo(ph, -2500, 0)
+    p3:run(4)
+    local ph0 = Session.items(ph, "Weapon_Material_02")
+    Fake.put(pickupOn(pa, "herbP"), "bIsPickable", false)
+    Session.gainItem(pa, "Weapon_Material_02", 1)
+    Fake.put(pickupOn(pb, "herbP"), "bIsPickable", false)
+    Session.gainItem(pb, "Weapon_Material_02", 1)
+    p3:run(40)
+    check(Session.items(ph, "Weapon_Material_02") - ph0 == 1,
+        "two guests take one pickup in a moment: the host gets one: " .. Session.items(ph, "Weapon_Material_02") - ph0)
+    allErrors(p3)
+end
+
+-- The second review of the pickups (11-09/10), each as it was found: a kill's reward and a pickup of the same thing a moment
+-- apart (the reward's share took the pickup's wait, the pickup's came on top); a pickup whose copy the host hadn't loaded
+-- (its share dropped as "given here too", the copy gone as it loaded: nothing at all); one's own take told by the partner's
+-- word before this world's look (taken for a copy not loaded, the share came as a second); and in a party, the second
+-- guest's take never told, a pickup back in one guest's world taken for a second guest's, two guests' finds a moment apart.
+local function pickupsRaced()
+    part("pickups in a race")
+    local M, M1 = "Weapon_Material_02", "Weapon_Material_01"
+    local function pickupOn(pc, id)
+        for i = #pc.pickups, 1, -1 do
+            if rawget(pc.pickups[i], "__name") == id then
+                return pc.pickups[i]
+            end
+        end
+    end
+    local function take(pc, id, item)
+        pickupOn(pc, id):K2_DestroyActor()
+        Session.gainItem(pc, item or M, 1)
+    end
+
+    -- A kill's reward of 2 in both worlds, then the host's pickup of 1: 3 each.
+    local s, h, g = pair()
+    Session.moveTo(h, 250, 150)
+    Session.moveTo(g, 250, -150)
+    Fake.pickup(h, "matK", M, 250.0, 0.0, 100.0)
+    Fake.pickup(g, "matK", M, 250.0, 0.0, 100.0)
+    s:run(3)
+    local h0, g0 = Session.items(h, M), Session.items(g, M)
+    Session.gainItem(h, M, 2)
+    s:run(0.3)
+    Session.gainItem(g, M, 2)
+    s:run(1.2)
+    take(h, "matK")
+    s:run(40)
+    check(Session.items(h, M) - h0 == 3 and Session.items(g, M) - g0 == 3,
+        string.format("a kill's reward of 2 in both worlds, then a pickup of 1 of the same thing: 3 each, %d and %d",
+            Session.items(h, M) - h0, Session.items(g, M) - g0))
+    allErrors(s)
+
+    -- The guest's pickup far off, the host's copy not loaded, a kill's reward of the same thing just before: 2 at the host,
+    -- its copy gone as it loads.
+    s, h, g = pair()
+    Session.moveTo(g, 3000, 150)
+    Fake.pickup(g, "farZ", M, 3000.0, 0.0, 100.0)
+    s:run(3)
+    h0 = Session.items(h, M)
+    Session.gainItem(h, M, 1)
+    s:run(0.4)
+    Session.gainItem(g, M, 1)
+    s:run(1.5)
+    take(g, "farZ")
+    s:run(10)
+    local late = Fake.pickup(h, "farZ", M, 3000.0, 0.0, 100.0)
+    Session.moveTo(h, 3000, -150)
+    s:run(4)
+    check(Session.items(h, M) - h0 == 2 and rawget(late, "__alive") == false,
+        "a pickup the host hadn't loaded, a reward of the same thing just before: 2 at the host, its copy gone as it loads: "
+        .. Session.items(h, M) - h0)
+    allErrors(s)
+
+    -- Both take one pickup, the guest's copy gone with its own take, the host's word here before the guest's next look:
+    -- one each.
+    s, h, g = pair()
+    Session.moveTo(h, 250, 150)
+    Session.moveTo(g, 250, -150)
+    Fake.pickup(h, "matF", M, 250.0, 0.0, 100.0)
+    Fake.pickup(g, "matF", M, 250.0, 0.0, 100.0)
+    s:run(3)
+    h0, g0 = Session.items(h, M), Session.items(g, M)
+    take(h, "matF")
+    take(g, "matF")
+    g.env.PBZ.game.takeRemotePickup("matF", "?", g.pawn, nil, nil, nil, M, 1)    -- (the host's word, before the look)
+    s:run(40)
+    check(Session.items(h, M) - h0 == 1 and Session.items(g, M) - g0 == 1 and count(g.logs, "too; you already") >= 1,
+        string.format("both take one pickup, the word before this world's look, its copy gone: one each, %d and %d",
+            Session.items(h, M) - h0, Session.items(g, M) - g0))
+    allErrors(s)
+
+    -- A party: two guests take one pickup, the second's copy found taken at the first's word before its own look. That
+    -- look still tells it, and the host gets one. (Untold, the second's share came as a thing of its own: two.)
+    local p3 = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest" }, 3, ENEMIES)
+    p3:run(4)
+    local ph, pa, pb = p3.pcs[1], p3.pcs[2], p3.pcs[3]
+    Session.moveTo(ph, 250, 0)
+    Session.moveTo(pa, 250, 150)
+    Session.moveTo(pb, 250, -150)
+    p3:run(3)
+    for _, pc in ipairs(p3.pcs) do
+        Fake.pickup(pc, "herbQ", M, 600.0, 0.0, 100.0)
+    end
+    Session.moveTo(ph, -2500, 0)
+    p3:run(4)
+    local ph0 = Session.items(ph, M)
+    Fake.put(pickupOn(pa, "herbQ"), "bIsPickable", false)
+    Session.gainItem(pa, M, 1)
+    Fake.put(pickupOn(pb, "herbQ"), "bIsPickable", false)
+    Session.gainItem(pb, M, 1)
+    pb.env.PBZ.game.takeRemotePickup("herbQ", "?", pb.pawn, nil, nil)          -- (A's word, before B's look)
+    p3:run(40)
+    check(Session.items(ph, M) - ph0 == 1 and count(pb.sent, "^E I herbQ") == 1,
+        "two guests take one pickup, the second's look after the first's word: still told, the host gets one: "
+        .. Session.items(ph, M) - ph0)
+
+    -- One guest takes a pickup, and the same one again once it's back in their world: the host gets both. (Taken for a
+    -- second guest's word on one gone, its share was dropped as the same thing.)
+    Session.moveTo(pb, -6000, 0)
+    Fake.pickup(ph, "herbR", M1, 600.0, 0.0, 100.0)
+    Fake.pickup(pa, "herbR", M1, 600.0, 0.0, 100.0)
+    p3:run(4)
+    ph0 = Session.items(ph, M1)
+    Session.moveTo(pa, 600, 150)
+    p3:run(2)
+    Fake.put(pickupOn(pa, "herbR"), "bIsPickable", false)
+    Session.gainItem(pa, M1, 1)
+    p3:run(40)
+    Fake.pickup(pa, "herbR", M1, 600.0, 0.0, 100.0)
+    p3:run(3)
+    Fake.put(pickupOn(pa, "herbR"), "bIsPickable", false)
+    Session.gainItem(pa, M1, 1)
+    p3:run(25)
+    check(Session.items(ph, M1) - ph0 == 2,
+        "a pickup back in one guest's world, taken again: the host gets both: " .. Session.items(ph, M1) - ph0)
+    allErrors(p3)
+
+    -- Two guests far apart each take a pickup of the same thing, 4 s apart, neither loaded at the host: the host gets both,
+    -- and its copies go as they load.
+    local q = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest" }, 3, ENEMIES)
+    q:run(4)
+    local qh, qa, qb = q.pcs[1], q.pcs[2], q.pcs[3]
+    Session.moveTo(qh, 0, 0)
+    Session.moveTo(qa, 6000, 150)
+    Session.moveTo(qb, -6000, 150)
+    q:run(3)
+    Fake.pickup(qa, "herbA", M, 6000.0, 0.0, 100.0)
+    Fake.pickup(qb, "herbB", M, -6000.0, 0.0, 100.0)
+    q:run(3)
+    local q0 = Session.items(qh, M)
+    take(qa, "herbA")
+    q:run(4)
+    take(qb, "herbB")
+    q:run(30)
+    local lateA = Fake.pickup(qh, "herbA", M, 6000.0, 0.0, 100.0)
+    local lateB = Fake.pickup(qh, "herbB", M, -6000.0, 0.0, 100.0)
+    q:run(4)
+    check(Session.items(qh, M) - q0 == 2 and rawget(lateA, "__alive") == false and rawget(lateB, "__alive") == false,
+        "two guests' pickups of one thing 4 s apart, not loaded at the host: it gets both, its copies gone: "
+        .. Session.items(qh, M) - q0)
+    allErrors(q)
+
+    -- The third review (11-10). Each player's pickup looks, as they run: what's done right after one comes before the next.
+    local function looks(pc)
+        local g = pc.env.PBZ.game
+        local watch = g.watchPickups
+        pc.looks = {}
+        g.watchPickups = function(...)
+            local r = watch(...)
+            if r ~= false then
+                pc.looks[#pc.looks + 1] = pc.now
+            end
+            return r
+        end
+    end
+    local function untilLook(s, pc)
+        local n = #pc.looks
+        for _ = 1, 600 do
+            if #pc.looks > n then
+                return
+            end
+            s:run(1 / 60)
+        end
+    end
+
+    -- A kill's reward of 2 between the guest's pickup of 1 and its next look: its word says 2. The host, with a find of its
+    -- own of the same thing 5 s before, gets every event once: 4 each. (The pickup's share was dropped as that find's, the
+    -- reward's given in its place: 5.)
+    s, h, g = pair()
+    looks(g)
+    Session.moveTo(h, 250, 150)
+    Session.moveTo(g, 1250, -150)
+    for _, pc in ipairs({ h, g }) do
+        Fake.pickup(pc, "herbQ5", M, 250.0, 0.0, 100.0)
+        Fake.pickup(pc, "herbP5", M, 1250.0, 0.0, 100.0)
+    end
+    s:run(3)
+    h0, g0 = Session.items(h, M), Session.items(g, M)
+    take(h, "herbQ5")
+    s:run(5)
+    untilLook(s, g)
+    take(g, "herbP5")
+    s:run(0.1)
+    Session.gainItem(h, M, 2)
+    s:run(0.2)
+    Session.gainItem(g, M, 2)
+    s:run(40)
+    check(count(g.sent, "^E I herbP5 %? %- Weapon_Material_02 2$") == 1 and Session.items(h, M) - h0 == 4 and Session.items(g, M) - g0 == 4,
+        string.format("a kill's reward between the guest's pickup and its look, its word saying the reward's 2: 4 each, %d and %d",
+            Session.items(h, M) - h0, Session.items(g, M) - g0))
+    allErrors(s)
+
+    -- A party: guest B's own find of 2 of the same thing, then A and B take one pickup together. The host gets the pickup
+    -- once and B's find: 3. (The note for B's second word, by item alone, took B's find: 2.)
+    local d = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest" }, 3, ENEMIES)
+    d:run(4)
+    local dh, da, db = d.pcs[1], d.pcs[2], d.pcs[3]
+    Session.moveTo(dh, -350, 0)
+    Session.moveTo(da, 250, 150)
+    Session.moveTo(db, 250, -150)
+    d:run(3)
+    for _, pc in ipairs(d.pcs) do
+        Fake.pickup(pc, "herbD", M, 250.0, 0.0, 100.0)
+    end
+    d:run(3)
+    local d0 = Session.items(dh, M)
+    Session.gainItem(db, M, 2)              -- (B's own chest: only B's world gives it)
+    d:run(0.4)
+    take(da, "herbD")
+    take(db, "herbD")
+    d:run(40)
+    check(Session.items(dh, M) - d0 == 3,
+        "a party: B's own find of 2, then A and B take one pickup: the host gets 3: " .. Session.items(dh, M) - d0)
+    allErrors(d)
+
+    -- The guest's word before the host's first look as it loads in (the look reads the save's name, which what's gone goes
+    -- by): the host's copy, made again later, goes again. (Filed under no save, it was there to take again.)
+    local v = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES)
+    for _, pc in ipairs(v.pcs) do
+        local find = pc.env.FindFirstOf
+        local saves = { GetContinueSlotName = function() return { ToString = function() return "Slot1" end } end,
+            IsValid = function() return true end }
+        pc.env.FindFirstOf = function(class)
+            if class == "PBZSaveLoadSubsystem" then
+                return saves
+            end
+            return find(class)
+        end
+    end
+    local vh, vg = v.pcs[1], v.pcs[2]
+    vh.env.PBZ.net.quietUntil = vh.now + 25
+    v:run(5)
+    Session.moveTo(vh, 250, 150)
+    Session.moveTo(vg, 250, -150)
+    Fake.pickup(vh, "herbS", M, 250.0, 0.0, 100.0)
+    Fake.pickup(vg, "herbS", M, 250.0, 0.0, 100.0)
+    v:run(9)
+    local v0 = Session.items(vh, M)
+    take(vg, "herbS")
+    v:run(16)
+    Session.moveTo(vh, 30000, 150)
+    v:run(5)
+    local again2 = Fake.pickup(vh, "herbS", M, 250.0, 0.0, 100.0)
+    Session.moveTo(vh, 250, 150)
+    v:run(5)
+    check(rawget(again2, "__alive") == false and Session.items(vh, M) - v0 == 1 and vh.env.PBZ.game.saveSlot == "Slot1",
+        "the guest's word before the host's first look: the host's copy made again later goes again, one each: "
+        .. Session.items(vh, M) - v0)
+    allErrors(v)
+
+    -- One player runs up to a pickup from out of the look's reach and takes it in the moment the other takes theirs, the
+    -- word here before this world's next look: one each. (Taken for a copy not loaded, the share came as a second.)
+    s, h, g = pair()
+    Session.moveTo(h, 250, 150)
+    Session.moveTo(g, 870, 0)
+    Fake.pickup(h, "herbR6", M, 250.0, 0.0, 100.0)
+    Fake.pickup(g, "herbR6", M, 250.0, 0.0, 100.0)
+    s:run(3)
+    h0, g0 = Session.items(h, M), Session.items(g, M)
+    take(h, "herbR6")
+    g.env.PBZ.net.quietUntil = g.now + 4    -- (its looks wait a moment, as after a hitch: the word comes first)
+    Session.moveTo(g, 260, -100)
+    take(g, "herbR6")
+    s:run(40)
+    check(Session.items(h, M) - h0 == 1 and Session.items(g, M) - g0 == 1,
+        string.format("a run from out of the look's reach to a pickup the other takes too: one each, %d and %d",
+            Session.items(h, M) - h0, Session.items(g, M) - g0))
+    allErrors(s)
+
+    -- Shares of other things piled up, then the guest's own find of a thing and its pickup of the same: the host's copy goes
+    -- at the word, 2 each, no script error. (Old ones taken off under the one found, its place pointed past the list: the
+    -- word stopped before the copy went, 3 each.)
+    s, h, g = pair()
+    Session.moveTo(h, 250, 150)
+    Session.moveTo(g, 250, -150)
+    Fake.pickup(h, "matG", M, 250.0, 0.0, 100.0)
+    Fake.pickup(g, "matG", M, 250.0, 0.0, 100.0)
+    s:run(3)
+    h0, g0 = Session.items(h, M), Session.items(g, M)
+    Session.gainItem(g, "R_500", 1)
+    s:run(0.4)
+    Session.gainItem(g, M1, 1)
+    s:run(20)
+    Session.gainItem(g, M, 1)
+    s:run(5)
+    take(g, "matG")
+    s:run(25)
+    check(Session.items(h, M) - h0 == 2 and Session.items(g, M) - g0 == 2 and rawget(pickupOn(h, "matG"), "__alive") == false,
+        string.format("other shares piled up, then a find and a pickup of one thing: 2 each, the host's copy gone: %d and %d",
+            Session.items(h, M) - h0, Session.items(g, M) - g0))
     allErrors(s)
 end
 
@@ -4934,13 +5279,118 @@ local function scaling()
     a.BaseValue, a.CurrentValue = 1, 1                      -- (back at its own number: the game set it again, or a new body)
     d:run(4)
     check(math.abs(attack(d.pcs[1], "thug1") - 1.5) < 1e-6, "a body back at its own number is scaled again: " .. attack(d.pcs[1], "thug1"))
+    -- (A difficulty switch sets an enemy's numbers again, to the new mode's, the Coop session found on the bench, 11-09; and
+    -- difficulty.lua raises the mode a second after a partner links. Scaled again from the game's new number, once; the other
+    -- kinds, still ours, aren't touched; an effect on top, the current alone, isn't scaled again.)
+    a.BaseValue, a.CurrentValue = 1.2, 1.2
+    d:run(4)
+    local thugSet = Session.enemyOn(d.pcs[1], "thug1").AttributeSetBase
+    check(math.abs(attack(d.pcs[1], "thug1") - 1.8) < 1e-6 and math.abs(thugSet.DealtVulnerabilityMultiplier_Fire.BaseValue - 1.5) < 1e-6,
+        string.format("set again by the game to 1.2 (a difficulty switch): 1.8 from it, the others still 1.5: %.2f, %.2f",
+            attack(d.pcs[1], "thug1"), thugSet.DealtVulnerabilityMultiplier_Fire.BaseValue))
+    d:run(4)
+    check(math.abs(a.BaseValue - 1.8) < 1e-6, "and not again on top of itself: " .. a.BaseValue)
+    a.CurrentValue = 3.0
+    d:run(4)
+    check(math.abs(a.BaseValue - 1.8) < 1e-6 and a.CurrentValue == 3.0, "an effect on top (the current alone) isn't scaled again")
     check(count(d.pcs[1].logs, "hitting at 150%%, bosses at 250%%") >= 1, "and the log says so")
     allErrors(d)
+    -- (Six players, ghost twins: a twin hits as hard as its original, a boss's as a boss. twins.lua gives a twin its
+    -- original's health and posture only, and every twin hit at the game's own; the review of 11-09.)
+    local SIX = { "Host", "Guest", "Guest", "Guest", "Guest", "Guest" }
+    local six = Session.new(SIM_SCRIPTS, SIX, 6, ENEMIES, "CoopEnemyDamage = 200\nCoopBossDamage = 300\n")
+    for i = 2, 6 do
+        Session.moveTo(six.pcs[i], 200 * i, 0)
+    end
+    six:run(25)
+    local twinsSeen, twinsRight = 0, 0
+    for _, pc in ipairs({ six.pcs[1], six.pcs[3] }) do
+        for _, e in ipairs(pc.enemies) do
+            local tid = e:IsValid() and pc.env.PBZ.game.twinId(e:GetAddress())
+            if tid then
+                twinsSeen = twinsSeen + 1
+                local want = tid:find(":sp:boss", 1, true) and 3 or 2
+                if math.abs(e.AttributeSetBase.DealtVulnerabilityMultiplier_Physical.CurrentValue - want) < 1e-6 then
+                    twinsRight = twinsRight + 1
+                end
+            end
+        end
+    end
+    check(twinsSeen > 0 and twinsRight == twinsSeen, string.format(
+        "ghost twins hit as their originals, a boss's twin as a boss, on host and guest: %d of %d", twinsRight, twinsSeen))
+    allErrors(six)
     local soft = party(nil, "CoopEnemyDamage = 50\n")
     soft:run(6)
     check(attack(soft.pcs[1], "thug1", true) == 0.5 and attack(soft.pcs[1], "thug1") == 1 and attack(soft.pcs[1], "boss", true) == 0.5,
         "CoopEnemyDamage = 50: half, by the multiplier down; bosses left out take the enemies' number")
     allErrors(soft)
+    -- The hitscale command across 100 and back, on the same bodies: each time the new number from the game's own, the one
+    -- before taken back first. (A body's first number kept, a mix came: x1.5 up, x0.5 down; the review of 11-09.)
+    local f = party(nil, "CoopEnemyDamage = 150\n")
+    f:run(6)
+    local function flip(n)
+        for _, pc in ipairs(f.pcs) do
+            Session.command(pc, "hitscale " .. n)
+        end
+        f:run(5)
+        return attack(f.pcs[1], "thug1") * attack(f.pcs[1], "thug1", true), attack(f.pcs[2], "thug1") * attack(f.pcs[2], "thug1", true)
+    end
+    local h1, g1 = flip(50)
+    local h2, g2 = flip(150)
+    local h3, g3 = flip(50)
+    check(math.abs(h1 - 0.5) + math.abs(g1 - 0.5) + math.abs(h2 - 1.5) + math.abs(g2 - 1.5) + math.abs(h3 - 0.5) + math.abs(g3 - 0.5) < 1e-6,
+        string.format("hitscale across 100 and back, the same bodies: x%.2f, x%.2f, x%.2f", h1, h2, h3))
+    -- (Back at 100, the game's own, as the ini back at 100 does when co-op starts again from the panel: every body around
+    -- kept the number before, none looked at; the review of 11-10.)
+    local h4, g4 = flip(100)
+    check(math.abs(h4 - 1) + math.abs(g4 - 1) < 1e-6, string.format("and hitscale 100: the game's own, on host and guest: x%.2f, x%.2f", h4, g4))
+    allErrors(f)
+    -- A boss to the mod only while its bar is up (the codex doesn't call it one): in its fight a boss's health and hits; after
+    -- it, its health kept (never cut while it's hurt), its hits an enemy's again. (Scaled as an enemy first, it kept that
+    -- health in its fight: the review of 11-09.)
+    local m = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, { { "masked", "BP_Monster_Masked_C", 900.0, 0.0, 100.0, 3000, 300 } },
+        "CoopEnemyHealth = 150\nCoopBossHealth = 300\nCoopEnemyDamage = 100\nCoopBossDamage = 200\n")
+    m:run(4)
+    Session.moveTo(m.pcs[1], 0, 0)
+    Session.moveTo(m.pcs[2], 300, 0)
+    m:run(10)
+    local asEnemy = max(m.pcs[1], "masked")
+    m.pcs[1].hudLayout:RegisterBossHPBar(Session.enemyOn(m.pcs[1], "masked"))
+    m:run(6)
+    local inFight, hitsIn = max(m.pcs[1], "masked"), attack(m.pcs[1], "masked")
+    m.pcs[1].hudLayout:UnRegisterBossHPBar(Session.enemyOn(m.pcs[1], "masked"))
+    m:run(6)
+    local after, hitsAfter = max(m.pcs[1], "masked"), attack(m.pcs[1], "masked")
+    check(asEnemy == 4500 and inFight == 9000 and math.abs(hitsIn - 2) < 1e-6 and after == 9000 and math.abs(hitsAfter - 1) < 1e-6,
+        string.format("a boss known by its bar alone: %.0f health before, %.0f in its fight hitting x%.2f, %.0f after hitting x%.2f",
+            asEnemy, inFight, hitsIn, after, hitsAfter))
+    allErrors(m)
+    -- The same in a party: a fight on it lost (the host showed it, a guest's: the body stands, a boss's numbers on it), a
+    -- fourth player joins, its next fight. A boss's own for four, 21000 and 1200: risen by the enemies' and promoted again,
+    -- it had 52500 and 2250 (the review of 11-10).
+    local j = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest", "Guest" }, true, { { "masked", "BP_Monster_Masked_C", 900.0, 0.0, 100.0, 3000, 300 } },
+        "CoopEnemyHealth = 150\nCoopEnemyPosture = 130\nCoopBossHealth = 300\nCoopBossPosture = 200\n")
+    j.pcs[4].joinAt = j.pcs[1].now + 40
+    j:run(4)
+    for i, pc in ipairs(j.pcs) do
+        Session.moveTo(pc, 300 * (i - 1), 0)
+    end
+    j:run(10)
+    local function masked()
+        return Session.enemyOn(j.pcs[1], "masked")
+    end
+    j.pcs[1].hudLayout:RegisterBossHPBar(masked())
+    j:run(6)
+    local three = max(j.pcs[1], "masked")
+    j.pcs[1].hudLayout:UnRegisterBossHPBar(masked())
+    j:run(math.max(0, j.pcs[4].joinAt - j.pcs[1].now) + 14)
+    j.pcs[1].hudLayout:RegisterBossHPBar(masked())
+    j:run(6)
+    local four, fourP = max(j.pcs[1], "masked")
+    check(three == 15000 and four == 21000 and fourP == 1200, string.format(
+        "in a party, a fight on it lost and a fourth player joined: its next fight at a boss's own for four, %.0f then %.0f / %.0f",
+        three, four, fourP))
+    allErrors(j)
     local o = party(nil, "")
     o:run(6)
     check(everyone(o, function(pc) return attack(pc, "thug1") == 1 and attack(pc, "boss") == 1 and attack(pc, "boss", true) == 1 end)
@@ -5976,6 +6426,7 @@ return function(print_, scripts)
     bossReactions()
     pickupsFresh()
     pickupsShown()
+    pickupsRaced()
     rests()
     sits()
     sitsForTwo()

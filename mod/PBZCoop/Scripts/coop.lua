@@ -16,7 +16,7 @@
 --                            PCs (a client's own death respawn isn't sent: only its world refreshes)
 --       Y <world>            host -> client: stands for the host's world as loaded: another one, and enemies respawn here
 --       C <amount>           the sender gained this much dust (currency): shared rewards
---       I <pickup>           this pickup was taken
+--       I <pickup> ? - <item> <n>  this pickup was taken, and what it held (a kill's drop: loot:<name> <item> <kind>)
 --       O <name>             this chest or rubbish pile was opened: the copy here stops paying
 --       T <item> <n> <kind>  the game gave the sender this: the same here
 --       W <weapon> <0|1>     what the sender holds, and whether it's drawn (moves.lua)
@@ -2532,14 +2532,19 @@ return function(api)
     local dustWaiting = 0
 
     handlers.I = function(rest, from)
-        local name, itemId, kind = rest:match("^(%S+)%s*(%S*)%s*(%S*)")
+        -- (A ground pickup's word ends in what it held and how many: reportPickup. An older one's had neither.)
+        local name, itemId, kind, held, n = rest:match("^(%S+)%s*(%S*)%s*(%S*)%s*(%S*)%s*(%S*)")
         -- (Every way on gets the same limits: the item went to the backpack unchecked when this player was there.)
-        if name and game.takeRemotePickup and #name <= MAX_CHEST_NAME and #itemId <= MAX_ITEM_NAME and #kind <= 16 then
+        if name and game.takeRemotePickup and #name <= MAX_CHEST_NAME and #itemId <= MAX_ITEM_NAME and #kind <= 16
+            and #held <= MAX_ITEM_NAME then
             local _, pawn = getPlayer1()
             kind = (kind ~= "" and kind ~= "-") and kind or nil
+            n = num(n)
+            n = (n and n >= 1 and n <= MAX_GIFT and n == math.floor(n)) and n or nil
             if valid(pawn) or name:sub(1, 5) ~= "loot:" then
                 local t = peerOf(from).target          -- (the map it lies on: theirs)
-                game.takeRemotePickup(name, itemId, pawn, kind, t and t.Map)
+                game.takeRemotePickup(name, itemId, pawn, kind, t and t.Map, net.party and (from or 1) or nil,
+                    held ~= "" and held or nil, n)
             else
                 giftsWaiting[#giftsWaiting + 1] = { id = itemId, count = 1, kind = kind, loot = true }
             end
@@ -2661,14 +2666,24 @@ return function(api)
         local GIFT_HOLD_S, GIFT_HOLD_MAX_S = 3, 12
         local now, kept = os.clock(), {}
         local scene = game.inCutscene and game.inCutscene()
+        local left = {}             -- (shares of each thing still to come after this one: receiveGift's more)
+        for _, gift in ipairs(giftsWaiting) do
+            if not gift.loot then
+                left[gift.id] = (left[gift.id] or 0) + 1
+            end
+        end
         for _, gift in ipairs(giftsWaiting) do
             local age = now - (gift.at or now - GIFT_HOLD_MAX_S)
             if gift.loot then
                 game.grantLoot(pawn, gift.id, gift.kind)
-            elseif age < GIFT_HOLD_S or (scene and age < GIFT_HOLD_MAX_S) then
-                kept[#kept + 1] = gift
             else
-                game.receiveGift(pawn, gift.id, gift.count, gift.kind, net.party and (gift.from or 1) or nil)
+                left[gift.id] = left[gift.id] - 1
+                if age < GIFT_HOLD_S or (scene and age < GIFT_HOLD_MAX_S) then
+                    kept[#kept + 1] = gift
+                else
+                    game.receiveGift(pawn, gift.id, gift.count, gift.kind, net.party and (gift.from or 1) or nil,
+                        left[gift.id] > 0, gift.at)
+                end
             end
         end
         giftsWaiting = kept
@@ -2748,7 +2763,9 @@ return function(api)
 
     local function reportPickup(name, itemId)
         log("Picked up " .. name .. " (" .. tostring(itemId) .. "), telling the other player.")
-        sendEvent("I", name, "?")       -- (only that it's gone: the item itself goes by T, like everything the game gives)
+        -- (Only that it's gone: the item itself goes by T, like everything the game gives. What it held and how many come
+        -- too, for a partner whose copy wasn't loaded to wait for that share all the same: game.takeRemotePickup.)
+        sendEvent("I", name, "?", "-", itemId or "-", game.pickupCount and game.pickupCount(itemId) or 1)
     end
 
     ------------------------------------------------------------------ bells and currency

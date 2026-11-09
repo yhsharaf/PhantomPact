@@ -23,9 +23,10 @@
 -- Bosses' own health and posture (CoopBossHealth / CoopBossPosture, left out: CoopEnemyHealth / CoopEnemyPosture as
 -- before), and how hard enemies and bosses hit (CoopEnemyDamage / CoopBossDamage, percent, 100 = off): a player report on
 -- 1.6.9, "options to customize the boss's damage, as well as the mobs' health, posture, and damage". The damage is each
--- enemy's own multipliers of what it deals (scaleHits: its Attack made no difference on the bench), once a body and never
--- on top of itself. Each PC sets its own: what its own player takes, from its own enemies or its copies of the host's. Not
--- with more players: the damage stays the same however many are connected.
+-- enemy's own multipliers of what it deals (scaleHits: its Attack made no difference on the bench), once a body and again
+-- when the game sets them again (a difficulty switch), never on top of itself. Each PC sets its own: what its own player
+-- takes, from its own enemies or its copies of the host's. Not with more players: the damage stays the same however many
+-- are connected.
 
 return function(api)
     local log, valid, game = api.log, api.valid, api.game
@@ -39,15 +40,19 @@ return function(api)
         bossPosture = nil,  -- CoopBossPosture / 100, or nil: posture
         damage = 1.0,       -- CoopEnemyDamage / 100
         bossDamage = 1.0,   -- CoopBossDamage / 100
+        hitsSeen = nil,     -- { damage, bossDamage } as tick last saw them
+        hitsBack = 0,       -- passes still to look at every body's hits after those changed (tick)
     }
 
-    -- This enemy's health and posture numbers: a boss's own, where it has them. (The boss question only when they differ.)
+    -- This enemy's health and posture numbers: a boss's own, where it has them, and whether they're a boss's. (The boss
+    -- question only when they differ.)
     local function numbersFor(e, addr)
         if (scaling.bossHealth or scaling.bossPosture) and game.isBoss(e, addr) then
-            return scaling.bossHealth or scaling.health, scaling.bossPosture or scaling.posture
+            return scaling.bossHealth or scaling.health, scaling.bossPosture or scaling.posture, true
         end
-        return scaling.health, scaling.posture
+        return scaling.health, scaling.posture, false
     end
+    local scaledAs = {}             -- enemy address -> { name, h, p, boss, players }: the numbers its scaling took
 
     local PASS_S = 1.0              -- a look over the enemies starts this often while the partner is here
     local LOOKS_PER_TICK = 16       -- enemies looked at per tick, and at most one scaled: that takes about 25 calls through
@@ -130,7 +135,14 @@ return function(api)
             return false
         end
         local set = e.AttributeSetBase
-        local h, p = numbersFor(e, addr)
+        local h, p, boss = numbersFor(e, addr)
+        -- (A body that holds a boss's numbers rises by them and stays one, its bar down or not. By the enemies' it was
+        -- promoted again at its next bar, a boss twice over: a guest's lost fight leaves the host's body so, and a player
+        -- joined. The review of 11-10.)
+        local was = scaledAs[addr]
+        if before and not boss and was and was.name == name and was.boss then
+            h, p, boss = was.h, was.p, true
+        end
         local health, posture = forPlayers(h, players), forPlayers(p, players)
         if before then
             health, posture = health / forPlayers(h, before), posture / forPlayers(p, before)
@@ -138,6 +150,26 @@ return function(api)
         scaleAttr(set, "Health", "Health_Max", health)
         scaleAttr(set, "Shachi", "Shachi_Max", posture)
         scaledMax[addr] = maxOf(e)
+        scaledAs[addr] = { name = name, h = h, p = p, boss = boss, players = players }
+        return true
+    end
+
+    -- A body scaled with the enemies' numbers that's a boss now (a story boss of an ordinary enemy's class is one only once
+    -- its bar is up): the bosses' own numbers, once, its share of health kept. The review of 11-09: it kept the enemies'.
+    -- (Only with bosses' own numbers set: CoopBossHealth / CoopBossPosture.)
+    local function promoteBoss(e, addr, name)
+        local was = scaledAs[addr]
+        if not (was and was.name == name) or was.boss or game.isDead(e) or not game.isBoss(e, addr) then
+            return false
+        end
+        local h, p = numbersFor(e, addr)
+        local players, set = was.players or 2, e.AttributeSetBase
+        scaleAttr(set, "Health", "Health_Max", forPlayers(h, players) / forPlayers(was.h, players))
+        scaleAttr(set, "Shachi", "Shachi_Max", forPlayers(p, players) / forPlayers(was.p, players))
+        scaledAs[addr] = { name = name, h = h, p = p, boss = true, players = players }
+        scaledMax[addr] = maxOf(e)
+        log(string.format("Co-op difficulty: %s is a boss: %d%% health, %d%% posture.", name,
+            math.floor(forPlayers(h, players) * 100 + 0.5), math.floor(forPlayers(p, players) * 100 + 0.5)))
         return true
     end
 
@@ -167,35 +199,85 @@ return function(api)
     -- On the bench, 11-09, a Xigu elite's Attack at twice made no difference; DealtVulnerabilityMultiplier_<kind> at 2 doubled
     -- its hits (70 -> 140) and DealtReductionMultiplier_<kind> at 0.5 halved them (70 -> 35, a poison's tick 4 -> 2). Up by
     -- the first, down by the second. Not "Elemental": a poison's tick counts it as well as its own kind and went four times.
-    -- A broken guard's blow (about 200) is neither's: it stays the game's. Once a body, and again only if it's back at the
-    -- number it had (a body come back at that address under the old name, or the game setting it again): never on top of
-    -- itself. True if it took a scaling, which is what a tick spends.
+    -- A broken guard's blow (about 200) is neither's: it stays the game's. Each kind's base as this set it is kept, and a
+    -- kind the game has set again is scaled again from the game's new number: a difficulty switch recomputes an enemy's
+    -- numbers (the Coop session on the bench, 11-09: a thug's Attack 100 -> 70 at Wayfarer and back), and difficulty.lua
+    -- raises the mode a second after a partner links, after this may have run; a body come back at that address too. One
+    -- still at ours isn't, so it's never on top of itself: by its base, as an effect on top moves only the current, and gone
+    -- again leaves ours. (The first kind looked at each pass, all of them only when it moved: a look is one read.) True if it
+    -- took a scaling, which is what a tick spends.
     local KINDS = { "Physical", "PhysicalSharp", "PhysicalBlunt", "Fire", "Toxin", "Ice", "Aqua", "Lightning", "Blood", "Chaos" }
-    local hits = {}                 -- enemy address -> { name, base, now }: its first kind's multiplier before and after
+    local UP, DOWN = "DealtVulnerabilityMultiplier_", "DealtReductionMultiplier_"
+    local hits = {}                 -- enemy address -> { name, f, prefix, given = { kind -> the base this set } }
+
+    -- Its factor now: a boss's, a boss's ghost twin's (no boss to the mod, but it hits as one: by its class, as the game's
+    -- codex has it), or an enemy's.
+    local function hitFactor(e, addr)
+        if scaling.bossDamage == scaling.damage then
+            return scaling.damage
+        end
+        local boss = game.isBoss(e, addr)
+        if not boss and game.isBossClass and game.twinId and game.twinId(addr, e) then
+            local ok, cn = pcall(function() return e:GetClass():GetFName():ToString() end)
+            boss = ok and game.isBossClass(cn) or false
+        end
+        return boss and scaling.bossDamage or scaling.damage
+    end
+
     local function scaleHits(e, addr, name)
-        local f = scaling.damage
-        if scaling.bossDamage ~= scaling.damage and game.isBoss(e, addr) then
-            f = scaling.bossDamage
-        end
-        local prefix = f >= 1 and "DealtVulnerabilityMultiplier_" or "DealtReductionMultiplier_"
+        local f = hitFactor(e, addr)
         local set = e.AttributeSetBase
-        local ok, cur = pcall(function() return set[prefix .. KINDS[1]].CurrentValue end)
-        if not ok or type(cur) ~= "number" then
-            return false
-        end
         local was = hits[addr]
-        if was and was.name == name and not (math.abs(cur - was.base) <= 0.001 and math.abs(cur - was.now) > 0.001) then
-            return false
+        if was and was.name ~= name then
+            was = nil               -- (another body at that address)
         end
-        hits[addr] = { name = name, base = cur, now = cur * f }
+        if was and was.f == f then
+            if f == 1 then
+                return false
+            end
+            local ok, base = pcall(function() return set[was.prefix .. KINDS[1]].BaseValue end)
+            if not ok or type(base) ~= "number" or (was.given[KINDS[1]] and math.abs(base - was.given[KINDS[1]]) <= 0.001) then
+                return false        -- (ours still)
+            end
+            -- The game set it again (a difficulty switch): each kind not at ours, from the game's new number.
+            local took = false
+            for _, kind in ipairs(KINDS) do
+                pcall(function()
+                    local a = set[was.prefix .. kind]
+                    local b = a.BaseValue
+                    if not (was.given[kind] and math.abs(b - was.given[kind]) <= 0.001) then
+                        a.BaseValue, a.CurrentValue = b * f, a.CurrentValue * f
+                        was.given[kind] = b * f
+                        took = true
+                    end
+                end)
+            end
+            return took
+        end
+        -- A new body, or its factor changed (a story boss known only once its bar is up, after it was scaled as an enemy; the
+        -- hitscale command): what the old factor set, where it still stands, goes back to the game's number first, so the two
+        -- never mix nor stack (the review of 11-09: up and down both on, or one on top of the other); then the new one.
+        if was and was.f ~= 1 then
+            for _, kind in ipairs(KINDS) do
+                pcall(function()
+                    local a = set[was.prefix .. kind]
+                    if was.given[kind] and math.abs(a.BaseValue - was.given[kind]) <= 0.001 then
+                        a.BaseValue, a.CurrentValue = a.BaseValue / was.f, a.CurrentValue / was.f
+                    end
+                end)
+            end
+        end
+        local prefix = f >= 1 and UP or DOWN
+        local given = {}
+        hits[addr] = { name = name, f = f, prefix = prefix, given = given }
         if f == 1 then
-            return false
+            return was ~= nil       -- (one put back took its calls)
         end
         for _, kind in ipairs(KINDS) do
             pcall(function()
                 local a = set[prefix .. kind]
-                a.BaseValue = a.BaseValue * f
-                a.CurrentValue = a.CurrentValue * f
+                a.BaseValue, a.CurrentValue = a.BaseValue * f, a.CurrentValue * f
+                given[kind] = a.BaseValue
             end)
         end
         return true
@@ -222,7 +304,14 @@ return function(api)
     local next, todo, addrs, at, n, hitN = 0, {}, {}, 1, 0, 0
     local players = 2
     local function tick()
-        local hitting = scaling.damage ~= 1 or scaling.bossDamage ~= 1
+        -- (The numbers changed, to 100 too: one whole pass more looks at every body's hits, so the number before is taken
+        -- back where it stands. At 100 none was looked at, and every body kept the one before, the ini's back at 100 and
+        -- co-op started again from the panel too: the review of 11-10.)
+        local seen = scaling.hitsSeen
+        if not seen or seen[1] ~= scaling.damage or seen[2] ~= scaling.bossDamage then
+            scaling.hitsSeen, scaling.hitsBack = { scaling.damage, scaling.bossDamage }, seen and 2 or 0
+        end
+        local hitting = scaling.damage ~= 1 or scaling.bossDamage ~= 1 or scaling.hitsBack > 0
         if scaling.health == 1 and scaling.posture == 1 and scaling.bossPoise == 1 and not hitting
             and (scaling.bossHealth or 1) == 1 and (scaling.bossPosture or 1) == 1 then
             return
@@ -255,6 +344,7 @@ return function(api)
             end
             todo, addrs = game.enemiesSoFar()
             at = 1
+            scaling.hitsBack = math.max(0, scaling.hitsBack - 1)
         end
         for _ = 1, LOOKS_PER_TICK do
             local e, addr = todo[at], addrs[at]
@@ -262,13 +352,18 @@ return function(api)
                 return
             end
             at = at + 1
-            -- (Not a ghost twin: it took its original's numbers, already scaled, as it came (twins.lua).)
-            local name = valid(e) and not inSoloFight(addr) and not (game.twinId and game.twinId(addr, e)) and e:GetFName():ToString()
-            if name and not game.isDead(e) and poiseBoss(e, addr, name) then
-                return
-            end
+            local name = valid(e) and not inSoloFight(addr) and e:GetFName():ToString()
+            -- (How hard it hits, a ghost twin's too: twins.lua gives a twin its original's health and posture, already
+            -- scaled, as it came, but not this; the review of 11-09, every twin at the game's own.)
             if name and hitting and not game.isDead(e) and scaleHits(e, addr, name) then
                 hitN = hitN + 1
+                return
+            end
+            -- (Nothing else for a ghost twin: it took its original's numbers as it came.)
+            if name and game.twinId and game.twinId(addr, e) then
+                name = false
+            end
+            if name and not game.isDead(e) and poiseBoss(e, addr, name) then
                 return
             end
             if name and net.party then
@@ -280,13 +375,17 @@ return function(api)
                 scaled[addr], scaledMax[addr] = name, nil       -- (or it's dead, and nothing brings it back as the same actor)
                 if not game.isDead(e) then
                     local set = e.AttributeSetBase
-                    local health, posture = numbersFor(e, addr)
+                    local health, posture, boss = numbersFor(e, addr)
                     scaleAttr(set, "Health", "Health_Max", health)
                     scaleAttr(set, "Shachi", "Shachi_Max", posture)
                     scaledMax[addr] = maxOf(e)
+                    scaledAs[addr] = { name = name, h = health, p = posture, boss = boss, players = 2 }
                     n = n + 1
                     return
                 end
+            end
+            if name and (scaling.bossHealth or scaling.bossPosture) and promoteBoss(e, addr, name) then
+                return
             end
         end
     end
@@ -333,7 +432,8 @@ return function(api)
     end
 
     -- hitscale <enemies %> [bosses %]   (100 100 = as hard as the game has them; read at start from CoopEnemyDamage /
-    -- CoopBossDamage; bosses left out: the enemies' number). Enemies scaled already keep theirs.
+    -- CoopBossDamage; bosses left out: the enemies' number). Enemies about take the new number too, from the game's own:
+    -- scaleHits takes the old one back first.
     function scaling.damageCommand(args)
         local m, b = (args or ""):match("^%s*(%d+)%s*(%d*)")
         if tonumber(m) then

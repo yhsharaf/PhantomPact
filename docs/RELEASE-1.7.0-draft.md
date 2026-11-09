@@ -66,8 +66,8 @@ works as before.
   again as you take yours. And a kill's reward that both games hand out comes once to the joining player, not twice (what
   a partner finds now reaches you about 3 s later)
 - What your partner picks up now shows on the right with the game's own notice, as your own finds do (it used to wait
-  until you opened a chest). A partner's pickup no longer lies there again after a long trip, and one that never reached
-  you is given to you
+  until you opened a chest). A partner's pickup no longer lies there again after a long trip, one that never reached you is
+  given to you, and two of you grabbing the same thing at once get one each
 - New options in `PhantomPact.ini`, from your requests: `CoopEnemyDamage` and `CoopBossDamage` set how hard enemies and
   bosses hit you while your partner is with you (percent, 100 = normal; each PC its own), and `CoopBossHealth` and
   `CoopBossPosture` give bosses their own numbers apart from `CoopEnemyHealth` and `CoopEnemyPosture`
@@ -122,7 +122,7 @@ Both players need 1.7.0. Thanks to shilover (Rakka) for the ideas in issue #13, 
 - 钟:加入进度更靠前的房主时,不会再点亮房主所有的钟(庞镇全部点亮、到处都能传送)。房主点亮的钟要等你走到旁边才会为你点亮
 - 晚一步加入首领战:不会再多出一条停在满血的首领血条。为你带来的首领会让位给你自己游戏的战斗动画带来的首领
 - 你捡起的东西不会再让另一位玩家得到两份(比如杀气琥珀):你拿走时,对方地上的那一份也会消失。两边游戏都会给的击杀奖励,加入的玩家也只得到一份(队友找到的东西现在大约晚 3 秒到你手上)
-- 队友捡到的东西现在会像你自己捡到时一样,在右侧显示游戏自己的拾取提示(以前要等你开宝箱才会显示)。队友捡走的物品,在你远距离传送再回来后不会再出现在地上;没有送到你手上的那一份也会补给你
+- 队友捡到的东西现在会像你自己捡到时一样,在右侧显示游戏自己的拾取提示(以前要等你开宝箱才会显示)。队友捡走的物品,在你远距离传送再回来后不会再出现在地上;没有送到你手上的那一份也会补给你;两人同时捡同一件东西,各得一份
 - `PhantomPact.ini` 新增选项(来自大家的请求):`CoopEnemyDamage` 和 `CoopBossDamage` 设置有搭档时敌人和首领打你有多疼(百分比,100 为原版;每台电脑各自设置),`CoopBossHealth` 和 `CoopBossPosture` 让首领有自己的血量和架势,与 `CoopEnemyHealth`、`CoopEnemyPosture` 分开
 - 队友还在首领战中时你倒下:你会一直等到战斗结束,首领不会再在几秒后回满血(房主的死亡曾结束客人那边的战斗)。首领的转阶段动画或处决也不会结束等待
 - 房主在首领战中时加入:按 F3 可立即加入,30 秒后(原来是 3 分钟)无论如何都可以自由行动,不会再站着无法操作
