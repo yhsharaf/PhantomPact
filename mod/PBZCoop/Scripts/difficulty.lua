@@ -20,7 +20,12 @@
 -- window on a break (12 and 14 frames, Hellwalker's 6), Wayfarer in how long a broken player reels (2 s, not 3); no mode
 -- changes a player's attributes. So a match holds the game at least at Hellwalker, and 66 Days, never lowered, gets
 -- Hellwalker's perfect deflect window in its config for the match: in memory only (the game never saves it), its own back
--- when the match is over.
+-- when the match is over. A match is never saved either (arena.lua's save veto), so difficulty_own.txt keeps what the save
+-- can hold: the co-op pick from before the match, or nothing.
+--
+-- One of coop's extraTicks while sync is on, a loop of its own while it's off: coop stops its ticks with sync, and leaving
+-- co-op (Leave, netoff) mid-match or while held left the game on Hellwalker and 66 Days at 8 frames (the review of
+-- 3f77be8). It acts only with the player in the world: on the title screen the game says Pathbreaker whatever the save is.
 
 return function(api)
     local log, valid = api.log, api.valid
@@ -162,19 +167,15 @@ return function(api)
         end)
     end
 
-    local function tick()
-        local now = os.clock()
-        if now < nextLook then
-            return
-        end
-        nextLook = now + LOOK_S
+    local function look(now)
         local gs = system()
         local cur = gs and current(gs)
-        if not cur then
-            return
+        local _, pawn = api.getPlayer1()
+        if not cur or not valid(pawn) then
+            return          -- (the title screen or a load: the mode read there isn't the save's)
         end
         if not started then
-            -- (A pick left over from a crash in co-op or in a match: held as if the partner had just left.)
+            -- (A pick left over from a crash in co-op: held as if the partner had just left.)
             started = true
             own, held = remembered()
             lastTogether = now
@@ -184,29 +185,58 @@ return function(api)
         if want then
             lastTogether = now
         end
+        if held ~= nil and cur > held then
+            -- A higher mode picked in the menu: the player's own now, and it stays when the partner leaves.
+            own, held = nil, nil
+            forget()
+        end
         if want and cur < want then
             if own == nil then
                 own = cur
             end
             if set(gs, want) then
                 held = want
-                remember()
+                if not net.arena then
+                    remember()      -- (a match is never saved: the file keeps what the save can hold)
+                end
                 log(string.format("Co-op difficulty: %s while you %s (yours was %s).", NAMES[want],
                     net.arena and "fight a PvP match" or "play together", NAMES[own] or tostring(own)))
             end
         elseif want and held ~= nil and cur == held and want < held then
-            -- The match is over and the partner still here: down to the co-op pick, never under the player's own.
+            -- The match is over and the partner still here: down to the co-op pick, never under the player's own; back at
+            -- the player's own, nothing is held any more (held there, it set the same mode again every second: the review).
             local to = math.max(want, own or want)
             if set(gs, to) then
-                held = to
-                remember()
                 log(string.format("Co-op difficulty: the match is over: %s while you play together.", NAMES[to]))
+                if to == own then
+                    own, held = nil, nil
+                    forget()
+                else
+                    held = to
+                    remember()
+                end
             end
         elseif not want and own ~= nil and (not difficulty.target or now - lastTogether >= GRACE_S) then
             putBack(gs, cur)
         end
     end
-    api.coop.extraTicks.difficulty = tick
+    api.coop.extraTicks.difficulty = function()
+        local now = os.clock()
+        if now >= nextLook then
+            nextLook = now + LOOK_S
+            look(now)
+        end
+    end
+    LoopInGameThreadWithDelay(math.floor(LOOK_S * 1000), function()
+        if not net.enabled then
+            local ok, err = pcall(look, os.clock())
+            if not ok and err ~= difficulty.lastError then
+                difficulty.lastError = err
+                log("Co-op difficulty: " .. tostring(err))
+            end
+        end
+        return false
+    end)
 
     -- difficulty [hellwalker | pathbreaker | wayfarer | off]   (read at start from CoopDifficulty)
     function difficulty.command(args)

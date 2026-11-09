@@ -159,7 +159,8 @@ return function(out, scripts)
     out("the game's difficulty, the same for everyone in a match:")
     h.difficulty = 4                            -- (the host plays 66 Days)
     Session.command(g, "difficulty off")        -- (the guest keeps its own mode with a partner, Wayfarer)
-    g.difficulty = 1
+    s:run(1.5)
+    g.difficulty = 1                            -- (picked once the setting is off: nothing holds it)
     s:run(1.5)
     check(h.difficulty == 4 and g.difficulty == 1, "before the match: the host on 66 Days, the guest on its own Wayfarer: "
         .. h.difficulty .. "/" .. g.difficulty)
@@ -184,9 +185,9 @@ return function(out, scripts)
     check(h.env.PBZ.net.arena == true and g.env.PBZ.net.arena == true, "both trim the network (net.arena)")
     check(h.env.PBZ.net.pvp == true and g.env.PBZ.net.pvp == true, "both fight (net.pvp)")
     s:run(3)
-    check(g.difficulty == 3 and g.files["difficulty_own.txt"] == "1 3",
-        "in the match the guest's Wayfarer is Hellwalker, CoopDifficulty off or not, its own kept: " .. g.difficulty .. ", "
-        .. tostring(g.files["difficulty_own.txt"]))
+    check(g.difficulty == 3 and g.files["difficulty_own.txt"] == nil,
+        "in the match the guest's Wayfarer is Hellwalker, CoopDifficulty off or not (no file: a match is never saved): "
+        .. g.difficulty .. ", " .. tostring(g.files["difficulty_own.txt"]))
     check(h.difficulty == 4 and daysWindow(h) == 8, "the host stays on 66 Days, with Hellwalker's 8-frame perfect deflect: "
         .. h.difficulty .. ", " .. daysWindow(h))
     local hm, gm = ha.match, ga.match
@@ -760,6 +761,59 @@ return function(out, scripts)
     f:run(2)
     check(fa.blocker() == nil, "two against three: nothing stops the start: " .. tostring(fa.blocker()))
     errors = errors + errorsIn(f, "five")
+
+    -- (The review of 3f77be8: difficulty.lua ran as one of coop's extraTicks, which stop with sync, so co-op turned off in a
+    -- match left the hold and 66 Days' window as they were; and back at the player's own after a match it set the same mode
+    -- again every second.)
+    out("the game's difficulty: co-op turned off in a match, and back at the player's own after one:")
+    do
+        local function duel(ini)
+            local d = Session.new(scripts, { "Host", "Guest" }, false,
+                { { "near", "BP_Monster_MaleThug_Sword_Blue_C", 300.0, 0.0, 100.0, 850, 400, false } }, ini)
+            local dh, dg = d.pcs[1], d.pcs[2]
+            d:run(4)
+            Session.moveTo(dh, 0, 0)
+            Session.moveTo(dg, 500, 0)
+            d:run(2)
+            return d, dh, dg
+        end
+        local function start(d, dh, dg)
+            Session.command(dh, "arena place 0")
+            Session.command(dg, "arena ready")
+            d:run(1.5)
+            Session.command(dh, "arena start")
+            d:run(8)
+        end
+        local d, dh, dg = duel("CoopDifficulty = Off\n")
+        dh.difficulty, dg.difficulty = 4, 1         -- (the host on 66 Days, the guest on Wayfarer)
+        d:run(1.5)
+        start(d, dh, dg)
+        check(dh.difficulty == 4 and daysWindow(dh) == 8 and dg.difficulty == 3,
+            "in the match: 66 Days at 8 frames, the Wayfarer at Hellwalker: " .. dh.difficulty .. " " .. daysWindow(dh) .. ", "
+            .. dg.difficulty)
+        Session.command(dh, "netoff")
+        Session.command(dg, "netoff")
+        d:run(5)
+        check(dh.env.PBZ.net.enabled == false and dg.env.PBZ.net.enabled == false, "co-op turned off on both in the match")
+        check(dh.difficulty == 4 and daysWindow(dh) == 6, "66 Days' own 6 frames back with co-op off: " .. daysWindow(dh))
+        check(dg.difficulty == 1 and dg.files["difficulty_own.txt"] == nil,
+            "the guest's own Wayfarer back with co-op off, no file left: " .. dg.difficulty)
+        errors = errors + errorsIn(d, "netoff")
+
+        local e, eh, eg = duel("CoopDifficulty = Wayfarer\n")      -- (both on the save's Pathbreaker)
+        start(e, eh, eg)
+        check(eg.difficulty == 3, "CoopDifficulty Wayfarer, own Pathbreaker: Hellwalker in the match: " .. eg.difficulty)
+        Session.command(eh, "arena leave")
+        Session.command(eh, "arena leave")
+        e:run(10)
+        local logs0, sets0 = count(eg.logs, "the match is over: "), count(eg.trace, "SetDifficultMode")
+        e:run(30)
+        check(eg.difficulty == 2 and eg.files["difficulty_own.txt"] == nil,
+            "home, the partner still there: its own Pathbreaker, nothing held: " .. eg.difficulty)
+        check(count(eg.logs, "the match is over: ") == logs0 and count(eg.trace, "SetDifficultMode") == sets0,
+            "and nothing set again for 30 s: " .. (count(eg.trace, "SetDifficultMode") - sets0) .. " more")
+        errors = errors + errorsIn(e, "stepdown")
+    end
     check(errors == 0, "no script errors: " .. errors)
     out(failed == 0 and "PASS" or ("FAILED " .. failed))
     return failed == 0

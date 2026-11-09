@@ -1879,14 +1879,17 @@ local function coopDifficulty()
     check(th.difficulty == 1 and th.files["difficulty_own.txt"] == nil, "after a crash in co-op, alone: back to Wayfarer")
     allErrors(t)
 
-    -- A crash in a PvP match that held a Pathbreaker at Hellwalker ("2 3": the pick, the mode it held): back to it.
+    -- A crash while co-op held a Wayfarer at Pathbreaker (the setting Pathbreaker then: "1 2", the pick and the mode it held),
+    -- the setting Hellwalker now: back to Wayfarer. (Compared with the setting alone, as before the file kept the mode it
+    -- held, the save stayed on Pathbreaker; the review of 3f77be8.)
     local u, uh = pair(nil, function(hpc, gpc)
-        hpc.files["difficulty_own.txt"] = "2 3"
-        hpc.difficulty = 3
+        hpc.files["difficulty_own.txt"] = "1 2"
+        hpc.difficulty = 2
         gpc.cut = true
     end)
     u:run(40)
-    check(uh.difficulty == 2 and uh.files["difficulty_own.txt"] == nil, "after a crash in a PvP match, alone: back to Pathbreaker")
+    check(uh.difficulty == 1 and uh.files["difficulty_own.txt"] == nil,
+        "after a crash while held at another setting's pick, alone: back to Wayfarer")
     allErrors(u)
 end
 -- A guest's hit that makes their copy flinch: the host's enemy itself flinches the same way, and its next move doesn't cut the

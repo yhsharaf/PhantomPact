@@ -130,6 +130,22 @@ slow motion held off (it slowed only the dodger's game). Health comes home as it
   setting off at Hellwalker in it and back after; a Pathbreaker setting back to Pathbreaker after), four (a crash in a match
   puts the own mode back). Bench: see the 11-09 results (the window is read live: a perfect deflect costs no posture, an
   ordinary one about 45, so it counts in a match).
+- A review of 3f77be8 (22 agents, each finding tried by two skeptics) confirmed six defects, all fixed:
+  - Leaving co-op mid-match or while held (Leave, netoff) left the hold and 66 Days' window as they were. difficulty.lua ran
+    only as one of coop's extraTicks, which stop with sync. It now has a loop of its own while sync is off.
+  - Back at the player's own mode after a match, it set the same mode again every second. Landing on the own mode now ends
+    the hold.
+  - A crash in a match wrote the match's Hellwalker into difficulty_own.txt, which the save never holds (save veto). A match
+    no longer writes the file.
+  - A pick between two matches was overwritten by a stale `own`. Fixed with the step-down change above.
+  - A higher pick was lowered by a stale `held`. A pick above the held mode now ends the hold.
+  - four.lua's crash check passed on the old code. It now uses a case only the new code passes.
+  - Two findings were rejected: an old one-number file with the setting Off (no shipped install has one), and 66 Days
+    picked mid-match (the game doesn't allow it mid-run).
+  - The file isn't tied to a save, and it is deleted before the game saves the restored mode. Both are older than
+    3f77be8, low, and left to the co-op side.
+  - Sims: pvp 145, four 1104, two against fc48deb the same (19). The reviewers' scenarios (sync off in a match, the
+    step-down, the crash file) all come out right.
 
 ## 10. Teams
 
