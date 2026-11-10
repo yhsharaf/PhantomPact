@@ -310,8 +310,8 @@ return function(api)
             return
         end
         local state = game.hitStateOf and game.hitStateOf(actor)
-        if not state or state == "None" or state:find("Break", 1, true) then
-            return
+        if not state or state == "None" or state:find("State.Break", 1, true) then
+            return              -- (a posture break's own tag: the poise levels are Hitreact.Break.LvN)
         end
         local m = api.moves.montage(p.move.path)
         local ai = m and api.moves.animOf(actor)

@@ -3,8 +3,11 @@
 Not posted. For the user to edit and post, on GitHub and Nexus.
 
 Unproven, so not claimed below: boss copies taking next to no poise in the host's moves (468a4e1), and 1.6.7's
-CoopBossPoise. On the bench (11-07) a thug's light-hit flinch didn't change with TakenReductionMultiplier_Poise at 1, 0.01
-or 0, nor with Resistance_Poise at 9999; whether a boss's armour in its attacks reads them still needs a boss to test on.
+CoopBossPoise as a poise multiplier. On the bench (11-07) a thug's light-hit flinch didn't change with
+TakenReductionMultiplier_Poise at 1, 0.01 or 0, nor with Resistance_Poise at 9999; whether a boss's armour in its attacks
+reads them still needs a boss to test on. A boss's recovery after its guard breaks (docs/BUGHUNT.md 221) is
+bench-checked on the Gold-Masked One. Also not claimed: a guest's execution of a boss showing its victim's half on the
+host (not tried on the bench).
 Also not claimed: the guest who can't hurt some bosses (a 1.6.9 report). It wasn't reproduced on the bench, and the change
 tried for a cause that would fit was taken back (docs/BUGHUNT.md 220). It needs the boss's name or the guest's UE4SS.log.
 
@@ -54,9 +57,12 @@ works as before.
 
 **Co-op fixes, from your reports:**
 
-- Bosses fight back: a partner's hits no longer stun-lock a boss. It flinches only when its posture breaks (once), never in
-  the middle of its own attack. And on the joining player's screen the boss no longer flinches at their every swing: they
-  see its attacks as the host does
+- Bosses fight back: a partner's hits no longer stun-lock a boss. Once its guard breaks it gets its fight back, as it does
+  against one player: your partner's blows take no posture from it while its bar fills again and for 6 s after, nor while
+  it deflects or dodges, and a guard your partner broke fills again (it could stay broken for good). With six players, a
+  boss's ghost twin too. It flinches at a partner's hit only when its posture breaks (once), never in the middle of its
+  own attack. And on the joining player's screen the boss no longer flinches at their every swing: they see its attacks
+  as the host does
 - A boss turns to whoever is pressing it harder: a turn the game didn't make no longer keeps it on the host for another 10 s
 - Bells: joining a host further along no longer lights every bell they have (Pangzhen's all lit, fast travel everywhere).
   A host's bell lights for you when you walk up to it
@@ -117,7 +123,7 @@ Both players need 1.7.0. Thanks to shilover (Rakka) for the ideas in issue #13, 
 
 **合作修复(来自大家的反馈):**
 
-- 首领会还手了:队友的攻击不会再让首领一直被打断。只有架势被打破时才会硬直(只一次),不会在它自己出招时被打断。客人的画面上,首领也不会再因客人的每一击而硬直:客人看到的攻击和房主看到的一样
+- 首领会还手了:队友的攻击不会再让首领一直被打断。架势被打破后,它会像面对一名玩家时一样重新反击:在它的架势条重新回满期间以及之后的 6 秒内,以及它弹反或闪避时,队友的攻击不会削减它的架势;队友打破的架势也会重新回满(以前可能一直停在破防状态)。六人时首领的幽影分身也一样。只有架势被打破时才会因队友的攻击硬直(只一次),不会在它自己出招时被打断。客人的画面上,首领也不会再因客人的每一击而硬直:客人看到的攻击和房主看到的一样
 - 首领会转向压制它更狠的人:游戏没有执行的转向不会再让它多盯房主 10 秒
 - 钟:加入进度更靠前的房主时,不会再点亮房主所有的钟(庞镇全部点亮、到处都能传送)。房主点亮的钟要等你走到旁边才会为你点亮
 - 晚一步加入首领战:不会再多出一条停在满血的首领血条。为你带来的首领会让位给你自己游戏的战斗动画带来的首领

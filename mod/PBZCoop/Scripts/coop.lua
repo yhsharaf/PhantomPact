@@ -1088,6 +1088,9 @@ return function(api)
             end
             if yaw == yaw and x == x and y == y and z == z then
                 local boss = game.isBoss and game.isBoss(actor, addr) and 1 or 0
+                if (boss == 1 or (game.bossTwin and game.bossTwin(actor, addr))) and game.watchBossBar then
+                    game.watchBossBar(actor, addr, posture)     -- (its breaks and fills, for a partner's blows: handlers.D)
+                end
                 -- "-" = unknown posture; the client leaves its own alone instead of zeroing it.
                 local number = enemyNumber(actor, name)
                 net.sendEnemyLine(number, string.format("%d %.0f %.0f %.0f %.0f %.0f %.0f %.1f %.1f %d %s", number,
@@ -1451,10 +1454,31 @@ return function(api)
                         hp, posture = prev.hp, prev.posture
                     else
                         local lethal = net.heldAlive[addr] ~= nil and (dHp > 0.5 or onFloor) and hp <= HELD_HP + 0.01
-                        reportHit(name, actor, math.max(0, dHp), math.max(0, dPosture), lethal)
-                        if lethal then
-                            net.lethalPending[name] = { at = os.clock(), tries = 1 }
-                            log("Killing blow on " .. name .. "; telling the host.")
+                        -- (A boss's copy weighs this player's blow as the host's boss does, game.partnerRefuses: no posture in
+                        -- the host's break and fill, as it recovers, or while it turns blows aside. Its bar here keeps with the
+                        -- host's, and it doesn't break here alone. One this very blow broke is left as its game has it, and the
+                        -- blow still goes, posture or none, for the host to judge the break: a parry's break took no health,
+                        -- and went nowhere, the guest's boss broken alone.)
+                        local hostOf = net.remoteEnemies[name]
+                        local broke = false
+                        if dPosture > 0.5 and prev.posture and game.partnerRefuses and game.setPosture
+                            and ((hostOf and hostOf.Boss) or net.partnerBosses[name] or (game.bossTwin and game.bossTwin(actor, addr)))
+                            and game.partnerRefuses(actor, addr, true) then
+                            local own = game.hitStateOf and game.hitStateOf(actor)
+                            broke = own ~= nil and own:find("State.Break", 1, true) ~= nil
+                            if not broke then
+                                game.setPosture(actor, prev.posture)
+                                posture = prev.posture
+                            end
+                            dPosture = 0
+                            net.struck[name] = true     -- (in this fight, a parry's too: see reportHit)
+                        end
+                        if dHp > 0.5 or dPosture > 0.5 or onFloor or broke then
+                            reportHit(name, actor, math.max(0, dHp), math.max(0, dPosture), lethal)
+                            if lethal then
+                                net.lethalPending[name] = { at = os.clock(), tries = 1 }
+                                log("Killing blow on " .. name .. "; telling the host.")
+                            end
                         end
                     end
                 end
@@ -1496,6 +1520,9 @@ return function(api)
                 if api.puppets then
                     api.puppets.follow(name, actor, r)
                 end
+                if (r.Boss or (game.bossTwin and game.bossTwin(actor, addr))) and game.watchBossBar then
+                    game.watchBossBar(actor, addr, r.Posture)   -- (the host's bar: its breaks and fills, for this player's blows)
+                end
                 if game.setMaxHealth and r.MaxHp and maxhp and math.abs(r.MaxHp - maxhp) > 1 then
                     game.setMaxHealth(actor, r.MaxHp)
                 end
@@ -1522,13 +1549,17 @@ return function(api)
                     net.healTicks[name] = nil
                 end
                 -- (Never down to an empty bar: the host's 0 is a break, its or ours, that fills again. Pulled to 0 after
-                -- this game's own break had filled it, every hit of this player's broke the boss again, for good.)
+                -- this game's own break had filled it, every hit of this player's broke the boss again, for good. A boss's
+                -- empty is its broken bar as the game holds it, 1.64 of the Gold-Masked One's: pulled down to that, the
+                -- copy broke here a second time at this player's next blow.)
+                local bars = game.bossBars and game.bossBars[addr]
+                local empty = (bars and bars.empty) or (game.POSTURE_EMPTY or 1.5)
                 if game.setPosture and r.Posture ~= nil and posture ~= nil and r.Posture < posture - 0.5
-                    and r.Posture > (game.POSTURE_EMPTY or 1.5) then
+                    and r.Posture > empty then
                     game.setPosture(actor, r.Posture)
                     posture = r.Posture
                     net.postureTicks[name] = nil
-                elseif game.setPosture and r.Posture ~= nil and r.Posture <= (game.POSTURE_EMPTY or 1.5) then
+                elseif game.setPosture and r.Posture ~= nil and r.Posture <= empty then
                     net.postureTicks[name] = nil
                 elseif game.setPosture and r.Posture ~= nil and posture ~= nil and r.Posture > posture + 0.5 then
                     -- (And back up, a few turns on: after the boss's break the bar refills on the host, and here it stayed
@@ -2350,6 +2381,11 @@ return function(api)
             net.bossReactAt[name] = now + wait
             return true
         end
+        -- (Nor a flinch in the 6 s after a partner's break: its bar waits empty for its refill then, in no fill and no
+        -- recovery of the game's, and a flinch 3 s on came through.)
+        if now - (net.bossBrokeAt[name] or -1e9) < (game.POSTURE_BREAK_S or 6) then
+            return false
+        end
         if api.puppets and api.puppets.inMove(name) then
             return false
         end
@@ -2430,17 +2466,42 @@ return function(api)
                 local wasAlive = not (game.isDead and game.isDead(actor))
                 local boss = net.partnerBosses[name] or (game.isBoss and game.isBoss(actor))
                 local before = game.getHealth(actor)
-                local barBefore = game.getPosture and game.getPosture(actor)
+                -- (A boss weighs a partner's blow by the game's own rules for one: no posture in its break and fill, as it
+                -- recovers, or while it turns blows aside, and no reaction of theirs on it then. See game.partnerRefuses.)
+                local bossLike = boss or (game.bossTwin and game.bossTwin(actor)) or false
+                local refused = bossLike and game.partnerRefuses and game.partnerRefuses(actor, actor:GetAddress())
+                -- (Not a break the sender's copy has already had: its game broke it at once, past taking back, and its bar,
+                -- kept with this one's, came there by blows this world took. Turned aside, the guest saw a break the host's
+                -- boss never had. Its break and fill, or its recovery, still refuse one.)
+                if refused == "aside" and rtag ~= nil and rtag:find("State%.Break") then
+                    refused = nil
+                end
+                if refused then
+                    posture = 0
+                end
                 local real = game.applyDamage(actor, amount, posture, true)
                 -- (What it took, for who the enemy goes for: a floor or a kill takes less than was sent.)
                 game.partnerHit(actor:GetAddress(), from, (before or 0) - (game.getHealth(actor) or before or 0))
-                -- (A break: the bar this hit took to empty here, or the break it made on the sender's copy. The game holds a
-                -- broken bar a little above 0, the elite swordsman's at 4 on the bench, so a guest's hits often stop short.)
+                -- (A break: the one this hit made on the sender's copy, its posture break's tag, State.Break, not the poise
+                -- levels, Hitreact.Break.LvN. A bar this hit took to empty here with no break there played nothing, yet
+                -- it used up the break's once, and the copy's own break a moment on was refused: the guest saw a break the
+                -- host's boss never had.)
                 local barAfter = game.getPosture and game.getPosture(actor)
-                local emptied = (barBefore ~= nil and barAfter ~= nil and barBefore > (game.POSTURE_EMPTY or 1.5)
-                    and barAfter <= (game.POSTURE_EMPTY or 1.5)) or (rtag ~= nil and rtag:find("%.Break") ~= nil)
-                if not boss or net.bossMayReact(name, actor, emptied) then
+                local emptied = not refused and rtag ~= nil and rtag:find("State%.Break") ~= nil
+                if not bossLike or (not refused and net.bossMayReact(name, actor, emptied)) then
                     react(actor)
+                    -- (A partner's break played here: the bar emptied as the sender's copy's, to fill again as after a break,
+                    -- refillEmptied. Left a few points up (the game holds a broken bar a little above 0, the elite
+                    -- swordsman's at 4 on the bench), nothing filled it: it stood broken for good, broken again at every
+                    -- break of the copy's. One already at 0 is filled the same, unless a refill waits already.)
+                    if emptied and barAfter and game.setPosture then
+                        if barAfter > 0 then
+                            game.setPosture(actor, 0)
+                            game.postureEmptied[actor:GetAddress()] = os.clock()
+                        elseif not game.postureEmptied[actor:GetAddress()] then
+                            game.postureEmptied[actor:GetAddress()] = os.clock()
+                        end
+                    end
                 end
                 if wasAlive and (real or (game.isDead and game.isDead(actor))) then
                     if real and boss and game.rollLoot then

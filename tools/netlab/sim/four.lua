@@ -2518,6 +2518,278 @@ local function bossReactions()
     allErrors(s)
 end
 
+-- A boss's posture and a guest's blows (reports on 1.6.9 and the bench, 11-10: once its guard broke, the Gold-Masked One
+-- was broken again 4 to 5 s after each fill, every guest blow taking posture, and spent 21 s of 30 reacting). The game's
+-- own break and fill are played here by hand: the bar to empty, then up a little each frame from wherever it stands.
+local function bossPosture()
+    part("a boss's posture and a partner's blows")
+    local BREAK = "CharacterState.HitReact.State.Break.Normal"
+    local DEFLECT = "/PBZCombatAsset/ActorData/Move/Boss_Deflect_R_Success.Boss_Deflect_R_Success"
+    local function setup()
+        local s, h, g = pair()
+        Session.moveTo(h, 2700, 3000)
+        Session.moveTo(g, 3300, 3000)
+        s:run(2)
+        local t = { s = s, h = h, g = g, copy = Session.enemyOn(g, "boss"), theirs = Session.enemyOn(h, "boss") }
+        function t.bar(e)
+            return rawget(e, "__fields").AttributeSetBase.Shachi
+        end
+        function t.setBar(e, v)
+            Fake.put(t.bar(e), "CurrentValue", v)
+            Fake.put(t.bar(e), "BaseValue", v)
+        end
+        t.max = t.bar(t.theirs).BaseValue
+        function t.hp(e)
+            return (select(1, Fake.health(e)))
+        end
+        -- A guest's blow on its copy: posture off its bar, 50 health off it.
+        function t.blow(posture)
+            t.setBar(t.copy, math.max(0, t.bar(t.copy).CurrentValue - posture))
+            swing(g, t.copy, t.hp(t.copy) - 50)
+        end
+        -- The game's own break on the host, then its fill: up a little each frame from wherever the bar stands.
+        function t.hostBreaks()
+            t.setBar(t.theirs, 0)
+            Fake.put(field(t.theirs, "hit"), "state", BREAK)
+            s:run(0.5)
+            Fake.put(field(t.theirs, "hit"), "state", "None")
+        end
+        function t.fill(seconds, each)
+            local frames = 0
+            s:run(seconds, function()
+                frames = frames + 1
+                t.setBar(t.theirs, math.min(t.max, t.bar(t.theirs).CurrentValue + t.max / 180))
+                if each then
+                    each(frames)
+                end
+            end)
+        end
+        -- Both bars put at v, the host's line given time to reach the copy.
+        function t.both(v)
+            t.setBar(t.theirs, v)
+            s:run(1.5)
+            t.setBar(t.copy, v)
+            s:run(0.1)
+        end
+        function t.sentSince(n, pattern)
+            for i = n + 1, #g.sent do
+                if g.sent[i]:find(pattern) then
+                    return true
+                end
+            end
+            return false
+        end
+        function t.state(e)
+            return field(field(e, "hit"), "state")
+        end
+        return t
+    end
+
+    -- The host's own blow breaks it; the game fills it over 3 s; the guest swings throughout.
+    local t = setup()
+    local s, h, g, copy, theirs, bar, max = t.s, t.h, t.g, t.copy, t.theirs, t.bar, t.max
+    t.hostBreaks()
+    local hp0, filled = t.hp(theirs), true
+    t.fill(3, function(frames)
+        if frames % 24 == 0 then
+            t.blow(40)
+        end
+        if frames < 180 and bar(theirs).CurrentValue < frames * max / 180 - 1 then
+            filled = false              -- (lower than the fill alone: a guest's posture went into it)
+        end
+    end)
+    check(filled and bar(theirs).CurrentValue >= max - 1,
+        "a guest's blows take no posture from a boss filling after its break (" .. bar(theirs).CurrentValue .. " of " .. max .. ")")
+    check(t.hp(theirs) < hp0 - 100, "but their damage lands")
+    -- Back: for its recovery (6 s) a guest's blow takes no posture, here or on the copy.
+    s:run(1)
+    local before = bar(theirs).CurrentValue
+    t.blow(40)
+    s:run(0.5)
+    check(bar(theirs).CurrentValue == before, "nor as it gets its fight back, just after (" .. bar(theirs).CurrentValue .. ")")
+    check(bar(copy).CurrentValue >= max - 1 and t.state(copy) ~= BREAK,
+        "and the guest's copy keeps the host's bar: no break of its own there")
+    s:run(6)
+    before = bar(theirs).CurrentValue
+    t.blow(40)
+    s:run(0.5)
+    check(bar(theirs).CurrentValue < before - 30, "after that, a guest's blow takes posture again (" .. bar(theirs).CurrentValue .. ")")
+    -- A deflect or a dodge turns their blow aside, as this world's.
+    Session.enemyMove(h, "boss", DEFLECT)
+    Session.enemyMove(g, "boss", DEFLECT)
+    s:run(0.3)
+    before = bar(theirs).CurrentValue
+    t.blow(40)
+    s:run(0.5)
+    check(bar(theirs).CurrentValue == before, "a boss deflecting takes no posture from a guest's blow (" .. bar(theirs).CurrentValue .. ")")
+    -- But a break their copy already had is a break, deflect or not: their game played it at once.
+    t.both(40)
+    local n = #g.sent
+    Fake.put(field(copy, "hit"), "state", BREAK)
+    t.setBar(copy, 0)
+    swing(g, copy, t.hp(copy) - 50)
+    s:run(0.3)
+    check(t.state(theirs) == BREAK, "a copy's break as the boss deflects: it breaks here too (" .. tostring(t.state(theirs)) .. ")")
+    Session.enemyMove(h, "boss", nil)
+    Session.enemyMove(g, "boss", nil)
+    -- In the 6 s after that break, its bar waiting empty for its refill, a partner's flinch doesn't play.
+    s:run(1)
+    Fake.put(field(theirs, "hit"), "state", "None")
+    Fake.put(field(copy, "hit"), "state", "CharacterState.Hitreact.State.Normal")
+    Session.enemyMove(g, "boss", "/PBZCombatAsset/ActorData/Move/Hit1.Hit1")
+    swing(g, copy, t.hp(copy) - 50)
+    s:run(0.3)
+    check(t.state(theirs) ~= "CharacterState.Hitreact.State.Normal", "nor a flinch of theirs in the 6 s after a break")
+    Session.enemyMove(g, "boss", nil)
+    Fake.put(field(copy, "hit"), "state", "None")
+    allErrors(s)
+
+    -- A guest's break the game holds a little above empty (the Gold-Masked One's at 1.64): emptied, filled 6 s on. (Left
+    -- there, nothing ever filled it, and every break of the copy's broke the boss again.)
+    t = setup()
+    s, h, g, copy, theirs, bar, max = t.s, t.h, t.g, t.copy, t.theirs, t.bar, t.max
+    t.both(30)
+    Fake.put(field(copy, "hit"), "state", BREAK)
+    t.setBar(copy, 4)
+    swing(g, copy, t.hp(copy) - 50)
+    s:run(0.5)
+    check(bar(theirs).CurrentValue == 0, "a guest's break the game holds above empty: the host's bar emptied (" .. bar(theirs).CurrentValue .. ")")
+    Fake.put(field(copy, "hit"), "state", "None")
+    Fake.put(field(theirs, "hit"), "state", "None")
+    s:run(6.5)
+    check(bar(theirs).CurrentValue >= max - 1 and count(h.logs, "Posture bar a partner emptied") >= 1,
+        "and filled 6 s on, as a break's (" .. bar(theirs).CurrentValue .. ")")
+    -- Back from it: a break of the copy's own in its recovery is the copy's alone.
+    s:run(1)
+    Session.enemyMove(h, "boss", "/PBZCombatAsset/ActorData/Move/E1.E1")
+    s:run(0.3)
+    Fake.put(field(copy, "hit"), "state", BREAK)
+    swing(g, copy, t.hp(copy) - 50)
+    s:run(0.5)
+    check(t.state(theirs) ~= BREAK and bar(theirs).CurrentValue >= max - 1, "a copy's break while the boss recovers doesn't break the host's")
+    Session.enemyMove(h, "boss", nil)
+    Fake.put(field(copy, "hit"), "state", "None")
+    Fake.put(field(theirs, "hit"), "state", "None")
+    -- Past it: a guest's blow empties the host's bar with no break on the copy, then the copy's break comes. (The first
+    -- used up the break's once, and the boss never broke here though the guest saw it break.)
+    s:run(7)
+    t.both(40)
+    t.blow(40)
+    s:run(0.3)
+    local early = t.state(theirs)
+    Fake.put(field(copy, "hit"), "state", BREAK)
+    swing(g, copy, t.hp(copy) - 50)
+    s:run(0.3)
+    check(early ~= BREAK and t.state(theirs) == BREAK,
+        "a bar a guest's blow empties, then the copy's break: that break plays here (" .. tostring(early) .. ")")
+    allErrors(s)
+
+    -- A guest's blow that breaks its copy carries its posture to the host; one that only takes posture, a parry's, goes too.
+    t = setup()
+    s, h, g, copy, theirs, bar, max = t.s, t.h, t.g, t.copy, t.theirs, t.bar, t.max
+    t.both(60)
+    n = #g.sent
+    t.setBar(copy, 0)
+    Fake.put(field(copy, "hit"), "state", BREAK)
+    swing(g, copy, t.hp(copy) - 50)
+    s:run(0.3)
+    check(t.sentSince(n, "^E D sp:boss 50%.0 60%.0"), "a guest's blow that breaks its copy carries its posture to the host")
+    Fake.put(field(copy, "hit"), "state", "None")
+    Fake.put(field(theirs, "hit"), "state", "None")
+    s:run(14)
+    t.both(40)
+    n = #g.sent
+    g.env.PBZ.game.noteLocalMove()
+    t.setBar(copy, 0)
+    Fake.put(field(copy, "hit"), "state", BREAK)
+    s:run(0.3)
+    check(t.sentSince(n, "^E D sp:boss 0%.0 40%.0") and t.state(theirs) == BREAK,
+        "a parry that breaks the copy, no health taken: it goes, and the host's boss breaks (" .. tostring(t.state(theirs)) .. ")")
+    Fake.put(field(copy, "hit"), "state", "None")
+    Fake.put(field(theirs, "hit"), "state", "None")
+    -- The host's own break and fill, and a guest's blow breaks its copy in it: the copy is left broken, its bar as its game
+    -- has it (its break and the guest's execution play out), and no posture goes to the host.
+    s:run(14)
+    t.hostBreaks()
+    t.fill(0.6)
+    n = #g.sent
+    t.setBar(copy, 0)
+    Fake.put(field(copy, "hit"), "state", BREAK)
+    swing(g, copy, t.hp(copy) - 50)
+    t.fill(0.2)
+    check(bar(copy).CurrentValue < 1 and t.sentSince(n, "^E D sp:boss 50%.0 0%.0") and t.state(copy) == BREAK,
+        "a guest's blow that breaks its copy in the host's own fill: the copy stays broken, no posture to the host ("
+        .. bar(copy).CurrentValue .. ")")
+    allErrors(s)
+
+    -- When a partner's blow empties the bar here, its refill: a bar the host's own blow left one short (8) that a guest's
+    -- blow then empties is filled 6 s on; a guest's blow that leaves it a little up (4), not broken, isn't (its work kept).
+    t = setup()
+    s, h, g, copy, theirs, bar, max = t.s, t.h, t.g, t.copy, t.theirs, t.bar, t.max
+    t.both(88)
+    t.setBar(theirs, 8)
+    t.blow(80)
+    s:run(0.5)
+    local emptiedHere = bar(theirs).CurrentValue
+    s:run(6.5)
+    check(emptiedHere == 0 and bar(theirs).CurrentValue >= max - 1,
+        "a bar a guest's blow empties is filled 6 s on (" .. emptiedHere .. " -> " .. bar(theirs).CurrentValue .. ")")
+    s:run(8)
+    t.both(44)
+    t.blow(40)
+    s:run(7)
+    check(bar(theirs).CurrentValue == 4, "one a guest's blow leaves a little up isn't filled (" .. bar(theirs).CurrentValue .. ")")
+    allErrors(s)
+
+    -- The host's own rules, with a guest that has none of them (an older one): the host still refuses its posture in its
+    -- fill, its recovery and a deflect of its own, here alone.
+    t = setup()
+    s, h, g, copy, theirs, bar, max = t.s, t.h, t.g, t.copy, t.theirs, t.bar, t.max
+    g.env.PBZ.game.partnerRefuses = function() return nil end
+    t.hostBreaks()
+    local fillOk = true
+    t.fill(3, function(frames)
+        if frames % 24 == 0 then
+            t.setBar(copy, math.max(0, bar(theirs).CurrentValue - 40))
+            swing(g, copy, t.hp(copy) - 50)
+        end
+        if frames < 180 and bar(theirs).CurrentValue < frames * max / 180 - 1 then
+            fillOk = false
+        end
+    end)
+    check(fillOk, "an older guest's blows: the host's boss still takes no posture in its fill")
+    s:run(1)
+    before = bar(theirs).CurrentValue
+    t.setBar(copy, before - 40)
+    swing(g, copy, t.hp(copy) - 50)
+    s:run(0.5)
+    check(bar(theirs).CurrentValue == before, "nor in its recovery")
+    s:run(7)
+    Session.enemyMove(h, "boss", DEFLECT)
+    s:run(0.3)
+    before = bar(theirs).CurrentValue
+    t.setBar(copy, before - 40)
+    swing(g, copy, t.hp(copy) - 50)
+    s:run(0.5)
+    check(bar(theirs).CurrentValue == before, "nor as it deflects, a deflect of the host's boss alone (" .. bar(theirs).CurrentValue .. ")")
+    Session.enemyMove(h, "boss", nil)
+    allErrors(s)
+
+    -- The recovery is 6 s on both PCs, whatever each one's CoopBossPoise says (a guest's at 1000 refused 30 s of blows the
+    -- host would have taken).
+    t = setup()
+    s, h, g, copy, theirs, bar, max = t.s, t.h, t.g, t.copy, t.theirs, t.bar, t.max
+    Session.command(g, "bosspoise 1000")
+    t.hostBreaks()
+    t.fill(3)
+    s:run(7.5)
+    before = bar(theirs).CurrentValue
+    t.blow(40)
+    s:run(0.5)
+    check(bar(theirs).CurrentValue < before - 30, "the recovery is 6 s, whatever the guest's CoopBossPoise (" .. bar(theirs).CurrentValue .. ")")
+    allErrors(s)
+end
+
 -- A boss beaten in co-op is beaten in both saves, and two saves that disagree are brought round to the host's.
 local function beatenInBoth()
     part("a boss beaten in both worlds")
@@ -5989,6 +6261,28 @@ local function sixPlayers()
     check(bossTwin ~= nil and h.env.PBZ.game.isBoss(bossTwin) == false, "a boss's twin is never the boss of a fight to the mod")
     local _, twinHp = Fake.health(bossTwin)
     check(twinHp == 5000 * 2.5, "a twin gets the same health as its original")
+    -- A boss's twin takes a guest's flinches as a boss does: none in a move of its own (every one was forced on it, the
+    -- same stun-lock as the boss's own before 1.7.0).
+    local bossTwinId
+    for tid, e in pairs(ht) do
+        if e == bossTwin then
+            bossTwinId = tid
+        end
+    end
+    local tg = s.pcs[2]
+    local twinCopy = twinsOn(tg)[bossTwinId]
+    Fake.put(rawget(bossTwin, "__fields").anim, "montage", h.env.StaticFindObject("/PBZCombatAsset/ActorData/Move/E1.E1"))
+    s:run(0.5)
+    Fake.put(rawget(twinCopy, "__fields").anim, "montage", tg.env.StaticFindObject("/PBZCombatAsset/ActorData/Move/Hit1.Hit1"))
+    Fake.put(field(twinCopy, "hit"), "state", "CharacterState.Hitreact.State.Normal")
+    swing(tg, twinCopy, select(1, Fake.health(twinCopy)) - 50)
+    s:run(0.5)
+    local twinMove = field(field(bossTwin, "anim"), "montage")
+    check(twinMove and twinMove:GetFullName():find("E1", 1, true) ~= nil
+        and field(field(bossTwin, "hit"), "state") ~= "CharacterState.Hitreact.State.Normal",
+        "a guest's hit doesn't cut a boss's twin's own attack short (" .. tostring(twinMove and twinMove:GetFullName()) .. ")")
+    Fake.put(rawget(bossTwin, "__fields").anim, "montage", nil)
+    Fake.put(field(twinCopy, "hit"), "state", "None")
 
     -- One twin killed on the host dies on every guest too.
     local thugTwinId, thugTwin
@@ -6424,6 +6718,7 @@ return function(print_, scripts)
     syncRaces()
     hitReactions()
     bossReactions()
+    bossPosture()
     pickupsFresh()
     pickupsShown()
     pickupsRaced()

@@ -1363,12 +1363,21 @@ return function(api)
     -- staggered it. So a bar a partner emptied that is still empty POSTURE_BREAK_S on (no break of the game's own
     -- filled it) is filled to its max here, as the game's break does. Keyed by address, no actor kept.
     game.POSTURE_EMPTY, game.POSTURE_BREAK_S, game.postureEmptied = 1.5, 6, {}   -- (empty: the game holds an emptied bar at 1)
+    -- The bar as broken: a two-hundredth of it, at least POSTURE_EMPTY. The game holds a broken bar a little above 0, the
+    -- Gold-Masked One's at 1.64 of 1055 and the elite swordsman's at 4 of 2558 (bench, 11-10; about 0.16% of each).
+    -- Above 1.5, the bar a partner broke was taken for one the game had filled again: it never filled, and it stood
+    -- broken for good. (Not much more: a bar a little higher is a bar one blow short of a break, still standing.)
+    function game.emptyBar(actor)
+        local ok, max = pcall(function() return actor.AttributeSetBase.Shachi_Max.CurrentValue end)
+        return math.max(game.POSTURE_EMPTY, (ok and type(max) == "number") and max * 0.005 or 0)
+    end
     function game.refillEmptied(actor, addr, posture)
         local at = game.postureEmptied[addr]
         if not at or posture == nil then
             return posture
         end
-        if posture > game.POSTURE_EMPTY then
+        -- (The share of the bar only once it's over 1.5: read every turn of every enemy with a pending refill, it cost.)
+        if posture > game.POSTURE_EMPTY and posture > game.emptyBar(actor) then
             game.postureEmptied[addr] = nil       -- (filled already: the game's own break ran)
             return posture
         end
@@ -1385,6 +1394,108 @@ return function(api)
         return max
     end
 
+    -- A boss's posture and a partner's blows (player reports on 1.6.9: "after the boss's guard is broken, it keeps getting
+    -- hitstunned ... it can't fight back until we kill it"). The game can't weigh a blow that only comes reported, so its
+    -- rules for one are kept here, on both PCs. Bench, 11-10, the Gold-Masked One, both players swinging every 0.5 s for
+    -- 30 s: every guest blow took posture (the host's were mostly deflected or dodged, one in four landed), so it broke
+    -- again 4 to 5 s after each fill, 5 breaks in all, 21 s of the 30 reacting and 9 moves of its own; the host alone
+    -- broke it once and it fought back, 23 moves. A partner's blow takes no posture from a boss:
+    -- - in a break of its own and the fill after it: the game's own blows take none then either, and written into the fill
+    --   they held it down;
+    -- - for BOSS_RECOVER_S after its bar is back: it gets its fight back, as after a break alone (alone, the host's blows
+    --   met its counters and deflects then). The same on both PCs, whatever each one's ini says;
+    -- - while it turns blows aside, a deflect, parry or dodge: this world's blows don't land then either. (Not a guard or
+    --   a block: those may cost it posture.)
+    -- Its health takes every blow. Each turn feeds watchBossBar the bar this world's boss has (the host's own, a guest's
+    -- copy the host's line), keyed by address, no actor kept.
+    game.bossBars = {}
+    game.BOSS_FILL_MAX_S, game.BOSS_RECOVER_S, game.BOSS_SETTLE_S = 12, 6, 0.5
+    function game.watchBossBar(actor, addr, posture)
+        if posture == nil then
+            return
+        end
+        local b = game.bossBars[addr]
+        local now = os.clock()
+        if b == nil or now - b.seenAt > 30 then
+            b = {}
+            game.bossBars[addr] = b
+        end
+        if not b.empty or now - b.emptyAt > 1 then
+            b.empty, b.emptyAt = game.emptyBar(actor), now
+        end
+        if posture <= b.empty then
+            b.brokeAt = now
+        elseif b.last and posture > b.last + 0.5 then
+            b.risingAt = now
+        end
+        b.last, b.seenAt = posture, now
+        -- (Back once it has risen since its break and has held still a moment: the fill's end, or the jump of
+        -- refillEmptied.)
+        if b.brokeAt and (b.upAt or -1) < b.brokeAt and (b.risingAt or -1) > b.brokeAt
+            and now - b.risingAt >= game.BOSS_SETTLE_S then
+            b.upAt = now
+        end
+    end
+
+    -- A deflect, parry or dodge, by the move's name or its folder (the game files them under /Dodge/ and /Deflect/): none
+    -- of the game's own tags says so (bench, 11-10). Not an attack that comes out of one (the Gold-Masked One's
+    -- DoggeAttack, Deflect_Atk2), a reaction (Deflect_Break), nor a boss's opening after the player's perfect dodge
+    -- (Dodged_By_Hun).
+    game.ASIDE_WORDS = { "deflect", "parry", "dodge", "dogge", "evade", "_roll", "backstep" }
+    game.ASIDE_NOT = { "attack", "atk", "break", "dodged", "_by_hun", "_hit" }
+    function game.turnsAside(actor)
+        local name, path = nil, nil
+        pcall(function()
+            local m = actor.Mesh:GetAnimInstance():GetCurrentActiveMontage()
+            if valid(m) then
+                name = m:GetFName():ToString():lower()
+                path = m:GetFullName():lower()
+            end
+        end)
+        if not name then
+            return false
+        end
+        for _, w in ipairs(game.ASIDE_NOT) do
+            if name:find(w, 1, true) then
+                return false
+            end
+        end
+        if path and (path:find("/dodge/", 1, true) or path:find("/deflect/", 1, true)) then
+            return true
+        end
+        for _, w in ipairs(game.ASIDE_WORDS) do
+            if name:find(w, 1, true) then
+                return true
+            end
+        end
+        return false
+    end
+
+    -- Why this boss takes no posture from a partner's blow now ("break", "recover", "aside"), or nil. line: a guest's copy,
+    -- its bar the host's line: its own hit state is left out (a break of the copy's that this very blow made isn't the
+    -- host's boss's, and the copy's own game takes no posture in one of its own).
+    function game.partnerRefuses(actor, addr, line)
+        local now = os.clock()
+        local b = game.bossBars[addr]
+        local state = not line and game.hitStateOf and game.hitStateOf(actor)
+        if state and state:find("State.Break", 1, true) then
+            return "break"
+        end
+        -- (Filling: risen since its break and not back yet. A bar a partner's write left empty, no break of the game's
+        -- and no fill, isn't one: the copy's break that follows must still play here.)
+        if b and b.brokeAt and (b.upAt or -1) < b.brokeAt and (b.risingAt or -1) > b.brokeAt
+            and now - b.brokeAt < game.BOSS_FILL_MAX_S then
+            return "break"
+        end
+        if b and b.upAt and now - b.upAt < game.BOSS_RECOVER_S then
+            return "recover"
+        end
+        if game.turnsAside(actor) then
+            return "aside"
+        end
+        return nil
+    end
+
     -- Host: the client's player hit this enemy. Lower its health and posture; at zero health, let the game run
     -- its death. real: through the game's own kill effect, the whole death as from this player's own blow, so this world
     -- pays its player and a boss's story goes on (its scene after the fight, its reward). Kill() skips all that: a boss
@@ -1397,8 +1508,13 @@ return function(api)
         local posture = game.getPosture(actor)
         if posture and postureDamage and postureDamage > 0 then
             game.setPosture(actor, math.max(0, posture - postureDamage))
-            if posture > game.POSTURE_EMPTY and posture - postureDamage <= game.POSTURE_EMPTY then
-                game.postureEmptied[actor:GetAddress()] = os.clock()
+            -- (A blow that empties it, to fill again 6 s on (refillEmptied). Not one that leaves it a little up, one short of
+            -- a break: filled, its whole bar of work was thrown away. And not stamped again while one waits: put off, a
+            -- bar held at 0 by blows went unfilled.)
+            local addr = actor:GetAddress()
+            if posture > game.POSTURE_EMPTY and posture - postureDamage <= game.POSTURE_EMPTY
+                and not game.postureEmptied[addr] then
+                game.postureEmptied[addr] = os.clock()
             end
         end
         local left = math.max(0, hp - amount)
@@ -1625,6 +1741,17 @@ return function(api)
             codexBoss[cn] = row ~= nil and row.bIsBoss == true
         end
         return codexBoss[cn]
+    end
+
+    -- A boss's ghost twin (twins.lua): never the boss of a fight to the mod, but a boss to fight, by its class as the
+    -- codex has it. It takes a partner's blows by a boss's rules (handlers.D): every flinch of theirs played on it, it never
+    -- fought back either.
+    function game.bossTwin(actor, addr)
+        addr = addr or actor:GetAddress()
+        if not twin.at(addr, actor) then
+            return false
+        end
+        return game.isBossClass(className(actor)) == true
     end
 
     -- The HUD registers a boss health bar when a boss fight starts: the surest way to know who the boss is.

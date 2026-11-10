@@ -188,6 +188,23 @@ Bosses also get `TakenReductionMultiplier_Poise` (an `AttributeSetBase` attribut
 100 / `CoopBossPoise` (default 200, so 0.5): the share of poise damage they take. Poise is the game's interrupt number
 (the `CharacterState.Hitreact.Endure.*` levels and each move's action poise), separate from posture (`Shachi`).
 
+A partner's blow on a boss only comes reported (`D`), so the game's own posture rules for it are kept by the mod, on
+both PCs (`game.partnerRefuses`, fed each turn by `game.watchBossBar`: the host from its boss's bar, a guest from the
+host's line). It takes no posture: in a break of the boss's own and the fill after it (the game's own blows take none
+then either); for 6 s after the bar is back, the same on both PCs, so the boss gets its fight back; and while the boss
+turns blows aside (a deflect, parry or dodge, by the move's name or its /Dodge/ or /Deflect/ folder: no game tag says
+so; not the attacks that come out of one, nor a guard or a block, which may cost it posture). Its health takes every
+blow. No reaction of the partner's plays on it then, nor in the 6 s after a partner's break. A break the sender's copy
+already had still plays, deflect or not, and a blow that broke the copy goes to the host even with no health in it (a
+parry's); the copy itself is left broken, so its break and the guest's execution play out. A boss's ghost twin takes
+partner blows by the same rules. A partner's break that the game holds a little above empty (1.64 of the Gold-Masked
+One's 1055) is emptied on the host and filled 6 s later as a break's; empty is a two-hundredth of the bar
+(`game.emptyBar`), not 1.5, and a blow that leaves the bar a little up, one short of a break, isn't filled. Bench, 11-10,
+the Gold-Masked One, both players swinging every 0.5 s for 30 s: 5 breaks, 9 moves of its own and 21 s reacting before;
+2 breaks, 15 moves and 13 s after (the host alone: 1 break, 23 moves). What's left is the game's own: every hit flinches
+a boss while its broken bar fills, the partner's figure's real (token) blows from behind it too. Open: a guest's
+execution of a boss may not play its victim's half on the host (1.7.0's flinch limit; the state's name is unknown).
+
 Bosses take `CoopBossHealth` / `CoopBossPosture` where given (else the enemies' numbers). How hard an enemy hits is the
 game's own pair of multipliers on what it deals, for each kind of damage (`DealtVulnerabilityMultiplier_<kind>` to raise,
 `DealtReductionMultiplier_<kind>` to lower; Physical, PhysicalSharp, PhysicalBlunt, Fire, Toxin, Ice, Aqua, Lightning,
