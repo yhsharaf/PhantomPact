@@ -235,10 +235,12 @@ trip), a Duel "here".
 - Decided, not built (`docs/PVP.md`, "Scope, decided"): split screen has no F6 page; everyone linked plays (leave the
   session to sit out); the F6 page takes a mouse; one finishing move a match.
 - Releasing 1.7.0 (the zip, GitHub, Nexus) waits for your go-ahead: nothing is pushed or posted. The zip is built and
-  checked locally (11-10, `tools/make-release.ps1`): `dist/PhantomPact-1.7.0.zip` from a962369, 5695 KB, SHA-256
-  C46A59E898488FF7FDF42C771F2D936CC327B19C207FE7E88B87E0953CA8B93B, Windows Defender clean, file types Nexus takes,
-  its 34 scripts and the ini byte for byte the commit's. The older builds are kept beside it, out of date
-  (`PhantomPact-1.7.0-8bdfc97.zip`, `-da821db.zip`, `-d1bdf5a.zip`).
+  checked locally (11-10, `tools/make-release.ps1`): `dist/PhantomPact-1.7.0.zip` from d19a7cf, 5695 KB, SHA-256
+  025D9A7324F39D2054FCBC093606447467328649EB87703BF0C38B562F446182, Windows Defender clean, file types Nexus takes,
+  its 34 scripts, the ini and INSTALL.md byte for byte the commit's. The older builds are kept beside it, out of date
+  (`PhantomPact-1.7.0-a962369.zip`, `-8bdfc97.zip`, `-da821db.zip`, `-d1bdf5a.zip`).
+- Bosses at 200% health with a partner, 300% with two, 400% with three (d19a7cf, the user's call 11-10): the ini ships
+  `CoopBossHealth = 200`, so a fight together takes about as long as alone; the enemies stay at 150%.
 - The stun-lock report again (11-10, BUGHUNT 221): aae17cc held on the elite it was tested on, not on a real boss. On the
   Gold-Masked One, both players swinging, 1.7.0 still broke it 5 times in 30 s (9 moves of its own, 21 s reacting).
   a962369: a partner's blows by the game's posture rules (none in the boss's break and fill, for 6 s after, or while
