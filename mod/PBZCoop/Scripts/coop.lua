@@ -229,8 +229,9 @@ return function(api)
 
     -- These are only worth showing now: a move two seconds late is worse than none, and must never hold up a death.
     -- (NQ: an enemy's number again, as N, on this lane too. Its lines count only once its name is known, and with the sure
-    -- N held up by one lost packet the copy waited about 1.5 round trips without following.)
-    local QUICK = { U = true, M = true, A = true, H = true, Z = true, SHOT = true, NQ = true, HEAL = true }
+    -- N held up by one lost packet the copy waited about 1.5 round trips without following. HX: a hit's sound and blood,
+    -- hitfx.lua: late, it's a sound after the blow.)
+    local QUICK = { U = true, M = true, A = true, H = true, Z = true, SHOT = true, NQ = true, HEAL = true, HX = true }
 
     local hostWorld = os.time()   -- host: stands for the world as loaded, new with each start and load from the title (see handlers.Y)
 
@@ -955,6 +956,10 @@ return function(api)
             end
             net.hostSeen[name] = { hp = hp, posture = posture, addr = addr }
         end
+        if api.hitfx and hp then
+            -- (This player's own hits' sound and blood, for everyone else: hitfx.lua. One a guest's game runs only noted.)
+            api.hitfx.runs(name, actor, addr, hp, net.guestRuns[name])
+        end
         -- At 0 health it's dead, and that's all most turns need; asking the game costs more and rarely says otherwise.
         local dead = hp ~= nil and hp <= 0
         -- (One already announced is asked every turn: dead by the game's word at full health, it mustn't flip back.)
@@ -1117,6 +1122,9 @@ return function(api)
             sendEvent("D", id, string.format("%.1f", hpDamage), string.format("%.1f", postureDamage or 0),
                 lethal and "L" or "-", path or "-", string.format("%.2f", pos or 0), tag or "-")
             net.stats.hitsReported = (net.stats.hitsReported or 0) + 1
+            if api.hitfx and not (lethal and hpDamage == 0 and (postureDamage or 0) == 0) then
+                api.hitfx.ownHit(id, enemy)     -- (its sound and blood for everyone else: hitfx.lua; not a killing blow told again)
+            end
             if isClient() and hpDamage > 0 then
                 net.hitHere[id] = true      -- (see GK in syncEnemy)
             end
@@ -1426,6 +1434,9 @@ return function(api)
                 net.pendingBosses[name] = nil
                 log("Host's boss fight with " .. name .. " now matched here.")
                 mirrorBossFight(name, actor)
+            end
+            if api.hitfx then
+                api.hitfx.ready()     -- (this player's hits watched before the first lands: hitfx.lua)
             end
             local hp, maxhp = nil, nil
             if game.getHealth then
@@ -1766,6 +1777,9 @@ return function(api)
             net.sendEnemyLine(number, string.format("%d %.0f %.0f %.0f %.0f %.0f %.0f %.1f %.1f 0 %s", number,
                 x, y, z, yaw, vx == vx and vx or 0, vy == vy and vy or 0, hp, maxhp,
                 posture ~= nil and string.format("%.1f", posture) or "-"))
+        end
+        if api.hitfx and hp then
+            api.hitfx.runs(name, actor, addr, hp)     -- (this player's own hits on it, for everyone else: hitfx.lua)
         end
         if api.puppets then
             api.puppets.watchHost(name, actor, addr)

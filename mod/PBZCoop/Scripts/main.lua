@@ -551,6 +551,7 @@ api.partner = dofile(SCRIPT_DIR .. "partner.lua")(api)
 api.moves = dofile(SCRIPT_DIR .. "moves.lua")(api)
 api.bullets = dofile(SCRIPT_DIR .. "bullets.lua")(api)
 api.puppets = dofile(SCRIPT_DIR .. "puppets.lua")(api)
+api.hitfx = dofile(SCRIPT_DIR .. "hitfx.lua")(api)
 api.hud = dofile(SCRIPT_DIR .. "hud.lua")(api)
 api.mapicon = dofile(SCRIPT_DIR .. "mapicon.lua")(api)
 api.revive = dofile(SCRIPT_DIR .. "revive.lua")(api)
@@ -610,6 +611,7 @@ PBZ = {
     arena = api.arena,
     mapfog = api.mapfog,
     qte = api.qte,
+    hitfx = api.hitfx,
 }
 
 -- Command file: lets a developer drive tests from outside the game. Write one command per line
@@ -644,6 +646,7 @@ COMMANDS.arena = api.arena.command
 COMMANDS.scale = api.scaling.command
 COMMANDS.bosspoise = api.scaling.bossPoiseCommand
 COMMANDS.bossarmor = api.scaling.bossArmorCommand
+COMMANDS.hitsounds = api.hitfx.command
 COMMANDS.bossscale = api.scaling.bossCommand
 COMMANDS.hitscale = api.scaling.damageCommand
 COMMANDS.difficulty = api.difficulty.command

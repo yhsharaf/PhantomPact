@@ -2989,6 +2989,537 @@ local function bossArmour()
     check(state(theirs) == FLINCH, "alone, a boss flinches as the game has it")
 end
 
+-- Partner hit sounds (PartnerHitSounds; a player report, 11-09: "it feels like they are hitting air"): a player's own hit on
+-- an enemy goes to the others as HX, with what the game's hit-effect chooser was asked for it, and each plays the game's own
+-- sound and blood for it on their copy of that enemy. Never the hitter's own, a hit on a player, a partner's blow or hit played
+-- here, a killing blow told again, or a hit with no fresh effect asked; not in PvP, nor with it off; and a line that isn't one
+-- is refused.
+local function partnerHitSounds()
+    part("partner hit sounds")
+    local CHOOSER_FN = "/PBZCombatAsset/Prototypes/Hitreact/BP_HitEffectPlayer_Chooser.BP_HitEffectPlayer_Chooser_C:GetEffectData"
+    local ON = "PartnerHitSounds = On\n"
+    -- (The hero's blade, a light hit on flesh, as the bench saw the chooser asked.)
+    local KIND, STRENGTH = "HitReact.AttackType.Physical.Slash.TangBlade.Player", "Hitreact.Strength.Income.Normal.Light"
+    local MATERIAL = "Hitreact.Material.Meat"
+    local function lineFor(id)
+        return "HX sp:" .. id .. " Physical.Slash.TangBlade.Player Normal.Light Meat"
+    end
+    local LINE = lineFor("thug1")
+    local BONE = "spine_04"
+    local BLOOD = { "/PBZVFXPack/Blood/NS_Blood_Hit_A.NS_Blood_Hit_A", "/PBZVFXPack/Blood/NS_Blood_Hit_B.NS_Blood_Hit_B" }
+    local function isBlood(path)
+        return path == BLOOD[1] or path == BLOOD[2]
+    end
+    local BASE = "/Script/PBZCombatAsset.HitreactEffectPlayer_PBZBase"       -- (the choosers' class: GetEffectData is its)
+    local COMMON = "/PBZCombatAsset/Config/HitReact/HitEffect/PBZ_HitreactEffectPlayer_Chooser.PBZ_HitreactEffectPlayer_Chooser"
+
+    -- A chooser of the game's: what it was asked (by: whose it is), and a sound and two blood systems for any hit. As UE4SS
+    -- runs a Blueprint hook for the mod's own calls too, the hook on GetEffectData runs once it has answered, with what it got.
+    local function newChooser(pc, e, by)
+        local c = Fake.object(pc, "BP_HitEffectPlayer_Chooser_C")
+        Fake.put(c, "GetEffectData", function(self, kind, strength, material, particles, _, _, out)
+            pc.asked[#pc.asked + 1] = { on = e, by = by, kind = kind.TagName:ToString(), strength = strength.TagName:ToString(),
+                material = material.TagName:ToString() }
+            out.HitSound = pc.hitSound
+            particles.Particles = pc.blood
+            local function param(v)
+                return { get = function() return v end }
+            end
+            for _, fn in ipairs(pc.hooks[CHOOSER_FN] or {}) do
+                fn(param(self), param(kind), param(strength), param(material))
+            end
+        end)
+        return c
+    end
+
+    -- The game's side of it on one PC, as much as hitfx.lua reads: the chooser's function (the hook goes on it) and class,
+    -- each enemy's hit-react component with a chooser of its own and its body's bone, that bone on its mesh, and the sound
+    -- engine. What the mod plays there is kept: pc.asked, pc.sounds, and where each blood went.
+    local function hearing(pc)
+        local class = Fake.object(pc, "Class")
+        pc.found[CHOOSER_FN] = Fake.object(pc, "Function")
+        pc.found[BASE] = Fake.object(pc, "Class")
+        pc.found["/Script/SGameCombatSystem.HitreactComponent"] = class
+        pc.asked, pc.sounds, pc.bloodAt = {}, {}, {}
+        pc.hitSound = Fake.object(pc, "AkAudioEvent")
+        local ak = Fake.object(pc, "AkGameplayStatics")
+        Fake.put(ak, "PostEvent", function(_, event, actor)
+            if event == pc.hitSound then
+                pc.sounds[#pc.sounds + 1] = actor
+            end
+            return 1
+        end)
+        pc.found["/Script/AkAudio.Default__AkGameplayStatics"] = ak
+        pc.blood = {}
+        for i, path in ipairs(BLOOD) do
+            local system = Fake.object(pc, "NiagaraSystem")
+            rawset(system, "__path", path)
+            pc.blood[i] = { Particle = system }
+        end
+        local niagara = pc.found["/Script/Niagara.Default__NiagaraFunctionLibrary"]
+        local spawn = field(niagara, "SpawnSystemAttached")
+        Fake.put(niagara, "SpawnSystemAttached", function(self, system, on, socket, where, ...)
+            local made = spawn(self, system, on, socket, where, ...)
+            pc.bloodAt[#pc.effectsOn] = where
+            return made
+        end)
+        for _, e in ipairs(pc.enemies) do
+            local f = rawget(e, "__fields")
+            Fake.put(f.hit, "EffectPlayer", newChooser(pc, e, "own"))
+            Fake.put(f.hit, "GetMainBodyData", function(_, body) body.bone = Fake.name(BONE) end)
+            Fake.put(e, "GetComponentByClass", function(_, c) return c == class and f.hit or nil end)
+            Fake.put(f.Mesh, "GetSocketLocation", function() return { X = f.loc.X, Y = f.loc.Y, Z = f.loc.Z + 120 } end)
+        end
+        pc.mark = { asked = 0, sounds = 0, fx = #pc.effectsOn, sent = #pc.sent }
+    end
+
+    -- The game asks this PC's chooser for its own player's hit: the hook gets the three tags as the game passes them.
+    local function struck(pc, kind, strength, material)
+        local function tag(name)
+            return { get = function() return { TagName = Fake.name(name) } end }
+        end
+        for _, fn in ipairs(pc.hooks[CHOOSER_FN] or {}) do
+            fn({ get = function() return nil end }, tag(kind or KIND), tag(strength or STRENGTH), tag(material or MATERIAL))
+        end
+    end
+    local function hit(pc, e)
+        swing(pc, e, select(1, Fake.health(e)) - 30)
+    end
+    -- Health lost with no hit of this player's: a bleed tick, say.
+    local function bleed(pc, id)
+        local e = Session.enemyOn(pc, id)
+        Fake.setHealth(e, select(1, Fake.health(e)) - 30)
+    end
+    -- Frame by frame till it's so (a second at most).
+    local function soon(s, ready)
+        for _ = 1, 60 do
+            if ready() then
+                return
+            end
+            s:run(1 / 60)
+        end
+    end
+
+    -- Since each PC's mark: the HX it sent, and what it played on one enemy (or on any, e nil): its chooser's asks, the hit
+    -- sounds posted on it, the blood on its body.
+    local function mark(...)
+        for _, pc in ipairs({ ... }) do
+            pc.mark = { asked = #pc.asked, sounds = #pc.sounds, fx = #pc.effectsOn, sent = #pc.sent }
+        end
+    end
+    local function sent(pc)
+        local lines = {}
+        for i = pc.mark.sent + 1, #pc.sent do
+            if pc.sent[i]:find("^Q HX ") then
+                lines[#lines + 1] = pc.sent[i]:sub(3)
+            end
+        end
+        return lines
+    end
+    local function told(pc, pattern)
+        local n = 0
+        for i = pc.mark.sent + 1, #pc.sent do
+            n = n + (pc.sent[i]:find(pattern) and 1 or 0)
+        end
+        return n
+    end
+    local function played(pc, e)
+        local asks, sounds, blood = 0, 0, 0
+        for i = pc.mark.asked + 1, #pc.asked do
+            asks = asks + ((e == nil or pc.asked[i].on == e) and 1 or 0)
+        end
+        for i = pc.mark.sounds + 1, #pc.sounds do
+            sounds = sounds + ((e == nil or pc.sounds[i] == e) and 1 or 0)
+        end
+        local mesh = e and field(e, "Mesh")
+        for i = pc.mark.fx + 1, #pc.effectsOn do
+            local fx = pc.effectsOn[i]
+            blood = blood + ((isBlood(fx.path) and (e == nil or fx.on == mesh)) and 1 or 0)
+        end
+        return asks, sounds, blood
+    end
+    local function none(pc)
+        local asks, sounds, blood = played(pc)
+        return asks + sounds + blood == 0
+    end
+    -- One effect, on that enemy alone: one ask, one sound, each blood once.
+    local function once(pc, e)
+        local asks, sounds, blood = played(pc, e)
+        local allAsks, allSounds, allBlood = played(pc)
+        return asks == 1 and sounds == 1 and blood == #BLOOD and allAsks == 1 and allSounds == 1 and allBlood == #BLOOD
+    end
+    -- Its blood at its body's bone, moved 25 cm toward the hitter's figure.
+    local function landed(pc, e, figure)
+        local f, mesh, n, right = rawget(e, "__fields"), field(e, "Mesh"), 0, figure ~= nil
+        for i = pc.mark.fx + 1, #pc.effectsOn do
+            local fx, w = pc.effectsOn[i], pc.bloodAt[i]
+            if fx.on == mesh then
+                n = n + 1
+                right = right and fx.socket == BONE and w ~= nil and math.abs(gap(w, f.loc) - 25) < 0.01
+                    and gap(w, at(figure)) < gap(f.loc, at(figure))
+            end
+        end
+        return n == #BLOOD and right
+    end
+    local function hearingBoth(a, b)
+        hearing(a)
+        hearing(b)
+    end
+
+    local s, h, g = pair(ON, hearingBoth)
+    local theirs, copy = Session.enemyOn(h, "thug1"), Session.enemyOn(g, "thug1")
+    check(#(h.hooks[CHOOSER_FN] or {}) == 1 and #(g.hooks[CHOOSER_FN] or {}) == 1,
+        "the hook on the game's hit-effect chooser goes in on each PC, once, before the first hit")
+    -- A guest's own hit: the game asks its chooser (the hook), then the mod counts the hit (its report).
+    mark(h, g)
+    struck(g)
+    hit(g, copy)
+    s:run(0.5)
+    local went = sent(g)
+    check(#went == 1 and went[1] == LINE and #sent(h) == 0,
+        "a guest's own hit goes out once, with what its chooser was asked, and nothing comes back (" .. tostring(went[1]) .. ")")
+    local asked = h.asked[#h.asked] or {}
+    check(select(1, played(h)) == 1 and asked.on == theirs and asked.kind == KIND and asked.strength == STRENGTH
+        and asked.material == MATERIAL, "the host asks that enemy's own chooser the same, the game's whole tags put back ("
+        .. tostring(asked.kind) .. " " .. tostring(asked.strength) .. " " .. tostring(asked.material) .. ")")
+    local _, sounds = played(h, theirs)
+    local _, allSounds = played(h)
+    check(sounds == 1 and allSounds == 1 and none(g), "and plays its sound on that enemy, once; the guest, whose game played its own, none")
+    check(landed(h, theirs, net(h).ghost), "and its blood on that body, at its bone, 25 cm toward the guest's figure")
+    -- The host's own hit: an enemy its game runs loses health just after a move of the host's, the effect asked.
+    s:run(0.5)
+    mark(h, g)
+    struck(h)
+    hit(h, theirs)
+    s:run(0.5)
+    went = sent(h)
+    check(#went == 1 and went[1] == LINE and #sent(g) == 0,
+        "the host's own hit goes out too: a drop on an enemy it runs, with a move of its own just before (" .. tostring(went[1]) .. ")")
+    check(once(g, copy) and landed(g, copy, net(g).ghost) and none(h),
+        "the guest plays it on its copy, once, sound and blood; the host none on its own enemy")
+    -- A drop with a move and no effect asked for it: bleeding or poison after a swing, say.
+    s:run(0.5)
+    mark(h, g)
+    hit(g, copy)
+    s:run(0.5)
+    hit(h, theirs)
+    s:run(0.5)
+    check(#sent(g) == 0 and #sent(h) == 0 and none(h) and none(g),
+        "a drop with a move but no effect asked (bleeding, poison): nothing goes, from a guest or the host")
+    -- An effect asked longer ago than the 0.4 s it waits for its hit to be counted isn't that hit's.
+    mark(h, g)
+    struck(g)
+    struck(h)
+    s:run(0.5)
+    hit(g, copy)
+    s:run(0.5)
+    hit(h, theirs)
+    s:run(0.5)
+    check(#sent(g) == 0 and #sent(h) == 0 and none(h) and none(g), "an effect asked over 0.4 s before the hit is counted: nothing goes")
+    -- The chooser asked for a hit on a player (an enemy's on this one), or with no attack type: never this player's hit.
+    mark(h, g)
+    struck(g, KIND, STRENGTH, "Hitreact.Material.PlayerMeat")
+    hit(g, copy)
+    s:run(0.5)
+    struck(g, "None", STRENGTH, MATERIAL)
+    hit(g, copy)
+    s:run(0.5)
+    struck(h, KIND, STRENGTH, "Hitreact.Material.PlayerMeat")
+    hit(h, theirs)
+    s:run(0.5)
+    check(#sent(g) == 0 and #sent(h) == 0 and none(h) and none(g), "the chooser asked for a hit on a player, or with no attack type: never sent")
+    mark(h, g)
+    struck(g)
+    hit(g, copy)
+    s:run(0.5)
+    check(#sent(g) == 1 and once(h, theirs), "and after all that, a fresh one still goes, and plays")
+    -- One effect asked is one hit's: two hits counted on it (the second with none asked for it, bleeding say) send one.
+    s:run(0.5)
+    local near = Session.enemyOn(g, "near")
+    mark(h, g)
+    struck(g)
+    hit(g, copy)
+    hit(g, near)
+    s:run(0.5)
+    local one = #sent(g)
+    s:run(0.5)
+    mark(h, g)
+    struck(g)
+    struck(g)
+    hit(g, copy)
+    hit(g, near)
+    s:run(0.5)
+    local _, onThug = played(h, theirs)
+    local _, onNear = played(h, Session.enemyOn(h, "near"))
+    check(one == 1 and #sent(g) == 2 and onThug == 1 and onNear == 1,
+        "one effect asked, two hits counted: one goes; two asked, two go, one on each enemy (" .. one .. ", " .. #sent(g) .. ")")
+    -- A partner's hit played here runs this PC's hook on the chooser too (UE4SS hooks the mod's own calls), and isn't this
+    -- player's: a player who has just moved plays one, then a drop with no effect of their own follows. Nothing goes back.
+    s:run(0.5)
+    mark(h, g)
+    h.env.PBZ.game.noteLocalMove()
+    struck(g)
+    hit(g, copy)
+    soon(s, function() return #h.sounds > h.mark.sounds end)
+    bleed(h, "thug2")
+    s:run(0.5)
+    check(once(h, theirs) and #sent(h) == 0,
+        "a host that has just moved plays a guest's hit, then a drop with no effect of its own: nothing goes back")
+    s:run(0.5)
+    mark(h, g)
+    g.env.PBZ.game.noteLocalMove()
+    struck(h)
+    hit(h, theirs)
+    soon(s, function() return #g.sounds > g.mark.sounds end)
+    bleed(g, "thug2")
+    s:run(0.5)
+    check(once(g, copy) and #sent(g) == 0, "and a guest that has just moved, playing the host's hit: the same")
+    -- Both at once: the host's own hit, landing as it plays the guest's, goes with its own effect, not the guest's.
+    s:run(0.5)
+    mark(h, g)
+    struck(g, KIND, "Hitreact.Strength.Income.Normal.Heavy", MATERIAL)
+    hit(g, copy)
+    soon(s, function() return count(h.inbox, "^HX ") > 0 end)
+    struck(h)
+    hit(h, Session.enemyOn(h, "thug2"))
+    s:run(0.5)
+    went = sent(h)
+    check(#went == 1 and went[1] == lineFor("thug2"),
+        "the host's own hit, landing as it plays the guest's, goes with its own effect (" .. tostring(went[1]) .. ")")
+    -- A guest's blow written on the host's enemy isn't the host's hit, though the host has an effect of its own waiting (a
+    -- swing that took no health) and has just moved.
+    s:run(0.5)
+    mark(h, g)
+    h.env.PBZ.game.noteLocalMove()
+    struck(h)
+    struck(g)
+    hit(g, near)
+    s:run(0.5)
+    local _, twice = played(g, near)
+    check(#sent(h) == 0 and #sent(g) == 1 and twice == 0, "a guest's blow on an enemy, the host with an effect of its own "
+        .. "waiting and a move: the host sends nothing, and the guest doesn't hear its own hit twice")
+    -- The host's own hit on an enemy in the same round as a guest's blow on it: the blow comes off, the hit still counts.
+    s:run(0.5)
+    mark(h, g)
+    struck(g)
+    hit(g, copy)
+    soon(s, function() return count(h.inbox, "^D sp:thug1 ") > 0 end)
+    struck(h)
+    hit(h, theirs)
+    s:run(0.5)
+    went = sent(h)
+    check(#went == 1 and went[1] == LINE and #sent(g) == 1,
+        "the host's own hit on an enemy in the same round as a guest's blow on it: it goes, once (" .. tostring(went[1]) .. ")")
+    -- Whose chooser is asked: the body's override if it's of the choosers' class, else the body's own, else the game's common
+    -- one. With that class not found, nothing plays.
+    s:run(0.5)
+    local comp = field(theirs, "hit")
+    local own = field(comp, "EffectPlayer")
+    local function askedBy()
+        mark(h)
+        h.inbox[#h.inbox + 1] = LINE
+        s:run(0.1)
+        local asks, heard = played(h)
+        return asks == 1 and heard == 1 and (h.asked[#h.asked] or {}).by or "-"
+    end
+    local override = newChooser(h, theirs, "override")
+    Fake.put(comp, "HitEffectPlayerOverride", override)
+    local first = askedBy()
+    Fake.put(override, "IsA", function() return false end)
+    local passed = askedBy()
+    Fake.put(comp, "HitEffectPlayerOverride", nil)
+    Fake.put(own, "IsA", function() return false end)
+    h.found[COMMON] = newChooser(h, nil, "common")
+    local common = askedBy()
+    Fake.put(own, "IsA", nil)
+    h.found[COMMON] = nil
+    check(first == "override" and passed == "own" and common == "common", "an override of another class is passed over for "
+        .. "the body's own chooser, which plays once; one of its class is asked first; with neither, the game's common one ("
+        .. first .. ", " .. passed .. ", " .. common .. ")")
+    local base, errors = h.found[BASE], #h.errors
+    h.found[BASE] = nil
+    mark(h)
+    h.inbox[#h.inbox + 1] = LINE
+    s:run(0.1)
+    h.found[BASE] = base
+    check(none(h) and #h.errors == errors, "the choosers' class not found: nothing plays, and no script error")
+    -- Lines that aren't an HX: refused, and nothing plays.
+    s:run(1.1)
+    mark(h, g)
+    local function refused(pc)
+        return (pc.env.PBZ.hitfx or {}).refused or 0
+    end
+    local before = refused(h)
+    local bad = { "HX sp:thug1 Physical.Slash.TangBlade.Player Normal.Light", LINE .. " Meat",
+        "HX sp:thug1 Physical.Slash;TangBlade.Player Normal.Light Meat", LINE .. ".Wet", LINE .. "\195\169",
+        "HX sp:thug1 " .. string.rep("Slash", 17) .. " Normal.Light Meat" }
+    for _, line in ipairs(bad) do
+        h.inbox[#h.inbox + 1] = line
+        s:run(0.1)
+    end
+    check(none(h) and refused(h) - before == #bad, "lines that aren't one (3 or 5 fields, odd characters, a dotted material, "
+        .. "a field over 80 characters): refused, nothing played (" .. (refused(h) - before) .. " of " .. #bad .. ")")
+    -- One enemy's effects at least 50 ms apart, and at most 24 a second in all.
+    mark(h)
+    h.inbox[#h.inbox + 1] = LINE
+    h.inbox[#h.inbox + 1] = LINE
+    s:run(0.1)
+    _, sounds = played(h, theirs)
+    check(sounds == 1, "two for one enemy in the same frame: one plays (" .. sounds .. ")")
+    s:run(1.1)
+    mark(h)
+    before = refused(h)
+    for _ = 1, 10 do
+        for _, id in ipairs({ "thug1", "thug2", "near" }) do
+            h.inbox[#h.inbox + 1] = lineFor(id)
+        end
+        s:run(4 / 60)
+    end
+    _, allSounds = played(h)
+    check(allSounds == 24 and refused(h) - before == 6,
+        "30 in 0.6 s, on three enemies: 24 play, the rest are refused (" .. allSounds .. " played, " .. (refused(h) - before) .. " refused)")
+    -- Off on one PC (the hitsounds command, as the ini's row): off on the host, the guest's hits still go and play nothing
+    -- there; off on the guest, its hits don't go.
+    Session.command(h, "hitsounds off")
+    s:run(0.6)
+    mark(h, g)
+    struck(g)
+    hit(g, copy)
+    s:run(0.5)
+    check(#sent(g) == 1 and none(h), "PartnerHitSounds off on the host: the guest's hit still goes, and nothing plays there")
+    Session.command(h, "hitsounds on")
+    Session.command(g, "hitsounds off")
+    s:run(0.6)
+    mark(h, g)
+    struck(g)
+    hit(g, copy)
+    s:run(0.5)
+    check(#sent(g) == 0 and none(h), "off on the guest: its hits don't go")
+    -- Played only on an enemy within 60 m of this player: the host 75 m from the one the guest is by, 42 m from another.
+    Session.moveTo(h, -6000, 300)
+    s:run(2)
+    mark(h)
+    local known = h.env.PBZ.coop.enemyActor("sp:thug1") == theirs
+    h.inbox[#h.inbox + 1] = LINE
+    h.inbox[#h.inbox + 1] = lineFor("thug2")
+    s:run(0.2)
+    _, sounds = played(h, theirs)
+    local _, inReach = played(h, Session.enemyOn(h, "thug2"))
+    check(known and sounds == 0 and inReach == 1, "an enemy 75 m from this player: not played there; one 42 m off is")
+    allErrors(s)
+
+    -- A killing blow told again (no K back yet: the host's answer held up here) is no new hit. The first one goes; told
+    -- again with an effect waiting then, nothing more does.
+    s, h, g = pair(ON, hearingBoth)
+    copy = Session.enemyOn(g, "thug1")
+    local hostHandlers = h.env.PBZ.coop.handlers
+    local answer = hostHandlers.D
+    hostHandlers.D = function() end
+    mark(h, g)
+    struck(g)
+    swing(g, copy, 1)       -- (onto its floor: the killing blow)
+    s:run(0.65)
+    local firstBlow = #sent(g)
+    struck(g)
+    s:run(0.4)              -- (told again 0.8 s after the first)
+    local again = told(g, "^E D sp:thug1 0%.0 0%.0 L ")
+    hostHandlers.D = answer
+    check(firstBlow == 1 and #sent(g) == 1 and again >= 1, "a killing blow goes out once; told again with an effect waiting, "
+        .. "nothing more goes (" .. firstBlow .. ", " .. #sent(g) .. ", told again " .. again .. ")")
+    allErrors(s)
+
+    -- Two players 37 m apart: the enemy by the guest is its game's to run (handover), the host still within 60 m of it.
+    s, h, g = pair(ON, hearingBoth)
+    Session.moveTo(h, -2000, 300)
+    Session.moveTo(g, 1700, 300)
+    s:run(4)
+    theirs, copy = Session.enemyOn(h, "thug1"), Session.enemyOn(g, "thug1")
+    local handed = net(h).guestRuns["sp:thug1"] == true and net(g).mine["sp:thug1"] == true
+    mark(h, g)
+    struck(g)
+    hit(g, copy)
+    s:run(0.5)
+    went = sent(g)
+    check(handed and #went == 1 and went[1] == LINE and once(h, theirs),
+        "two players 37 m apart, an enemy the guest's game runs: the guest's hit on it goes out, and the host plays it on its copy")
+    -- Its line taking the host's copy down isn't the host's hit, though an effect of the host's waits and it has just moved.
+    s:run(0.5)
+    mark(h, g)
+    local was = select(1, Fake.health(theirs))
+    h.env.PBZ.game.noteLocalMove()
+    struck(h)
+    struck(g)
+    hit(g, copy)
+    s:run(0.5)
+    check(select(1, Fake.health(theirs)) < was - 0.5 and #sent(h) == 0 and #sent(g) == 1,
+        "and its line taking the host's copy down, an effect of the host's waiting and a move: the host sends nothing")
+    -- The host's hit on it, written on the guest's (a D), isn't sent back, though an effect of the guest's waits and it has
+    -- just moved.
+    s:run(0.5)
+    mark(h, g)
+    g.env.PBZ.game.noteLocalMove()
+    struck(g)
+    struck(h)
+    hit(h, theirs)
+    s:run(0.5)
+    check(#sent(h) == 1 and #sent(g) == 0 and once(g, copy),
+        "the host's hit on it goes out and the guest plays it; the blow written there isn't sent back, an effect of its own waiting")
+    allErrors(s)
+
+    -- Left out of the ini: off, as before. No hook, nothing goes, and an HX that comes plays nothing.
+    s, h, g = pair(nil, hearingBoth)
+    copy = Session.enemyOn(g, "thug1")
+    mark(h, g)
+    struck(g)
+    hit(g, copy)
+    s:run(0.5)
+    h.inbox[#h.inbox + 1] = LINE
+    s:run(0.2)
+    check(h.hooks[CHOOSER_FN] == nil and g.hooks[CHOOSER_FN] == nil and #sent(g) == 0 and none(h),
+        "the row left out of the ini: no hook, nothing goes, and an HX that comes plays nothing")
+    allErrors(s)
+
+    -- In PvP, hits are real: nothing goes either way, and an HX that comes plays nothing.
+    s, h, g = pair(ON .. "PvP = On\n", hearingBoth)
+    theirs, copy = Session.enemyOn(h, "thug1"), Session.enemyOn(g, "thug1")
+    mark(h, g)
+    struck(g)
+    hit(g, copy)
+    s:run(0.5)
+    struck(h)
+    hit(h, theirs)
+    s:run(0.5)
+    h.inbox[#h.inbox + 1] = LINE
+    g.inbox[#g.inbox + 1] = LINE
+    s:run(0.2)
+    check(net(h).pvp == true and net(g).pvp == true and #sent(g) == 0 and #sent(h) == 0 and none(h) and none(g),
+        "in PvP: nothing goes from either, and an HX that comes plays nothing")
+    allErrors(s)
+
+    -- Four players: one guest's hit is played by the host and the other two guests, each on their copy.
+    s = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest", "Guest" }, true, ENEMIES, ON)
+    for _, pc in ipairs(s.pcs) do
+        hearing(pc)
+    end
+    s:run(4)
+    spread(s)
+    s:run(3)
+    h = s.pcs[1]
+    local a, b, c = s.pcs[2], s.pcs[3], s.pcs[4]
+    mark(h, a, b, c)
+    struck(a)
+    hit(a, Session.enemyOn(a, "thug1"))
+    s:run(0.5)
+    went = sent(a)
+    check(#went == 1 and went[1] == LINE and #sent(h) + #sent(b) + #sent(c) == 0,
+        "four players: a guest's hit goes out once, and nobody else sends one (" .. tostring(went[1]) .. ")")
+    check(once(h, Session.enemyOn(h, "thug1")) and once(b, Session.enemyOn(b, "thug1")) and once(c, Session.enemyOn(c, "thug1"))
+        and none(a), "the host and the other two guests each play it on their copy, once; the one who hit, none")
+    allErrors(s)
+
+    check(Session.shippedIni():match("\nPartnerHitSounds = ([^\r\n]+)") == "On", "the ini as it ships has PartnerHitSounds = On")
+end
+
 -- A boss beaten in co-op is beaten in both saves, and two saves that disagree are brought round to the host's.
 local function beatenInBoth()
     part("a boss beaten in both worlds")
@@ -6949,6 +7480,7 @@ return function(print_, scripts)
     bossReactions()
     bossPosture()
     bossArmour()
+    partnerHitSounds()
     pickupsFresh()
     pickupsShown()
     pickupsRaced()

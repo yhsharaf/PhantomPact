@@ -69,7 +69,9 @@ Seeing a new session from the partner restarts both lanes and hands the mod an `
 
 ## Events
 
-`coop.lua`'s header lists them. `sendEvent` picks the lane: U, M, A, H, Z, SHOT, NQ and HEAL are quick; the rest are sure.
+`coop.lua`'s header lists them. `sendEvent` picks the lane: U, M, A, H, Z, SHOT, NQ, HEAL and HX are quick; the rest are
+sure. (`HX <enemy> <type> <strength> <material>`: a hit's sound and blood, `hitfx.lua`. Older versions drop it, as they
+drop any event they don't know.)
 
 Enemy lines don't carry names: an `N` event gives each enemy a number first.
 

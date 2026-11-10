@@ -221,6 +221,9 @@ return function(api)
                 if api.scaling and api.scaling.bossArmorCommand and s.coopbossarmor and s.coopbossarmor ~= "" then
                     api.scaling.bossArmorCommand(s.coopbossarmor)
                 end
+                if api.hitfx and s.partnerhitsounds and s.partnerhitsounds ~= "" then
+                    api.hitfx.command(s.partnerhitsounds)
+                end
                 -- (Bosses' own health and posture, and how hard enemies and bosses hit: a player report on 1.6.9. Left out,
                 -- as before: bosses take the enemies' numbers, and everything hits as the game has it.)
                 local function pct(v, default)
