@@ -18,6 +18,7 @@ share loot and dust, and rest at bells together. The host's world leads, and you
 - See your partner's Soul live, with their moves, attacks, dodges and hit reactions
 - Shared enemies in both worlds, with shared health, posture and executions
 - Your partner's hits count in the host's world, so you can fight the same enemy together
+- Your partner's hits on enemies play the game's own hit sound and blood on your screen too (new in 1.7.1)
 - Shared boss fights: the boss health bar and arena fog walls for both players
 - Boss fights wait for everyone: die and you watch your partner until it's over; join during one and you watch, then go to them
 - Shared loot and dust: what either player picks up or earns goes to both
