@@ -205,7 +205,9 @@ the Gold-Masked One, both players swinging every 0.5 s for 30 s: 5 breaks, 9 mov
 a boss while its broken bar fills, the partner's figure's real (token) blows from behind it too. Open: a guest's
 execution of a boss may not play its victim's half on the host (1.7.0's flinch limit; the state's name is unknown).
 
-Bosses take `CoopBossHealth` / `CoopBossPosture` where given (else the enemies' numbers). How hard an enemy hits is the
+Bosses take `CoopBossHealth` / `CoopBossPosture` where given (else the enemies' numbers). The ini ships
+`CoopBossHealth = 200` (11-10, the user's call): 200% with a partner, 300% with two, 400% with three, so a fight takes
+about as long as alone when everyone deals as much (at the enemies' 150% a duo took three quarters of it). How hard an enemy hits is the
 game's own pair of multipliers on what it deals, for each kind of damage (`DealtVulnerabilityMultiplier_<kind>` to raise,
 `DealtReductionMultiplier_<kind>` to lower; Physical, PhysicalSharp, PhysicalBlunt, Fire, Toxin, Ice, Aqua, Lightning,
 Blood, Chaos), times `CoopEnemyDamage` or `CoopBossDamage`, once a body. A number changed (`hitscale`, or the ini when

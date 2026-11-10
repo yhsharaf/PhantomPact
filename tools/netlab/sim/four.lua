@@ -5527,6 +5527,25 @@ local function scaling()
     check(math.abs(poise(q.pcs[1], "boss") - 0.25) < 1e-6, "CoopBossPoise = 400: a quarter")
     allErrors(q)
 
+    -- The ini as it ships: bosses at 200% health with a partner, 300% with two, 400% with three, so a fight takes about as
+    -- long as alone when everyone deals as much (the user's call, 11-10: at the enemies' 150% a duo took three quarters of
+    -- the time). The enemies stay at their 150%.
+    local shippedBoss = tonumber(Session.shippedIni():match("\nCoopBossHealth = (%d+)"))
+    check(shippedBoss == 200, "the ini as it ships gives bosses 200% health with a partner (" .. tostring(shippedBoss) .. ")")
+    for _, case in ipairs({ { 2, 10000, 900 }, { 3, 15000, 1200 }, { 4, 20000, 1500 } }) do
+        local roles = { "Host" }
+        for i = 2, case[1] do
+            roles[i] = "Guest"
+        end
+        local b = party(nil, "CoopBossHealth = 200\n", roles)
+        b:run(6)
+        local bossMax, thugMax = max(b.pcs[1], "boss"), max(b.pcs[1], "thug1")
+        check(bossMax == case[2] and thugMax == case[3], string.format(
+            "%d players: the boss at %d%% (%.0f), the others at the enemies' %d%% (%.0f)", case[1], case[2] / 50, bossMax,
+            case[3] / 6, thugMax))
+        allErrors(b)
+    end
+
     -- Bosses' own numbers, and how hard everything hits (a player report on 1.6.9: "options to customize the boss's damage,
     -- as well as the mobs' health, posture, and damage").
     -- (How hard it hits: the game's multiplier of the damage it deals, up, the first kind's; scaling.lua's KINDS.)
