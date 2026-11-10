@@ -276,6 +276,64 @@ return function(api)
         return state
     end
 
+    -- The flags a branch's own tasks wait for, as text ("xg.营地玉儿.药材1" to 3: Yuer's three herbs, one for each found). A
+    -- branch the game finishes itself has them; one finished here with FinishQuestBranch didn't, and what waits on the same
+    -- flags never opened: the map said the herbs were in, and Yuer wouldn't take them (a player report on 1.7.1). Her
+    -- hand-in reads the flags, not the bag. (A task waiting for a flag to be gone, "Not", is no flag to raise.)
+    local function branchFlags(nc, quest, branch)
+        local out = {}
+        pcall(function()
+            local list = nc.QuestList
+            for i = 1, #list do
+                local q = list[i]
+                pcall(function() q = q:get() end)
+                if valid(q) and q:GetClass():GetFName():ToString() == quest .. "_C" then
+                    local bs = q.Branches
+                    for j = 1, #bs do
+                        local b = bs[j]
+                        pcall(function() b = b:get() end)
+                        if valid(b) and b.ID:ToString() == branch then
+                            local ts = b.QuestTasks
+                            for k = 1, #ts do
+                                local t = ts[k]
+                                pcall(function() t = t:get() or t end)
+                                if valid(t) and t:GetClass():GetFName():ToString() == "BPT_HasTag_C" and t.Not ~= true then
+                                    pcall(function()
+                                        t.Tags.GameplayTags:ForEach(function(_, g)
+                                            out[#out + 1] = g:get().TagName:ToString()
+                                        end)
+                                    end)
+                                end
+                            end
+                        end
+                    end
+                    return
+                end
+            end
+        end)
+        return out
+    end
+
+    -- Those of the flags this world hasn't got, raised. How many were.
+    local function raiseFlags(ep, tags)
+        if #tags == 0 or not valid(ep) then
+            return 0
+        end
+        local have, n = {}, 0
+        pcall(function()
+            ep.GlobalTags.GameplayTags:ForEach(function(_, t)
+                have[t:get().TagName:ToString()] = true
+            end)
+        end)
+        for _, tag in ipairs(tags) do
+            if tag ~= "" and tag ~= "None" and not have[tag] and pcall(function() ep:AddTagsByString(tag) end) then
+                have[tag] = true
+                n = n + 1
+            end
+        end
+        return n
+    end
+
     -- A quest's class, by our table's path for it (loaded: a quest this world hasn't begun isn't in memory).
     local classes = {}
     local function questClass(quest)
@@ -301,7 +359,8 @@ return function(api)
     -- rang every bell of the region on arrival, fast travel to all of them and the progression gone (a player report, 11-06).
     -- A bell is the player's to ring, or comes by its own id (b) or tag. What a row hands out (weapons, items, loot) isn't: a player's own finds, and what
     -- the story needs comes with the host's bag. Returns how many of its parts the game took, and how many it was given.
-    local function applyRow(row, nc, ep, bells, ui)
+    -- A branch it finishes leaves the flags its tasks wait for in owed (branchFlags), raised after the batch.
+    local function applyRow(row, nc, ep, bells, ui, owed)
         local took, tried = 0, 0
         local function try(f)
             tried = tried + 1
@@ -319,6 +378,9 @@ return function(api)
                 end
                 if step.finish and st < 2 then
                     try(function() nc:FinishQuestBranch(cls, branches, true) end)
+                    for _, tag in ipairs(branchFlags(nc, step.quest, step.branch)) do
+                        owed[#owed + 1] = tag
+                    end
                 end
             else
                 tried = tried + 1
@@ -352,16 +414,17 @@ return function(api)
         if not (nc and DATA and DATA.rows) then
             return false
         end
-        local took, tried = 0, 0
+        local took, tried, owed = 0, 0, {}
         -- (What the rows hand out isn't sent on as found: the partner had it when they did the step.)
         game.granting = true
         for _, i in ipairs(list) do
             local row = DATA.rows[i]
             if row then
-                local t, n = applyRow(row, nc, ep, bells, ui)
+                local t, n = applyRow(row, nc, ep, bells, ui, owed)
                 took, tried = took + t, tried + n
             end
         end
+        raiseFlags(ep, owed)
         game.granting = false
         if tried > 0 and took < tried then
             log(string.format("Story: the game took %d of %d parts of %s.", took, tried, why))
@@ -386,6 +449,53 @@ return function(api)
                 list[#list + 1] = i
             end
             log(string.format("Story jump: rows %d to %d: %s.", from, to, tostring(applyRows(pawn, list, "the story jump"))))
+        end
+    end
+
+    -- Steps an older mod finished in this world for another player never had their flags raised, and what waits on them
+    -- stayed shut for good: the report's own save, Yuer's herbs "in" on the map and her hand-in never offered. Once a load,
+    -- the finished steps of a quest still under way here get the flags their tasks wait for, if they're missing. Only steps
+    -- the table has, the ones a catch-up or a partner's step could have finished; not a quest that's over, its flags done
+    -- with. Called with a read of this world's quests (readQuests).
+    local mended, mendedIn = {}, nil
+    local function mend(states)
+        local _, pawn = api.getPlayer1()
+        local nc = narrative()
+        if not (rows and nc and calm(pawn)) then
+            return
+        end
+        local here = nc:GetAddress()
+        if here ~= mendedIn then
+            mended, mendedIn = {}, here         -- (a load: this world again from its save, or another)
+        end
+        local owed = {}
+        for _, row in ipairs(rows.quests) do
+            for _, need in ipairs(row.needs) do
+                local q = states[need.quest]
+                local key = need.quest .. " " .. need.branch
+                if need.finish and q and q[need.branch] == 2 and not mended[key] then
+                    local underWay = false
+                    for _, st in pairs(q) do
+                        underWay = underWay or st == 1
+                    end
+                    if underWay then
+                        mended[key] = true
+                        for _, tag in ipairs(branchFlags(nc, need.quest, need.branch)) do
+                            owed[#owed + 1] = tag
+                        end
+                    end
+                end
+            end
+        end
+        if #owed == 0 then
+            return
+        end
+        game.granting = true
+        local n = raiseFlags(FindFirstOf("EventPipelineManager"), owed)
+        game.granting = false
+        if n > 0 then
+            log(string.format("Story: %d flag%s of quest steps finished here before put back, for what waits on them.", n,
+                n == 1 and "" or "s"))
         end
     end
 
@@ -512,6 +622,7 @@ return function(api)
                 told, toldAt = line, -1e9
             end
             takeGuestSteps(states, done, now)
+            mend(states)
         end
         if told and now - toldAt >= TELL_S then
             toldAt = now
@@ -659,6 +770,7 @@ return function(api)
                     if states then
                         ownReading = false
                         tellOwn(states, now)
+                        mend(states)
                     elseif reading == nil then
                         ownReading = false          -- (a load came in between)
                     end
@@ -683,6 +795,7 @@ return function(api)
         end
         local done, point = pointOf(states)
         tellOwn(states, now)
+        mend(states)
         if batch then
             local missed = 0
             for _, k in ipairs(batch) do

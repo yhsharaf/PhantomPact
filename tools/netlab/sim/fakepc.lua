@@ -300,12 +300,15 @@ end
 
 Fake.object = object      -- (for a test that needs an object of its own, a class say)
 
--- The game's item table, as far as the mod reads it: { ItemId, ItemDetailType }. Quest items are "NarrativeItem".
+-- The game's item table, as far as the mod reads it: { ItemId, ItemDetailType, AddTagWhenHas }. Quest items are
+-- "NarrativeItem"; some raise a flag of their own while held (one of the Bagua boy's relics: "ljc.小雪.收集物1").
 Fake.ITEMS = {
     { "R_500", "Material" },
     { "I_KEY_9", "NarrativeItem" },
     { "Weapon_Material_01", "Material" },
     { "Weapon_Material_02", "Material" },
+    { "I_RELIC_1", "NarrativeItem", "relic.one" },
+    { "I_RELIC_2", "NarrativeItem", "relic.two" },
 }
 
 -- The player's skill tree (PBZAbilityNodesComponent), as the bench measured it on 11-07: 32 nodes; ActivateNode by its
@@ -664,7 +667,7 @@ function Fake.story(pc)
                 return b
             end
         end
-        local b = object(pc, "QuestBranch", { ID = name(id), state = 0 })
+        local b = object(pc, "QuestBranch", { ID = name(id), state = 0, QuestTasks = {} })
         defs(pc, b, { GetBranchState = function(self) return rawget(self, "__fields").state end })
         table.insert(rawget(q, "__fields").Branches, b)
         return b
@@ -673,6 +676,17 @@ function Fake.story(pc)
     pc.storyStep = function(quest, id, state)
         local b = branchOf(quest, id)
         put(b, "state", math.max(rawget(b, "__fields").state, state))
+    end
+    -- And a task of a branch's that waits for flags (the game's BPT_HasTag), or for them to be gone (inverted: its Not).
+    pc.storyTask = function(quest, id, tags, inverted)
+        local tasks = rawget(branchOf(quest, id), "__fields").QuestTasks
+        local items = {}
+        for _, t in ipairs(tags) do
+            items[#items + 1] = { TagName = name(t) }
+        end
+        local cls = { IsValid = function() return true end, GetFName = function() return name("BPT_HasTag_C") end }
+        tasks[#tasks + 1] = { IsValid = function() return true end, GetClass = function() return cls end, Not = inverted == true,
+            Tags = { GameplayTags = list(items) } }
     end
     pc.storyState = function(quest, id)
         local q = pc.quests[quest]
@@ -739,7 +753,9 @@ function Fake.story(pc)
             local c, out = column:ToString(), {}
             if t == itemTable then
                 for i, r in ipairs(Fake.ITEMS) do
-                    out[i] = { get = function() return name(c == "ItemId" and r[1] or c == "ItemDetailType" and r[2] or "") end }
+                    local held = '(TagName="' .. (r[3] or "") .. '")'     -- (as the game's table has it)
+                    out[i] = { get = function() return name(c == "ItemId" and r[1] or c == "ItemDetailType" and r[2]
+                        or c == "AddTagWhenHas" and held or "") end }
                 end
                 return out
             end
@@ -942,6 +958,30 @@ function Fake.switch(pc, class, x, y, z, bell, noState)
     })
     pc.switches[#pc.switches + 1] = s
     return s
+end
+
+-- A pile as the game places one: its own name (a pile's, by class, is BP_Rubbish_C), the flags its flow raises once it's
+-- searched (its flow preset's AddTagWhenSuccess), and gone when destroyed.
+function Fake.pile(pc, id, x, y, z, flags)
+    local p = Fake.switch(pc, "BP_Rubbish_C", x, y, z)
+    rawset(p, "__name", id)
+    rawset(p, "__classObject", { IsValid = function() return true end, GetFName = function() return name("BP_Rubbish_C") end })
+    rawset(p, "K2_DestroyActor", function(self) rawset(self, "__alive", false) end)
+    local tags = {}
+    for _, t in ipairs(flags or {}) do
+        tags[#tags + 1] = { TagName = name(t) }
+    end
+    put(p, "BP_PBZFlowComponent", { FlowPresetDataList = { { IsValid = function() return true end,
+        AddTagWhenSuccess = { GameplayTags = list(tags) } } } })
+    return p
+end
+
+-- This player searches a pile: the game's own step on it, as pbz.lua's hookPiles watches it. (The flags its flow raises
+-- in this world are the game's: not raised here.)
+function Fake.search(pc, pile)
+    for _, fn in ipairs(pc.hooks["/Game/PBZContent/Blueprint/Item/Device/BP_Rubbish.BP_Rubbish_C:OnInteract"] or {}) do
+        fn({ get = function() return pile end })
+    end
 end
 
 -- The game's limits on how far a camera tilts, on the first controller's, and the engine's on any other.
@@ -1769,6 +1809,7 @@ function Fake.new(id, scripts, ini, link)
         ["/Game/RenewalContent/Prototypes/Character/BP_RenewalPlayer.BP_RenewalPlayer_C:Respawn Refresh Monster"] = object(pc, "Function"),
         [BELL_HEAL] = object(pc, "Function"),
         [BACKPACK] = object(pc, "BackpackClass"),
+        ["/Game/PBZContent/Blueprint/Item/Device/BP_Rubbish.BP_Rubbish_C:OnInteract"] = object(pc, "Function"),
     }
     rawset(found[BACKPACK], "__path", BACKPACK)
     for path, o in pairs(Fake.story(pc)) do

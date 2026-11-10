@@ -9,6 +9,9 @@
 -- under an open dialogue or a scene can finish what it waits for.
 --
 -- FLOW t <tag> ... | FLOW n <node> ... | FLOW b <bell id> ...  (host to guests)
+--
+-- The one way back: what another player found raises its own flags here too, host or guest (flow.raise): a pile or chest
+-- they searched (coop.lua's OF), since their search took ours away, and a thing of theirs that came here (grantLoot).
 
 return function(api)
     local log, valid, game = api.log, api.valid, api.game
@@ -351,6 +354,49 @@ return function(api)
         end
     end
 
+    -- Flags owed here for what another player found, any role: a pile or chest they searched raised these in their world
+    -- (coop.lua's OF), and ours went with their search; a thing of theirs that came here has its own while it's held
+    -- (pbz.lua's grantLoot). Raised when it's calm, as the host's are on a guest; one this world has already is left alone.
+    -- { tag, why } each.
+    flow.owed = {}
+    function flow.raise(tags, why)
+        for _, tag in ipairs(tags or {}) do
+            if type(tag) == "string" and tag ~= "" and not tag:find("%s") and not skipped(tag) and #flow.owed < 200 then
+                flow.owed[#flow.owed + 1] = { tag = tag, why = why }
+            end
+        end
+    end
+
+    local function raiseOwed()
+        if game.inPrologue and game.inPrologue() then
+            flow.owed = {}          -- (nothing of another's into this player's prologue: see hostTick)
+            return
+        end
+        local ep = FindFirstOf("EventPipelineManager")
+        if not (calm() and valid(ep)) then
+            return
+        end
+        local have = {}
+        pcall(function()
+            ep.GlobalTags.GameplayTags:ForEach(function(_, t)
+                have[t:get().TagName:ToString()] = true
+            end)
+        end)
+        local raised = {}
+        game.granting = true        -- (what a flow they wake hands out isn't sent back as found)
+        for _, o in ipairs(flow.owed) do
+            if not have[o.tag] and pcall(function() ep:AddTagsByString(o.tag) end) then
+                have[o.tag] = true
+                raised[#raised + 1] = o.tag
+            end
+        end
+        game.granting = false
+        flow.owed = {}
+        if #raised > 0 then
+            log("Story flow: " .. table.concat(raised, " ") .. " raised here, for what the other player found.")
+        end
+    end
+
     -- A loop of its own, once a second on the game thread: as an entry of coop.extraTicks it was gone on the bench after
     -- a while, cause not found, and the host told nothing.
     local nextGuest = 0
@@ -369,6 +415,13 @@ return function(api)
         end
         if os.clock() < (coop.net.quietUntil or 0) then
             return          -- (the quiet after a load or a trip: see coop's QUIET_AFTER_LOAD_S)
+        end
+        if #flow.owed > 0 then
+            local ok, err = pcall(raiseOwed)
+            if not ok and err ~= flow.lastError then
+                flow.lastError = err
+                log("Story flow: " .. tostring(err))
+            end
         end
         if coop.isHost() then
             local ok, err = pcall(hostTick, now)

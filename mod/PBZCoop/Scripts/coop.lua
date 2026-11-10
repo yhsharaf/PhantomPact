@@ -2637,6 +2637,24 @@ return function(api)
         end
     end
 
+    -- What a pile or chest the partner searched raised in their world, its own flow's flags (game.successTags): raised here
+    -- too when it's calm (flowsync.lua), as a search of our copy would have. Its things come by T and our copy goes with O,
+    -- but these never came, and a quest counting them never moved on here: Yuer's three herbs, two found by the partner,
+    -- and she wouldn't take them (a player report on 1.7.1). Either way, the host's search or a guest's. OF <name> <flag> ...
+    handlers.OF = function(rest)
+        local name, flags = (rest or ""):match("^(%S+) (.+)$")
+        if not (name and #name <= MAX_CHEST_NAME and #flags <= 1600 and api.flowsync and api.flowsync.raise) then
+            return
+        end
+        local list = {}
+        for flag in flags:gmatch("%S+") do
+            if #flag <= 200 and #list < 8 then
+                list[#list + 1] = flag
+            end
+        end
+        api.flowsync.raise(list, name)
+    end
+
     handlers.T = function(rest, from)
         local id, count, kind = rest:match("^(%S+) (%d+) (%S+)$")
         count = num(count)
@@ -2773,9 +2791,12 @@ return function(api)
         end
     end
 
-    local function reportChest(name)
+    local function reportChest(name, flags)
         log("Opened " .. name .. ": telling the other player.")
         sendEvent("O", name)
+        if flags and #flags > 0 then
+            sendEvent("OF", name, table.concat(flags, " "))     -- (what its flow raised: handlers.OF)
+        end
     end
 
     -- The host's world decides (FollowHostStory): a chest the host opened before, alone, is opened for a guest too, and pays

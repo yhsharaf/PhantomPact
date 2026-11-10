@@ -3667,12 +3667,16 @@ local function hostsChests()
     Fake.put(far, "CurSwitchState", true)
     s:run(2)
     local late = Fake.chest(g, "BP_Chest_C_10", 900.0, 0.0, 100.0, "Xigu.AC_Deflect")
+    -- (A flag of its own that its opening raises: its flow preset's, as a quest's chest may have.)
+    Fake.put(late, "BP_PBZFlowComponent", { FlowPresetDataList = { { IsValid = function() return true end,
+        AddTagWhenSuccess = { GameplayTags = Fake.list({ { TagName = Fake.name("xg.chest.opened") } }) } } } })
     s:run(2)
     check(field(late, "CurSwitchState") == true and count(g.trace, "PushAccessoryToInventory") == 2,
         "one that wasn't loaded on the guest's side pays when it is")
     s:run(65)
     check(Session.items(g, "Weapon_Material_04") == 6 and count(g.trace, "PushAccessoryToInventory") == 2,
         "named again (for one who joins later), nothing pays twice")
+    check(count(g.globalTags, "^xg%.chest%.opened$") == 1, "and its own flag is raised, as its opening would have")
     local live = Fake.chest(h, "BP_Chest_C_11", 100.0, 0.0, 100.0, LOOT)
     local liveThere = Fake.chest(g, "BP_Chest_C_11", 100.0, 0.0, 100.0, LOOT)
     s:run(2)
@@ -3844,6 +3848,126 @@ local function followTheHost()
         "a boss the host beat while the guest was away is gone on the guest's side once they sync")
     check(field(rg.spawners[Session.indexOf(rg, "boss")], "record") == false, "and beaten in the guest's world")
     allErrors(r)
+end
+
+-- The flags a partner's doing raises in this world too (a player report on 1.7.1, Apprentice Healer: three herbs for
+-- Yuer, two found by the guest. The host's map said they were in, and Yuer wouldn't take them: her hand-in reads the flags
+-- each herb's pile raises as it's searched, not the bag).
+local function questFlags()
+    part("quest flags")
+    local function has(pc, tag)
+        local n = 0
+        for _, t in ipairs(pc.globalTags) do
+            if t == tag then
+                n = n + 1
+            end
+        end
+        return n
+    end
+    local s = party()
+    spread(s)
+    local h, a, b, c = s.pcs[1], s.pcs[2], s.pcs[3], s.pcs[4]
+    local herbs = {}
+    for i, pc in ipairs(s.pcs) do
+        herbs[i] = Fake.pile(pc, "BP_Rubbish_C_UAID_herb1", 600.0, 0.0, 100.0, { "xg.camp.herb1" })
+    end
+    s:run(3)
+    Fake.search(a, herbs[2])
+    s:run(3)
+    check(has(h, "xg.camp.herb1") == 1 and has(b, "xg.camp.herb1") == 1 and has(c, "xg.camp.herb1") == 1,
+        "a pile a guest searched raises its flag in the host's world and the other guests'")
+    check(rawget(herbs[1], "__alive") == false and rawget(herbs[3], "__alive") == false, "their copies of it go, as before")
+    s:run(20)
+    check(has(h, "xg.camp.herb1") == 1 and has(b, "xg.camp.herb1") == 1 and has(c, "xg.camp.herb1") == 1,
+        "once each, the host's flags told on to the guests as well")
+    allErrors(s)
+
+    local p, ph, pg = pair()
+    local mine = Fake.pile(ph, "BP_Rubbish_C_UAID_herb3", 600.0, 0.0, 100.0, { "xg.camp.herb3" })
+    Fake.pile(pg, "BP_Rubbish_C_UAID_herb3", 600.0, 0.0, 100.0, { "xg.camp.herb3" })
+    local plain = Fake.pile(ph, "BP_Rubbish_C_UAID_junk", 700.0, 0.0, 100.0)
+    Fake.pile(pg, "BP_Rubbish_C_UAID_junk", 700.0, 0.0, 100.0)
+    p:run(3)
+    Fake.search(ph, mine)
+    Fake.search(ph, plain)
+    p:run(3)
+    check(has(pg, "xg.camp.herb3") == 1, "a pile the host searched raises its flag in the guest's world")
+    check(count(ph.sent, "^E OF ") == 1, "a pile with no flags of its own sends none")
+    -- Not under an open talk: a flag raised there can finish what the talk is waiting for, as a story step did.
+    local talk = Fake.switch(pg, "WBP_FlowDialog_C", 0.0, 0.0, 0.0)
+    rawset(talk, "IsInViewport", function() return true end)
+    rawset(talk, "IsVisible", function() return true end)
+    local herb2 = Fake.pile(ph, "BP_Rubbish_C_UAID_herb2", 800.0, 0.0, 100.0, { "xg.camp.herb2" })
+    Fake.pile(pg, "BP_Rubbish_C_UAID_herb2", 800.0, 0.0, 100.0, { "xg.camp.herb2" })
+    p:run(1)
+    Fake.search(ph, herb2)
+    p:run(4)
+    check(has(pg, "xg.camp.herb2") == 0, "not while the guest is in a talk")
+    rawset(talk, "__alive", false)
+    p:run(8)
+    check(has(pg, "xg.camp.herb2") == 1, "but once it's over")
+    -- A thing with a flag of its own while it's held (one of the Bagua boy's relics): the game raises it as the thing's card
+    -- closes, and a shared one's card waits for the game's own moment. It comes with the thing.
+    Session.gainItem(pg, "I_RELIC_1")
+    p:run(5)
+    check(Session.items(ph, "I_RELIC_1") == 1 and has(ph, "relic.one") == 1,
+        "a thing the guest found that has a flag while held raises it for the host too")
+    allErrors(p)
+
+    -- And one that came quietly, in the host's bag on joining: no card at all.
+    local j, jh, jg = pair(nil, function(ph2)
+        Session.gainItem(ph2, "I_RELIC_2")
+    end)
+    j:run(20)
+    check(Session.items(jg, "I_RELIC_2") == 1 and has(jg, "relic.two") == 1,
+        "one that came in the host's bag on joining raises it too")
+    check(has(jh, "relic.two") == 0, "(the host's own is the game's, as it picked it up)")
+    allErrors(j)
+
+    -- A step the guest finished, done here for the host (the herbs found, Yuer's first branch): its tasks' flags with it.
+    -- Not a task's that waits for a flag to be gone.
+    local e, eh, eg = pair(nil, function(ph2, pg2)
+        ph2.storyUpTo(3)
+        pg2.storyUpTo(6)
+        ph2.storyTask("Side-Cry", "1", { "cry.herb1", "cry.herb2" })
+        ph2.storyTask("Side-Cry", "1", { "cry.notyet" }, true)
+    end)
+    e:run(30)
+    eg.storyUpTo(#Fake.STORY_ROWS)
+    e:run(60)
+    check(eh.storyState("Side-Cry", "1") == 2 and has(eh, "cry.herb1") == 1 and has(eh, "cry.herb2") == 1,
+        "a guest's finished step, done for the host, raises the flags its tasks wait for")
+    check(has(eh, "cry.notyet") == 0, "but not one a task waits to be gone")
+    allErrors(e)
+
+    -- And the host's, caught up to by a guest.
+    local u, uh, ug = pair(nil, function(ph2, pg2)
+        pg2.storyTask("Side-Cry", "1", { "cry.herb1" })
+    end)
+    uh.storyUpTo(#Fake.STORY_ROWS)
+    ug.storyUpTo(3)
+    u:run(60)
+    check(ug.storyState("Side-Cry", "1") == 2 and has(ug, "cry.herb1") == 1, "a step caught up to raises them too")
+    allErrors(u)
+
+    -- A save left stuck before this (the report's: the step done, the flags never raised, Yuer's hand-in never offered):
+    -- once linked, a quest under way gets the flags of its finished steps back. Not a quest that's over.
+    local m, mh, mg = pair(nil, function(ph2, pg2)
+        for _, pc in ipairs({ ph2, pg2 }) do
+            pc.storyUpTo(5)
+            pc.storyStep("Main-Valley", "2", 1)
+            pc.storyTask("Main-Valley", "1", { "valley.herbs" })
+            pc.storyTask("Boss-Puppet", "S1", { "boss.beaten" })
+        end
+    end)
+    m:run(45)
+    check(has(mh, "valley.herbs") == 1 and has(mg, "valley.herbs") == 1,
+        "a quest under way gets the flags of its finished steps back, the host's world and a guest's")
+    check(has(mh, "boss.beaten") == 0 and has(mg, "boss.beaten") == 0, "not a quest that's over")
+    check(count(mh.logs, "flag of quest steps finished here before put back") == 1, "said once")
+    m:run(45)
+    check(has(mh, "valley.herbs") == 1 and has(mg, "valley.herbs") == 1, "and only once")
+    allErrors(m)
 end
 
 -- A guest whose save has played further: the host's enemies are long dead in it. Its spawners bring them back for the host,
@@ -8368,6 +8492,7 @@ return function(print_, scripts)
     beatenInBoth()
     guestSide()
     followTheHost()
+    questFlags()
     hostsChests()
     looks()
     itemEffects()

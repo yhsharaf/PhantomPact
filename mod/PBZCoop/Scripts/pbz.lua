@@ -1677,6 +1677,14 @@ return function(api)
                 after = game.itemCount(bp, itemId)
             end
             log(string.format("Shared loot: %s x%d (%d -> %d)%s", itemId, count, before, after, line and ", on the right" or ""))
+            -- Its own flag while it's held ("ljc.小雪.收集物1", one of the relics for the Bagua boy): the game raises it as
+            -- its pickup card closes. A quiet add has no card (the bag on joining) and a shared one waits for the game's own
+            -- moment, often long after (the bench, 11-11): a quest counting the flag stayed short. It goes with the thing.
+            game.isNarrative(itemId)
+            local flag = game.heldFlags and game.heldFlags[itemId]
+            if flag and after > 0 and api.flowsync and api.flowsync.raise then
+                api.flowsync.raise({ flag }, itemId)
+            end
         end
         game.granting = false
     end
@@ -5284,15 +5292,17 @@ return function(api)
                     end
                     return out
                 end
-                local ids, kinds = col("ItemId"), col("ItemDetailType")
-                local all = {}          -- (every item's kind: game.pickupSharesDue gives only these)
+                local ids, kinds, held = col("ItemId"), col("ItemDetailType"), col("AddTagWhenHas")
+                local all, flags = {}, {}   -- (every item's kind: game.pickupSharesDue gives only these)
                 for i = 1, #ids do
                     all[ids[i]] = kinds[i] or "?"
                     if (kinds[i] or ""):find("Narrative", 1, true) then
                         set[ids[i]] = true
                     end
+                    flags[ids[i]] = (held[i] or ""):match('TagName="([^"]+)"')
                 end
                 game.itemKinds = all
+                game.heldFlags = flags  -- (a thing's own flag while it's held: grantLoot)
                 game.narrative = set
                 log("Quest items in the game's table: " .. tostring(#ids) .. " items read.")
             end)
@@ -5518,6 +5528,9 @@ return function(api)
         end
         pcall(function() chest:SwitchWithoutPlaySequence() end)
         chests.showOpen(chest, false)
+        if api.flowsync and api.flowsync.raise then
+            api.flowsync.raise(game.successTags(chest), name)     -- (what its own opening raises: game.successTags)
+        end
         log("The host's " .. name .. " is open: " .. (loot and (#loot .. " things and " .. loot.dust .. " dust from it here too.")
             or "it isn't in the game's table, so nothing to pay."))
         return true
@@ -5597,6 +5610,35 @@ return function(api)
         chests.stones.pending[name] = { at = at, rot = rot }
     end
 
+    -- The flags a pile or chest's own flow raises once it's searched: its flow presets' AddTagWhenSuccess (one of Yuer's
+    -- herbs, "xg.营地玉儿.药材1"). A partner's search took our copy away and sent its things (O, T), but never these, and a
+    -- quest counting them stayed short here: two herbs found by the partner, the map saying all three were in, and Yuer not
+    -- taking them (a player report on 1.7.1). They go with the word now (coop.lua's OF). As text, read at once.
+    function game.successTags(a)
+        local tags = {}
+        if not valid(a) then
+            return tags
+        end
+        pcall(function()
+            local list = a.BP_PBZFlowComponent.FlowPresetDataList
+            for i = 1, #list do
+                local p = list[i]
+                pcall(function() p = p:get() or p end)
+                if valid(p) then
+                    pcall(function()
+                        p.AddTagWhenSuccess.GameplayTags:ForEach(function(_, t)
+                            local s = t:get().TagName:ToString()
+                            if s ~= "" and s ~= "None" then
+                                tags[#tags + 1] = s
+                            end
+                        end)
+                    end)
+                end
+            end
+        end)
+        return tags
+    end
+
     -- A pile says nothing once searched, so its own step is what's watched.
     function game.hookPiles(report)
         if pileHooked or not valid(StaticFindObject(PILE_SEARCHED)) then
@@ -5608,7 +5650,8 @@ return function(api)
                 local ok, name = pcall(function() return self:get():GetFName():ToString() end)
                 if ok and not searched[name] then
                     searched[name] = true
-                    report(name)
+                    local _, pile = pcall(function() return self:get() end)
+                    report(name, game.successTags(pile))
                 end
             end)
         end)
@@ -5632,7 +5675,7 @@ return function(api)
                     retiring[name], owed[name] = nil, nil
                     if closedNear[name] then
                         offered[name] = true    -- (opened just now: its things go by what the game gives)
-                        report(name)
+                        report(name, game.successTags(c))
                     elseif offer and not offered[name] then
                         offered[name] = true
                         offer(name)
