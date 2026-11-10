@@ -235,10 +235,17 @@ trip), a Duel "here".
 - Decided, not built (`docs/PVP.md`, "Scope, decided"): split screen has no F6 page; everyone linked plays (leave the
   session to sit out); the F6 page takes a mouse; one finishing move a match.
 - Releasing 1.7.0 (the zip, GitHub, Nexus) waits for your go-ahead: nothing is pushed or posted. The zip is built and
-  checked locally (11-10, `tools/make-release.ps1`): `dist/PhantomPact-1.7.0.zip` from 8bdfc97, 5692 KB, SHA-256
-  E9AE1C514D8CA91459FE1854C524A0BE4D1623C1C22FB7B2ED0A2B24DC821292, Windows Defender clean, file types Nexus takes,
-  its 34 scripts and the ini byte for byte the commit's. The 11-09 builds are kept beside it, out of date
-  (`PhantomPact-1.7.0-da821db.zip`, `PhantomPact-1.7.0-d1bdf5a.zip`).
+  checked locally (11-10, `tools/make-release.ps1`): `dist/PhantomPact-1.7.0.zip` from a962369, 5695 KB, SHA-256
+  C46A59E898488FF7FDF42C771F2D936CC327B19C207FE7E88B87E0953CA8B93B, Windows Defender clean, file types Nexus takes,
+  its 34 scripts and the ini byte for byte the commit's. The older builds are kept beside it, out of date
+  (`PhantomPact-1.7.0-8bdfc97.zip`, `-da821db.zip`, `-d1bdf5a.zip`).
+- The stun-lock report again (11-10, BUGHUNT 221): aae17cc held on the elite it was tested on, not on a real boss. On the
+  Gold-Masked One, both players swinging, 1.7.0 still broke it 5 times in 30 s (9 moves of its own, 21 s reacting).
+  a962369: a partner's blows by the game's posture rules (none in the boss's break and fill, for 6 s after, or while
+  it deflects or dodges), a guest's break filled again, and a break the guest saw played on the host too; two
+  adversarial reviews (18 agents) and their fixes. Bench after: 2 breaks, 15 moves, 13 s reacting (the host alone: 1,
+  23, 7 s); the guest alone, 30 moves in 40 s. Open: a guest's execution of a boss may not show its victim's half on
+  the host (not tried on the bench).
 - 1.6.9's player reports, on this branch too: the stun-lock (aae17cc), the double bar (2444e2b), items twice (6a7c2bb,
   f41c7eb), a partner's finds on the right and their pickups staying taken (03feb1a, BUGHUNT 219), the damage options
   (d1bdf5a). Three adversarial reviews of those (11-09/10; the third: 12 agents, each finding run in the sim and put
