@@ -235,10 +235,10 @@ trip), a Duel "here".
 - Decided, not built (`docs/PVP.md`, "Scope, decided"): split screen has no F6 page; everyone linked plays (leave the
   session to sit out); the F6 page takes a mouse; one finishing move a match.
 - Releasing 1.7.0 (the zip, GitHub, Nexus) waits for your go-ahead: nothing is pushed or posted. The zip is built and
-  checked locally (11-10, `tools/make-release.ps1`): `dist/PhantomPact-1.7.0.zip` from d19a7cf, 5695 KB, SHA-256
-  025D9A7324F39D2054FCBC093606447467328649EB87703BF0C38B562F446182, Windows Defender clean, file types Nexus takes,
+  checked locally (11-10, `tools/make-release.ps1`): `dist/PhantomPact-1.7.0.zip` from 34feae8, 5699 KB, SHA-256
+  4CC7D2F9BE8EDBB3614CACA8A29B24711DEEF5A03A661D9E93D39CE7A1B52A3A, Windows Defender clean, file types Nexus takes,
   its 34 scripts, the ini and INSTALL.md byte for byte the commit's. The older builds are kept beside it, out of date
-  (`PhantomPact-1.7.0-a962369.zip`, `-8bdfc97.zip`, `-da821db.zip`, `-d1bdf5a.zip`).
+  (`PhantomPact-1.7.0-d19a7cf.zip`, `-a962369.zip`, `-8bdfc97.zip`, `-da821db.zip`, `-d1bdf5a.zip`).
 - Bosses at 200% health with a partner, 300% with two, 400% with three (d19a7cf, the user's call 11-10): the ini shipped
   `CoopBossHealth = 200`, so a fight together took about as long as alone; the enemies stayed at 150%. Replaced the same
   day by the next item.
