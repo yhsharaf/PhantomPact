@@ -188,6 +188,47 @@ Bosses also get `TakenReductionMultiplier_Poise` (an `AttributeSetBase` attribut
 100 / `CoopBossPoise` (default 200, so 0.5): the share of poise damage they take. Poise is the game's interrupt number
 (the `CharacterState.Hitreact.Endure.*` levels and each move's action poise), separate from posture (`Shachi`).
 
+Boss super armour (`CoopBossArmor = On`, the user's call 11-10: "the bosses should not be able to be knocked back"):
+while someone is with you (a partner's figure here: this map, alive, not in a scene; this player up; not a fight
+begun alone that someone only watches), a boss (or a boss's ghost twin) this PC runs lets go of a flinch at once, and
+takes up the move the hit cut where it was (`puppets.resumeHost`: its ability again and its montage at that place, as
+`resumeMove` does on a guest's copy, which never stopped it).
+
+How `scaling.letGo` works:
+- It ends a hit state of the flinch family with `ChangeHitState(None, nil, true)` and stops its reaction montage (not
+  the boss's own move). The family is: under `State.Normal` but its scripted `Perform`; `State.Launchingback`;
+  `State.PoiseBreak`; and the poise levels `Break.LvN`.
+- It runs at the start of the scaling tick over the fights' bosses, and in `puppets.watchHost` before a montage goes
+  out. So a flinch it let go never reaches a guest as a move.
+- A hit state it doesn't know is logged once.
+
+`net.bossMayReact` plays no partner flinch on an armoured boss; their break still plays. On a guest, a boss copy's own
+reaction to their hit gives way at once (`puppets.lua`'s `armourCopy`, while `scaling.copiesArmoured`), its hit state
+gone by itself or not. In one of the host's moves it gives way to that move where the host is in it; between moves it
+gives way to nothing. The host's own move stays, and so does a flinch a host without super armour sends; a break, an
+execution and death stay too.
+
+Left out of the ini it's off, so with the row off nothing changes (the `two` sim); the ini ships it On. Left to the
+game:
+- the guard break (`State.Break.*`);
+- an execution (`State.Executing`);
+- death;
+- `Custom`;
+- being frozen;
+- the air and floor states (`InAir`, `Air.Launchingback`, `Landing`, `Lying`, `Getup`, `Root`).
+
+Online only: local co-op has no scaling of its own.
+
+Its armour profile can't do this. The Gold-Masked One's `AbstractEndureConfig` (`AbstractEndure_Minion`: `EndureLevel`
+0 in plain attacks, 2 in skills, deflect and recovery, 3 in ultimates and dodge) gives no armour between moves or in the
+refill after a break, and raising every level to 8 changed nothing. Bench, 11-10, both players swinging every 0.5 s:
+
+| Gold-Masked One | Share of the fight reacting |
+|---|---|
+| Two players, without super armour | 51% |
+| Two players, with super armour (final code: the host's boss; the guest's copy 5%) | 4% |
+| One player | 31% |
+
 A partner's blow on a boss only comes reported (`D`), so the game's own posture rules for it are kept by the mod, on
 both PCs (`game.partnerRefuses`, fed each turn by `game.watchBossBar`: the host from its boss's bar, a guest from the
 host's line). It takes no posture: in a break of the boss's own and the fill after it (the game's own blows take none
@@ -201,13 +242,15 @@ partner blows by the same rules. A partner's break that the game holds a little 
 One's 1055) is emptied on the host and filled 6 s later as a break's; empty is a two-hundredth of the bar
 (`game.emptyBar`), not 1.5, and a blow that leaves the bar a little up, one short of a break, isn't filled. Bench, 11-10,
 the Gold-Masked One, both players swinging every 0.5 s for 30 s: 5 breaks, 9 moves of its own and 21 s reacting before;
-2 breaks, 15 moves and 13 s after (the host alone: 1 break, 23 moves). What's left is the game's own: every hit flinches
-a boss while its broken bar fills, the partner's figure's real (token) blows from behind it too. Open: a guest's
+2 breaks, 15 moves and 13 s after (the host alone: 1 break, 23 moves). What was left was the game's own: every hit
+flinches a boss while its broken bar fills, the partner's figure's real (token) blows from behind it too. Super armour
+(above) lets those flinches go. Open: a guest's
 execution of a boss may not play its victim's half on the host (1.7.0's flinch limit; the state's name is unknown).
 
 Bosses take `CoopBossHealth` / `CoopBossPosture` where given (else the enemies' numbers). The ini ships
-`CoopBossHealth = 200` (11-10, the user's call): 200% with a partner, 300% with two, 400% with three, so a fight takes
-about as long as alone when everyone deals as much (at the enemies' 150% a duo took three quarters of it). How hard an enemy hits is the
+`CoopBossPosture = 200` and no `CoopBossHealth` (11-10, the user's calls after the bench): the guard bar at 200% with a
+partner, 300% with two, 400% with three, and health the enemies' 150%, 200%, 250%. Bench, Gold-Masked One, guard breaks
+a minute: 2.65 for one player, 3.49 for two on the enemies' 130%. How hard an enemy hits is the
 game's own pair of multipliers on what it deals, for each kind of damage (`DealtVulnerabilityMultiplier_<kind>` to raise,
 `DealtReductionMultiplier_<kind>` to lower; Physical, PhysicalSharp, PhysicalBlunt, Fire, Toxin, Ice, Aqua, Lightning,
 Blood, Chaos), times `CoopEnemyDamage` or `CoopBossDamage`, once a body. A number changed (`hitscale`, or the ini when

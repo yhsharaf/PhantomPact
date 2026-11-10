@@ -40,6 +40,8 @@ return function(api)
     local puppets = { attacks = 0, played = 0, failed = 0, noCopy = 0 }
     local byAddr = {}             -- guest: actor address -> { actor, name, target, busyUntil }
     local hostSeen = {}           -- host: enemy name -> { addr, pos } of the montage last sent
+    local hostMoves = {}          -- host: enemy address -> { name, path, ability, start, montage } of the move last sent,
+                                  -- for an armoured boss to take it up again after a flinch (resumeHost)
     local failedOnce = {}         -- guest: moves already logged as not replayed
 
     local function passive(name)
@@ -53,6 +55,12 @@ return function(api)
 
     -- Host, once a snapshot for every living enemy it shares.
     function puppets.watchHost(name, actor, addr)
+        -- (An armoured boss's flinch is let go here first, so it never goes out as a move, and the move it cut is taken up
+        -- again: scaling.lua's CoopBossArmor, resumeHost below.)
+        local body = addr
+        if api.scaling and api.scaling.letGo and api.scaling.letGo(actor, addr) then
+            return
+        end
         -- (Asked each time: kept by address, the list only grew, and a new enemy on a used address could be read through
         -- the old one's animation while that lingered.)
         local ai = api.moves.animOf(actor)
@@ -62,7 +70,7 @@ return function(api)
         local m = ai:GetCurrentActiveMontage()
         local s = hostSeen[name]
         if not valid(m) then
-            hostSeen[name] = nil
+            hostSeen[name], hostMoves[body] = nil, nil
             return
         end
         addr = m:GetAddress()
@@ -78,9 +86,47 @@ return function(api)
                 end
                 coop.sendEvent("A", name, ability or "-", path or "-", string.format("%.2f", pos), after)
                 puppets.attacks = puppets.attacks + 1
+                -- (A move of its own, not a reaction, kept to take up again after a flinch an armoured boss lets go.)
+                local state = game.hitStateOf and game.hitStateOf(actor)
+                hostMoves[body] = (path and (not state or state == "None"))
+                    and { name = name, path = path, ability = ability or "-", start = os.clock() - pos, montage = addr } or nil
             end
         end
         hostSeen[name] = { addr = addr, pos = pos }
+    end
+
+    -- Host: the move last sent for the enemy at this address, while it may still be playing, or nil.
+    function puppets.hostMoveOf(body)
+        return hostMoves[body]
+    end
+
+    -- Host: an armoured boss's move that a hit cut (scaling.lua's letGo), taken up again where it had got to: its ability
+    -- again, for its hits to land, and its animation at that place, as resumeMove does on a guest's copy. The guest's
+    -- copy never stopped it, so nothing goes out. True if there was one; if not, the next move goes out as new.
+    function puppets.resumeHost(actor, body)
+        local move = hostMoves[body]
+        local m = move and api.moves.montage(move.path)
+        local ai = m and api.moves.animOf(actor)
+        local at, len = move and os.clock() - move.start or 0, 0
+        pcall(function() len = m:GetPlayLength() end)
+        if not (ai and at < len - 0.1) then
+            hostMoves[body] = nil
+            if move then
+                hostSeen[move.name] = nil
+            end
+            return false
+        end
+        if move.ability ~= "-" then
+            game.playAbility(actor, move.ability)
+        end
+        if not pcall(function() ai:Montage_Play(m, 1.0, 0, at, true) end) then
+            hostSeen[move.name] = nil
+            return false
+        end
+        move.montage = m:GetAddress()
+        hostSeen[move.name] = { addr = move.montage, pos = at }
+        puppets.resumedHost = (puppets.resumedHost or 0) + 1
+        return true
     end
 
     -- Host: this enemy was in one of its moves at its last turn (a montage playing: an attack, a flinch). A turn to another
@@ -301,6 +347,25 @@ return function(api)
     -- the host's boss attacked.) Its ability again, for its hits to land here, then its animation where the host's is, as
     -- the "A" handler plays it. A break stays: the copy's bar is its own. The montage found by its path each time.
     local RESUME_LOOK_S = 0.1
+    -- The host's move taken up again on this copy where the host is in it: true if it was.
+    local function takeUp(p, actor, clock)
+        local m = api.moves.montage(p.move.path)
+        local ai = m and api.moves.animOf(actor)
+        local at, len = clock - p.move.start, 0
+        pcall(function() len = m:GetPlayLength() end)
+        if not ai or at >= len - 0.1 then
+            return false
+        end
+        game.clearHitState(actor)
+        if p.move.ability ~= "-" then
+            game.playAbility(actor, p.move.ability)
+        end
+        if pcall(function() ai:Montage_Play(m, 1.0, 0, at, true) end) then
+            puppets.resumed = (puppets.resumed or 0) + 1
+            return true
+        end
+        return false
+    end
     local function resumeMove(p, actor, addr, clock)
         if not (p.move and clock >= (p.resumeLookAt or 0)) then
             return
@@ -313,20 +378,49 @@ return function(api)
         if not state or state == "None" or state:find("State.Break", 1, true) then
             return              -- (a posture break's own tag: the poise levels are Hitreact.Break.LvN)
         end
-        local m = api.moves.montage(p.move.path)
-        local ai = m and api.moves.animOf(actor)
-        local at, len = clock - p.move.start, 0
-        pcall(function() len = m:GetPlayLength() end)
-        if not ai or at >= len - 0.1 then
+        takeUp(p, actor, clock)
+    end
+
+    -- CoopBossArmor on a guest (scaling.copiesArmoured): a boss copy's own reaction to this player's hit gives way at once,
+    -- its hit state gone by itself or not. In one of the host's moves to that move where the host is in it, between them
+    -- to nothing, as the host's armoured boss had none. (Bench, 11-10: with super armour on the host the guest still saw
+    -- its copy reacting 15% of the fight, mostly a knockback playing on after its hit state was over.) The host's own move
+    -- stays, a flinch a host without super armour sends among them; so do a break, an execution and death.
+    local REACTION_WORDS = { "hit", "knock", "launch", "poise", "stagger", "react" }
+    local function armourCopy(p, actor, addr, clock, busy)
+        if not (game.isBoss(actor, addr) or (game.bossTwin and game.bossTwin(actor, addr))) then
             return
         end
-        game.clearHitState(actor)
-        if p.move.ability ~= "-" then
-            game.playAbility(actor, p.move.ability)
+        local state = game.hitStateOf and game.hitStateOf(actor)
+        if state and (state:find("Break", 1, true) and not state:find("Break.Lv", 1, true)
+            or state:find("Executing", 1, true) or state:find("Dead", 1, true)) then
+            return
         end
-        if pcall(function() ai:Montage_Play(m, 1.0, 0, at, true) end) then
-            puppets.resumed = (puppets.resumed or 0) + 1
+        local ai = api.moves.animOf(actor)
+        local m = ai and ai:GetCurrentActiveMontage()
+        if not valid(m) then
+            return
         end
+        local path = api.moves.pathOf(m)
+        if p.move and path == p.move.path then
+            return
+        end
+        local words = (m:GetFName():ToString() .. " " .. tostring(path)):lower()
+        local reaction = false
+        for _, word in ipairs(REACTION_WORDS) do
+            reaction = reaction or words:find(word, 1, true) ~= nil
+        end
+        if not reaction then
+            return
+        end
+        if busy and p.move and takeUp(p, actor, clock) then
+            return
+        end
+        if state and state ~= "None" then
+            game.clearHitState(actor)
+        end
+        pcall(function() ai:Montage_Stop(0.1, m) end)
+        puppets.armoured = (puppets.armoured or 0) + 1
     end
 
     -- The host's enemy is carried forward along its own speed from the last update, and the copy moves at that speed
@@ -358,6 +452,12 @@ return function(api)
         end
         if busy then
             resumeMove(p, actor, addr, clock)
+        end
+        if api.scaling and api.scaling.copiesArmoured and clock >= (p.armourLookAt or 0) and api.scaling.copiesArmoured() then
+            -- (A boss copy's own reaction given way, CoopBossArmor. Asked of every copy, not by p.boss, set once: a story
+            -- boss is one only once its bar is up. Not every frame.)
+            p.armourLookAt = clock + RESUME_LOOK_S / 2
+            armourCopy(p, actor, addr, clock, busy)
         end
         if busy and dist < LOCKED_CM then
             if dist > BUSY_CM then

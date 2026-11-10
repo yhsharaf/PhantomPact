@@ -643,6 +643,7 @@ COMMANDS.pvp = api.pvp.command
 COMMANDS.arena = api.arena.command
 COMMANDS.scale = api.scaling.command
 COMMANDS.bosspoise = api.scaling.bossPoiseCommand
+COMMANDS.bossarmor = api.scaling.bossArmorCommand
 COMMANDS.bossscale = api.scaling.bossCommand
 COMMANDS.hitscale = api.scaling.damageCommand
 COMMANDS.difficulty = api.difficulty.command

@@ -8,6 +8,9 @@ TakenReductionMultiplier_Poise at 1, 0.01 or 0, nor with Resistance_Poise at 999
 reads them still needs a boss to test on. A boss's recovery after its guard breaks (docs/BUGHUNT.md 221) is
 bench-checked on the Gold-Masked One. Also not claimed: a guest's execution of a boss showing its victim's half on the
 host (not tried on the bench).
+Also not claimed: that a player's perfect deflect still opens a boss up with super armour on. A script couldn't time
+one on the bench; none of the Gold-Masked One's 21 hit states is a deflect recoil, and the counter reactions seen came
+from plain hits (docs/BUGHUNT.md 222).
 Also not claimed: the guest who can't hurt some bosses (a 1.6.9 report). It wasn't reproduced on the bench, and the change
 tried for a cause that would fit was taken back (docs/BUGHUNT.md 220). It needs the boss's name or the guest's UE4SS.log.
 
@@ -57,12 +60,15 @@ works as before.
 
 **Co-op fixes, from your reports:**
 
-- Bosses fight back: a partner's hits no longer stun-lock a boss. Once its guard breaks it gets its fight back, as it does
-  against one player: your partner's blows take no posture from it while its bar fills again and for 6 s after, nor while
-  it deflects or dodges, and a guard your partner broke fills again (it could stay broken for good). With six players, a
-  boss's ghost twin too. It flinches at a partner's hit only when its posture breaks (once), never in the middle of its
-  own attack. And on the joining player's screen the boss no longer flinches at their every swing: they see its attacks
-  as the host does
+- Bosses fight back: two players can no longer keep a boss stuck. While your partner is with you online, bosses have
+  super armour: a hit doesn't make them flinch, knock them back or cut their attack short, so they keep attacking
+  (`CoopBossArmor = On`; `Off` = the game's own flinches). Breaking a boss's guard still staggers it, and you can still
+  execute it. On our test PC, two players swinging nonstop kept the Gold-Masked One stuck about half the fight; now
+  under a tenth of it (alone: about a third). After its
+  guard breaks it also gets its fight back as against one player: your partner's blows take no posture from it while its
+  bar fills again and for 6 s after, nor while it deflects or dodges, and a guard your partner broke fills again (it
+  could stay broken for good). With six players, a boss's ghost twin too. And on the joining player's screen the boss no
+  longer flinches at their every swing: they see its attacks as the host does
 - A boss turns to whoever is pressing it harder: a turn the game didn't make no longer keeps it on the host for another 10 s
 - Bells: joining a host further along no longer lights every bell they have (Pangzhen's all lit, fast travel everywhere).
   A host's bell lights for you when you walk up to it
@@ -75,11 +81,13 @@ works as before.
   until you opened a chest). A partner's pickup no longer lies there again after a long trip, one that never reached you is
   given to you, and two of you grabbing the same thing at once get one each
 - New options in `PhantomPact.ini`, from your requests: `CoopEnemyDamage` and `CoopBossDamage` set how hard enemies and
-  bosses hit you while your partner is with you (percent, 100 = normal; each PC its own), and `CoopBossHealth` and
-  `CoopBossPosture` give bosses their own numbers apart from `CoopEnemyHealth` and `CoopEnemyPosture`
-- Bosses now have twice their health while your partner is with you, three times with two partners and four times with
-  three, so a boss fight together takes about as long as alone (`CoopBossHealth = 200`; it was the enemies' 150%, and a
-  pair took three quarters of the time). Other enemies stay at 150%
+  bosses hit you while your partner is with you (percent, 100 = normal; each PC its own), `CoopBossHealth` and
+  `CoopBossPosture` give bosses their own numbers apart from `CoopEnemyHealth` and `CoopEnemyPosture`, and
+  `CoopBossArmor` turns bosses' super armour off
+- A boss's guard bar (posture) is now twice as big while your partner is with you, three times with two partners and four
+  times with three, so its guard breaks about as often as when you're alone (`CoopBossPosture = 200`; it was the enemies'
+  130%, and two players broke it far more often). Boss health stays Elden Ring style like the other enemies: 150% with
+  a partner, 200% with two, 250% with three
 - Dying in a boss fight while your partner fights on: you stay down until it's over, and the boss is no longer reset to
   full health a few seconds later (the host's death ended the guest's copy of the fight). A boss's phase scene or an
   execution no longer ends the wait either
@@ -126,14 +134,14 @@ Both players need 1.7.0. Thanks to shilover (Rakka) for the ideas in issue #13, 
 
 **合作修复(来自大家的反馈):**
 
-- 首领会还手了:队友的攻击不会再让首领一直被打断。架势被打破后,它会像面对一名玩家时一样重新反击:在它的架势条重新回满期间以及之后的 6 秒内,以及它弹反或闪避时,队友的攻击不会削减它的架势;队友打破的架势也会重新回满(以前可能一直停在破防状态)。六人时首领的幽影分身也一样。只有架势被打破时才会因队友的攻击硬直(只一次),不会在它自己出招时被打断。客人的画面上,首领也不会再因客人的每一击而硬直:客人看到的攻击和房主看到的一样
+- 首领会还手了:两个人不会再把首领一直打到无法还手。联机有搭档时首领有霸体:挨打不会硬直、不会被击退,攻击也不会被打断,所以它会继续进攻(`CoopBossArmor = On`;设为 `Off` 则是游戏原版的硬直)。破防仍然会让首领踉跄,仍然可以处决它。在我们的测试中,两名玩家不停攻击时,金面人以前约一半时间处于硬直,现在不到十分之一(单人约三分之一)。架势被打破后,它会像面对一名玩家时一样重新反击:在它的架势条重新回满期间以及之后的 6 秒内,以及它弹反或闪避时,队友的攻击不会削减它的架势;队友打破的架势也会重新回满(以前可能一直停在破防状态)。六人时首领的幽影分身也一样。客人的画面上,首领也不会再因客人的每一击而硬直:客人看到的攻击和房主看到的一样
 - 首领会转向压制它更狠的人:游戏没有执行的转向不会再让它多盯房主 10 秒
 - 钟:加入进度更靠前的房主时,不会再点亮房主所有的钟(庞镇全部点亮、到处都能传送)。房主点亮的钟要等你走到旁边才会为你点亮
 - 晚一步加入首领战:不会再多出一条停在满血的首领血条。为你带来的首领会让位给你自己游戏的战斗动画带来的首领
 - 你捡起的东西不会再让另一位玩家得到两份(比如杀气琥珀):你拿走时,对方地上的那一份也会消失。两边游戏都会给的击杀奖励,加入的玩家也只得到一份(队友找到的东西现在大约晚 3 秒到你手上)
 - 队友捡到的东西现在会像你自己捡到时一样,在右侧显示游戏自己的拾取提示(以前要等你开宝箱才会显示)。队友捡走的物品,在你远距离传送再回来后不会再出现在地上;没有送到你手上的那一份也会补给你;两人同时捡同一件东西,各得一份
-- `PhantomPact.ini` 新增选项(来自大家的请求):`CoopEnemyDamage` 和 `CoopBossDamage` 设置有搭档时敌人和首领打你有多疼(百分比,100 为原版;每台电脑各自设置),`CoopBossHealth` 和 `CoopBossPosture` 让首领有自己的血量和架势,与 `CoopEnemyHealth`、`CoopEnemyPosture` 分开
-- 有搭档时首领的血量现在是两倍,两名搭档时三倍,三名搭档时四倍,所以一起打首领的时间与单人差不多(`CoopBossHealth = 200`;以前与普通敌人一样是 150%,两人只用四分之三的时间)。其他敌人仍是 150%
+- `PhantomPact.ini` 新增选项(来自大家的请求):`CoopEnemyDamage` 和 `CoopBossDamage` 设置有搭档时敌人和首领打你有多疼(百分比,100 为原版;每台电脑各自设置),`CoopBossHealth` 和 `CoopBossPosture` 让首领有自己的血量和架势,与 `CoopEnemyHealth`、`CoopEnemyPosture` 分开,`CoopBossArmor` 可关闭首领的霸体
+- 有搭档时首领的架势(破防槽)现在是两倍,两名搭档时三倍,三名搭档时四倍,所以首领被破防的频率与单人时差不多(`CoopBossPosture = 200`;以前与普通敌人一样是 130%,两个人破防得太频繁)。首领血量和其他敌人一样保持艾尔登法环式的数值:有搭档时 150%,两名搭档时 200%,三名搭档时 250%
 - 队友还在首领战中时你倒下:你会一直等到战斗结束,首领不会再在几秒后回满血(房主的死亡曾结束客人那边的战斗)。首领的转阶段动画或处决也不会结束等待
 - 房主在首领战中时加入:按 F3 可立即加入,30 秒后(原来是 3 分钟)无论如何都可以自由行动,不会再站着无法操作
 - 剧情首领:队友先开始的首领战,在你自己的剧情把首领带出来时仍然是你的战斗;小雪重新站起来后不会在客人那边消失;残留的复制体不会再挡住场地旁的钟(“战斗中”)

@@ -106,7 +106,7 @@ Press [b]Esc[/b], [b]F5[/b] or the [b]X[/b] to close the panel.
 [*]Shared dust and bell rests
 [*]The game doesn’t pause while you’re linked, in the F5 panel or the game’s own menu: enemies keep coming
 [*]Partner compass, your partner on the map, and tips when they connect, go down or wander off
-[*]Elden Ring–style co-op difficulty: enemies and bosses get 50% more health and 30% more posture with a partner
+[*]Elden Ring–style co-op difficulty: enemies and bosses get 50% more health and 30% more posture with a partner, bosses twice their guard bar, and super armour so two players can't stun-lock them
 [*]PvP duels with the game’s own block, parry and dodge: turn it on under [b]MORE[/b] in F5
 [/list]
 

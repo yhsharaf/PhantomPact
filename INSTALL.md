@@ -137,23 +137,26 @@ next time they play alone). 66 Days stays 66 Days. Set `CoopDifficulty` in `Phan
 Off to change that; each PC uses its own setting. A PvP match (F6) is Hellwalker for everyone whatever the setting, so
 nobody gets an easier guard; 66 Days stays 66 Days there too, with Hellwalker's perfect deflect window for the match.
 
-Like Elden Ring, enemies and bosses get tougher while your partner is with you: enemies 150% health and 130% posture by
-default, bosses 200% health, so a boss fight with a partner takes about as long as alone. Change `CoopEnemyHealth` /
-`CoopEnemyPosture` and `CoopBossHealth` in `PhantomPact.ini` (percent; 100 = normal). Both players should use the same
-numbers.
+Like Elden Ring, enemies and bosses get tougher while your partner is with you: 150% health and 130% posture by
+default, and bosses twice their posture (the guard bar), so their guard breaks about as often as when you're alone.
+Change `CoopEnemyHealth` / `CoopEnemyPosture` and `CoopBossPosture` in `PhantomPact.ini` (percent; 100 = normal). Both
+players should use the same numbers.
 
-Bosses are also harder to knock out of an attack: `CoopBossPoise = 200` means it takes twice the hits to stagger a boss
-out of a move (100 = normal). Posture is the bar that opens an execution; poise is what stops the interrupts.
+Bosses also have super armour while your partner is with you online (`CoopBossArmor = On`): a hit doesn't make a boss
+flinch, knock it back or cut its attack short, so two players can't keep it stuck and it keeps fighting. Breaking its
+guard still staggers it, and you can still execute it. `Off` = no super armour: bosses flinch at hits as the game has
+them. Both players should use the same setting. (With it Off, `CoopBossPoise = 200` makes a boss take half the poise
+damage, which the game uses to knock it out of a move; 100 = normal.)
 
-Bosses have their own numbers: `CoopBossHealth` (200) and `CoopBossPosture` (left out; either one with a `;` in front,
+Bosses have their own numbers: `CoopBossPosture` (200) and `CoopBossHealth` (left out; either one with a `;` in front,
 bosses take `CoopEnemyHealth` or `CoopEnemyPosture`). And how hard things hit you while your partner is with you:
 `CoopEnemyDamage` for enemies,
 `CoopBossDamage` for bosses (percent; 100 = normal, 150 = half as hard again, 50 = half). Each PC sets its own damage:
 it's what you take. A broken guard's blow stays the game's.
 
 With 4 or 6 Players, each person connected adds the same again, wherever they are, on another map, loading or down: 200%
-and 160% with two connected, 250% and 190% with three, and it stops there (bosses: 300% health with two connected, 400%
-with three). With five or six, the ghost twins make it harder
+and 160% with two connected, 250% and 190% with three, and it stops there (bosses' guard bar: 300% with two connected,
+400% with three). With five or six, the ghost twins make it harder
 instead of more health. It only goes up, so a boss doesn't lose health when someone dies or
 leaves. Someone who joins during a boss fight only watches, so that boss keeps its number until the fight is over, while other
 enemies rise at once.

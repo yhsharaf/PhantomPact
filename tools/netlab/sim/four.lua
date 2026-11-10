@@ -2790,6 +2790,205 @@ local function bossPosture()
     allErrors(s)
 end
 
+-- Boss super armour (CoopBossArmor; the user, 11-10: "the bosses should not be able to be knocked back"): while a partner
+-- is here, a boss the host runs lets go of a flinch at once and never sends it as a move; its guard break, an execution, a
+-- scripted reaction and one on the ground stay; a thug's flinch is the game's; a partner's flinch isn't played on it, their
+-- break is; and with it Off, or alone, a boss flinches as the game has it.
+local function bossArmour()
+    part("boss super armour")
+    local FLINCH = "CharacterState.Hitreact.State.Normal"
+    local BREAK = "CharacterState.HitReact.State.Break.Normal"
+    local HIT = "/PBZCombatAsset/ActorData/Move/Hit1.Hit1"
+    local function state(e)
+        return field(field(e, "hit"), "state")
+    end
+    local function setState(e, tag)
+        Fake.put(field(e, "hit"), "state", tag)
+    end
+    local function montage(e)
+        return field(field(e, "anim"), "montage")
+    end
+    local function setBar(e, v)
+        Fake.put(field(e, "AttributeSetBase").Shachi, "CurrentValue", v)
+        Fake.put(field(e, "AttributeSetBase").Shachi, "BaseValue", v)
+    end
+    local function fight(extraIni)
+        local s, h, g = pair(extraIni or "CoopBossArmor = On\n")     -- (left out of the ini it's off: the ini ships it On)
+        Session.moveTo(h, 2700, 3000)
+        Session.moveTo(g, 3300, 3000)
+        s:run(2)
+        local theirs = Session.enemyOn(h, "boss")
+        h.hudLayout:RegisterBossHPBar(theirs)
+        s:run(1)
+        return s, h, g, theirs, Session.enemyOn(g, "boss")
+    end
+    local function sentSince(pc, n, pattern)
+        for i = n + 1, #pc.sent do
+            if pc.sent[i]:find(pattern) then
+                return true
+            end
+        end
+        return false
+    end
+
+    local s, h, g, theirs, copy = fight()
+    local n = #h.sent
+    setState(theirs, FLINCH)
+    Session.enemyMove(h, "boss", HIT)
+    s:run(0.2)
+    check(state(theirs) == "None", "a boss's flinch is let go at once while a partner is here (" .. tostring(state(theirs)) .. ")")
+    check(montage(theirs) == nil, "its reaction stops with it")
+    check(not sentSince(h, n, "Hit1%.Hit1"), "and the flinch never goes to the guest as a move")
+    for _, tag in ipairs({ "CharacterState.Hitreact.State.Normal.Knockback", "CharacterState.Hitreact.State.Normal.Heavy",
+        "CharacterState.Hitreact.State.Normal.Counter", "CharacterState.Hitreact.State.NormalLoop",
+        "CharacterState.Hitreact.State.Launchingback", "CharacterState.Hitreact.State.PoiseBreak" }) do
+        setState(theirs, tag)
+        s:run(0.2)
+        check(state(theirs) == "None", "let go too: " .. tag:gsub("CharacterState%.Hitreact%.", ""))
+    end
+    for _, tag in ipairs({ BREAK, "CharacterState.Hitreact.State.Break.State", "CharacterState.HitReact.State.Executing",
+        "CharacterState.HitReact.State.Normal.Perform", "CharacterState.Hitreact.State.Lying",
+        "CharacterState.Hitreact.State.InAir", "CharacterState.Hitreact.State.Frozen" }) do
+        setState(theirs, tag)
+        s:run(0.2)
+        check(state(theirs) == tag, "left to the game: " .. tag:gsub("CharacterState%.Hit[Rr]eact%.", ""))
+        setState(theirs, "None")
+    end
+    -- A thug isn't a boss: its flinch is the game's.
+    local thug = Session.enemyOn(h, "thug1")
+    setState(thug, FLINCH)
+    s:run(0.2)
+    check(state(thug) == FLINCH, "a thug's flinch is left to the game")
+    setState(thug, "None")
+    -- On the guest, between the host's moves, the copy's own flinch at their hit is let go too: the host's boss had none.
+    -- (On the bench the guest still saw its copy flinch a quarter of the fight.)
+    Session.enemyMove(h, "boss", nil)
+    setState(theirs, "None")
+    s:run(5)
+    setState(copy, FLINCH)
+    Session.enemyMove(g, "boss", HIT)
+    s:run(0.3)
+    check(state(copy) == "None" and montage(copy) == nil,
+        "the guest's copy lets its own flinch go between the host's moves (" .. tostring(state(copy)) .. ")")
+    -- And a reaction of its own that plays on after its hit state is over (the knockback the guest saw on the bench).
+    Session.enemyMove(g, "boss", HIT)
+    s:run(0.3)
+    check(montage(copy) == nil, "and a reaction of the copy's own playing on with no hit state")
+    -- A guest's flinch isn't played on the host's boss; their break is. (The host's boss between moves and past the wait
+    -- between flinches first: in one of its moves, the scripts before took no flinch of theirs either.)
+    Session.enemyMove(h, "boss", nil)
+    setState(theirs, "None")
+    s:run(4)
+    setState(copy, FLINCH)
+    Session.enemyMove(g, "boss", HIT)
+    swing(g, copy, select(1, Fake.health(copy)) - 50)
+    s:run(0.3)
+    check(state(theirs) ~= FLINCH and state(theirs) ~= "CharacterState.Hitreact.State.Normal",
+        "a guest's flinch isn't played on an armoured boss (" .. tostring(state(theirs)) .. ")")
+    Session.enemyMove(g, "boss", nil)
+    setState(copy, "None")
+    s:run(1)
+    setBar(theirs, 40)
+    s:run(1.5)
+    setBar(copy, 40)
+    s:run(0.1)
+    setState(copy, BREAK)
+    setBar(copy, 0)
+    swing(g, copy, select(1, Fake.health(copy)) - 50)
+    s:run(0.3)
+    check(state(theirs) == BREAK, "a guest's break still plays on it (" .. tostring(state(theirs)) .. ")")
+    allErrors(s)
+
+    -- A hit that cuts one of its moves: the move goes on where it was, and nothing new goes to the guest, whose copy plays it
+    -- on (super armour: the hit neither stuns it nor stops it).
+    local E1 = "/PBZCombatAsset/ActorData/Move/E1.E1"
+    local function playing(e)
+        local m = montage(e)
+        return m and m:GetFullName():gsub("^%S+ ", "") or "-"
+    end
+    setState(theirs, "None")
+    s:run(1)
+    Session.enemyMove(h, "boss", E1)
+    s:run(0.5)
+    n = #h.sent
+    setState(theirs, FLINCH)
+    Session.enemyMove(h, "boss", HIT)
+    s:run(0.2)
+    check(state(theirs) == "None" and playing(theirs) == E1, "a hit that cut its move: the move goes on (" .. playing(theirs) .. ")")
+    check(not sentSince(h, n, "Hit1%.Hit1") and not sentSince(h, n, "E1%.E1"), "and nothing new goes to the guest")
+    check(playing(copy) == E1, "whose copy plays it on (" .. playing(copy) .. ")")
+    -- The copy's own reaction to the guest's hit in that move gives way to the move.
+    Session.enemyMove(g, "boss", HIT)
+    s:run(0.3)
+    check(playing(copy) == E1, "the copy's own reaction in the host's move gives way to the move (" .. playing(copy) .. ")")
+    Session.enemyMove(h, "boss", nil)
+    s:run(2)
+    -- A guest whose own CoopBossArmor is off: their copy keeps its flinch and tells the host, which doesn't play it.
+    Session.command(g, "bossarmor off")
+    local played = field(field(theirs, "anim"), "played") or 0
+    setState(copy, FLINCH)
+    Session.enemyMove(g, "boss", HIT)
+    swing(g, copy, select(1, Fake.health(copy)) - 50)
+    s:run(0.5)
+    check(count(g.sent, "^E D sp:boss .*CharacterState%.Hitreact%.State%.Normal$") >= 1, "a guest without it reports their copy's flinch")
+    check(state(theirs) ~= FLINCH and (field(field(theirs, "anim"), "played") or 0) == played,
+        "and the host's armoured boss doesn't play it")
+    Session.enemyMove(g, "boss", nil)
+    setState(copy, "None")
+    allErrors(s)
+
+    -- CoopBossArmor = Off: as the game has it, and its flinch goes to the guest as a move, as ever.
+    s, h, g, theirs = fight("CoopBossArmor = Off\n")
+    n = #h.sent
+    setState(theirs, FLINCH)
+    Session.enemyMove(h, "boss", HIT)
+    s:run(0.3)
+    check(state(theirs) == FLINCH, "CoopBossArmor = Off: a boss flinches as the game has it")
+    check(sentSince(h, n, "Hit1%.Hit1"), "and its flinch goes to the guest as a move, as ever")
+    check(count(h.logs, "flinch from hits as the game has it") >= 1, "and the log says so")
+    allErrors(s)
+
+    -- Not with you: the partner on another map, or down. A boss you fight alone flinches as the game has it.
+    s, h, g, theirs = fight()
+    g.map = "Map_Other"
+    Session.moveTo(g, 90000, -70000)
+    s:run(8)            -- (their ghost goes 3 s after their map does: GHOST_AWAY_S)
+    setState(theirs, FLINCH)
+    s:run(0.3)
+    check(state(theirs) == FLINCH, "the partner on another map: a boss fought alone flinches as the game has it")
+    allErrors(s)
+    s, h, g, theirs = fight()
+    Session.die(g)
+    s:run(4)
+    setState(theirs, FLINCH)
+    s:run(0.3)
+    check(state(theirs) == FLINCH, "the partner down: the same")
+    -- A fight begun alone that the partner then joins: they only watch it, and it keeps the game's flinches.
+    s, h, g = pair("CoopBossArmor = On\n")
+    g.map = "Map_Other"
+    Session.moveTo(g, 90000, -70000)
+    Session.moveTo(h, 2700, 3000)
+    s:run(3)
+    theirs = Session.enemyOn(h, "boss")
+    h.hudLayout:RegisterBossHPBar(theirs)
+    s:run(3)
+    g.map = h.map
+    Session.moveTo(g, 3300, 3000)
+    s:run(4)
+    setState(theirs, FLINCH)
+    s:run(0.3)
+    check(state(theirs) == FLINCH, "a fight begun alone that the partner joins: it keeps the game's flinches")
+    allErrors(s)
+
+    -- Alone (the partner gone): as the game has it.
+    s, h, g, theirs = fight()
+    g.cut = true
+    s:run(15)
+    setState(theirs, FLINCH)
+    s:run(0.3)
+    check(state(theirs) == FLINCH, "alone, a boss flinches as the game has it")
+end
+
 -- A boss beaten in co-op is beaten in both saves, and two saves that disagree are brought round to the host's.
 local function beatenInBoth()
     part("a boss beaten in both worlds")
@@ -5527,22 +5726,33 @@ local function scaling()
     check(math.abs(poise(q.pcs[1], "boss") - 0.25) < 1e-6, "CoopBossPoise = 400: a quarter")
     allErrors(q)
 
-    -- The ini as it ships: bosses at 200% health with a partner, 300% with two, 400% with three, so a fight takes about as
-    -- long as alone when everyone deals as much (the user's call, 11-10: at the enemies' 150% a duo took three quarters of
-    -- the time). The enemies stay at their 150%.
-    local shippedBoss = tonumber(Session.shippedIni():match("\nCoopBossHealth = (%d+)"))
-    check(shippedBoss == 200, "the ini as it ships gives bosses 200% health with a partner (" .. tostring(shippedBoss) .. ")")
-    for _, case in ipairs({ { 2, 10000, 900 }, { 3, 15000, 1200 }, { 4, 20000, 1500 } }) do
+    -- The ini as it ships (the user's calls, 11-10, after the bench): bosses on the enemies' health, 150% with a partner,
+    -- 200% with two, 250% with three; their guard bar twice, three and four times, so it breaks about as often as alone;
+    -- super armour on. Its own lines, read through the mod's own ini path.
+    local shipped = Session.shippedIni()
+    local function active(key)
+        return shipped:match("\n" .. key .. " = ([^\r\n]+)")
+    end
+    check(active("CoopBossHealth") == nil and active("CoopBossPosture") == "200" and active("CoopBossArmor") == "On",
+        string.format("the ini as it ships: bosses on the enemies' health, a 200%% guard bar, super armour on (%s, %s, %s)",
+            tostring(active("CoopBossHealth")), tostring(active("CoopBossPosture")), tostring(active("CoopBossArmor"))))
+    local shippedLines = ""
+    for _, key in ipairs({ "CoopEnemyHealth", "CoopEnemyPosture", "CoopBossHealth", "CoopBossPosture", "CoopBossArmor" }) do
+        if active(key) then
+            shippedLines = shippedLines .. key .. " = " .. active(key) .. "\n"
+        end
+    end
+    for _, case in ipairs({ { 2, 7500, 800, 900 }, { 3, 10000, 1200, 1200 }, { 4, 12500, 1600, 1500 } }) do
         local roles = { "Host" }
         for i = 2, case[1] do
             roles[i] = "Guest"
         end
-        local b = party(nil, "CoopBossHealth = 200\n", roles)
+        local b = party(nil, shippedLines, roles)
         b:run(6)
-        local bossMax, thugMax = max(b.pcs[1], "boss"), max(b.pcs[1], "thug1")
-        check(bossMax == case[2] and thugMax == case[3], string.format(
-            "%d players: the boss at %d%% (%.0f), the others at the enemies' %d%% (%.0f)", case[1], case[2] / 50, bossMax,
-            case[3] / 6, thugMax))
+        local bossMax, bossBar = max(b.pcs[1], "boss")
+        local thugMax = max(b.pcs[1], "thug1")
+        check(bossMax == case[2] and math.abs(bossBar - case[3]) < 0.01 and thugMax == case[4], string.format(
+            "%d players: the boss at %.0f health and a %.0f guard bar, the others at %.0f", case[1], bossMax, bossBar, thugMax))
         allErrors(b)
     end
 
@@ -6738,6 +6948,7 @@ return function(print_, scripts)
     hitReactions()
     bossReactions()
     bossPosture()
+    bossArmour()
     pickupsFresh()
     pickupsShown()
     pickupsRaced()

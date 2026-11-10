@@ -36,6 +36,7 @@ return function(api)
         health = 1.5,       -- CoopEnemyHealth / 100
         posture = 1.3,      -- CoopEnemyPosture / 100
         bossPoise = 2.0,    -- CoopBossPoise / 100
+        bossArmor = false,  -- CoopBossArmor = On (the ini ships it On; left out, the game's own flinches)
         bossHealth = nil,   -- CoopBossHealth / 100, or nil: health
         bossPosture = nil,  -- CoopBossPosture / 100, or nil: posture
         damage = 1.0,       -- CoopEnemyDamage / 100
@@ -193,6 +194,127 @@ return function(api)
             log(string.format("Co-op difficulty: boss %s at %d%% poise.", name, math.floor(scaling.bossPoise * 100 + 0.5)))
         end
         return ok
+    end
+
+    -- Boss super armour (CoopBossArmor, On as the ini ships; the user, 11-10: "the bosses should not be able to be knocked
+    -- back ... if they get knocked back or react to hit they can't do anything"). While someone is with you, a boss this PC
+    -- runs lets go of a flinch from a hit at once, with its reaction's montage, and takes up the move the hit cut where it
+    -- was (puppets.resumeHost), so the hit neither stops it nor stuns it. Its guard break (State.Break) and an execution stay
+    -- the game's. On the bench, 11-10, the Gold-Masked One with two players swinging spent 51% of the fight reacting
+    -- without it and 4% with it (31% with one player). Its armour profile can't do this: the Gold-Masked One's,
+    -- AbstractEndure_Minion, has none in its plain attacks, between moves or in the refill after a break, and every level
+    -- put at 8 changed nothing. The host doesn't send a flinch it let go (puppets.watchHost), nor plays a partner's on an
+    -- armoured boss (coop.lua's bossMayReact); a guest's copy gives its own reactions way (puppets.lua's armourCopy).
+    -- The hit states let go (after "Hitreact."): the flinch family under State.Normal (light, heavy, knockback, counter,
+    -- the loop) but its scripted Perform, a knock back on the ground, a poise stagger, and the poise levels Break.LvN. The
+    -- Gold-Masked One's HitreactStatesConfig has 21 (bench, 11-10). Left to the game: the guard break (State.Break.*), an
+    -- execution (State.Executing), death, Custom, being frozen, and the air and floor states (InAir, Air.Launchingback,
+    -- Landing, Lying, Getup, Root): a body let go there could be left hanging. One not known here is logged once.
+    local LEFT = {
+        ["State.Break.Normal"] = true, ["State.Break.State"] = true, ["State.Executing"] = true, ["State.Dead"] = true,
+        ["State.DeadLoop"] = true, ["State.Normal.Perform"] = true, ["State.Custom"] = true, ["State.Frozen"] = true,
+        ["State.InAir"] = true, ["State.Air.Launchingback"] = true, ["State.Landing"] = true, ["State.Lying"] = true,
+        ["State.Getup"] = true, ["State.Root"] = true,
+    }
+    local function lettable(kind)
+        if LEFT[kind] then
+            return false
+        end
+        return kind:find("^State%.Normal") ~= nil or kind == "State.Launchingback" or kind == "State.PoiseBreak"
+            or kind:find("^Break%.Lv%d+$") ~= nil
+    end
+    local REACTION_WORDS = { "hit", "knock", "launch", "poise", "stagger", "react" }
+    local unknownSaid, unknownN = {}, 0
+    scaling.letGoCount = 0
+
+    -- Someone with you as the rest of co-op difficulty means it: a partner's figure here (this map, alive, not in a scene)
+    -- and this player up. (By the connection alone, a partner on another map or dead gave a boss fought alone its armour:
+    -- the reviews of 11-10.)
+    local function partnerHere()
+        if net.deadSince ~= nil then
+            return false
+        end
+        for _, p in ipairs(api.coop.partners()) do
+            if valid(p.ghost) and not p.ghostHidden and not p.silent then
+                return true
+            end
+        end
+        return false
+    end
+
+    -- Whether this body, on this PC, wears it now: a boss or a boss's ghost twin that this PC runs, someone with you, and
+    -- not a fight begun alone that someone only watches (it keeps its numbers too: soloFights).
+    function scaling.armoured(actor, addr)
+        if not scaling.bossArmor or not partnerHere() then
+            return false
+        end
+        addr = addr or actor:GetAddress()
+        if soloFights[addr] and game.bossFightActive() then
+            return false
+        end
+        if api.puppets and api.puppets.follows and api.puppets.follows(addr) then
+            return false            -- (a copy: the host's boss does what it does)
+        end
+        return game.isBoss(actor, addr) or (game.bossTwin and game.bossTwin(actor, addr)) or false
+    end
+
+    -- The letting go itself: a hit state of the flinch family ended, then its reaction montage stopped (not keep: the move
+    -- it goes on with, an additive flinch over it). True if there was one. (ChangeHitState's third argument ends the
+    -- reaction's strength task too, its push; game.clearHitState passes false, to drop a copy's tag alone.)
+    local function letGoNow(actor, keep)
+        local state, comp = game.hitStateOf(actor)
+        local kind = comp and state and state:match("[Hh]it[Rr]eact%.(.+)$")
+        if not kind or kind == "None" then
+            return false
+        end
+        if not lettable(kind) then
+            if not LEFT[kind] and not unknownSaid[kind] and unknownN < 40 then      -- (names off the game: capped)
+                unknownSaid[kind], unknownN = true, unknownN + 1
+                log("Super armour: a boss's hit state " .. kind .. " left to the game (not one known here).")
+            end
+            return false
+        end
+        if not pcall(function() comp:ChangeHitState({ TagName = FName("None") }, nil, true) end) then
+            return false
+        end
+        pcall(function()
+            local anim = api.moves.animOf(actor)
+            local m = anim and anim:GetCurrentActiveMontage()
+            if valid(m) and m:GetAddress() ~= keep then
+                local n = (m:GetFName():ToString() .. " " .. tostring(api.moves.pathOf(m))):lower()
+                for _, word in ipairs(REACTION_WORDS) do
+                    if n:find(word, 1, true) then
+                        anim:Montage_Stop(0.1, m)
+                        break
+                    end
+                end
+            end
+        end)
+        scaling.letGoCount = scaling.letGoCount + 1
+        return true
+    end
+
+    -- An armoured boss's flinch let go, and the move it cut taken up again: true if it had one.
+    function scaling.letGo(actor, addr)
+        if not scaling.armoured(actor, addr) then
+            return false
+        end
+        addr = addr or actor:GetAddress()
+        local move = api.puppets and api.puppets.hostMoveOf and api.puppets.hostMoveOf(addr)
+        if not letGoNow(actor, move and move.montage) then
+            return false
+        end
+        if api.puppets and api.puppets.resumeHost then
+            api.puppets.resumeHost(actor, addr)
+        end
+        return true
+    end
+
+    -- Whether a guest's copies of bosses wear it now (puppets.lua's armourCopy: a copy's own reaction to this player's hit
+    -- gives way, as the host's armoured boss had none). By this PC's own CoopBossArmor, which both players should set the
+    -- same: a host without it sends its boss's flinches as moves, and those play here as ever.
+    function scaling.copiesArmoured()
+        return scaling.bossArmor and partnerHere()
     end
 
     -- How hard it hits: the game's own multipliers of the damage it deals, each kind's (CoopEnemyDamage or CoopBossDamage).
@@ -389,7 +511,18 @@ return function(api)
             end
         end
     end
-    api.coop.extraTicks.scaling = tick
+    -- The bosses of the fights going on, every tick (EXTRA_S), before anything else here: their flinches let go. (A boss
+    -- shared with a guest is also looked at in each snapshot, puppets.watchHost, before a flinch could go out as a move; a
+    -- ghost twin only there.) Not a tick of its own: a new entry in coop's extraTicks changes the order they all run in.
+    local function armourTick()
+        if scaling.bossArmor then
+            for _, boss in ipairs(game.bossActors()) do
+                scaling.letGo(boss)
+            end
+        end
+        return tick()
+    end
+    api.coop.extraTicks.scaling = armourTick
 
     -- scale <health %> [posture %]   (100 100 = normal enemies)
     function scaling.command(args)
@@ -412,6 +545,16 @@ return function(api)
         end
         log(string.format("Co-op difficulty: bosses at %d%% poise while your partner is here.",
             math.floor(scaling.bossPoise * 100 + 0.5)))
+    end
+
+    -- bossarmor on | off   (read at start from CoopBossArmor)
+    function scaling.bossArmorCommand(args)
+        local v = (args or ""):lower():match("^%s*(%a+)")
+        if v == "on" or v == "off" then
+            scaling.bossArmor = v == "on"
+        end
+        log(string.format("Co-op difficulty: bosses %s while your partner is here.",
+            scaling.bossArmor and "don't flinch from hits (super armour)" or "flinch from hits as the game has it"))
     end
 
     -- bossscale <health %> [posture %] | off   (read at start from CoopBossHealth / CoopBossPosture; off: bosses take scale's

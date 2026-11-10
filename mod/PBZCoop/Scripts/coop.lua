@@ -2371,6 +2371,11 @@ return function(api)
     net.bossReactAt = {}
     net.bossBrokeAt = {}
     function net.bossMayReact(name, actor, emptied)
+        -- (An armoured boss takes no flinch of a partner's, scaling.lua's CoopBossArmor: its own would be let go anyway. A
+        -- break still plays.)
+        if not emptied and api.scaling and api.scaling.armoured and api.scaling.armoured(actor) then
+            return false
+        end
         local now = os.clock()
         local wait = net.BOSS_REACT_S * ((api.scaling and api.scaling.bossPoise) or 2)
         if emptied then

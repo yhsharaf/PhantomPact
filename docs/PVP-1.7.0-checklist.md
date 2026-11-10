@@ -239,8 +239,18 @@ trip), a Duel "here".
   025D9A7324F39D2054FCBC093606447467328649EB87703BF0C38B562F446182, Windows Defender clean, file types Nexus takes,
   its 34 scripts, the ini and INSTALL.md byte for byte the commit's. The older builds are kept beside it, out of date
   (`PhantomPact-1.7.0-a962369.zip`, `-8bdfc97.zip`, `-da821db.zip`, `-d1bdf5a.zip`).
-- Bosses at 200% health with a partner, 300% with two, 400% with three (d19a7cf, the user's call 11-10): the ini ships
-  `CoopBossHealth = 200`, so a fight together takes about as long as alone; the enemies stay at 150%.
+- Bosses at 200% health with a partner, 300% with two, 400% with three (d19a7cf, the user's call 11-10): the ini shipped
+  `CoopBossHealth = 200`, so a fight together took about as long as alone; the enemies stayed at 150%. Replaced the same
+  day by the next item.
+- Boss super armour and a bigger guard bar (BUGHUNT 222, the user's calls 11-10 after the bench). The cause the user found
+  watching the bench: every hit made a boss flinch, so two players kept it stuck about half the fight (51% on the
+  Gold-Masked One, against 31% for one player). Changes:
+  - `CoopBossArmor = On`: while a partner is here, a boss's flinch is let go at once, the move a hit cut goes on, and a
+    guest's copy drops its own reactions; the guard break and an execution stay. Bench, the final code: the host's boss
+    4% stuck, the guest's view 5%, nearly all of it the guard break's stagger.
+  - Not proven: a player's perfect deflect with it on. A script couldn't time one.
+  - `CoopBossPosture = 200`: the guard bar 200/300/400%, so it breaks about as often as alone.
+  - Health back to the enemies' 150/200/250%: `CoopBossHealth` is left out.
 - The stun-lock report again (11-10, BUGHUNT 221): aae17cc held on the elite it was tested on, not on a real boss. On the
   Gold-Masked One, both players swinging, 1.7.0 still broke it 5 times in 30 s (9 moves of its own, 21 s reacting).
   a962369: a partner's blows by the game's posture rules (none in the boss's break and fill, for 6 s after, or while
