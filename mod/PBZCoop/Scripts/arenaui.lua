@@ -47,9 +47,14 @@ return function(api)
         return api.lang and api.lang.code == "zh"
     end
 
+    -- Arabic, and the one font that draws it is in (pbz.lua's game.arabicFont): else the English words, not boxes.
+    local function arabic()
+        return api.lang and api.lang.arabic() and api.game.arabicFont()
+    end
+
     -- A picture in the player's language, where it has one.
     local function worded(tex)
-        return zh() and ("zh_" .. tex) or tex
+        return api.lang and (api.lang.prefix() .. tex) or tex
     end
 
     -- The screen's size, asked again once a second (a window resized), not at every tick and frame.
@@ -456,9 +461,19 @@ return function(api)
         setText(p, NUMBERS[k], LOOK.FONT, LOOK.NUMBER_PT, LOOK.BONE)
         return p
     end
+    -- A word under the countdown or TIME'S UP in the player's language: Arabic in the one font the game can draw it in
+    -- (pbz.lua's game.arabicFont), with no gap between its letters (that would break their joins).
+    local function sayWord(word)
+        if arabic() then
+            return api.lang.say(word), api.game.ARABIC_FONT, true
+        end
+        return word, LOOK.WORD_FONT, false
+    end
+
     local function wordPart(k)
         local p = textPart("cd_w" .. k, 600, 120, 5)
-        setText(p, WORDS[k], LOOK.WORD_FONT, LOOK.WORD_PT, LOOK.BONE, 600)
+        local text, font, arabic = sayWord(WORDS[k])
+        setText(p, text, font, LOOK.WORD_PT, LOOK.BONE, not arabic and 600 or 0)
         return p
     end
     local function fightPart()
@@ -468,7 +483,8 @@ return function(api)
     end
     local function fightWordPart()
         local p = textPart("cd_wf", 600, 120, 5)
-        setText(p, "FIGHT", LOOK.WORD_FONT, LOOK.WORD_PT + 6, LOOK.CRIMSON, 700)
+        local text, font, arabic = sayWord("FIGHT")
+        setText(p, text, font, LOOK.WORD_PT + 6, LOOK.CRIMSON, not arabic and 700 or 0)
         return p
     end
 
@@ -611,7 +627,8 @@ return function(api)
     end
     local function timeUpWordPart()
         local p = textPart("tu_en", 1100, 170, 5)
-        setText(p, "TIME'S UP", LOOK.WORD_FONT, LOOK.TIMEUP_WORD_PT, LOOK.BONE, 250)
+        local text, font, arabic = sayWord("TIME'S UP")
+        setText(p, text, font, LOOK.TIMEUP_WORD_PT, LOOK.BONE, not arabic and 250 or 0)
         return p
     end
 
@@ -761,6 +778,9 @@ return function(api)
 
     -- A foe's name over their bar, in the player's language.
     local function foeName(slot)
+        if arabic() then
+            return api.lang.say("PLAYER ") .. tostring(slot)
+        end
         return (zh() and "玩家 " or "PLAYER ") .. tostring(slot)
     end
 
@@ -772,7 +792,8 @@ return function(api)
             return text
         end
         if m.mode == "duel" then
-            text = text .. string.format("  ·  %s %d – %d", zh() and "你" or "YOU", m.score[mine] or 0, m.score[3 - mine] or 0)
+            local you = arabic() and api.lang.say("YOU") or (zh() and "你" or "YOU")
+            text = text .. string.format("  ·  %s %d – %d", you, m.score[mine] or 0, m.score[3 - mine] or 0)
         end
         local left = (m.phase == "count" or m.phase == "fight" or m.phase == "out") and clockLeft(m, now)
         if left then

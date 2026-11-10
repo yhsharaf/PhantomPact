@@ -18,6 +18,7 @@ return function(api)
     local ARENA_W, ARENA_H = 160, 104
     local W_CARD_W, W_CARD_H = 160, 52
     local WORDS_Y = 322
+    local WORDS_FIT = 110           -- letters a line in the box holds before it breaks (lang.fit)
     local TIP_FROM_BOTTOM = 30
     local CLOSE = { x = 848, y = 14, w = 38, h = 38 }
     local MODES = { duel = { x = 40, y = 118 }, death = { x = 228, y = 118 } }
@@ -45,7 +46,7 @@ return function(api)
     local words, wordsWidget, wordsAt = nil, nil, 0
 
     local function worded(name, tex, w, h, z)
-        tex = (api.lang.code == "zh" and "zh_" or "") .. tex
+        tex = api.lang.prefix() .. tex
         local p = kit.part(name, tex, w, h, z)
         kit.picture(p, tex)
         return p
@@ -55,6 +56,15 @@ return function(api)
         local p = kit.part(name, tex, w, h, z)
         kit.picture(p, tex)
         return p
+    end
+
+    -- A weapon's card: the game's own names for it, so its Chinese in Chinese and its English otherwise, Arabic too: the
+    -- game has no Arabic, so players know the weapons by those (the user, 11-10).
+    local function named(name, tex, w, h, z)
+        if api.lang.code == "zh" then
+            return worded(name, tex, w, h, z)
+        end
+        return plain(name, tex, w, h, z)
     end
 
     local function isHost()
@@ -128,7 +138,15 @@ return function(api)
         end
         if text ~= words then
             words = text
-            wordsWidget:SetText(FText(api.lang.say(text)))
+            if api.lang.arabic() then
+                wordsWidget:SetText(FText(api.lang.fit(text, WORDS_FIT)))    -- (hidden, for the bar's size: pbz.lua)
+                game.arabicTip(wordsWidget, api.lang.say(text), nil, 1100)    -- (wrapped inside the box)
+            else
+                if game.arabicTipUsed then
+                    game.arabicTip(wordsWidget, nil)
+                end
+                wordsWidget:SetText(FText(api.lang.fit(api.lang.say(text), WORDS_FIT)))
+            end
         end
         local o = kit.origin
         local screenH = 2 * o.y + kit.H * o.scale
@@ -308,7 +326,9 @@ return function(api)
             if slot then
                 local y = ROW_Y + (i - 1) * ROW_STEP
                 local p = l.players[slot]
-                kit.place(plain("pv_row" .. i, "pvp_row_" .. slot, 250, 26, 1), 40, y)
+                -- (PLAYER n in English and Chinese, as before; اللاعب n in Arabic: art/make_arabic_art.py.)
+                local row = (api.lang.arabic() and "ar_" or "") .. "pvp_row_" .. slot
+                kit.place(plain("pv_row" .. i, row, 250, 26, 1), 40, y)
                 local team = (p.team and p.team > 0) and p.team or 1
                 local tag = worded("pv_team" .. i, "pvp_team_" .. team, 96, 24, 1)
                 kit.place(tag, TEAM_X, y + 1)
@@ -325,7 +345,7 @@ return function(api)
         for _, s in ipairs(SLOTS) do
             kit.place(worded("pv_slot_" .. s.key, "pvp_slot_" .. s.key, 176, 18, 1), s.x, s.y - 18)
             local id = preset[s.kind][s.n]
-            kit.place(worded("pv_w_" .. s.key, "pvp_w_" .. id, W_CARD_W, W_CARD_H, 1), s.x, s.y)
+            kit.place(named("pv_w_" .. s.key, "pvp_w_" .. id, W_CARD_W, W_CARD_H, 1), s.x, s.y)
         end
     end
 
@@ -341,7 +361,7 @@ return function(api)
             if w then
                 local cx = PICK_X + ((i - 1) % 5) * PICK_STEP_X
                 local cy = PICK_Y + math.floor((i - 1) / 5) * PICK_STEP_Y
-                kit.place(worded("pv_pick" .. i, "pvp_w_" .. w.id, W_CARD_W, W_CARD_H, 1), cx, cy)
+                kit.place(named("pv_pick" .. i, "pvp_w_" .. w.id, W_CARD_W, W_CARD_H, 1), cx, cy)
                 if w.id == now then
                     kit.place(plain("pv_sel_weapon", "pvp_sel_weapon", W_CARD_W, W_CARD_H, 2), cx, cy)
                 end

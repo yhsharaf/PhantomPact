@@ -1843,6 +1843,18 @@ function Fake.new(id, scripts, ini, link)
         if found[path] then
             return found[path]
         end
+        -- The engine's own Roboto, in every game: its fallback face a font file of the engine's (the Chinese one, as the
+        -- bench found it), for pbz.lua's game.arabicFont to swap for its Arabic one. Made the first time it's asked for, so
+        -- a session that never asks has nothing more in it.
+        if path == "/Engine/EngineFonts/Roboto.Roboto" then
+            local face = object(pc, "FontData", { FontFilename = "../../../Engine/Content/Slate/Fonts/DroidSansFallback.ttf",
+                LoadingPolicy = 1, FontFaceAsset = object(pc, "FontFace") })
+            local font = object(pc, "Font", { CompositeFont = { FallbackTypeface = { Typeface = {
+                Fonts = list({ { Font = face } }) } } } })
+            rawset(font, "__path", path)
+            found[path] = font
+            return font
+        end
         -- Each mode's combat config, as the game has it: its perfect deflect window (the bench, 11-09).
         local mode = path:match("^/PBZCombatAsset/Config/GlobalConfig_Combat_(%a+)%.")
         local frames = mode and ({ Handicapped = 8, Easy = 10, Normal = 8, Hard = 8, Nightmare = 6 })[mode]

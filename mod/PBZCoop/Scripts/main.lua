@@ -542,7 +542,7 @@ local api = {
     state = state,
     version = VERSION,
 }
-api.lang = dofile(SCRIPT_DIR .. "lang.lua")()
+api.lang = dofile(SCRIPT_DIR .. "lang.lua")(SCRIPT_DIR)
 api.game = dofile(SCRIPT_DIR .. "pbz.lua")(api)
 local coop = dofile(SCRIPT_DIR .. "coop.lua")(api)
 api.coop = coop
@@ -612,6 +612,8 @@ PBZ = {
     mapfog = api.mapfog,
     qte = api.qte,
     hitfx = api.hitfx,
+    lang = api.lang,
+    status = api.status,
 }
 
 -- Command file: lets a developer drive tests from outside the game. Write one command per line

@@ -16,6 +16,7 @@ return function(api)
     local CARD_W, CARD_H = 176, 58
     local BUTTON_W, BUTTON_H = 170, 46
     local WORDS_Y = 155             -- middle of the status box, in panel units
+    local WORDS_FIT = 110           -- letters a line in the box holds before it breaks (lang.fit)
     local TIP_FROM_BOTTOM = 30      -- where the game lays out the ink-bar text: centred, this far above the screen's bottom
     local CLOSE = { x = 848, y = 14, w = 38, h = 38 }
     -- main.dll clicks the panel's middle as it opens and on coming back to the game (see free_cursor): no click counts for
@@ -24,7 +25,7 @@ return function(api)
     local PASTE = { x = 604, y = 244 }
     local PASSWORD = { x = 604, y = 344 }
     local BUTTONS = { host = { x = 40, y = 350 }, join = { x = 228, y = 350 }, leave = { x = 416, y = 350 } }
-    local LANGUAGE = { en = { x = 40, y = 18 }, zh = { x = 124, y = 18 } }
+    local LANGUAGE = { en = { x = 40, y = 18 }, zh = { x = 124, y = 18 }, ar = { x = 208, y = 18 } }
     local LANGUAGE_W, LANGUAGE_H = 76, 30
 
     local SETTINGS = { x = 690, y = 494 }
@@ -256,7 +257,15 @@ return function(api)
                 log("Online panel: " .. text)
             end
             words = text
-            wordsWidget:SetText(FText(api.lang.say(text)))
+            if api.lang.arabic() then
+                wordsWidget:SetText(FText(api.lang.fit(text, WORDS_FIT)))    -- (hidden, for the bar's size: pbz.lua)
+                game.arabicTip(wordsWidget, api.lang.say(text), nil, 1100)    -- (wrapped inside the box)
+            else
+                if game.arabicTipUsed then
+                    game.arabicTip(wordsWidget, nil)
+                end
+                wordsWidget:SetText(FText(api.lang.fit(api.lang.say(text), WORDS_FIT)))
+            end
         end
         -- Moved as a picture, up from where the game lays it out: its own layout fills the screen and stays as it is.
         local o = kit.origin
@@ -329,7 +338,10 @@ return function(api)
     end
 
     local function setLanguage(code)
-        api.lang.set(code == "zh" and "Chinese" or "English")
+        api.lang.set(({ zh = "Chinese", ar = "Arabic" })[code] or "English")
+        if api.lang.arabic() and game.arabicFont then
+            game.arabicFont()       -- (the game has no font with Arabic letters: see pbz.lua)
+        end
         save({ Language = api.lang.word() })
         words, wordsAt = nil, 0
     end
@@ -414,7 +426,7 @@ return function(api)
 
     -- A picture with words on it, in the language picked.
     local function worded(name, tex, w, h, z)
-        tex = (api.lang.code == "zh" and "zh_" or "") .. tex
+        tex = api.lang.prefix() .. tex
         local p = kit.part(name, tex, w, h, z)
         kit.picture(p, tex)
         return p

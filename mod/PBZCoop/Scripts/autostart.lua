@@ -89,6 +89,13 @@ return function(api)
         api.revive.set((settings.revive or "off"):lower() == "on")
     end
     api.lang.set(settings.language)
+    if api.lang.arabic() and api.game.arabicFont then
+        -- (As early as can be: the game keeps a fallback font it has used, see pbz.lua. On the game thread: this runs as
+        -- the mod loads, on UE4SS's own thread, and the font is the game's.)
+        ExecuteInGameThread(function()
+            pcall(api.game.arabicFont)
+        end)
+    end
     api.partner.teleport = (settings.partnerteleport or "off"):lower() == "on"
     if api.story then
         api.story.follow = (settings.followhoststory or "on"):lower() ~= "off"

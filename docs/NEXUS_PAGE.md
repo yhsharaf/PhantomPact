@@ -70,7 +70,7 @@ Press [b]F5[/b] once you’re in the world, on both PCs. The game doesn’t paus
 [img]IMAGE-4[/img]
 
 [list=1]
-[*][b]Language:[/b] [b]English[/b] or [b]中文[/b] at the top changes the panel and the co-op messages.
+[*][b]Language:[/b] [b]English[/b], [b]中文[/b] or [b]العربية[/b] (Arabic) at the top changes the panel and the co-op messages.
 [*][b]Connect Through:[/b] pick the same one on both PCs. [b]Steam[/b] needs no setup. For [b]Tailscale[/b] or [b]Other network[/b], the host sends their address to the guest, who copies it and presses [b]Paste address[/b].
 [*][b]Password (optional):[/b] copy the same password on both PCs and press [b]Paste password[/b] before you connect.
 [*][b]HOST:[/b] one player presses it, and [b]Status[/b] says it’s waiting for a partner.
@@ -214,7 +214,7 @@ Online co-op needs none of these pad steps. If your pads stop working in other g
 进入游戏世界后,两台电脑都按 [b]F5[/b]。游戏不会暂停,请在安全的地方打开。上面的第 4 张图就是这个面板。
 
 [list=1]
-[*][b]语言:[/b]顶部的 English 和中文可以切换面板和联机提示的语言。
+[*][b]语言:[/b]顶部的 English、中文 和 العربية(阿拉伯语)可以切换面板和联机提示的语言。
 [*][b]连接方式:[/b]两台电脑选择同一种。Steam 无需设置。使用 Tailscale 或其他网络时,房主把地址发给客人,客人复制后按[b]粘贴地址[/b]。UU 加速器和 ZeroTier 选其他网络。
 [*][b]密码(可不设):[/b]连接前,两台电脑复制同一个密码,然后按[b]粘贴密码[/b]。
 [*][b]开房:[/b]一方按下后,状态栏会显示正在等待队友。

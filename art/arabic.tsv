@@ -1,0 +1,324 @@
+id	english	arabic	notes
+term.player1	the host (purple)	المضيف (بنفسجي)	glossary; a name put into lines as %s, so those lines put the verb first (انضم %s، سقط %s); colour words masculine to agree with المضيف / اللاعب
+term.player2	player 2 (green)	اللاعب 2 (أخضر)	glossary; a %s name like the host's
+term.player3	player 3 (gold)	اللاعب 3 (ذهبي)	glossary; gold = ذهبي
+term.player4	player 4 (blue)	اللاعب 4 (أزرق)	glossary
+term.player5	player 5 (orange)	اللاعب 5 (برتقالي)	glossary
+term.player6	player 6 (pink)	اللاعب 6 (وردي)	glossary; pink = وردي
+term.arena.yucong	Crimson Forest	Crimson Forest	kept in English: a name in the game, which has no Arabic (the user, 11-10); name: Crimson Forest (zh 赤林 'red forest'); glossary; the same قرمزي as the Crimson team; the F6 card (f6.art.arena.yucong) must say the same; was: الغابة القرمزية
+term.arena.huaqianxiao	Hua Qianxiao's Stage	Hua Qianxiao's Stage	kept in English: a name in the game, which has no Arabic (the user, 11-10); Hua Qianxiao's Stage (zh 花千笑之台); was: مسرح هوا تشيان شياو
+term.arena.goldmask	The Gold-Masked One's Gorge	The Gold-Masked One's Gorge	kept in English: a name in the game, which has no Arabic (the user, 11-10); name: The Gold-Masked One's Gorge (zh 金面人之谷); glossary: one Arabic name for this and the F6 card's 'The Gold-Masked Gorge'; alt مضيق القناع الذهبي (مضيق is narrower, closer to 'gorge'); was: وادي القناع الذهبي
+term.arena.muxiaokui	Mu Xiaokui's Meadow	Mu Xiaokui's Meadow	kept in English: a name in the game, which has no Arabic (the user, 11-10); name: Mu Xiaokui's Meadow (zh 木小葵之野); glossary; was: مرج مو شياو كوي
+term.arena.here	Here	«هنا»	REVIEW, was [هنا]: name: Here (zh 此地 'this place'); this name goes only into 'To %s.' (tip.pvp.start.to), and a bare إلى هنا. reads 'that's all / this far', so it comes quoted, as f6.words.other_map already says it; the card (f6.art.arena.here) keeps هنا
+term.boss.yucong	YuCong	YuCong	kept in English: a name in the game, which has no Arabic (the user, 11-10); name: YuCong (zh 余聪), the game's own boss; the game has no Arabic, so the name is ours (pinyin c = تس); glossary; was: يو تسونغ
+term.boss.huaqianxiao	Hua Qianxiao	Hua Qianxiao	kept in English: a name in the game, which has no Arabic (the user, 11-10); name: Hua Qianxiao (zh 花千笑); pinyin q = تش, x = ش; glossary; was: هوا تشيان شياو
+term.boss.goldmask	the Gold-Masked One	The Gold-Masked One	kept in English: a name in the game, which has no Arabic (the user, 11-10); name: the Gold-Masked One (zh 金面人); glossary: the article is built in like the English 'the'; not ذو القناع الذهبي (ذو changes with case, a %s can't); was: صاحب القناع الذهبي
+term.boss.muxiaokui	Mu Xiaokui	Mu Xiaokui	kept in English: a name in the game, which has no Arabic (the user, 11-10); name: Mu Xiaokui (zh 木小葵); glossary; was: مو شياو كوي
+term.version.older	1.4.1-or-older	1.4.1 أو أقدم	the relay's word for a partner on Phantom Pact 1.4.1 or older, put into tip.conn.version_cant as %1 (left English, it showed reversed in a right-to-left line)
+term.version.other	other-protocol	بروتوكول مختلف	the relay's word for a partner whose Phantom Pact speaks another protocol, put into tip.conn.version_cant as %1
+f5.art.title	ONLINE CO-OP	اللعب التعاوني عبر الإنترنت	glossary (ONLINE CO-OP); Arabic is never letter-spaced; if a face draws it too wide, alt التعاوني عبر الإنترنت; fits: 277 of 320 px (Segoe UI 25px, widest of 3 faces)
+f5.art.status	STATUS	الحالة	glossary; fits: 32 of 820 px (Sakkal Majalla Bold 17px, widest of 3 faces)
+f5.art.through	CONNECT THROUGH	الاتصال عبر	glossary: heading over the Steam / Tailscale / Other cards ('connect through'); fits: 64 of 820 px (Sakkal Majalla Bold 17px, widest of 3 faces)
+f5.art.play	PLAY	اللعب	glossary: heading over the three buttons; fits: 31 of 560 px (Segoe UI 13px, widest of 3 faces)
+f5.art.password	PASSWORD	كلمة المرور	glossary; fits: 62 of 256 px (Segoe UI 13px, widest of 3 faces)
+f5.art.help1	Host: your world, your partner joins you. Guest: you join the host. Leave: back to playing alone.	«استضافة»: ينضم شريكك إلى عالمك. «انضمام»: تنضم إلى المضيف. «مغادرة»: تعود إلى اللعب الفردي.	names the three buttons in quotes with the buttons' own words (glossary HOST / GUEST / LEAVE); 'your world, your partner joins you' said as 'your partner joins your world'; 'back to playing alone' = back to single-player (zh 单人游戏); fits: 559 of 820 px (Segoe UI 13px, widest of 3 faces)
+f5.art.help2	Your choice is kept for the next start. Both players use the same way of connecting.	يُحفظ اختيارك للتشغيل القادم. يجب أن يستخدم اللاعبان طريقة الاتصال نفسها.	glossary sentence for 'kept for the next start'; اللاعبان = the two players; fits: 428 of 820 px (Tahoma 13px, widest of 3 faces)
+f5.art.help3	Steam needs nothing: it finds your friend. The others: copy the host's address, then press Paste.	لا يحتاج Steam إلى أي إعداد: يجد صديقك تلقائيًا. الطرق الأخرى: انسخ عنوان المضيف، ثم اضغط «لصق العنوان».	starts with an Arabic word, not Steam; 'Paste' quoted with the card's own words (glossary); fits: 605 of 820 px (Tahoma 13px, widest of 3 faces)
+f5.art.help4	Joining takes you to the host, on any map.	الانضمام ينقلك إلى المضيف، في أي خريطة كان.	glossary: 'Joining takes you to the host'; في أي خريطة كان = whatever map he is on; fits: 260 of 650 px (Tahoma 13px, widest of 3 faces)
+f5.art.help5	Password: optional. If one player sets it, both must use the same one.	كلمة المرور اختيارية. إن عيّنها أحد اللاعبين، فيجب أن يستخدم الآخر كلمة المرور نفسها.	glossary: كلمة المرور اختيارية (feminine); 'both must use the same one' said as 'the other must use the same password'; fits: 474 of 650 px (Tahoma 13px, widest of 3 faces)
+f5.art.card.steam	Steam	Steam	brand name, kept; fits: 42 of 148 px (Segoe UI 15px, widest of 3 faces)
+f5.art.card.steam.sub	friends, no setup	مع الأصدقاء، بلا إعداد	glossary: 'friends, no setup'; fits: 98 of 148 px (Segoe UI 11px, widest of 3 faces)
+f5.art.card.tailscale	Tailscale	Tailscale	brand name, kept; fits: 56 of 148 px (Segoe UI 15px, widest of 3 faces)
+f5.art.card.tailscale.sub	also Hamachi, Radmin	وكذلك Hamachi و Radmin	network names stay Latin, never first on the line; و stands apart from Radmin so it doesn't touch the n in the right-to-left line (orthography joins it: وRadmin); zh's 'also works with' (يصلح أيضًا مع ...) is too wide: 159 of 148 px; fits: 126 of 148 px (Segoe UI 11px, widest of 3 faces)
+f5.art.card.other	Other network	شبكة أخرى	glossary; fits: 75 of 148 px (Tahoma 15px, widest of 3 faces)
+f5.art.card.other.sub	ZeroTier, UU...	مثل ZeroTier و UU	network names stay Latin, so مثل ('such as') opens the line and stands in for the English '...'; alt مثل ZeroTier و UU وغيرها (also fits: 123 px); fits: 89 of 148 px (Segoe UI 11px, widest of 3 faces)
+f5.art.card.paste	Paste address	لصق العنوان	glossary: the card lines call 'Paste'; fits: 80 of 148 px (Segoe UI 15px, widest of 3 faces)
+f5.art.card.paste.sub	copied from the host	منسوخ من المضيف	glossary: 'copied from the host'; fits: 89 of 148 px (Segoe UI 11px, widest of 3 faces)
+f5.art.card.password	Paste password	لصق كلمة المرور	glossary: the card lines call 'Paste password'; fits: 107 of 148 px (Segoe UI 15px, widest of 3 faces)
+f5.art.card.password.sub	optional, same for both	اختيارية، ونفسها للطرفين	glossary: feminine to agree with كلمة المرور; fits: 117 of 148 px (Segoe UI 11px, widest of 3 faces)
+f5.art.card.password_set	Password set	تم تعيين كلمة المرور	glossary 'Password set'; alt كلمة المرور معيّنة if it must be shorter; fits: 128 of 148 px (Segoe UI 15px, widest of 3 faces)
+f5.art.card.password_set.sub	press to remove	اضغط للإزالة	glossary: 'press to remove'; fits: 58 of 148 px (Sakkal Majalla Bold 14px, widest of 3 faces)
+f5.art.btn.host	HOST	استضافة	glossary HOST button, a verbal noun like مغادرة / رجوع; CHOICE: roles instead of actions = مضيف (with GUEST = ضيف); fits: 70 of 150 px (Tahoma Bold 16px, widest of 3 faces)
+f5.art.btn.join	GUEST	انضمام	glossary GUEST button (zh 加入 'join'); CHOICE together with HOST: ضيف; fits: 53 of 150 px (Tahoma Bold 16px, widest of 3 faces)
+f5.art.btn.leave	LEAVE	مغادرة	glossary; fits: 49 of 150 px (Tahoma Bold 16px, widest of 3 faces)
+f5.art.btn.settings	MORE	المزيد	glossary: tips name it «المزيد» (F5); fits: 43 of 150 px (Tahoma Bold 16px, widest of 3 faces)
+f5.art.lang.en	English	English	unchanged: each language keeps its own name on its button, one picture in every language; the new third button says العربية (online_lang_ar.png)
+f5.art.lang.zh	中文	中文	unchanged: the same picture in every language
+f5.words.not_connected	Not connected.	غير متصل.	glossary; already in lang_ar.lua
+f5.words.starting	Starting...	جارٍ البدء...	glossary: جارٍ for anything under way
+f5.words.couldnt_start	Couldn't start: %s	تعذّر البدء: %1	pattern: %1 = the %s, the relay's own error (rows tip.relayerr.*); lang.lua's zh rows for those errors match AFTER this prefix ('^无法启动:...'), so the Arabic tip.relayerr.* patterns must start with this exact text, تعذّر البدء: 
+f5.words.connected	Connected to %s.	متصل بـ %1.	piece: %1 = the %s, the partner's address (IP or Steam ID); glossary 'Connected to %s.'; the pieces that follow each bring their own leading space
+f5.words.ping	 Ping %d ms.	 البينغ %1 مللي ثانية.	piece, keeps its leading space: %1 = the %d (round trip in ms); glossary
+f5.words.route_direct	 Route: direct.	 المسار: مباشر.	piece, keeps its leading space; glossary
+f5.words.route_relay	 Route: relay.	 المسار: عبر وسيط.	piece, keeps its leading space; glossary: relayed = عبر وسيط
+f5.words.players	 Players: %d of %d.	 اللاعبون: %1 من %2.	piece, keeps its leading space: %1 = players here, %2 = players the host allows (the two %d, same order); glossary
+f5.words.youre	 You're %s.	 أنت %1.	piece, keeps its leading space: %1 = the %s, this player's own name (term.player*), e.g. أنت اللاعب 2 (أخضر).; zh builds one row per player name (lang.lua:186)
+f5.words.waiting	Waiting for a partner.	بانتظار شريك.	glossary; already in lang_ar.lua
+f5.words.looking_for	Looking for %s...	جارٍ البحث عن %1...	pattern: %1 = the %s, HostAddress (IP, Steam name or SteamID64); the dots land at the line's left end, as they should
+f5.words.looking_steam	Looking for a Steam friend who's hosting...	جارٍ البحث عن صديق على Steam يستضيف...	glossary: صديق على Steam, صديق يستضيف
+f5.words.paste_first	Copy the host's address first, then press Paste.	انسخ عنوان المضيف أولًا، ثم اضغط «لصق العنوان».	the glossary's own sentence; 'Paste' = the card's words
+f5.words.address_set	Host address set to %s.	تم تعيين عنوان المضيف: %1.	pattern: %1 = the %s, the pasted address; 'set to X' said as 'set: X' (like تم تعيين كلمة المرور)
+f5.words.pw_removed	Password removed.	أُزيلت كلمة المرور.	glossary
+f5.words.pw_first	Copy the password first, then press Paste password.	انسخ كلمة المرور أولًا، ثم اضغط «لصق كلمة المرور».	'Paste password' = the card's words (glossary)
+f5.words.pw_set	Password set. Your partner needs the same one.	تم تعيين كلمة المرور. يحتاج شريكك إلى كلمة المرور نفسها.	glossary
+f5.words.ini_no_address	PhantomPact.ini: HostAddress isn't set. Put the host's Tailscale IP there, or use Steam.	لم يُعيَّن HostAddress في PhantomPact.ini. اكتب فيه عنوان IP الخاص بالمضيف على Tailscale، أو استخدم Steam.	keeps the English's ini terms, starting with an Arabic word; CHOICE: zh says it in panel terms instead, which also fits the panel box: لا يوجد عنوان للمضيف بعد. انسخ عنوانه ثم اضغط «لصق العنوان»، أو استخدم Steam.
+f5.words.ini_bad_char	PhantomPact.ini: HostAddress has a character that can't be used (" % & | < > ^). Leave it empty to join any friend who's hosting.	يحتوي HostAddress في PhantomPact.ini على رمز غير مسموح به (" % & | < > ^). اتركه فارغًا للانضمام إلى أي صديق يستضيف.	the character list kept as is (a LINES value, so % needs no escaping); رمز = symbol (حرف would read as 'letter'); glossary: اتركه فارغًا, صديق يستضيف
+f5more.art.title	SETTINGS	الإعدادات	glossary (SETTINGS page title); fits: 98 of 340 px (Sakkal Majalla Bold 32px, widest of 3 faces)
+f5more.art.foot1	Click a tile to change it. Kept for next time. Steam Direct and Players: next connection.	انقر على مربع لتغييره، ويُحفظ اختيارك. يسري «اتصال Steam المباشر» و«عدد اللاعبين» من الاتصال القادم.	glossary: click a tile, kept, Steam Direct, Players, next connection; tile names quoted; fits: 526 of 630 px (Tahoma 12px, widest of 3 faces)
+f5more.art.foot2	Mode: next game start. Online, the host decides every tile but Steam Direct and Mode.	يسري «الوضع» من التشغيل القادم للعبة. عبر الإنترنت، يحدد المضيف كل المربعات عدا «اتصال Steam المباشر» و«الوضع».	glossary: Mode, next game start, online; tile names quoted; fits: 602 of 630 px (Tahoma 12px, widest of 3 faces)
+f5more.art.tile.teleport	TP > Partner	الانتقال إلى الشريك	glossary: no '>' (it turns round in a right-to-left line); the tips quote the same words: «الانتقال إلى الشريك»; fits: 2 line(s) of 126 px (bold 15, widest of 3 faces)
+f5more.art.tile.teleport.sub	F3 takes you to your partner, on any map	اضغط F3 للانتقال إلى شريكك، في أي خريطة	glossary: F3 never opens the line; fits: 2 line(s) of 126 px, the tile's words 70 of ~104 px high (widest of 3 faces)
+f5more.art.tile.revive	Revive	الإنعاش	glossary; fits: 1 line(s) of 126 px (bold 15, widest of 3 faces)
+f5more.art.tile.revive.sub	Strike a downed partner to bring them back	اضرب شريكك الساقط لإنعاشه	glossary: strike, downed partner, bring back; fits: 2 line(s) of 126 px, the tile's words 50 of ~104 px high (widest of 3 faces)
+f5more.art.tile.pvp	PvPvE	PvPvE	the mode's name, kept Latin and the same everywhere (glossary); fits: 1 line(s) of 126 px (bold 15, widest of 3 faces)
+f5more.art.tile.pvp.sub	Fight your partner out in the world	قاتل شريكك في العالم المفتوح	the glossary's own sentence; fits: 2 line(s) of 126 px, the tile's words 50 of ~104 px high (widest of 3 faces)
+f5more.art.tile.mapicon	Partner On The Map	الشريك على الخريطة	glossary; fits: 2 line(s) of 126 px (bold 15, widest of 3 faces)
+f5more.art.tile.mapicon.sub	Their mark on the game's map	تظهر علامته على خريطة اللعبة	glossary: the game's map = خريطة اللعبة; fits: 2 line(s) of 126 px, the tile's words 70 of ~104 px high (widest of 3 faces)
+f5more.art.tile.freetravel	Free Bell Travel	السفر المجاني بين الأجراس	glossary; fits: 2 line(s) of 126 px (bold 15, widest of 3 faces)
+f5more.art.tile.freetravel.sub	Off: a trip to a bell costs a Traversal Talisman	عند التعطيل: السفر إلى جرس يستهلك Traversal Talisman	kept in English: a name in the game, which has no Arabic (the user, 11-10) (Traversal Talisman, the game's item); 'Off: ...' = عند التعطيل, a trip to a bell = السفر إلى جرس; was: عند التعطيل: السفر إلى جرس يستهلك تميمة العبور
+f5more.art.tile.direct	Steam Direct	اتصال Steam المباشر	glossary; fits: 2 line(s) of 126 px (bold 15, widest of 3 faces)
+f5more.art.tile.direct.sub	Less delay, but your partner can see your IP	تأخير أقل، لكن شريكك يرى عنوان IP الخاص بك	glossary: less delay, your IP; fits: 2 line(s) of 126 px, the tile's words 70 of ~104 px high (widest of 3 faces)
+f5more.art.tile.players	Players	عدد اللاعبين	glossary (the Players tile); fits: 1 line(s) of 126 px (bold 15, widest of 3 faces)
+f5more.art.tile.players.sub	Host's choice. 6: ghost twins (test)	يحدده المضيف. 6 لاعبين: توائم شبحية (تجريبي)	glossary: ghost twins (test); '6:' said as '6 players:' (zh 6 人) so the bare digit isn't left alone; fits: 2 line(s) of 126 px, the tile's words 50 of ~104 px high (widest of 3 faces)
+f5more.art.tile.mode	Mode	الوضع	glossary; fits: 1 line(s) of 126 px (bold 15, widest of 3 faces)
+f5more.art.tile.mode.sub	Local: split screen on this PC, next start	محلي: شاشة مقسومة على هذا الجهاز، من التشغيل القادم	the glossary's own sentence; fits: 3 line(s) of 126 px, the tile's words 65 of ~104 px high (widest of 3 faces)
+f5more.art.tile.skip	Skip Prologue	تخطي المقدمة	glossary; fits: 1 line(s) of 126 px (bold 15, widest of 3 faces)
+f5more.art.tile.skip.sub	Start a New Game and choose the game's own skip there	ابدأ New Game واختر خيار التخطي في اللعبة نفسها	kept in English: a name in the game, which has no Arabic (the user, 11-10); the glossary's own sentence (also in f5more.tip.skip_how and tip.f3.in_prologue); fits: 2 line(s) of 126 px, the tile's words 50 of ~104 px high (widest of 3 faces); was: ابدأ لعبة جديدة واختر خيار التخطي في اللعبة نفسها
+f5more.art.tile.skip_done.sub	You're past the prologue	تجاوزت المقدمة	glossary; fits: 1 line(s) of 126 px, the tile's words 35 of ~104 px high (widest of 3 faces)
+f5more.art.value.on	ON	مفعّل	glossary; fits: 35 of 104 px (Tahoma Bold 14px, widest of 3 faces)
+f5more.art.value.off	OFF	معطّل	glossary; fits: 39 of 104 px (Tahoma Bold 14px, widest of 3 faces)
+f5more.art.value.multiplayer	MULTIPLAYER	عبر الإنترنت	glossary (online play as against LOCAL); alt متعدد اللاعبين; fits: 76 of 104 px (Tahoma Bold 14px, widest of 3 faces)
+f5more.art.value.local	LOCAL	محلي	glossary; fits: 40 of 104 px (Tahoma Bold 14px, widest of 3 faces)
+f5more.art.value.soon	SOON	قريبًا	glossary; fits: 30 of 104 px (Tahoma Bold 14px, widest of 3 faces)
+f5more.art.value.new_game	NEW GAME	NEW GAME	kept in English: a name in the game, which has no Arabic (the user, 11-10); glossary; fits: 71 of 104 px (Tahoma Bold 14px, widest of 3 faces); was: لعبة جديدة
+f5more.art.value.done	DONE	تم	glossary; fits: 15 of 104 px (Tahoma Bold 14px, widest of 3 faces)
+f5more.art.btn.back	BACK	رجوع	glossary; fits: 39 of 150 px (Tahoma Bold 16px, widest of 3 faces)
+f5more.tip.host_setting	Only the host's setting counts.	المعتمد هو إعداد المضيف وحده.	the glossary's own sentence
+f5more.tip.pvpve_party	PvPvE is off with more than two players (F6 PvP has teams).	مع 3 لاعبين أو أكثر يكون PvPvE معطّلًا (لكن PvP في F6 يدعم الفرق).	'more than two players' said as '3 players or more' (a bare لاعبين could read as a plural); PvPvE and F6 never open the line
+f5more.tip.pvpve_all	PvPvE on for everyone: the host's rules count for all.	فُعِّل PvPvE للجميع: قواعد المضيف تسري على كل اللاعبين.	starts with the verb, so PvPvE doesn't open the line; glossary: للجميع
+f5more.tip.pvpve_partner	your partner needs PvPvE on too, or their moves won't show here.	يجب أن يفعّل شريكك PvPvE أيضًا، وإلا فلن تظهر حركاته هنا.	glossary: partner masculine
+f5more.tip.players_host	Only the host's Players setting counts.	إعداد «عدد اللاعبين» يحدده المضيف وحده.	the glossary's own sentence
+f5more.tip.players_next	Players: from your next Host (Leave, then Host).	عدد اللاعبين: من استضافتك القادمة («مغادرة» ثم «استضافة»).	the glossary's own sentence; the buttons quoted with their own words
+f5more.tip.local_next	Local co-op starts the next time you start the game.	يبدأ اللعب التعاوني المحلي عند تشغيل اللعبة المرة القادمة.	glossary: local co-op, next time you start the game
+f5more.tip.past_prologue	you're past the prologue.	لقد تجاوزت المقدمة بالفعل.	glossary; بالفعل = 'already' (zh 已经)
+f5more.tip.skip_how	to skip the prologue, start a New Game and choose the game's own skip there.	لتخطي المقدمة، ابدأ New Game واختر خيار التخطي في اللعبة نفسها.	kept in English: a name in the game, which has no Arabic (the user, 11-10); the glossary's own sentence, as on the Skip Prologue tile; was: لتخطي المقدمة، ابدأ لعبة جديدة واختر خيار التخطي في اللعبة نفسها.
+tip.prefix	Phantom Pact: 	Phantom Pact: 	kept in English like the mod's name in every other line: the line now goes in after a right-to-left mark (pbz.lua's game.arabicTip), so it no longer needs an Arabic first letter (11-10); name: the mod's name (English: Phantom Pact). In Arabic the head goes through say() too (status.lua: say('Phantom Pact: ') .. say(text)) and the line takes its direction from its first letter, so the head must start with an Arabic letter or every tip lays out left to right; this is the bench row already in lang_ar.lua. CHOICE: the glossary keeps the brand Latin, which here needs an invisible RIGHT-TO-LEFT MARK (U+200F) before 'Phantom Pact: ' (not tried on the bench); a meaningful name would be الميثاق الشبحي: ; was: فانتوم باكت: 
+tip.conn.connected_ping_signed	partner connected (ping %d ms), signed.	اتصل شريكك (البينغ %1 مللي ثانية)، والاتصال محمي بكلمة المرور.	%1 = ping in ms; the three rows below are its pieces: اتصل شريكك + (البينغ %1 مللي ثانية) + ، والاتصال محمي بكلمة المرور. The glossary's 'signed' clause makes this about 1.3x the English's width on the proof sheet (the ink bar is sized by the English); shorter: ، بحماية كلمة المرور.
+tip.conn.connected_ping	partner connected (ping %d ms).	اتصل شريكك (البينغ %1 مللي ثانية).	%1 = ping in ms; 'partner connected' = اتصل شريكك (glossary); lang_ar.lua's bench row still says الشريك متصل (البينغ %1 مللي ثانية).: replace it with this row
+tip.conn.connected_signed	partner connected, signed.	اتصل شريكك، والاتصال محمي بكلمة المرور.	'signed' = a password (Secret) is in use (glossary)
+tip.conn.connected	partner connected.	اتصل شريكك.	
+tip.conn.disconnected	partner disconnected.	انقطع اتصال شريكك.	
+tip.conn.party_joined	%s joined. %d players now.	انضم %1. عدد اللاعبين الآن: %2.	%1 = the player's name (term.player*), %2 = players now (2-6): the count after a label needs no agreement
+tip.conn.party_left	%s left. %d players now.	غادر %1. عدد اللاعبين الآن: %2.	%1 = the player's name, %2 = players now (1-5)
+tip.conn.party_full	someone tried to join, but the party is full (%d players).	حاول أحدهم الانضمام، لكن المجموعة ممتلئة (%1 لاعبين).	%1 = 4 or 6 (the host's PartySize, set only with more than two): 3-10 take لاعبين; if it could ever be 2 or 11+, say (عدد اللاعبين: %1)
+tip.conn.clock	your PC's clock and your partner's are over 2 minutes apart: set both to the right time.	تختلف ساعة جهازك عن ساعة جهاز شريكك بأكثر من دقيقتين: اضبط الساعتين على الوقت الصحيح.	'2 minutes' = دقيقتين, the dual with no digit (glossary: 2 دقيقة is wrong)
+tip.conn.settings_differ	settings differ from your partner's: %s	تختلف إعداداتك عن إعدادات شريكك: %1	%1 = PhantomPact.ini key names, comma-separated, Latin (coopenemyhealth, pvpdamage, ...); no full stop, as the English
+tip.conn.version_cant	your partner's Phantom Pact (%s) can't connect to %s: both PCs need the same version.	إصدار Phantom Pact لدى شريكك (%1) لا يمكنه الاتصال بإصدارك %2: يلزم الإصدار نفسه على الجهازين.	%1 = their version as the relay says it, English words: '1.4.1-or-older' or 'other-protocol'; %2 = this version. In a right-to-left line '1.4.1-or-older' shows as 'or-older-1.4.1': rows for the two words would fix it (1.4.1 أو أقدم / بروتوكول مختلف)
+tip.conn.version_diff	your partner is on Phantom Pact %s and you're on %s: use the same version, or enemies won't stay in step.	شريكك يستخدم Phantom Pact %1 وأنت تستخدم %2: يجب استخدام الإصدار نفسه، وإلا فلن يبقى الأعداء متزامنين.	%1 = their version, %2 = this one
+tip.conn.version_player	player %d is on Phantom Pact %s and you're on %s: use the same version, or enemies won't stay in step.	اللاعب %1 يستخدم Phantom Pact %2 وأنت تستخدم %3: يجب استخدام الإصدار نفسه، وإلا فلن يبقى الأعداء متزامنين.	%1 = player slot 2-6, %2 = their version, %3 = this one
+tip.conn.secret	packets refused: both PCs need the same Secret in PhantomPact.ini (or both none), and their clocks within two minutes of each other.	رُفض الاتصال: يجب أن تتطابق كلمة المرور (Secret) في PhantomPact.ini على الجهازين (أو تُترك فارغة على كليهما)، وأن يقل الفرق بين ساعتيهما عن دقيقتين.	'packets refused' said as 'connection refused', as the Chinese does; Secret = the ini key (the panel's password)
+tip.conn.high_ping	high ping (%d ms).	البينغ مرتفع (%1 مللي ثانية).	%1 = ping in ms (over 250); on Tailscale or another network tip.conn.tailscale_ping follows
+tip.conn.tailscale_ping	 On Tailscale, run "tailscale ping": via DERP means relayed.	 على Tailscale، شغّل «tailscale ping»: إن ظهر via DERP فالاتصال يمر عبر وسيط.	REVIEW, was [على Tailscale، شغّل «tailscale ping»: تعني via DERP أن الاتصال يمر عبر وسيط.]: 'via DERP' as the subject of تعني read stiffly; now 'if via DERP shows, the connection is relayed' (zh: 显示 via DERP 表示经过了中继); keeps the leading space (it follows tip.conn.high_ping); the command and its output 'via DERP' stay Latin; relayed = يمر عبر وسيط (glossary)
+tip.conn.steam_relay	Steam is relaying this connection, which adds delay. A direct one needs SteamDirect = On on both PCs and routers that allow it.	يمر هذا الاتصال عبر وسيط من Steam، مما يزيد التأخير. الاتصال المباشر يحتاج إلى SteamDirect = On على الجهازين، وإلى راوترات تسمح به.	SteamDirect = On is the ini line (the Steam Direct tile); router = راوتر (glossary)
+tip.conn.no_friend	no friend hosting found. You must be Steam friends, and your partner needs Role = Host, Connect = Steam and not to be Invisible in Steam (or put their SteamID64 in HostAddress), and the same Secret and Phantom Pact version on both PCs.	لم يُعثر على صديق يستضيف. يجب أن تكونا صديقين على Steam، وأن يضبط شريكك Role = Host و Connect = Steam دون أن يكون «غير مرئي» على Steam (أو ضع SteamID64 الخاص به في HostAddress)، وأن تتطابق كلمة المرور (Secret) وإصدار Phantom Pact على الجهازين.	'Invisible' = غير مرئي, Steam's own status word: use the Steam client's Arabic word if it differs. As long as the English; the Chinese drops the ini keys and the SteamID64 part if a shorter line is wanted. The Chinese row matches anything after the first sentence
+tip.conn.no_answer	no answer from the host (%s). Check HostAddress and Port, that they're in the game on Role = Host, and the same Secret and Phantom Pact version on both PCs.	لا رد من المضيف (%1). تحقق من HostAddress و Port، ومن أن المضيف في اللعبة على Role = Host، ومن تطابق كلمة المرور (Secret) وإصدار Phantom Pact على الجهازين.	%1 = the host's address; ini keys stay Latin
+tip.conn.nobody_joined	nobody has joined yet. Your partner needs Role = Guest and your address: two Hosts never find each other.	لم ينضم أحد بعد. يحتاج شريكك إلى Role = Guest وإلى عنوانك: إذا استضاف كلاكما فلن يجد أحدكما الآخر.	REVIEW, was [لم ينضم أحد بعد. يحتاج شريكك إلى Role = Guest وإلى عنوانك: لا يجد مضيفان أحدهما الآخر.]: 'two Hosts never find each other' was the calque لا يجد مضيفان أحدهما الآخر (the reciprocal has no clear subject); now 'if you both host, neither will find the other'; 'Role = Guest' is the ini line; CHOICE: the Chinese names the button instead: يجب أن يضغط شريكك «انضمام» ويستخدم عنوانك
+tip.conn.couldnt_start	co-op couldn't start: %s	تعذّر بدء اللعب التعاوني: %1	%1 = the relay's own error (the tip.relayerr.* rows); no full stop, as the English. In Chinese those errors are translated only after the F5 box's 'Couldn't start: ': Arabic needs them after this head too, or they stay English in the tip
+tip.conn.steam_couldnt	Steam couldn't connect: %s. See Connection problems in the install guide.	تعذّر اتصال Steam: %1. راجع «Connection problems» في دليل التثبيت.	%1 = Steam's own reason (a number and Steam's English words), not translated; the install guide is English, so its heading stays English in «» (glossary)
+tip.conn.build	this game update isn't tested with this Phantom Pact version; some co-op features may fail.	لم يُختبر تحديث اللعبة هذا مع إصدار Phantom Pact الحالي، وقد تتعطل بعض ميزات اللعب التعاوني.	once per game when the game's exe is a build the mod doesn't know
+tip.conn.no_dll	Couldn't start the relay: dlls\main.dll can't be reached. Reinstall Phantom Pact, check your antivirus didn't remove it, and use the UE4SS build from the install guide.	تعذّر تشغيل وحدة الاتصال: لا يمكن الوصول إلى dlls\main.dll. أعد تثبيت Phantom Pact، وتأكد من أن برنامج مكافحة الفيروسات لم يحذفه، واستخدم إصدار UE4SS المذكور في دليل التثبيت.	'the relay' = وحدة الاتصال, the mod's network part (glossary); one backslash here, written dlls\\main.dll inside a Lua string
+tip.conn.no_write	Couldn't start the relay: net_start.txt can't be written in %s	تعذّر تشغيل وحدة الاتصال: لا يمكن كتابة net_start.txt في %1	%1 = the mod's folder path; no full stop, as the English
+tip.relayerr.random	no system random numbers for the Secret	لم يوفّر النظام أرقامًا عشوائية لكلمة المرور (Secret)	Windows' random numbers failed while the Secret was set up; goes after تعذّر البدء: (F5 box) or تعذّر بدء اللعب التعاوني: (tip); no Chinese row
+tip.relayerr.winsock	Winsock didn't start	فشل تشغيل Winsock	no Chinese row
+tip.relayerr.socket	couldn't open a UDP socket	فشل فتح مقبس UDP	socket = مقبس (not منفذ, the port); no Chinese row
+tip.relayerr.port_in_use	UDP port %d is in use on this PC (error %d): set another Port in PhantomPact.ini on both PCs	منفذ UDP رقم %1 قيد الاستخدام على هذا الجهاز (الخطأ %2): غيّر قيمة Port في PhantomPact.ini على الجهازين	REVIEW, was [منفذ UDP رقم %1 مستخدم على هذا الجهاز (الخطأ %2): غيّر قيمة Port في PhantomPact.ini على الجهازين]: 'is in use' = قيد الاستخدام; unmarked مستخدم also reads مستخدِم 'user'; %1 = Port, %2 = Windows' error number; no full stop, as the English
+tip.relayerr.port_cant	UDP port %d can't be used (error %d): set another Port in PhantomPact.ini on both PCs	لا يمكن استخدام منفذ UDP رقم %1 (الخطأ %2): غيّر قيمة Port في PhantomPact.ini على الجهازين	%1 = Port, %2 = Windows' error number
+tip.relayerr.no_host	couldn't find the host address %s	لم يُعثر على عنوان المضيف %1	%1 = HostAddress
+tip.relayerr.steam_no_fn	this game's Steam has no %s	لا يحتوي Steam في هذه اللعبة على %1	%1 = a Steam function's name (Latin): the game's steam_api64.dll lacks it; no Chinese row
+tip.relayerr.steam_not_loaded	Steam isn't loaded in this game (steam_api64.dll)	لم يُحمَّل Steam في هذه اللعبة (steam_api64.dll)	
+tip.relayerr.steam_not_ready	Steam isn't ready: is it running and logged in?	لم يجهز Steam بعد: هل هو مفتوح وقد سجّلت الدخول إليه؟	
+tip.partner.down	your partner is down.	سقط شريكك.	
+tip.partner.back	your partner is back.	عاد شريكك.	back on their feet after being down (health above zero again)
+tip.partner.cutscene	your partner is watching a cutscene.	يشاهد شريكك مشهدًا سينمائيًا.	
+tip.partner.other_map	your partner is on another map.	شريكك في خريطة أخرى.	tip.partner.f3_there follows when TP > PARTNER is on
+tip.partner.far	your partner is %d m away.	شريكك على بُعد %1 متر.	%1 = metres (over 150); متر stays singular after digits, as a unit (glossary); tip.partner.f3_there may follow
+tip.partner.f3_there	 F3 takes you there.	 اضغط F3 للانتقال إلى هناك.	keeps the leading space; follows the two rows above
+tip.partner.rest_join	your partner rested at a bell: you'll join them.	استراح شريكك عند جرس: ستنتقل إليه.	you're dead or waiting out a boss fight, so you're brought to them
+tip.partner.rest_too	your partner rested at a bell: you're rested too.	استراح شريكك عند جرس، واستعدت عافيتك أنت أيضًا.	
+tip.partner.rest_boss	your partner rested at a bell: you're rested, and so is the boss.	استراح شريكك عند جرس، واستعدت عافيتك، وكذلك الزعيم.	the boss of your own fight is back to full health too
+tip.partner.sync_off	your partner turned co-op sync off.	أوقف شريكك مزامنة اللعب التعاوني.	
+tip.partner.bag	your bag now has what your partner's has (%d new).	صارت حقيبتك تحوي ما في حقيبة شريكك (جديد: %1).	%1 = things added; the count after a label needs no agreement (glossary)
+tip.partner.quest_step	your partner finished a quest step you were on: done for you too.	أنهى شريكك مرحلة من المهمة كنت فيها، فاكتملت لك أيضًا.	no Chinese row (English in Chinese mode); the host hears it when a guest finishes a step
+tip.partner.story_caught	your story caught up with the host's: %d steps.	لحقت قصتك بقصة المضيف (الخطوات: %1).	%1 = steps, 1 too (the English pattern takes 'step' or 'steps'); the count after a label needs no agreement (glossary)
+tip.party.down	%s is down.	سقط %1.	%1 = the player's name (term.player*: المضيف (بنفسجي), اللاعب 2 (أخضر)...): masculine verbs agree with both
+tip.party.back	%s is back.	عاد %1.	%1 = the player's name
+tip.party.cutscene	%s is watching a cutscene.	يشاهد %1 مشهدًا سينمائيًا.	%1 = the player's name
+tip.party.other_map	%s is on another map.	%1 في خريطة أخرى.	%1 = the player's name; no verb in this sentence, so the name comes first (an Arabic name, so the line still starts right to left)
+tip.party.far	%s is %d m away.	%1 على بُعد %2 متر.	%1 = the player's name, %2 = metres
+tip.party.rest_join	%s rested at a bell: you'll join them.	استراح %1 عند جرس: ستنتقل إليه.	%1 = the player's name
+tip.party.rest_too	%s rested at a bell: you're rested too.	استراح %1 عند جرس، واستعدت عافيتك أنت أيضًا.	%1 = the player's name
+tip.party.rest_boss	%s rested at a bell: you're rested, and so is the boss.	استراح %1 عند جرس، واستعدت عافيتك، وكذلك الزعيم.	%1 = the player's name
+tip.party.sync_off	%s turned co-op sync off.	أوقف %1 مزامنة اللعب التعاوني.	%1 = the player's name
+tip.boss.f3_join	your partner is in a boss fight: F3 takes you there, if you want to join.	شريكك في معركة زعيم: إن أردت الانضمام، اضغط F3 للانتقال إلى هناك.	
+tip.boss.wall_join	your partner is in a boss fight: press E at the black wall, or F3, to join.	شريكك في معركة زعيم: للانضمام، اضغط E عند جدار الضباب الأسود أو اضغط F3.	'black wall' = جدار الضباب الأسود (glossary)
+tip.boss.no_ground	no ground past the wall here: try another part of it.	لا أرض خلف الجدار هنا: جرّب جزءًا آخر منه.	
+tip.boss.taking_long	the fight is taking long: you're free to move. F3 takes you to your partner.	طال القتال: يمكنك التحرك بحرية. اضغط F3 للانتقال إلى شريكك.	
+tip.boss.watching	your partner is in a boss fight: you'll join them when it's over. F3 takes you in now.	شريكك في معركة زعيم: ستنتقل إليه حين ينتهي القتال. اضغط F3 لتدخل الآن.	
+tip.boss.hold	you're down: you'll be back when the fight is over.	سقطت: ستعود حين ينتهي القتال.	
+tip.f3.not_now	not now.	ليس الآن.	F3 refused for now (a scene, a menu, a fight); the Chinese says 'can't teleport now': لا يمكن الانتقال الآن. if that reads clearer
+tip.f3.tp_off	TP > PARTNER is off. Turn it on in MORE (F5).	خيار «الانتقال إلى الشريك» معطّل. فعّله من «المزيد» (F5).	TP > PARTNER = the tile «الانتقال إلى الشريك», MORE = the F5 button «المزيد» (glossary)
+tip.f3.too_late	couldn't reach your partner in time. TP > PARTNER in MORE (F5) can take you there.	تعذّر الوصول إلى شريكك في الوقت المحدد. خيار «الانتقال إلى الشريك» في «المزيد» (F5) ينقلك إليه.	
+tip.f3.no_partner	no partner to go to yet.	لا يوجد شريك تنتقل إليه بعد.	
+tip.f3.partner_prologue	your partner is still in the prologue.	ما زال شريكك في المقدمة.	
+tip.f3.in_prologue	you're in the prologue: finish it first, or start a New Game and choose the game's own skip there.	أنت في المقدمة: أنهِها أولًا، أو ابدأ New Game واختر خيار التخطي في اللعبة نفسها.	kept in English: a name in the game, which has no Arabic (the user, 11-10); the New Game sentence is the glossary's, as on the Skip Prologue tile; was: أنت في المقدمة: أنهِها أولًا، أو ابدأ لعبة جديدة واختر خيار التخطي في اللعبة نفسها.
+tip.f3.cant_join	your partner can't be joined right now.	لا يمكن الانتقال إلى شريكك الآن.	as the Chinese: can't teleport to your partner now
+tip.f3.position	your partner's position looks wrong.	يبدو أن موقع شريكك غير صحيح.	
+tip.f3.map_unknown	your partner's map isn't known yet.	خريطة شريكك غير معروفة بعد.	
+tip.f3.wouldnt_go	the game wouldn't go there.	رفضت اللعبة الانتقال إلى هناك.	glossary sentence
+f6.art.title	PvP	PvP	kept Latin, as the Chinese does (glossary: PvP); alone on its line, so no direction issue
+f6.art.sub	DUELS IN THE ARENAS OF THE BOSSES YOU HAVE BEATEN	مبارزات في ساحات الزعماء الذين هزمتهم	fits: 172 of 820 px (Tahoma 10px, widest of 3 faces)
+f6.art.mode	MODE	الوضع	fits: 32 of 360 px (Segoe UI 12px, widest of 3 faces)
+f6.art.clock	CLOCK	الوقت	fits: 30 of 264 px (Segoe UI 12px, widest of 3 faces)
+f6.art.arena	ARENA	الساحة	fits: 38 of 820 px (Tahoma 12px, widest of 3 faces)
+f6.art.players	PLAYERS	اللاعبون	fits: 41 of 430 px (Sakkal Majalla Bold 15px, widest of 3 faces)
+f6.art.loadout	YOUR LOADOUT	عتادك	fits: 30 of 382 px (Segoe UI 12px, widest of 3 faces)
+f6.art.mode.duel	Duel	مبارزة	fits: widest 32 of 154 px on 1 line(s) (13 px, 11 px on two; widest of 3 faces)
+f6.art.mode.duel.sub	Best of three rounds	الفوز بجولتين من ثلاث	fits: 83 of 148 px (Tahoma 9px, widest of 3 faces)
+f6.art.mode.death	Death	قتال حتى الموت	glossary alt: حتى الموت; fits: widest 89 of 154 px on 1 line(s) (13 px, 11 px on two; widest of 3 faces)
+f6.art.mode.death.sub	One life, last team standing	حياة واحدة، يفوز آخر فريق صامد	صامد = still standing; fits: 122 of 148 px (Sakkal Majalla Bold 12px, widest of 3 faces)
+f6.art.clock.0	No Timer	بلا حد زمني	REVIEW, was [بلا وقت]: No Timer: بلا وقت read as 'no time (left)'; بلا حد زمني is the usual 'no time limit'; the tip piece tip.pvp.start.no_timer says the same; alt بلا مؤقت; fits: widest 67 of 154 px on 1 line(s) (13 px, 11 px on two; widest of 3 faces)
+f6.art.clock.0.sub	Fight to the fall	حتى السقوط	fits: 51 of 148 px (Tahoma 9px, widest of 3 faces)
+f6.art.clock.60	60 s a round	60 ثانية للجولة	fits: widest 81 of 154 px on 1 line(s) (13 px, 11 px on two; widest of 3 faces)
+f6.art.clock.90	90 s a round	90 ثانية للجولة	fits: widest 81 of 154 px on 1 line(s) (13 px, 11 px on two; widest of 3 faces)
+f6.art.clock.120	120 s a round	120 ثانية للجولة	fits: widest 88 of 154 px on 1 line(s) (13 px, 11 px on two; widest of 3 faces)
+f6.art.clock.sub	Most health left wins	الأعلى صحةً يفوز	fits: 64 of 148 px (Sakkal Majalla Bold 12px, widest of 3 faces)
+f6.art.arena.yucong	Crimson Forest	Crimson Forest	kept in English: a name in the game, which has no Arabic (the user, 11-10); name: Crimson Forest (YuCong's arena); the same قرمزي as the Crimson team; fits: 81 of 146 px (Tahoma Bold 12px, widest of 3 faces); was: الغابة القرمزية
+f6.art.arena.huaqianxiao	Hua Qianxiao's Stage	Hua Qianxiao's Stage	kept in English: a name in the game, which has no Arabic (the user, 11-10); was: مسرح هوا تشيان شياو
+f6.art.arena.goldmask	The Gold-Masked Gorge	The Gold-Masked Gorge	kept in English: a name in the game, which has no Arabic (the user, 11-10); name: The Gold-Masked Gorge; one Arabic name for this card and the tip's The Gold-Masked One's Gorge (term.arena.goldmask); fits: 112 of 146 px (Tahoma Bold 12px, widest of 3 faces); was: وادي القناع الذهبي
+f6.art.arena.muxiaokui	Mu Xiaokui's Meadow	Mu Xiaokui's Meadow	kept in English: a name in the game, which has no Arabic (the user, 11-10); name: Mu Xiaokui's Meadow; fits: 101 of 146 px (Tahoma Bold 12px, widest of 3 faces); was: مرج مو شياو كوي
+f6.art.arena.here	Here	هنا	name: Here (the arena where the host stands); lines quote it as «هنا»; fits: 18 of 146 px (Tahoma Bold 12px, widest of 3 faces)
+f6.art.arena.here.sub	Where the host stands	حيث يقف المضيف	fits: 72 of 146 px (Sakkal Majalla Bold 12px, widest of 3 faces)
+f6.art.arena.locked	Beat this boss first	اهزم هذا الزعيم أولًا	fits: 78 of 146 px (Sakkal Majalla Bold 12px, widest of 3 faces)
+f6.art.slot.main1	WEAPON I	السلاح الأول	fits: 50 of 172 px (Segoe UI 10px, widest of 3 faces)
+f6.art.slot.main2	WEAPON II	السلاح الثاني	fits: 57 of 172 px (Tahoma 10px, widest of 3 faces)
+f6.art.slot.edge1	PHANTOM EDGE I	Phantom Edge الأول	kept in English: a name in the game, which has no Arabic (the user, 11-10) (Phantom Edge, the game's word for the second weapons); was: السلاح الشبحي الأول
+f6.art.slot.edge2	PHANTOM EDGE II	Phantom Edge الثاني	kept in English: a name in the game, which has no Arabic (the user, 11-10) (Phantom Edge, the game's word for the second weapons); was: السلاح الشبحي الثاني
+f6.art.pick.main	CHOOSE A WEAPON	اختر سلاحًا	fits: 104 of 600 px (Tahoma 22px, widest of 3 faces)
+f6.art.pick.edge	CHOOSE A PHANTOM EDGE	اختر Phantom Edge	kept in English: a name in the game, which has no Arabic (the user, 11-10) (Phantom Edge, the game's word for the second weapons); was: اختر سلاحًا شبحيًا
+f6.art.btn.ready	READY	جاهز	CHOICE (glossary): جاهز on both READY pictures, as the English; or استعداد here (not ready yet, zh 准备) and جاهز on the lit one (zh 已准备); fits: 33 of 150 px (Sakkal Majalla Bold 19px, widest of 3 faces)
+f6.art.btn.ready_on	READY	جاهز	the guest who is ready (red); see f6.art.btn.ready; fits: 33 of 150 px (Sakkal Majalla Bold 19px, widest of 3 faces)
+f6.art.btn.start	START	ابدأ	fits: 21 of 150 px (Segoe UI 15px, widest of 3 faces)
+f6.art.btn.leave	LEAVE	مغادرة	fits: 44 of 150 px (Segoe UI 15px, widest of 3 faces)
+f6.art.btn.back	BACK	رجوع	fits: 35 of 150 px (Sakkal Majalla Bold 19px, widest of 3 faces)
+f6.art.team.1	CRIMSON	القرمزي	team tag (CRIMSON); the tip says الفريق القرمزي.; name: Crimson (team) = القرمزي, the same قرمزي as the Crimson Forest; fits: 38 of 88 px (Tahoma Bold 10px, widest of 3 faces)
+f6.art.team.2	AZURE	اللازوردي	name: Azure (team tag AZURE) = اللازوردي; the tip says الفريق اللازوردي.; alt السماوي; fits: 43 of 88 px (Tahoma Bold 10px, widest of 3 faces)
+f6.art.foot	Everyone fights at the top of the game: every skill, weapons at level 30, three drinks from one gourd, no talismans.	يقاتل الجميع بكامل قوتهم: كل المهارات، والأسلحة بالمستوى 30، وثلاث جرعات من قَرعة واحدة، ولا تمائم.	قَرعة with its fatha (a picture: plain قرعة also reads 'a draw/lottery'); fits: 436 of 820 px (Tahoma 10px, widest of 3 faces)
+f6.art.row	PLAYER %d	اللاعب %d	optional picture today (pvp_row_1..6.png): needs pvppanel.lua:311 to use worded(); %d = 1-6; fits: 49 of 224 px (Tahoma Bold 12px, widest of 3 faces)
+f6.words.in_match	In a match: LEAVE twice ends it for everyone.	أثناء النزال: اضغط «مغادرة» مرتين لإنهائه للجميع.	
+f6.words.offline	Play online first (F5): PvP is between linked players. Your loadout is kept for when you are.	العب عبر الإنترنت أولًا (F5): نزالات PvP بين اللاعبين المتصلين. يُحفظ عتادك لحين اتصالك.	
+f6.words.offline_short	Play online first (F5): PvP is between linked players.	العب عبر الإنترنت أولًا (F5): نزالات PvP بين اللاعبين المتصلين.	also a tip when START is pressed: as a tip it comes after the 'Phantom Pact: ' prefix (the glossary's direction issue)
+f6.words.host_starts	The host starts the match.	المضيف هو من يبدأ النزال.	REVIEW, was [المضيف يبدأ النزال.]: المضيف يبدأ النزال read as 'the host is starting the match (now)'; the line says only the host can start it (a guest pressed START); f6.words.you_ready has the same sentence
+f6.words.restoring	Putting the last match back: a moment.	جارٍ إرجاعك من النزال السابق: انتظر لحظة.	said by meaning: the code is putting this player back where they were before the last match (zh 'restoring the last match')
+f6.words.nobody	Nobody to fight: a partner needs to be linked.	لا يوجد من تقاتله: يجب أن يتصل شريك.	
+f6.words.needs_version	%s needs Phantom Pact %s for PvP.	يحتاج %1 إلى Phantom Pact %2 للعب PvP.	%1 = player name, %2 = this version; verb first
+f6.words.other_version	%s is on Phantom Pact %s: everyone needs %s.	%1 يستخدم Phantom Pact %2: يحتاج الجميع إلى الإصدار %3.	%1 = player name, %2 = their version, %3 = this version; الإصدار added before %3 for clarity
+f6.words.waiting_ready	Waiting for %s to be ready.	بانتظار أن يستعد %1.	%1 = player name
+f6.words.both_teams	Both teams need someone.	يحتاج كل فريق إلى لاعب واحد على الأقل.	
+f6.words.three_a_side	Three a side at most: someone needs to change team.	ثلاثة لكل فريق على الأكثر: على أحدكم أن يغيّر فريقه.	
+f6.words.not_beaten	%s hasn't beaten %s yet: that arena opens after the fight.	%1 لم يهزم %2 بعد: تُفتح هذه الساحة بعد المعركة.	%1 = player name, %2 = boss name; name first so the two names never touch
+f6.words.other_map	%s is on another map: for Here, everyone on %s (F3 takes you to a partner).	%1 في خريطة أخرى: لساحة «هنا» يلزم وجود الجميع في %2 (اضغط F3 للانتقال إلى شريك).	%1 = player name, %2 = internal map name (PBZ_Xigu_WP, stays Latin); 'for Here' said as 'for the «هنا» arena'; the page's longest line
+f6.words.all_ready	Everyone's ready: START when you are.	الجميع جاهزون: اضغط «ابدأ» متى شئت.	
+f6.words.waiting_host	Waiting to hear the host's match (the host needs Phantom Pact %s).	بانتظار معلومات نزال المضيف (يحتاج المضيف إلى Phantom Pact %1).	%1 = this version
+f6.words.you_ready	You're ready. The host starts the match.	أنت جاهز. المضيف هو من يبدأ النزال.	REVIEW, was [أنت جاهز. المضيف يبدأ النزال.]: the same English sentence as f6.words.host_starts, the same Arabic
+f6.words.set_loadout	Set your loadout, pick a team, then READY.	جهّز عتادك واختر فريقًا، ثم اضغط «جاهز».	«جاهز» = the READY button (see f6.art.btn.ready)
+f6.words.pick	Click one to take it; BACK keeps what you had.	انقر على سلاح لاختياره؛ «رجوع» يُبقي ما كان لديك.	'one' said as سلاح: both pick pages hold weapons
+tip.pvp.host_sets	the host sets the match.	إعدادات النزال يحددها المضيف.	a guest clicked a host-only choice
+tip.pvp.needs_beaten	everyone needs %s beaten in their own game for that arena.	لهذه الساحة، يجب أن يهزم الجميع %1، كلٌّ في لعبته.	%1 = boss (term.boss.*)
+tip.pvp.two_players	two players: one team each.	لاعبان: لكلٍّ منهما فريق.	
+tip.pvp.loadout_next	the loadout changes for the next match.	تسري تغييرات العتاد في النزال التالي.	a change made now counts from the next match
+tip.pvp.press_leave	press LEAVE again to end the match for everyone.	اضغط «مغادرة» مرة أخرى لإنهاء النزال للجميع.	LEAVE = the button «مغادرة» (glossary)
+tip.pvp.no_arena	can't get to the arena from here.	لا يمكن الوصول إلى الساحة من هنا.	glossary sentence
+tip.pvp.talismans	no talismans in a match: yours come back after it.	لا تمائم في النزال: ستعود إليك تمائمك بعده.	
+tip.pvp.too_late	too late to finish them: the match is over.	فات أوان الإجهاز عليه: انتهى النزال.	'finish' = أجهز على (glossary)
+tip.pvp.get_closer	get closer to a fallen foe to finish them.	اقترب من الخصم الساقط للإجهاز عليه.	glossary sentence
+tip.pvp.cut_short	a match was cut short by the game closing: back to where it began.	انقطع النزال لأن اللعبة أُغلقت: عدت إلى حيث بدأ.	
+tip.pvp.start.duel	Duel, best of three, 	مبارزة، الفوز بجولتين من ثلاث، 	piece; the whole tip reads: مبارزة، الفوز بجولتين من ثلاث، 90 ثانية للجولة. الفريق القرمزي. إلى Crimson Forest.
+tip.pvp.start.death	Death, one life, 	قتال حتى الموت، حياة واحدة، 	piece; e.g. قتال حتى الموت، حياة واحدة، بلا حد زمني. الفريق اللازوردي. إلى «هنا».
+tip.pvp.start.no_timer	no timer. 	بلا حد زمني. 	REVIEW, was [بلا وقت.]: piece; the same words as the No Timer card (f6.art.clock.0)
+tip.pvp.start.timer	%d s a round. 	%1 ثانية للجولة. 	piece; %1 = 60, 90 or 120: ثانية, the singular, is right for all three
+tip.pvp.start.crimson	Crimson team. 	الفريق القرمزي. 	piece
+tip.pvp.start.azure	Azure team. 	الفريق اللازوردي. 	piece
+tip.pvp.start.to	To %s.	إلى %1.	piece; %1 = arena (term.arena.*). For the Here arena 'To Here.' needs its own row, as the Chinese has (前往Here。 -> 前往此地。): 'إلى Here.' -> 'إلى «هنا».' (term.arena.here comes quoted: a bare إلى هنا. reads 'that's all'), or 'Here' stays English
+tip.pvp.back.over	back from the match: the match is over.	عدت من النزال: انتهى النزال.	'back from the match:' = عدت من النزال: on all 15 rows (glossary)
+tip.pvp.back.you_left	back from the match: you left.	عدت من النزال: غادرت.	
+tip.pvp.back.you_died	back from the match: you died.	عدت من النزال: لقيت حتفك.	'you died' = لقيت حتفك (glossary)
+tip.pvp.back.player_lost	back from the match: a player was lost.	عدت من النزال: انقطع اتصال أحد اللاعبين.	
+tip.pvp.back.host_lost	back from the match: the host was lost.	عدت من النزال: انقطع اتصال المضيف.	
+tip.pvp.back.coop_off	back from the match: co-op was turned off.	عدت من النزال: أُوقف اللعب التعاوني.	
+tip.pvp.back.trip_long	back from the match: the trip to the arena took too long.	عدت من النزال: طال الانتقال إلى الساحة.	
+tip.pvp.back.you_couldnt	back from the match: you couldn't get to the arena.	عدت من النزال: تعذّر عليك الوصول إلى الساحة.	
+tip.pvp.back.late	back from the match: not everyone got to the arena in time.	عدت من النزال: لم يصل الجميع إلى الساحة في الوقت المحدد.	
+tip.pvp.back.name_lost	back from the match: %s was lost.	عدت من النزال: انقطع اتصال %1.	%1 = the player's name
+tip.pvp.back.name_left	back from the match: %s left.	عدت من النزال: غادر %1.	%1 = the player's name
+tip.pvp.back.name_couldnt	back from the match: %s couldn't get to the arena.	عدت من النزال: تعذّر على %1 الوصول إلى الساحة.	%1 = the player's name
+tip.pvp.back.your_world	back from the match: your world never finished its fight with %s: that arena is closed for you.	عدت من النزال: لم يكتمل القتال مع %1 في عالمك، فهذه الساحة مغلقة أمامك.	%1 = boss (term.boss.*)
+tip.pvp.back.their_world	back from the match: %s's world never finished that arena's boss fight.	عدت من النزال: لم تكتمل معركة زعيم تلك الساحة في عالم %1.	%1 = the player's name
+tip.pvp.back.other	back from the match: %s.	عدت من النزال: %1.	fallback for any reason not above; %1 = the English reason, which stays English
+match.count.numbers	一 二 三	一 二 三	unchanged: brush characters shown in every language
+match.count.one	ONE	واحد	drawn in the Arabic font with no letter-spacing (arenaui.lua sayWord); fits: 81 of 600 px (Sakkal Majalla Bold 51px, widest of 3 faces)
+match.count.two	TWO	اثنان	fits: 75 of 600 px (Sakkal Majalla Bold 51px, widest of 3 faces)
+match.count.three	THREE	ثلاثة	fits: 73 of 600 px (Tahoma 40px, widest of 3 faces)
+match.count.fight_glyph	斗	斗	unchanged: brush character shown in every language
+match.count.fight	FIGHT	قتال!	a noun: right for one player or a team; glossary alt قاتِل!; fits: 98 of 600 px (Segoe UI 48px, widest of 3 faces)
+match.timeup_glyph	时间到	时间到	unchanged: brush characters shown in every language
+match.timeup	TIME'S UP	انتهى الوقت	fits: 444 of 1100 px (Tahoma 88px, widest of 3 faces)
+match.foe.name	PLAYER %d	اللاعب %d	code: arenaui.lua foeName() says say('PLAYER ') .. slot, so its lang_ar.lua row is 'PLAYER ' = 'اللاعب ' (with the space)
+match.foe.score	  ·  YOU %d – %d	  ·  أنت %d – %d	code: arenaui.lua foeLabel() says only say('YOU'), so its lang_ar.lua row is 'YOU' = 'أنت'; own rounds first, and in the right-to-left line that number sits next to أنت (proofed)
+match.banner.round_1	ROUND ONE	الجولة الأولى	fits: 237 of 800 px (Tahoma Bold 38px, widest of 3 faces)
+match.banner.round_2	ROUND TWO	الجولة الثانية	fits: 230 of 800 px (Tahoma Bold 38px, widest of 3 faces)
+match.banner.round_3	FINAL ROUND	الجولة الحاسمة	fits: 283 of 800 px (Tahoma Bold 38px, widest of 3 faces)
+match.banner.death	ONE LIFE	حياة واحدة	fits: 193 of 800 px (Tahoma Bold 38px, widest of 3 faces)
+match.banner.round_won	ROUND TAKEN	فزت بالجولة	fits: 213 of 800 px (Tahoma Bold 38px, widest of 3 faces)
+match.banner.round_lost	ROUND LOST	خسرت الجولة	fits: 250 of 800 px (Tahoma Bold 38px, widest of 3 faces)
+match.banner.round_draw	DRAW	تعادل	fits: 98 of 800 px (Tahoma Bold 38px, widest of 3 faces)
+match.banner.down	YOU'RE DOWN	سقطت	fits: 136 of 800 px (Tahoma Bold 38px, widest of 3 faces)
+match.banner.fell	YOU FELL	هويت	a fall off the arena, apart from سقطت (down); glossary alt سقطت من الساحة; fits: 103 of 800 px (Tahoma Bold 38px, widest of 3 faces)
+match.banner.finish	PRESS F TO FINISH	اضغط F للإجهاز	fits: 269 of 800 px (Tahoma Bold 38px, widest of 3 faces)
+match.banner.again	PRESS F TO REMATCH	اضغط F لإعادة النزال	fits: 364 of 800 px (Tahoma Bold 38px, widest of 3 faces)
+match.banner.won	YOUR TEAM WINS	فاز فريقك	fits: 172 of 800 px (Tahoma Bold 38px, widest of 3 faces)
+match.banner.lost	YOUR TEAM FALLS	هُزم فريقك	fits: 195 of 800 px (Tahoma Bold 38px, widest of 3 faces)
+match.banner.won_one	YOU WIN	فزت	fits: 75 of 800 px (Tahoma Bold 38px, widest of 3 faces)
+match.banner.lost_one	YOU FALL	هُزمت	fits: 111 of 800 px (Tahoma Bold 38px, widest of 3 faces)
+match.mate	PLAYER %d	اللاعب %d	%d = 1-6; fits: 49 of 134 px (Tahoma Bold 12px, widest of 3 faces)
+match.alive	A L I V E	نجوت	no spaces (spaced Arabic letters lose their joins); the code sets this on the game's DeadRichText in the game's own font, which drops Arabic (bench 11-10)
+match.victory	V I C T O R Y	النصر	no spaces; same screen and same font problem as match.alive
+match.alive_glyphs	生\n还	生\n还	unchanged: brush characters shown in every language
+local.art.title	LOCAL CO-OP	اللعب التعاوني المحلي	F4 panel title; glossary 'local co-op'; draw it whole, never letter-spaced like the English (the joins break); fits: 235 of 340 px (Tahoma 25px, widest of 3 faces)
+local.art.players	PLAYERS	اللاعبون	heading over the 1-4 tabs; glossary 'PLAYERS (heading over a list)'; fits: 47 of 430 px (Sakkal Majalla Bold 17px, widest of 3 faces)
+local.art.screen	SCREEN	الشاشة	heading over the layout pictures; glossary 'SCREEN (F4 heading)'; fits: 45 of 380 px (Tahoma 13px, widest of 3 faces)
+local.art.controls	CONTROLS	التحكم	heading over the cards; glossary 'CONTROLS (F4 heading)'; fits: 37 of 820 px (Tahoma 13px, widest of 3 faces)
+local.art.help1	Hold any button on a joystick to light up its card.	اضغط مطوّلًا على أي زر في وحدة تحكم لتضيء بطاقتها.	footer line 1; glossary sentence (hold = اضغط مطوّلًا, joystick = وحدة التحكم, card = البطاقة); fits: 304 of 450 px (Segoe UI 13px, widest of 3 faces)
+local.art.help2	Drag cards onto players.	اسحب البطاقات إلى اللاعبين.	footer line 2; glossary sentence; fits: 162 of 450 px (Tahoma 13px, widest of 3 faces)
+local.art.slot	PLAYER %d	اللاعب %d	slot heading; %d = 1-2, filled in by make_local_panel.py; the digit lands at the left end, as it should in a right-to-left line; fits: 35 of 180 px (Segoe UI 10px, widest of 3 faces)
+local.art.kbm	Keyboard & Mouse	لوحة المفاتيح والفأرة	card label, one line, no shrink; glossary 'Keyboard & Mouse'; CHECK: tightest label here, over the room if the Arabic is drawn 2 px bigger in a bold face (Tahoma Bold 17 px: 167 px); the spoken والماوس is wider still (143 px at 15 px); fits: 130 of 148 px (Segoe UI 15px, widest of 3 faces)
+local.art.kbm.sub	one per game	واحدة لكل لعبة	card small line: only one keyboard and mouse in a game; feminine to agree with لوحة المفاتيح; glossary; alt للاعب واحد فقط 'for one player only' if 'one per game' reads oddly; fits: 70 of 148 px (Segoe UI 11px, widest of 3 faces)
+local.art.joy	Joystick %d	وحدة التحكم %d	card label; %d = 1-2 (cards joy1, joy2), filled in by make_local_panel.py; glossary 'Joystick %d'; fits: 90 of 148 px (Tahoma 15px, widest of 3 faces)
+local.art.joy.sub	connected	متصلة	card small line; feminine to agree with وحدة التحكم; glossary; fits: 31 of 148 px (Segoe UI 11px, widest of 3 faces)
+local.art.apply	APPLY	تطبيق	button; glossary APPLY; fits: 48 of 150 px (Tahoma Bold 16px, widest of 3 faces)
+local.art.applied	APPLIED	تم التطبيق	button, red for 1.5 s after a click; glossary APPLIED; fits: 81 of 150 px (Tahoma Bold 16px, widest of 3 faces)
+local.art.multiplayer	MULTIPLAYER	عبر الإنترنت	button back to online play (from the next start); glossary MULTIPLAYER (online as against LOCAL); alt متعدد اللاعبين; fits: 86 of 150 px (Tahoma Bold 16px, widest of 3 faces)
+local.tip.close_menu	close the game's menu first, then press F4.	أغلق قائمة اللعبة أولًا، ثم اضغط F4.	glossary 'close the game's menu first'; F4 stays Latin, mid-line
+local.tip.multiplayer_next	Multiplayer starts the next time you start the game.	يبدأ اللعب عبر الإنترنت عند تشغيل اللعبة المرة القادمة.	the glossary's own sentence (MULTIPLAYER)
+local.tip.wall	press E or Circle at the black wall to join the fight.	اضغط E أو زر الدائرة عند جدار الضباب الأسود للانضمام إلى القتال.	glossary: black wall, Circle = زر الدائرة, 'join the fight'
+local.tip.checklist	%s is player 1, %s is player 2. F4: screen and pads. Player 2: Cross climbs and jumps, Circle uses, D-pad down drinks.	اللاعب 1: %1، واللاعب 2: %2. اضغط F4 لضبط الشاشة ووحدات التحكم. اللاعب 2: زر إكس للتسلق والقفز، وزر الدائرة للتفاعل، وزر الاتجاه السفلي للشرب.	pattern: %1 = the first %s (player 1's device), %2 = the second %s (player 2's); each is 'keyboard' or 'pad N' in English, so local.word.keyboard and local.word.pad must be applied after this row or English lands mid-line; 'F4: screen and pads' said as 'press F4 to set ...' so no sentence opens on F4; glossary: Cross/Circle/D-pad and the three verbs
+local.word.keyboard	keyboard	لوحة المفاتيح	put into local.tip.checklist as %1 or %2; glossary
+local.word.pad	pad %d	وحدة التحكم %d	put into local.tip.checklist; %d = 1-4; the code builds 'pad ' .. digit, so as a Lua piece it is 'pad (%d)' -> 'وحدة التحكم %1', applied after the checklist row; glossary 'pad %d'
+local.tip.new_pad	player %d is on a new controller.	انتقل اللاعب %1 إلى وحدة تحكم جديدة.	pattern: %1 = the %d (player 1 or 2); 'is on a new controller' said as 'moved to a new controller'
+local.tip.p2_joined	player 2 joined.	انضم اللاعب 2.	glossary '%s joined.' = انضم %s.
+local.tip.pad_lost	player %d's controller is disconnected. Reconnect it, or hold a button on another.	انقطع اتصال وحدة تحكم اللاعب %1. أعد توصيلها، أو اضغط مطوّلًا على زر في وحدة تحكم أخرى.	pattern: %1 = the %d (player 1 or 2); glossary: disconnected, hold; أعد توصيلها is feminine for وحدة التحكم
+local.tip.pad_back	player %d's controller is back.	عادت وحدة تحكم اللاعب %1.	pattern: %1 = the %d (player 1 or 2); the glossary's own sentence
+local.tip.gourd_empty	player 2's gourd is empty: rest at a bell.	قرعة الشفاء لدى اللاعب 2 فارغة: استرح عند جرس.	gourd as قرعة الشفاء, as the glossary says where القرعة could read 'the draw'; glossary 'rest at a bell'
+revive.tip.up	You're back on your feet.	نهضت من جديد.	glossary 'back on your feet'
+revive.tip.down	You're down: your partner can strike you to bring you back.	سقطت: يستطيع شريكك إنعاشك بضربك.	glossary: down = سقط, bring back = أنعش, strike = ضرب; 'your partner can revive you by striking you' (hits fill a gauge, zh 队友攻击你就能把你救起)
+revive.tip.partner_down	Your partner is down: strike them to bring them back.	سقط شريكك: اضربه لإنعاشه.	glossary: 'strike' = اضرب, 'to bring them back' = لإنعاشه
+revive.tip.partner_up	Your partner is back on their feet.	نهض شريكك من جديد.	glossary 'back on your feet', said of the partner

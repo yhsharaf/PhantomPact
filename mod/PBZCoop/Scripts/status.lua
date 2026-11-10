@@ -20,6 +20,7 @@ return function(api)
     local GUEST_ALONE_S = 20        -- a guest that has heard nothing for this long is told what to check
     local HOST_ALONE_S = 90         -- a host, the same, once: it may just be waiting for a friend
     local TIP_CLASS = "/Game/PBZContent/UI/InGame/SwitchUI/WB_TipsText.WB_TipsText_C"
+    local TIP_FIT = 150             -- letters a tip line holds before it breaks (lang.fit): the screen holds ~190
 
     local status = { on = true, last = {}, lastShown = {}, highPingReads = 0, relayedReads = 0, relayShown = false,
         buildShown = false }
@@ -69,7 +70,17 @@ return function(api)
                 end
             end
             tip:SetVisibility(3)                    -- HitTestInvisible: seen, never clicked
-            tip:SetText(FText("Phantom Pact: " .. api.lang.say(text)))
+            if api.lang.arabic() then
+                -- (The game's text keeps the English, hidden, for the bar's size; the Arabic, its head too so it reads right
+                -- to left from its start, goes beside it in the one font with Arabic: pbz.lua's game.arabicTip.)
+                tip:SetText(FText(api.lang.fit("Phantom Pact: " .. text, TIP_FIT)))
+                game.arabicTip(tip, api.lang.say("Phantom Pact: ") .. api.lang.say(text))
+            else
+                if game.arabicTipUsed then
+                    game.arabicTip(tip, nil)
+                end
+                tip:SetText(FText(api.lang.fit("Phantom Pact: " .. api.lang.say(text), TIP_FIT)))
+            end
             pcall(function() tip:PlayAnimation(tip.FadeIn, 0, 1, 0, 1, false) end)
             local shown = tip
             tipSerial = tipSerial + 1

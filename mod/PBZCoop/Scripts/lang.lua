@@ -1,8 +1,10 @@
--- The online mode's words on screen, in English or Chinese: picked on the online panel (F5), kept in PhantomPact.ini.
--- Everything is written in English and logged that way. say() turns a line into Chinese as it goes on screen, and a
--- line with no row here stays English. The panel's own pictures come in both (art/make_online_panel.py).
+-- The online mode's words on screen, in English, Chinese or Arabic: picked on the online panel (F5), kept in
+-- PhantomPact.ini. Everything is written in English and logged that way. say() turns a line into the language picked as
+-- it goes on screen, and a line with no row stays English. Chinese is here; Arabic is lang_ar.lua's (the same English
+-- lines and pieces, checked by the mod's author). The panels' pictures come in each: "zh_" ones from
+-- art/make_online_panel.py and make_pvp_art.py, "ar_" ones from art/make_arabic_art.py.
 
-return function()
+return function(scriptDir)
     local lang = { code = "en" }
 
     -- Whole lines.
@@ -211,25 +213,144 @@ return function()
         PARTS[#PARTS + 1] = name
     end
 
+    -- Arabic: lang_ar.lua's lines and pieces ({ LINES = {...}, PARTS = {...} }, the same English keys as above).
+    local AR = { LINES = {}, PARTS = {} }
+    if scriptDir then
+        local ok, t = pcall(dofile, scriptDir .. "lang_ar.lua")
+        if ok and type(t) == "table" and type(t.LINES) == "table" and type(t.PARTS) == "table" then
+            AR = t
+        end
+    end
+    local WORDS = { zh = "Chinese", ar = "Arabic" }
+
     function lang.set(word)
-        lang.code = (word or ""):lower() == "chinese" and "zh" or "en"
+        local w = (word or ""):lower()
+        lang.code = (w == "chinese" and "zh") or (w == "arabic" and "ar") or "en"
     end
 
     function lang.word()
-        return lang.code == "zh" and "Chinese" or "English"
+        return WORDS[lang.code] or "English"
+    end
+
+    -- What the pictures of this language are named with: "zh_", "ar_", or nothing for English.
+    function lang.prefix()
+        return WORDS[lang.code] and (lang.code .. "_") or ""
+    end
+
+    -- Arabic reads right to left, in a font the game doesn't have (pbz.lua's game.arabicFont).
+    function lang.arabic()
+        return lang.code == "ar"
     end
 
     function lang.say(text)
-        if lang.code ~= "zh" then
+        local lines, parts
+        if lang.code == "zh" then
+            lines, parts = LINES, PARTS
+        elseif lang.code == "ar" then
+            lines, parts = AR.LINES, AR.PARTS
+        else
             return text
         end
-        if LINES[text] then
-            return LINES[text]
+        if lines[text] then
+            return lines[text]
         end
-        for _, row in ipairs(PARTS) do
+        for _, row in ipairs(parts) do
             text = text:gsub(row[1], row[2])
         end
         return text
+    end
+
+    -- A long line broken into the fewest lines at most max wide (a letter 1, a Chinese character 2), at its spaces or
+    -- between Chinese characters, as even as they go: the game's tip text never wraps, and the longest tips ran off the
+    -- screen in one line (the user, 11-10). A line break already in it stays. Arabic isn't broken here: pbz.lua's
+    -- game.arabicTip wraps it, right to left.
+    local CLOSE, OPEN = {}, {}  -- marks a line can't start with, and can't end with
+    if utf8 then
+        for _, c in ipairs({ ".", ",", ";", ":", "!", "?", ")", "]", "。", "，", "、", "；", "：", "！", "？", "）", "」", "』", "”", "’" }) do
+            CLOSE[utf8.codepoint(c)] = true
+        end
+        for _, c in ipairs({ "(", "[", "（", "「", "『", "“", "‘" }) do
+            OPEN[utf8.codepoint(c)] = true
+        end
+    end
+    local function wide(cp)
+        return cp >= 0x2E80
+    end
+
+    -- One line (no line break in it) fitted.
+    local function fitLine(text, max)
+        if #text <= max then
+            return text
+        end
+        -- Pieces that stay together: a word, or a Chinese character with the marks that close on it.
+        local units, cur, curW, spaced, prev = {}, {}, 0, false, nil
+        local function flush()
+            if #cur > 0 then
+                units[#units + 1] = { text = table.concat(cur), width = curW, spaced = spaced }
+            end
+            cur, curW, spaced = {}, 0, false
+        end
+        for _, cp in utf8.codes(text) do
+            if cp == 32 then
+                flush()
+                spaced = true
+            else
+                if #cur > 0 and (wide(cp) or wide(prev)) and not CLOSE[cp] and not OPEN[prev] then
+                    flush()
+                end
+                cur[#cur + 1] = utf8.char(cp)
+                curW = curW + (wide(cp) and 2 or 1)
+            end
+            prev = cp
+        end
+        flush()
+        if #units == 0 then
+            return text
+        end
+        -- The pieces in lines at most limit wide, as many to a line as fit (one wider than limit on a line of its own).
+        local function pack(limit)
+            local lines, line, w = {}, {}, 0
+            for _, u in ipairs(units) do
+                local gap = (#line > 0 and u.spaced) and 1 or 0
+                if #line > 0 and w + gap + u.width > limit then
+                    lines[#lines + 1] = table.concat(line)
+                    line, w, gap = {}, 0, 0
+                end
+                if gap == 1 then
+                    line[#line + 1] = " "
+                end
+                line[#line + 1] = u.text
+                w = w + gap + u.width
+            end
+            lines[#lines + 1] = table.concat(line)
+            return lines
+        end
+        -- The fewest lines max allows, at the narrowest width that still needs no more of them: as even as they go.
+        local fewest = #pack(max)
+        local lo, hi = 1, max
+        while lo < hi do
+            local mid = (lo + hi) // 2
+            if #pack(mid) <= fewest then
+                hi = mid
+            else
+                lo = mid + 1
+            end
+        end
+        return (units[1].spaced and " " or "") .. table.concat(pack(lo), "\n")
+    end
+
+    function lang.fit(text, max)
+        if not utf8 or type(text) ~= "string" or not max or #text <= max then     -- (no fewer bytes than its width)
+            return text
+        end
+        local ok, fitted = pcall(function()
+            local out = {}
+            for line in (text .. "\n"):gmatch("([^\n]*)\n") do
+                out[#out + 1] = fitLine(line, max)
+            end
+            return table.concat(out, "\n")
+        end)
+        return ok and fitted or text
     end
 
     return lang

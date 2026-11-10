@@ -77,17 +77,19 @@ WORDS = {
 }
 
 
+def online_ground():
+    """The main page with no words: the panel's ground and the box the status goes in."""
+    img, d = ground()
+    d.rectangle((40 * K, 112 * K, 860 * K, 198 * K), fill=(10, 11, 13, 190), outline=FAINT, width=K)
+    return img, d
+
+
 def online_background(w_):
     w, h = 900, 560
     f = w_["face"]
-    img, d = canvas(w, h)
-    d.rectangle((0, 0, w * K, h * K), fill=BLACK)
-    frame(d, w, h, FAINT)
-    corners(d, w, h)
+    img, d = online_ground()
     spaced(d, (w * K / 2, 42 * K), w_["title"], f(25), BRIGHT, gap=7)
-    d.line(((w / 2 - 170) * K, 67 * K, (w / 2 + 170) * K, 67 * K), fill=FAINT, width=K)
     spaced(d, (40 * K, 96 * K), w_["status"], f(13), DIM, gap=3, anchor="lm")
-    d.rectangle((40 * K, 112 * K, 860 * K, 198 * K), fill=(10, 11, 13, 190), outline=FAINT, width=K)
     spaced(d, (40 * K, 226 * K), w_["through"], f(13), DIM, gap=3, anchor="lm")
     spaced(d, (40 * K, 332 * K), w_["play"], f(13), DIM, gap=3, anchor="lm")
     spaced(d, (604 * K, 332 * K), w_["password"], f(13), DIM, gap=3, anchor="lm")
@@ -99,12 +101,8 @@ def online_background(w_):
 def settings_background(w_):
     w, h = 900, 560
     f = w_["face"]
-    img, d = canvas(w, h)
-    d.rectangle((0, 0, w * K, h * K), fill=BLACK)
-    frame(d, w, h, FAINT)
-    corners(d, w, h)
+    img, d = ground()
     spaced(d, (w * K / 2, 42 * K), w_["settings"], f(25), BRIGHT, gap=7)
-    d.line(((w / 2 - 170) * K, 67 * K, (w / 2 + 170) * K, 67 * K), fill=FAINT, width=K)
     for y, line in zip((505, 528), w_["foot"]):
         d.text((230 * K, y * K), line, font=f(12), fill=DIM, anchor="lm")
     save(img, w_["prefix"] + "online_settings_bg")
@@ -138,11 +136,38 @@ def wrap(d, text, f, width):
     return lines + [line] if line else lines
 
 
-def tile(name, label, sub, value, look, face, mark=None):
-    fill, edge, title, small = LOOKS[look]
+def tile_ground(look):
+    """A tile with no words, in its look's colours."""
+    fill, edge = LOOKS[look][:2]
     img, d = canvas(TILE, TILE)
     d.rectangle((0, 0, TILE * K - 1, TILE * K - 1), fill=fill)
     frame(d, TILE, TILE, edge, width=2)
+    return img, d
+
+
+def tick_or_cross(d, x, base, mark, color):
+    """The tick (on) or the cross (off) in front of a tile's value, 16 wide from x. True when there is one."""
+    if mark == "tick":
+        d.line(((x + 1) * K, base * K, (x + 6) * K, (base + 5) * K, (x + 15) * K, (base - 6) * K), fill=color,
+               width=3 * K, joint="curve")
+    elif mark == "cross":
+        d.line(((x + 2) * K, (base - 6) * K, (x + 13) * K, (base + 5) * K), fill=color, width=3 * K)
+        d.line(((x + 13) * K, (base - 6) * K, (x + 2) * K, (base + 5) * K), fill=color, width=3 * K)
+    return mark in ("tick", "cross")
+
+
+def value_size(d, value, face, room):
+    """A tile value's size and letter gap: 14 and 2, closed up, then made smaller until it fits room."""
+    size, gap = 14, 2
+    while size > 9 and (sum(d.textlength(c, font=face(size, True)) for c in value)
+                        + gap * K * (len(value) - 1)) > room * K:
+        gap, size = (gap - 1, size) if gap else (0, size - 1)
+    return size, gap
+
+
+def tile(name, label, sub, value, look, face, mark=None):
+    title, small = LOOKS[look][2:]
+    img, d = tile_ground(look)
     pad = 12
     y = pad + 2
     for line in wrap(d, label, face(15, True), (TILE - 2 * pad) * K):
@@ -154,17 +179,9 @@ def tile(name, label, sub, value, look, face, mark=None):
         y += 15
     base = TILE - pad - 9
     x = pad
-    if mark == "tick":
-        d.line(((x + 1) * K, base * K, (x + 6) * K, (base + 5) * K, (x + 15) * K, (base - 6) * K), fill=title,
-               width=3 * K, joint="curve")
+    if tick_or_cross(d, x, base, mark, title):
         x += 22
-    elif mark == "cross":
-        d.line(((x + 2) * K, (base - 6) * K, (x + 13) * K, (base + 5) * K), fill=title, width=3 * K)
-        d.line(((x + 13) * K, (base - 6) * K, (x + 2) * K, (base + 5) * K), fill=title, width=3 * K)
-        x += 22
-    size, gap = 14, 2
-    while size > 9 and sum(d.textlength(c, font=face(size, True)) for c in value) + gap * K * (len(value) - 1) > (TILE - 2 * pad - x + pad) * K:
-        gap, size = (gap - 1, size) if gap else (0, size - 1)
+    size, gap = value_size(d, value, face, TILE - 2 * pad - x + pad)
     spaced(d, (x * K, base * K), value, face(size, True), title, gap=gap, anchor="lm")
     save(img, name)
 
@@ -192,9 +209,7 @@ def tiles(w_):
 
 
 def option(name, text, face=font, w=124, h=40):
-    img, d = canvas(w, h)
-    d.rectangle((0, 0, w * K, h * K), fill=(26, 27, 31, 240))
-    frame(d, w, h)
+    img, d = box(w, h)
     # A long word closes up, then shrinks, to stay inside the frame. (The short ones never get here.)
     size, gap = 13, 2
     while sum(d.textlength(c, font=face(size)) for c in text) + gap * K * (len(text) - 1) > (w - 14) * K and (gap or size > 9):

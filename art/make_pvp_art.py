@@ -10,7 +10,7 @@ import re
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
 
-from make_local_panel import (BLACK, BRIGHT, DIM, FAINT, FONTS, K, OUT, SILVER, canvas, corners, font, frame, save,
+from make_local_panel import (BRIGHT, DIM, FAINT, FONTS, K, OUT, SILVER, box, canvas, font, frame, ground, save,
                               selected, spaced)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -274,30 +274,44 @@ def smear(w, h, color, seed):
     return ink(m, color, bleed=False)
 
 
+# Words across the screen between rounds: English, Chinese.
+BANNERS = {
+    "round_1": ("ROUND ONE", "第一回合"), "round_2": ("ROUND TWO", "第二回合"), "round_3": ("FINAL ROUND", "决胜回合"),
+    "death": ("ONE LIFE", "一命定胜负"),
+    "round_won": ("ROUND TAKEN", "本回合胜"), "round_lost": ("ROUND LOST", "本回合负"), "round_draw": ("DRAW", "平局"),
+    "down": ("YOU'RE DOWN", "你倒下了"), "fell": ("YOU FELL", "你坠落了"),
+    "finish": ("PRESS F TO FINISH", "按 F 处决"),
+    # (The host's, on the last screens: a rematch where they stand, issue #13.)
+    "again": ("PRESS F TO REMATCH", "按 F 再战一场"),
+    "won": ("YOUR TEAM WINS", "你的队伍获胜"), "lost": ("YOUR TEAM FALLS", "你的队伍落败"),
+    # (One on one: it's you, not a team.)
+    "won_one": ("YOU WIN", "你获胜"), "lost_one": ("YOU FALL", "你落败"),
+}
+DARK = ("round_lost", "lost", "lost_one", "down", "fell")
+
+
+def banner_ground(key):
+    """A banner with no words: its ink smear, in blood for a loss and black otherwise (900x150, drawn big)."""
+    W, H = 900, 150
+    img = Image.new("RGBA", (W * K, H * K), (0, 0, 0, 0))
+    img.alpha_composite(smear(W * K, H * K, DEEP if key in DARK else (20, 18, 20, 255), sum(map(ord, key))))
+    return img
+
+
+def banner_ink(key):
+    """A banner's words' colour: crimson to finish, gold for a win, bone otherwise."""
+    return CRIMSON if key == "finish" else (GOLD if key in ("won", "won_one", "round_won") else BONE)
+
+
 def banners(only=None):
     """Words across the screen between rounds, on an ink smear. only: just these keys (the rest left as they are)."""
-    sets = {
-        "round_1": ("ROUND ONE", "第一回合"), "round_2": ("ROUND TWO", "第二回合"), "round_3": ("FINAL ROUND", "决胜回合"),
-        "death": ("ONE LIFE", "一命定胜负"),
-        "round_won": ("ROUND TAKEN", "本回合胜"), "round_lost": ("ROUND LOST", "本回合负"), "round_draw": ("DRAW", "平局"),
-        "down": ("YOU'RE DOWN", "你倒下了"), "fell": ("YOU FELL", "你坠落了"),
-        "finish": ("PRESS F TO FINISH", "按 F 处决"),
-        # (The host's, on the last screens: a rematch where they stand, issue #13.)
-        "again": ("PRESS F TO REMATCH", "按 F 再战一场"),
-        "won": ("YOUR TEAM WINS", "你的队伍获胜"), "lost": ("YOUR TEAM FALLS", "你的队伍落败"),
-        # (One on one: it's you, not a team.)
-        "won_one": ("YOU WIN", "你获胜"), "lost_one": ("YOU FALL", "你落败"),
-    }
-    dark = ("round_lost", "lost", "lost_one", "down", "fell")
-    for key, (en, zh) in sets.items():
+    for key, (en, zh) in BANNERS.items():
         if only and key not in only:
             continue
         for prefix, text, face in (("", en, font), ("zh_", zh, chinese)):
             W, H = 900, 150
-            img = Image.new("RGBA", (W * K, H * K), (0, 0, 0, 0))
-            img.alpha_composite(smear(W * K, H * K, DEEP if key in dark else (20, 18, 20, 255), sum(map(ord, key))))
-            color = CRIMSON if key == "finish" else (GOLD if key in ("won", "won_one", "round_won") else BONE)
-            words = caption(text, 38, color, gap=12, face=face, w=W)
+            img = banner_ground(key)
+            words = caption(text, 38, banner_ink(key), gap=12, face=face, w=W)
             img.alpha_composite(words, (0, (H * K - words.size[1]) // 2))
             save_hud(img, prefix + "banner_" + key)
 
@@ -345,34 +359,35 @@ ARENAS = [("yucong", "Crimson Forest", "赤林"), ("huaqianxiao", "Hua Qianxiao'
           ("goldmask", "The Gold-Masked Gorge", "金面人之谷"), ("muxiaokui", "Mu Xiaokui's Meadow", "木小葵之野")]
 
 
-def page_bg(wd):
-    W, H = 900, 560
-    img, d = canvas(W, H)
-    d.rectangle((0, 0, W * K, H * K), fill=BLACK)
-    frame(d, W, H, FAINT)
-    corners(d, W, H)
-    face = wd["face"]
+def page_ground():
+    """The page with no words: the panel's ground with a stroke of blood under the title in place of the rule, and a
+    rule over the players."""
+    W = 900
+    img, d = ground(rule=False)
     rng = random.Random(5)
     m = Image.new("L", (W * K, 30 * K), 0)
     stroke(m, [(360 * K, 18 * K), (450 * K, 14 * K), (540 * K, 17 * K)], [5 * K, 9 * K, 3 * K], rng, bristles=40, dry=0.5)
     img.alpha_composite(ink(m, BLOOD, bleed=False), (0, 46 * K))
+    d.line((40 * K, 338 * K, 860 * K, 338 * K), fill=FAINT, width=K)
+    return img, d
+
+
+def page_bg(wd):
+    W, H = 900, 560
+    img, d = page_ground()
+    face = wd["face"]
     spaced(d, (W * K / 2, 34 * K), wd["title"], font(28), BRIGHT, gap=10)
     d.text((W * K / 2, 84 * K), wd["sub"], font=face(10), fill=DIM, anchor="mm")
     label(d, (40 * K, 108 * K), wd["mode"], face, 12, DIM)
     label(d, (416 * K, 108 * K), wd["clock"], face, 12, DIM)
     label(d, (40 * K, 192 * K), wd["arena"], face, 12, DIM)
-    d.line((40 * K, 338 * K, 860 * K, 338 * K), fill=FAINT, width=K)
     label(d, (40 * K, 354 * K), wd["players"], face, 12, DIM)
     label(d, (478 * K, 354 * K), wd["loadout"], face, 12, DIM)
     d.text((W * K / 2, 548 * K), wd["foot"], font=face(10), fill=DIM, anchor="mm")
     save(img, wd["prefix"] + "pvp_bg")
     for kind in ("main", "edge"):
-        img, d = canvas(W, H)
-        d.rectangle((0, 0, W * K, H * K), fill=BLACK)
-        frame(d, W, H, FAINT)
-        corners(d, W, H)
+        img, d = ground()
         label(d, (W * K / 2, 42 * K), wd["pick"][kind], face, 22, BRIGHT, gap=6, anchor="mm")
-        d.line(((W / 2 - 170) * K, 67 * K, (W / 2 + 170) * K, 67 * K), fill=FAINT, width=K)
         save(img, wd["prefix"] + "pvp_pick_" + kind)
 
 
@@ -392,12 +407,16 @@ def wrap(text, face, size, width):
     return best[1]
 
 
-def card(name, text, sub, face, w=176, h=58, accent=None):
-    img, d = canvas(w, h)
-    d.rectangle((0, 0, w * K, h * K), fill=(26, 27, 31, 240))
-    frame(d, w, h)
+def card_ground(w=176, h=58, accent=None):
+    """A card with no words: the panels' box, with its colour down the left edge."""
+    img, d = box(w, h)
     if accent:
         d.rectangle((K, K, 4 * K, h * K - K), fill=accent)
+    return img, d
+
+
+def card(name, text, sub, face, w=176, h=58, accent=None):
+    img, d = card_ground(w, h, accent)
     size = 13 if face is font else 14
     lines = wrap(text, face, size, (w - 22) * K)
     if len(lines) > 1:
@@ -411,73 +430,115 @@ def card(name, text, sub, face, w=176, h=58, accent=None):
     save(img, name)
 
 
-def button(name, text, face, w=170, h=46, red=False, faded=False):
+def button_ground(red=False, faded=False, w=170, h=46):
+    """A button with no words, and the colour its words go in: dark or red in a silver frame, or faded."""
     img, d = canvas(w, h)
     d.rectangle((0, 0, w * K, h * K), fill=(150, 26, 22, 235) if red else (26, 27, 31, 240))
     frame(d, w, h, SILVER if not faded else FAINT)
-    label(d, (w * K / 2, h * K / 2), text, face, 15, BRIGHT if not faded else DIM, gap=4, anchor="mm")
+    return img, d, BRIGHT if not faded else DIM
+
+
+def button(name, text, face, w=170, h=46, red=False, faded=False):
+    img, d, color = button_ground(red, faded, w, h)
+    label(d, (w * K / 2, h * K / 2), text, face, 15, color, gap=4, anchor="mm")
     save(img, name)
 
 
-def arena_cards(wd):
-    """An arena's card: its own picture (photographed on the bench), darkened, its name on an ink band. Locked: grey."""
-    w, h = 160, 104
+CROPS = {"yucong": (0.02, 0.16, 0.80, 0.86), "huaqianxiao": (0.0, 0.10, 0.62, 0.75),
+         "goldmask": (0.08, 0.06, 0.92, 0.80), "muxiaokui": (0.38, 0.10, 1.0, 0.75)}
+
+
+def arena_photos():
+    """The arenas' own pictures, photographed on the bench (art/pvp_src), by key."""
     pics = {}
     for key, _, _ in ARENAS:
         p = os.path.join(SRC, key + ".jpg")
         if os.path.exists(p):
             pics[key] = Image.open(p).convert("RGBA")
-    crops = {"yucong": (0.02, 0.16, 0.80, 0.86), "huaqianxiao": (0.0, 0.10, 0.62, 0.75), "goldmask": (0.08, 0.06, 0.92, 0.80),
-             "muxiaokui": (0.38, 0.10, 1.0, 0.75)}
+    return pics
+
+
+def arena_ground(key, locked, pics):
+    """An arena's card with no words: its picture darkened (grey when locked) or an ink ring, the ink band below."""
+    w, h = 160, 104
+    img, d = canvas(w, h)
+    if key in pics:
+        src = pics[key]
+        sw, sh = src.size
+        c = CROPS[key]
+        pic = src.crop((int(c[0] * sw), int(c[1] * sh), int(c[2] * sw), int(c[3] * sh)))
+        pic = pic.resize((w * K, h * K), Image.LANCZOS)
+        pic = ImageEnhance.Brightness(pic).enhance(0.9 if not locked else 0.4)
+        if locked:
+            pic = ImageEnhance.Color(pic).enhance(0.08)
+        img.alpha_composite(pic)
+    else:
+        d.rectangle((0, 0, w * K, h * K), fill=(18, 16, 18, 255))
+        img.alpha_composite(enso(h * K, random.Random(9), color=DEEP), ((w - h) * K // 2, -12 * K))
+    band = Image.new("RGBA", (w * K, 40 * K), (0, 0, 0, 0))
+    bd = ImageDraw.Draw(band)
+    for y in range(40 * K):
+        bd.line((0, y, w * K, y), fill=(0, 0, 0, int(30 + 200 * y / (40 * K))))
+    img.alpha_composite(band, (0, (h - 40) * K))
+    return img
+
+
+def arena_name(d, text, face, locked, sub):
+    """An arena's name on its card's band, higher when a line goes under it."""
+    h = 104
+    size = 12 if len(text) <= 20 else 11
+    d.text((8 * K, (h - 22) * K if sub else (h - 13) * K), text, font=face(size, True),
+           fill=BRIGHT if not locked else DIM, anchor="lm")
+
+
+def arena_cards(wd):
+    """An arena's card: its own picture (photographed on the bench), darkened, its name on an ink band. Locked: grey."""
+    w, h = 160, 104
+    pics = arena_photos()
     face = wd["face"]
     for key, en, zh in [("here", "", "")] + ARENAS:
         for locked in (False, True):
             if key == "here" and locked:
                 continue
-            img, d = canvas(w, h)
-            if key in pics:
-                src = pics[key]
-                sw, sh = src.size
-                c = crops[key]
-                pic = src.crop((int(c[0] * sw), int(c[1] * sh), int(c[2] * sw), int(c[3] * sh)))
-                pic = pic.resize((w * K, h * K), Image.LANCZOS)
-                pic = ImageEnhance.Brightness(pic).enhance(0.9 if not locked else 0.4)
-                if locked:
-                    pic = ImageEnhance.Color(pic).enhance(0.08)
-                img.alpha_composite(pic)
-            else:
-                d.rectangle((0, 0, w * K, h * K), fill=(18, 16, 18, 255))
-                img.alpha_composite(enso(h * K, random.Random(9), color=DEEP), ((w - h) * K // 2, -12 * K))
-            band = Image.new("RGBA", (w * K, 40 * K), (0, 0, 0, 0))
-            bd = ImageDraw.Draw(band)
-            for y in range(40 * K):
-                bd.line((0, y, w * K, y), fill=(0, 0, 0, int(30 + 200 * y / (40 * K))))
-            img.alpha_composite(band, (0, (h - 40) * K))
+            img = arena_ground(key, locked, pics)
             d = ImageDraw.Draw(img)
             if key == "here":
                 text, sub = wd["here"]
             else:
                 text = en if face is font else zh
                 sub = wd["locked"] if locked else None
-            size = 12 if len(text) <= 20 else 11
-            d.text((8 * K, (h - 22) * K if sub else (h - 13) * K), text, font=face(size, True),
-                   fill=BRIGHT if not locked else DIM, anchor="lm")
+            arena_name(d, text, face, locked, sub)
             if sub:
                 d.text((8 * K, (h - 8) * K), sub, font=face(9), fill=(220, 120, 110, 255) if locked else DIM, anchor="lm")
             frame(d, w, h, FAINT)
             save(img, wd["prefix"] + "pvp_arena_" + key + ("_locked" if locked else ""))
 
 
-def loadout_cards(wd):
-    """Each weapon's and Phantom Edge's card: its name in the game's own words, its kind under it."""
+def weapons():
+    """The weapons and Phantom Edge weapons in arenas.lua: (main or edge, id, English name, Chinese name, kind)."""
     data = open(os.path.join(HERE, "..", "mod", "PBZCoop", "Scripts", "arenas.lua"), encoding="utf-8").read()
-    face, p = wd["face"], wd["prefix"]
+    out = []
     for block, kind in (("data.weapons", "main"), ("data.edges", "edge")):
         body = data.split(block + " = {", 1)[1].split("\n}", 1)[0]
         for m in re.finditer(r'id = "(\w+)", name = "([^"]+)", zh = "([^"]+)", kind = "(\w+)"', body):
-            wid, en, zh, k = m.groups()
-            card(p + "pvp_w_" + wid, en if face is font else zh, wd["kinds"].get(k, ""), face, w=160, h=52,
-                 accent=GOLD if kind == "main" else BLOOD)
+            out.append((kind,) + m.groups())
+    return out
+
+
+def loadout_cards(wd):
+    """Each weapon's and Phantom Edge's card: its name in the game's own words, its kind under it."""
+    face, p = wd["face"], wd["prefix"]
+    for kind, wid, en, zh, k in weapons():
+        card(p + "pvp_w_" + wid, en if face is font else zh, wd["kinds"].get(k, ""), face, w=160, h=52,
+             accent=GOLD if kind == "main" else BLOOD)
+
+
+def team_ground(team):
+    """A team's tag with no words: its colour in a light frame (96x24)."""
+    img, d = canvas(96, 24)
+    d.rectangle((0, 0, 96 * K, 24 * K), fill=TEAM[team][:3] + (215,))
+    frame(d, 96, 24, (230, 230, 230, 180))
+    return img, d
 
 
 def page(wd):
@@ -495,9 +556,7 @@ def page(wd):
         button(p + "pvp_" + key, text, face, red=key in ("ready_on", "start"))
     button(p + "pvp_start_off", wd["buttons"]["start"], face, faded=True)
     for team in (1, 2):
-        img, d = canvas(96, 24)
-        d.rectangle((0, 0, 96 * K, 24 * K), fill=TEAM[team][:3] + (215,))
-        frame(d, 96, 24, (230, 230, 230, 180))
+        img, d = team_ground(team)
         label(d, (48 * K, 12 * K), wd["teams"][team], face, 10, BRIGHT, gap=2, anchor="mm", bold=True)
         save(img, p + "pvp_team_" + str(team))
     arena_cards(wd)
@@ -510,10 +569,16 @@ def frames():
     selected("pvp_sel_weapon", 160, 52)
 
 
+def row_ground(slot):
+    """A player's row on the page with no words: their colour's dot (250x26)."""
+    img, d = canvas(250, 26)
+    d.ellipse((4 * K, 7 * K, 16 * K, 19 * K), fill=PLAYERS[slot][0] + (255,))
+    return img, d
+
+
 def player_rows():
     for slot, (rgb, text) in PLAYERS.items():
-        img, d = canvas(250, 26)
-        d.ellipse((4 * K, 7 * K, 16 * K, 19 * K), fill=rgb + (255,))
+        img, d = row_ground(slot)
         d.text((26 * K, 13 * K), text, font=font(12, True), fill=BRIGHT, anchor="lm")
         save(img, "pvp_row_%d" % slot)
     for on in (0, 1):
@@ -523,6 +588,13 @@ def player_rows():
             d.line((6 * K, 13 * K, 11 * K, 19 * K), fill=(120, 220, 120, 255), width=3 * K)
             d.line((11 * K, 19 * K, 20 * K, 7 * K), fill=(120, 220, 120, 255), width=3 * K)
         save(img, "pvp_tick_%d" % on)
+
+
+def mate_ground(slot):
+    """A teammate's name tag with no words: their colour's dot (150x22)."""
+    img, d = canvas(150, 22)
+    d.ellipse((2 * K, 7 * K, 10 * K, 15 * K), fill=PLAYERS[slot][0] + (255,))
+    return img, d
 
 
 def mate_bars():
@@ -546,8 +618,7 @@ def mate_bars():
     save_hud(img, "mate_lag")
     for slot, (rgb, text) in PLAYERS.items():
         for zh in (False, True):
-            img, d = canvas(150, 22)
-            d.ellipse((2 * K, 7 * K, 10 * K, 15 * K), fill=rgb + (255,))
+            img, d = mate_ground(slot)
             if zh:
                 d.text((16 * K, 11 * K), "玩家 %d" % slot, font=chinese(12, True), fill=BONE, anchor="lm")
             else:

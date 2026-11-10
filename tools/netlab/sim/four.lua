@@ -7466,6 +7466,881 @@ local function syncRaces()
     allErrors(w)
 end
 
+-- art/arabic.tsv, where the Arabic comes from (tools/make_lang_ar.py): id -> { en = its English, ar = its Arabic }, and
+-- the ids in the file's order.
+local function arabicRows()
+    local T, ids = {}, {}
+    local f = io.open(SIM_REPO .. "/art/arabic.tsv", "rb")
+    if f then
+        local first = true
+        for line in (f:read("a") .. "\n"):gmatch("([^\n]*)\n") do
+            local id, en, ar = line:gsub("\r$", ""):match("^([^\t]*)\t([^\t]*)\t([^\t]*)")
+            if first then
+                first = false
+            elseif id and id ~= "" then
+                T[id] = { en = en, ar = ar }
+                ids[#ids + 1] = id
+            end
+        end
+        f:close()
+    end
+    return T, ids
+end
+
+-- Every string in a script as Lua reads it (its escapes, \\ and \" and the rest, read by Lua itself), strings joined by ..
+-- taken as one, across line breaks and comments: the whole lines the code can hand say(). Added to runs.
+local function literalRuns(src, runs)
+    local i, run, joined = 1, nil, false        -- the run so far, and whether a .. came after its last string
+    local function finish()
+        if run then
+            runs[#runs + 1] = table.concat(run)
+        end
+        run, joined = nil, false
+    end
+    local function add(literal)
+        local ok, value = pcall(function() return load("return " .. literal, "=literal", "t", {})() end)
+        if not ok or type(value) ~= "string" then
+            finish()
+            return
+        end
+        if run and joined then
+            run[#run + 1] = value
+        else
+            finish()
+            run = { value }
+        end
+        joined = false
+    end
+    while true do
+        local j = src:find("[\"'%-%[%.]", i)    -- the next quote, comment, long bracket or dot
+        if not j then
+            finish()
+            return
+        end
+        if src:sub(i, j - 1):find("%S") then    -- (anything else between ends a run)
+            finish()
+        end
+        local c = src:sub(j, j)
+        if c == "-" and src:sub(j + 1, j + 1) == "-" then
+            local eq = src:match("^%[(=*)%[", j + 2)
+            local stop = eq and select(2, src:find("]" .. eq .. "]", j + 4 + #eq, true)) or src:find("\n", j, true)
+            i = (stop or #src) + 1
+        elseif c == "." and src:sub(j, j + 2) ~= "..." and src:sub(j, j + 1) == ".." then
+            if run and not joined then
+                joined = true
+            else
+                finish()
+            end
+            i = j + 2
+        elseif c == "[" and src:match("^%[=*%[", j) then
+            local eq = src:match("^%[(=*)%[", j)
+            local stop = select(2, src:find("]" .. eq .. "]", j + 2 + #eq, true)) or #src
+            add(src:sub(j, stop))
+            i = stop + 1
+        elseif c == '"' or c == "'" then
+            local k, stop = j + 1, nil
+            while true do
+                local m = src:find("[\\" .. c .. "\n]", k)
+                if not m or src:sub(m, m) == "\n" then
+                    break
+                elseif src:sub(m, m) == "\\" then
+                    k = m + (src:sub(m + 1, m + 2) == "\r\n" and 3 or 2)    -- (what's escaped is never the end)
+                else
+                    stop = m
+                    break
+                end
+            end
+            if stop then
+                add(src:sub(j, stop))
+                i = stop + 1
+            else
+                finish()
+                i = j + 1
+            end
+        else
+            finish()
+            i = j + (src:sub(j, j + 2) == "..." and 3 or 1)
+        end
+    end
+end
+
+-- Arabic: lang_ar.lua, made by tools/make_lang_ar.py from art/arabic.tsv. Each row of the tsv that goes through say(),
+-- made the way the code makes it, comes out as the tsv's Arabic, its names in Arabic too, and so do the lines the code
+-- builds of pieces. English and Chinese stay as they were, and no Arabic line keeps English the tsv has Arabic for.
+local function arabic()
+    part("Arabic")
+    local T, ids = arabicRows()
+    check(#ids > 0, string.format("art/arabic.tsv: %d rows", #ids))
+    if #ids == 0 then
+        return
+    end
+    local function language(word, withArabic)
+        local l = dofile(SIM_SCRIPTS .. "/lang.lua")(withArabic and (SIM_SCRIPTS .. "/") or nil)
+        l.set(word)
+        return l
+    end
+    local ar, en, zh, zhAlone = language("Arabic", true), language("English", true), language("Chinese", true),
+        language("Chinese", false)
+    local ok, t = pcall(dofile, SIM_SCRIPTS .. "/lang_ar.lua")
+    local lines, pieces = 0, 0
+    if ok and type(t) == "table" and type(t.LINES) == "table" and type(t.PARTS) == "table" then
+        for _ in pairs(t.LINES) do
+            lines = lines + 1
+        end
+        pieces = #t.PARTS
+    end
+    -- (Old scripts have no Arabic: their lang.lua has no arabic() to call.)
+    check(lines > 0 and pieces > 0 and ar.arabic ~= nil and ar.arabic() and ar.prefix() == "ar_" and ar.word() == "Arabic",
+        string.format("lang_ar.lua loads (%d lines, %d pieces), and Arabic is picked", lines, pieces))
+
+    -- A row's English with its %s and %d as the values given, and its Arabic with its %1, %2... as theirs.
+    local function made(id, ...)
+        local v, k = { ... }, 0
+        return (T[id].en:gsub("%%[sd]", function()
+            k = k + 1
+            return v[k]
+        end))
+    end
+    local function fill(id, ...)
+        local v = { ... }
+        return (T[id].ar:gsub("%%(%d)", function(k)
+            return v[tonumber(k)]
+        end))
+    end
+    local function name(id)
+        return { T[id].en, T[id].ar }
+    end
+    local function pad(n)
+        return { (T["local.word.pad"].en:gsub("%%d", n)), (T["local.word.pad"].ar:gsub("%%d", n)) }
+    end
+
+    local said, english, bad = {}, {}, {}
+    -- strip: what the line was given that isn't the tsv's (Steam's own words, a map's name), for the look for English.
+    local function note(id, line, got, want, strip)
+        said[#said + 1] = { id = id, got = got, strip = strip }
+        english[#english + 1] = line
+        if got ~= want then
+            bad[#bad + 1] = id .. ": " .. line .. " -> " .. got .. "  (the tsv: " .. want .. ")"
+        end
+    end
+    local function try(id, line, want, strip)
+        note(id, line, ar.say(line), want, strip)
+    end
+    local function verdict(what)
+        check(#bad == 0, what)
+        for i = 1, math.min(#bad, 10) do
+            out("       " .. bad[i])
+        end
+        bad = {}
+    end
+
+    -- Each of lang_ar.lua's whole lines is one the code says, word for word. say() looks a line up whole, and the checks
+    -- below give it the tsv's own English: a tsv that drifted from the code (a curly apostrophe, a full stop, a tip
+    -- reworded in the code) left that line English on screen and passed them all. A line is a string in the scripts,
+    -- strings joined by .. as one; the few the code builds around a name or a number need each of their pieces. (coop.lua
+    -- says who .. " rested at a bell: ...", who "your partner" with two players; status.lua puts the ping, and whether it's
+    -- signed, between "partner connected" and its full stop.)
+    local BUILT = {
+        ["your partner rested at a bell: you'll join them."] = { "your partner", " rested at a bell: you'll join them." },
+        ["your partner rested at a bell: you're rested too."] = { "your partner", " rested at a bell: you're rested too." },
+        ["your partner rested at a bell: you're rested, and so is the boss."] =
+            { "your partner", " rested at a bell: you're rested, and so is the boss." },
+        ["your partner turned co-op sync off."] = { "your partner", " turned co-op sync off." },
+        ["partner connected."] = { "partner connected", "." },
+        ["partner connected, signed."] = { "partner connected", ", signed", "." },
+    }
+    local runs, scripts = {}, 0
+    local listing = io.popen('dir /b "' .. SIM_SCRIPTS:gsub("/", "\\") .. '\\*.lua"')
+    for name in (listing and listing:lines() or function() end) do
+        local file = name ~= "lang.lua" and name ~= "lang_ar.lua" and io.open(SIM_SCRIPTS .. "/" .. name, "rb")
+        if file then
+            literalRuns(file:read("a"), runs)
+            file:close()
+            scripts = scripts + 1
+        end
+    end
+    if listing then
+        listing:close()
+    end
+    local inCode = {}
+    for _, r in ipairs(runs) do
+        inCode[r] = true
+    end
+    local keys, built = {}, 0
+    for k in pairs(ok and type(t) == "table" and type(t.LINES) == "table" and t.LINES or {}) do
+        keys[#keys + 1] = k
+    end
+    table.sort(keys)
+    for _, k in ipairs(keys) do
+        local pieces = not inCode[k] and BUILT[k]
+        if pieces then
+            built = built + 1
+            if table.concat(pieces) ~= k then
+                bad[#bad + 1] = "(the list above doesn't make it) " .. k
+            end
+            for _, piece in ipairs(pieces) do
+                if not inCode[piece] then
+                    bad[#bad + 1] = "not in the scripts: \"" .. piece .. "\", a piece of " .. k
+                end
+            end
+        elseif not inCode[k] then
+            bad[#bad + 1] = "not in the scripts: " .. k
+        end
+    end
+    if #keys == 0 then
+        bad[#bad + 1] = "lang_ar.lua has no lines"
+    end
+    verdict(string.format("each of lang_ar.lua's %d lines is one the code says, word for word (%d strings in %d scripts; "
+        .. "%d built of pieces)", #keys, #runs, scripts, built))
+
+    -- Every row, its %s and %d given values by place (none of them a word), or names: P a player, B a boss, A an
+    -- arena, the two devices of local co-op. Not through say(): the pictures' words (art/make_arabic_art.py), the brush
+    -- characters drawn in every language, and ALIVE and VICTORY, put straight on the game's own death screen.
+    local S, D = { "1.6.9", "1.7.2", "2.0.1" }, { "3", "4", "5" }
+    local P, B, A = name("term.player3"), name("term.boss.goldmask"), name("term.arena.huaqianxiao")
+    local KEYBOARD = name("local.word.keyboard")
+    local NAMES = { ["f5.words.youre"] = { P }, ["tip.conn.party_joined"] = { P }, ["tip.conn.party_left"] = { P },
+        ["f6.words.needs_version"] = { P }, ["f6.words.other_version"] = { P }, ["f6.words.waiting_ready"] = { P },
+        ["f6.words.not_beaten"] = { P, B }, ["f6.words.other_map"] = { P }, ["tip.pvp.needs_beaten"] = { B },
+        ["tip.pvp.back.name_lost"] = { P }, ["tip.pvp.back.name_left"] = { P }, ["tip.pvp.back.name_couldnt"] = { P },
+        ["tip.pvp.back.your_world"] = { B }, ["tip.pvp.back.their_world"] = { P }, ["tip.pvp.start.to"] = { A },
+        ["local.tip.checklist"] = { KEYBOARD, pad("2") } }
+    local NOT_SAID = { ["match.count.numbers"] = true, ["match.count.fight_glyph"] = true, ["match.timeup_glyph"] = true,
+        ["match.alive_glyphs"] = true, ["match.alive"] = true, ["match.victory"] = true }
+    local HEADS = { "f5.words.couldnt_start", "tip.conn.couldnt_start" }
+    local function sample(id)
+        local names, e, a, k, s = NAMES[id] or (id:find("^tip%.party%.") and { P }) or {}, {}, {}, 0, 0
+        for c in T[id].en:gmatch("%%([sd])") do
+            k = k + 1
+            if c == "s" then
+                s = s + 1
+                e[k], a[k] = names[s] and names[s][1] or S[k], names[s] and names[s][2] or S[k]
+            else
+                e[k], a[k] = D[k], D[k]
+            end
+        end
+        return made(id, table.unpack(e, 1, k)), fill(id, table.unpack(a, 1, k))
+    end
+    local rows, errors, tips = 0, {}, {}
+    for _, id in ipairs(ids) do
+        local r = T[id]
+        if id:find("^tip%.relayerr%.") then             -- the relay's own words: only ever after a head (below)
+            errors[#errors + 1] = id
+        elseif not (id:find("%.art%.") or id:find("^match%.banner%.") or id == "match.mate" or id:find("^weapon%.")
+            or NOT_SAID[id]) then
+            rows = rows + 1
+            if id == "match.foe.name" then              -- arenaui.lua: say("PLAYER ") .. slot
+                note(id, "PLAYER ", ar.say("PLAYER ") .. "3", (r.ar:gsub("%%d", "3")))
+            elseif id == "match.foe.score" then         -- arenaui.lua: say("YOU") in the score's own words
+                note(id, "YOU", string.format("  ·  %s %d – %d", ar.say("YOU"), 2, 1), string.format(r.ar, 2, 1))
+            elseif id == "term.arena.here" or id == "tip.pvp.start.to" then
+                -- (To %s. only ever after a team's piece, as arena.lua says it: the whole start tip.)
+                local here = id == "term.arena.here"
+                local line = "Duel, best of three, no timer. Crimson team. To " .. (here and r.en or A[1]) .. "."
+                local want = T["tip.pvp.start.duel"].ar .. T["tip.pvp.start.no_timer"].ar .. T["tip.pvp.start.crimson"].ar
+                    .. fill("tip.pvp.start.to", here and r.ar or A[2])
+                try(id, line, want)
+                tips[#tips + 1] = { id, line, want }
+            elseif id == "local.word.pad" or id == "local.word.keyboard" then
+                -- (Only ever in the checklist, below. Anywhere else, as in a Steam friend's name, it stays as it is.)
+                local friend = (r.en:gsub("%%d", "2")) .. " warrior"
+                try(id, "Looking for " .. friend .. "...", fill("f5.words.looking_for", friend), { friend })
+            elseif id:find("^term%.") then
+                try(id, r.en, r.ar)
+            else
+                local line, want = sample(id)
+                try(id, line, want)
+                if (id:find("tip%.") == 1 or id:find("%.tip%.")) and id ~= "tip.prefix" then
+                    tips[#tips + 1] = { id, line, want }
+                end
+            end
+        end
+    end
+    verdict(string.format("each of the tsv's %d rows said on its own, made as the code makes it: the tsv's Arabic", rows))
+
+    -- The panel's line (onlinepanel.lua), piece by piece: two players, then more, each player saying who they are.
+    local n = #said
+    local function panelLine(peer, ping, route, here, of, me)
+        local line, want = "Connected to " .. peer .. ".", fill("f5.words.connected", peer)
+        if ping then
+            line, want = line .. " Ping " .. ping .. " ms.", want .. fill("f5.words.ping", ping)
+        end
+        if route then
+            line, want = line .. " Route: " .. route .. ".", want .. T["f5.words.route_" .. route].ar
+        end
+        if here then
+            line, want = line .. " Players: " .. here .. " of " .. of .. ".", want .. fill("f5.words.players", here, of)
+            if me then
+                line, want = line .. " You're " .. me[1] .. ".", want .. fill("f5.words.youre", me[2])
+            end
+        end
+        try("f5.words", line, want)
+    end
+    for _, peer in ipairs({ "100.64.0.7", "76561198000000042" }) do
+        for _, ping in ipairs({ false, "9", "180" }) do
+            for _, route in ipairs({ false, "direct", "relay" }) do
+                panelLine(peer, ping, route)
+                panelLine(peer, ping, route, "2", "4")
+                for slot = 1, 6 do
+                    panelLine(peer, ping, route, tostring(slot), "6", name("term.player" .. slot))
+                end
+            end
+        end
+    end
+    verdict(string.format("the panel's line, piece by piece, as each of six players: %d lines", #said - n))
+
+    -- The relay's errors after either head (the panel's Couldn't start: and a tip's co-op couldn't start:), and one the tsv
+    -- hasn't: it stays as it is.
+    n = #said
+    for _, id in ipairs(errors) do
+        local line, want = sample(id)
+        for _, head in ipairs(HEADS) do
+            try(id, made(head, line), fill(head, want))
+        end
+    end
+    for _, head in ipairs(HEADS) do
+        try(head, made(head, "something else went wrong"), fill(head, "something else went wrong"),
+            { "something else went wrong" })
+    end
+    verdict(string.format("the relay's %d errors after the panel's head and a tip's: %d lines", #errors, #said - n))
+
+    -- What's said of each of the six by name, in status.lua, partner.lua, coop.lua and PvP's words.
+    n = #said
+    for slot = 1, 6 do
+        local p = name("term.player" .. slot)
+        for _, id in ipairs({ "tip.party.down", "tip.party.back", "tip.party.cutscene", "tip.party.other_map",
+            "tip.party.rest_join", "tip.party.rest_too", "tip.party.rest_boss", "tip.party.sync_off" }) do
+            try(id, made(id, p[1]), fill(id, p[2]))
+        end
+        try("tip.party.far", made("tip.party.far", p[1], 212), fill("tip.party.far", p[2], 212))
+        for players = 2, 6 do
+            try("tip.conn.party_joined", made("tip.conn.party_joined", p[1], players), fill("tip.conn.party_joined", p[2], players))
+            try("tip.conn.party_left", made("tip.conn.party_left", p[1], players - 1), fill("tip.conn.party_left", p[2], players - 1))
+        end
+        for _, id in ipairs({ "f6.words.needs_version", "f6.words.waiting_ready" }) do
+            try(id, made(id, p[1], "1.7.2"), fill(id, p[2], "1.7.2"))
+        end
+        try("f6.words.other_version", made("f6.words.other_version", p[1], "1.6.9", "1.7.2"),
+            fill("f6.words.other_version", p[2], "1.6.9", "1.7.2"))
+        for _, boss in ipairs({ "term.boss.yucong", "term.boss.huaqianxiao", "term.boss.goldmask", "term.boss.muxiaokui" }) do
+            local b = name(boss)
+            try("f6.words.not_beaten", made("f6.words.not_beaten", p[1], b[1]), fill("f6.words.not_beaten", p[2], b[2]))
+        end
+        try("f6.words.other_map", made("f6.words.other_map", p[1], "PBZ_Xigu_WP"), fill("f6.words.other_map", p[2], "PBZ_Xigu_WP"),
+            { "PBZ_Xigu_WP" })
+    end
+    verdict(string.format("each of six players by name: %d lines", #said - n))
+
+    -- The PvP start tip (arena.lua): every mode, clock, team and arena.
+    n = #said
+    for _, mode in ipairs({ { "Duel, best of three", "tip.pvp.start.duel" }, { "Death, one life", "tip.pvp.start.death" } }) do
+        for _, timer in ipairs({ 0, 60, 90, 120 }) do
+            for _, team in ipairs({ { "Crimson", "tip.pvp.start.crimson" }, { "Azure", "tip.pvp.start.azure" } }) do
+                for _, place in ipairs({ "term.arena.yucong", "term.arena.huaqianxiao", "term.arena.goldmask",
+                    "term.arena.muxiaokui", "term.arena.here" }) do
+                    local a = name(place)
+                    try("tip.pvp.start", string.format("%s, %s. %s team. To %s.", mode[1],
+                        timer > 0 and (timer .. " s a round") or "no timer", team[1], a[1]),
+                        T[mode[2]].ar .. (timer > 0 and fill("tip.pvp.start.timer", timer) or T["tip.pvp.start.no_timer"].ar)
+                        .. T[team[2]].ar .. fill("tip.pvp.start.to", a[2]))
+                end
+            end
+        end
+    end
+    -- (Its To %s. only after a team: a friend's name ending "To <something>." elsewhere stays as it is.)
+    try("tip.pvp.start.to", "Looking for Mr To Be...", fill("f5.words.looking_for", "Mr To Be"), { "Mr To Be" })
+    verdict(string.format("the PvP start tip, every mode, clock, team and arena: %d lines", #said - n))
+
+    -- Back from a match (arena.lua: "back from the match: " .. why .. "."), every why there is.
+    n = #said
+    local function back(why, id, ...)
+        try(id, "back from the match: " .. why .. ".", fill(id, ...))
+    end
+    for _, why in ipairs({ { "the match is over", "over" }, { "you left", "you_left" }, { "you died", "you_died" },
+        { "a player was lost", "player_lost" }, { "the host was lost", "host_lost" }, { "co-op was turned off", "coop_off" },
+        { "the trip to the arena took too long", "trip_long" }, { "you couldn't get to the arena", "you_couldnt" },
+        { "not everyone got to the arena in time", "late" } }) do
+        back(why[1], "tip.pvp.back." .. why[2])
+    end
+    for slot = 1, 6 do
+        local p = name("term.player" .. slot)
+        back(p[1] .. " was lost", "tip.pvp.back.name_lost", p[2])
+        back(p[1] .. " left", "tip.pvp.back.name_left", p[2])
+        back(p[1] .. " couldn't get to the arena", "tip.pvp.back.name_couldnt", p[2])
+        back(p[1] .. "'s world never finished that arena's boss fight", "tip.pvp.back.their_world", p[2])
+    end
+    for _, boss in ipairs({ "term.boss.yucong", "term.boss.huaqianxiao", "term.boss.goldmask", "term.boss.muxiaokui" }) do
+        local b = name(boss)
+        back("your world never finished its fight with " .. b[1] .. ": that arena is closed for you", "tip.pvp.back.your_world",
+            b[2])
+    end
+    try("tip.pvp.back.other", "back from the match: the moon fell.", fill("tip.pvp.back.other", "the moon fell"), { "the moon fell" })
+    verdict(string.format("back from a match, every why: %d lines", #said - n))
+
+    -- The rest the code builds of pieces, or with words from elsewhere put in.
+    n = #said
+    for _, ping in ipairs({ false, 42 }) do
+        for _, signed in ipairs({ false, true }) do
+            local id = "tip.conn.connected" .. (ping and "_ping" or "") .. (signed and "_signed" or "")
+            try(id, "partner connected" .. (ping and string.format(" (ping %d ms)", ping) or "") .. (signed and ", signed" or "")
+                .. ".", ping and fill(id, ping) or T[id].ar)
+        end
+    end
+    for _, teleport in ipairs({ false, true }) do
+        local f3, f3ar = teleport and " F3 takes you there." or "", teleport and T["tip.partner.f3_there"].ar or ""
+        try("tip.partner.other_map", "your partner is on another map." .. f3, T["tip.partner.other_map"].ar .. f3ar)
+        try("tip.partner.far", string.format("your partner is %d m away.", 160) .. f3, fill("tip.partner.far", 160) .. f3ar)
+    end
+    for _, steam in ipairs({ true, false }) do
+        try("tip.conn.high_ping", string.format("high ping (%d ms).", 320) .. (steam and ""
+            or " On Tailscale, run \"tailscale ping\": via DERP means relayed."),
+            fill("tip.conn.high_ping", 320) .. (steam and "" or T["tip.conn.tailscale_ping"].ar))
+    end
+    for _, caught in ipairs({ 1, 12 }) do
+        try("tip.partner.story_caught", string.format("your story caught up with the host's: %d step%s.", caught,
+            caught == 1 and "" or "s"), fill("tip.partner.story_caught", caught))
+    end
+    for _, one in ipairs({ KEYBOARD, pad("1"), pad("3") }) do
+        for _, two in ipairs({ KEYBOARD, pad("2"), pad("4") }) do
+            try("local.tip.checklist", string.format("%s is player 1, %s is player 2. F4: screen and pads. Player 2: Cross "
+                .. "climbs and jumps, Circle uses, D-pad down drinks.", one[1], two[1]), fill("local.tip.checklist", one[2], two[2]))
+        end
+    end
+    -- (The relay's own words for their version, in Arabic too: left English, they showed reversed.)
+    for _, theirs in ipairs({ { "1.4.1-or-older", "term.version.older" }, { "other-protocol", "term.version.other" } }) do
+        try("tip.conn.version_cant", "your partner's Phantom Pact (" .. theirs[1] .. ") can't connect to 1.7.2: both PCs need "
+            .. "the same version.", fill("tip.conn.version_cant", T[theirs[2]].ar, "1.7.2"))
+    end
+    try("tip.conn.settings_differ", "settings differ from your partner's: coopenemyhealth, PvPvE",
+        fill("tip.conn.settings_differ", "coopenemyhealth, PvPvE"), { "coopenemyhealth" })
+    try("tip.conn.steam_couldnt", "Steam couldn't connect: 5003 timed out. See Connection problems in the install guide.",
+        fill("tip.conn.steam_couldnt", "5003 timed out"), { "5003 timed out" })
+    for _, tip in ipairs(tips) do        -- status.lua: the head said on its own, then the tip
+        note(tip[1], "Phantom Pact: " .. tip[2], ar.say("Phantom Pact: ") .. ar.say(tip[2]), T["tip.prefix"].ar .. tip[3])
+    end
+    verdict(string.format("lines built of pieces, the tip's head before each tip: %d lines", #said - n))
+
+    -- English and Chinese, with the Arabic loaded.
+    for _, line in ipairs(english) do
+        if en.say(line) ~= line then
+            bad[#bad + 1] = "English: " .. line .. " -> " .. en.say(line)
+        end
+    end
+    verdict(string.format("English stays English: %d lines", #english))
+    for _, line in ipairs(english) do
+        if zh.say(line) ~= zhAlone.say(line) then
+            bad[#bad + 1] = "Chinese: " .. line .. " -> " .. zh.say(line)
+        end
+    end
+    verdict(string.format("Chinese says the same with the Arabic loaded: %d lines", #english))
+    check(zh.say("Not connected.") == "未连接。" and zh.say("player 3 (gold) rested at a bell: you're rested too.")
+        == "玩家 3(金) 在钟旁休息了:你也恢复了。" and zh.say("Couldn't start: couldn't find the host address abc")
+        == "无法启动:找不到房主地址 abc", "(and still its own Chinese)")
+
+    -- Latin an Arabic line keeps: the names of things, then (KEPT) the ini's own words, file names, a command and what it
+    -- answers, the install guide's heading, which the tsv keeps in Latin on purpose. Any other word of three letters or
+    -- more is English the tsv has Arabic for.
+    local NAMED_THINGS = { "PhantomPact.ini", "Phantom Pact", "HostAddress", "Steam", "Tailscale", "PvPvE", "PvP", "UDP",
+        "Winsock", "DERP" }
+    local KEPT = { "SteamDirect = On", "SteamID64", "steam_api64.dll", "Connect = Steam", "Role = Host", "Role = Guest",
+        "Secret", "Port", "dlls\\main.dll", "net_start.txt", "tailscale ping", "via DERP", "Connection problems", "UE4SS",
+        "New Game" }
+    -- (The game's own names stay English, as the game shows them: it has no Arabic. The user, 11-10. The longer first.)
+    for _, id in ipairs(ids) do
+        if id:find("^term%.") and not T[id].ar:find("[\216-\219]") then
+            NAMED_THINGS[#NAMED_THINGS + 1] = T[id].ar
+        end
+    end
+    table.sort(NAMED_THINGS, function(a, b) return #a > #b end)
+    local function plain(s)
+        return (s:gsub("%p", "%%%0"))
+    end
+    local left, kept = {}, {}
+    for _, s in ipairs(said) do
+        local text = s.got
+        for _, v in ipairs(s.strip or {}) do
+            text = text:gsub(plain(v), " ")
+        end
+        for _, k in ipairs(KEPT) do
+            local found
+            text, found = text:gsub(plain(k), " ")
+            kept[k] = kept[k] or found > 0
+        end
+        for _, k in ipairs(NAMED_THINGS) do
+            text = text:gsub(plain(k), " ")
+        end
+        for word in text:gmatch("%a%a%a+") do
+            if not left[word] then
+                left[word] = true
+                bad[#bad + 1] = word .. " (" .. s.id .. ")"
+            end
+        end
+    end
+    local found = {}
+    for _, k in ipairs(KEPT) do
+        if kept[k] then
+            found[#found + 1] = k
+        end
+    end
+    out("       Latin the tsv keeps on purpose: " .. table.concat(found, ", "))
+    verdict(string.format("no English the tsv has Arabic for is left in an Arabic line: %d lines looked at", #said))
+end
+
+-- Arabic on the screen, through the mod's own calls in a session with Language = Arabic. The part above takes lang.lua
+-- alone, so main.lua not loading lang_ar.lua, or a screen that never asked for the Arabic, passed it. Here a tip, both
+-- panels' words and a match's words come out as the tsv's Arabic (pbz.lua's game.arabicTip, arenaui.lua), the engine's
+-- Arabic font goes in as the mod starts, a match falls back to English without it, and a foe bar gets its own font back.
+local function arabicScreens()
+    part("Arabic on the screen")
+    local T = arabicRows()
+    local function ar(id)
+        return T[id] and T[id].ar
+    end
+    local ROBOTO = "/Engine/EngineFonts/Roboto.Roboto"
+    local s = Session.new(SIM_SCRIPTS, { "Host" }, false, {}, "Language = Arabic\n")
+    local h = s.pcs[1]
+    local lang, game = h.env.PBZ.lang, h.env.PBZ.game
+    check(lang ~= nil and lang.code == "ar" and lang.say("Not connected.") == ar("f5.words.not_connected"),
+        "Language = Arabic: the mod says a line as the tsv has it (main.lua loads lang_ar.lua): "
+        .. tostring(lang and lang.say("Not connected.")))
+    if not (lang and game.arabicTip and game.arabicText and game.ownText) then
+        return                                  -- (old scripts: no Arabic to show)
+    end
+    -- The engine's Roboto (fakepc.lua's), its fallback face: the Arabic one before a single frame has run.
+    local roboto = h.found[ROBOTO]
+    local face = roboto and rawget(roboto, "__fields").CompositeFont.FallbackTypeface.Typeface.Fonts.items[1].Font
+    local fallback = face and rawget(face, "__fields") or {}
+    check(fallback.FontFilename == game.ARABIC_TTF and fallback.LoadingPolicy == 0 and fallback.FontFaceAsset == nil
+        and count(h.logs, "Arabic: the engine's Arabic font is in") == 1,
+        "as the mod starts, before anything is shown, the engine's Arabic font goes in as Roboto's fallback, once "
+        .. "(game.arabicFont): " .. tostring(fallback.FontFilename))
+
+    -- What reaches game.arabicTip, and for which widget. (The fake's widgets have no TextBlock beside them to put it in.)
+    local calls = {}
+    local arabicTip = game.arabicTip
+    game.arabicTip = function(w, text, pt, wrap)
+        calls[#calls + 1] = { w = w, text = text, pt = pt, wrap = wrap }
+        return arabicTip(w, text, pt, wrap)
+    end
+    local function sent(from, wrap)            -- the first line given since call from, wrapped at wrap (nil: the tip's own)
+        for i = from + 1, #calls do
+            if calls[i].text ~= nil and calls[i].wrap == wrap then
+                return calls[i]
+            end
+        end
+    end
+    s:run(2)
+    local from = #calls
+    Session.command(h, "tips your partner is down.")
+    s:run(1)
+    local c = sent(from, nil)
+    check(c ~= nil and c.text == ar("tip.prefix") .. ar("tip.partner.down") and c.pt == nil,
+        "a tip (tips your partner is down.) reaches game.arabicTip in the tsv's Arabic, its head too: "
+        .. tostring(c and c.text))
+    check(c ~= nil and field(c.w, "lastText") == "Phantom Pact: your partner is down.",
+        "and the tip's own text keeps the English, hidden, for the bar's size: " .. tostring(c and field(c.w, "lastText")))
+    from = #calls
+    Session.command(h, "onlinepanel toggle")
+    s:run(1)
+    c = sent(from, 1100)
+    check(c ~= nil and c.text == ar("f5.words.waiting") and field(c.w, "lastText") == "Waiting for a partner.",
+        "the online panel's words (F5) reach it in the tsv's Arabic, to wrap in the box (1100), the English kept hidden: "
+        .. tostring(c and c.text))
+    Session.command(h, "onlinepanel toggle")
+    s:run(0.5)
+    from = #calls
+    Session.command(h, "pvppanel toggle")
+    s:run(1)
+    c = sent(from, 1100)
+    check(c ~= nil and c.text == ar("f6.words.nobody")
+        and field(c.w, "lastText") == "Nobody to fight: a partner needs to be linked.",
+        "and the PvP page's (F6): " .. tostring(c and c.text))
+    Session.command(h, "pvppanel toggle")
+    s:run(0.5)
+
+    -- A foe bar's name (pbz.lua's showFoeBar and setFoeName): game.arabicText puts it in Roboto, and after a switch from
+    -- Arabic game.ownText gives it back its own font, from the note it keeps by the TextBlock's address. The TextBlock is
+    -- as UE4SS hands one over: its Font a copy, that only SetFont puts back.
+    local OWN = "/Game/PBZContent/UI/Fonts/BossName.BossName"
+    local own = Fake.object(h, "Font")
+    rawset(own, "__path", OWN)
+    h.found[OWN] = own
+    local font = { FontObject = own, TypefaceFontName = h.env.FName("Bold"), Size = 22 }
+    local label = setmetatable({
+        IsValid = function() return true end,
+        GetAddress = function() return 0x7E0000 end,
+        SetFont = function(_, f)
+            font = { FontObject = f.FontObject, TypefaceFontName = f.TypefaceFontName, Size = f.Size }
+        end,
+    }, { __index = function(_, k)
+        if k == "Font" then
+            return { FontObject = font.FontObject, TypefaceFontName = font.TypefaceFontName, Size = font.Size }
+        end
+    end })
+    local function typeface()
+        return font.TypefaceFontName and font.TypefaceFontName:ToString()
+    end
+    check(game.arabicText(label, 18) == true and font.FontObject == h.found[ROBOTO] and typeface() == "Regular"
+        and font.Size == 18, "game.arabicText puts a foe bar's name in Roboto")
+    check(game.ownText(label) == true and font.FontObject == own and typeface() == "Bold" and font.Size == 22,
+        "and game.ownText gives it its own font back: the font, its face and its size")
+    allErrors(s)
+
+    -- A duel (arena.lua, arenaui.lua), two players in Arabic: the foe's name over their bar, and the countdown's words.
+    local duel = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, {}, "Language = Arabic\n")
+    local dh, dg = duel.pcs[1], duel.pcs[2]
+    duel:run(4)
+    Session.moveTo(dh, 0, 0)
+    Session.moveTo(dg, 500, 0)
+    duel:run(2)
+    local dgame, dlang = dh.env.PBZ.game, dh.env.PBZ.lang
+    local names, asked = {}, {}
+    local showFoeBar, say = dgame.showFoeBar, dlang.say
+    dgame.showFoeBar = function(body, foe, hud)
+        names[#names + 1] = foe
+        return showFoeBar(body, foe, hud)
+    end
+    dlang.say = function(text)
+        asked[text] = say(text)
+        return asked[text]
+    end
+    Session.command(dh, "arena place 0")
+    Session.command(dg, "arena ready")
+    duel:run(1.5)
+    Session.command(dh, "arena start")
+    duel:run(6)
+    local match = dh.env.PBZ.arena.match
+    check(match ~= nil and match.phase == "fight", "(a duel is on: " .. tostring(match and match.phase) .. ")")
+    local foe = (ar("match.foe.name") or "?"):gsub("%%d", "2")
+    check(names[#names] == foe, "the foe's bar goes up with their name in the tsv's Arabic: " .. tostring(names[#names]))
+    local WORDS = { { "ONE", "match.count.one" }, { "TWO", "match.count.two" }, { "THREE", "match.count.three" },
+        { "FIGHT", "match.count.fight" }, { "TIME'S UP", "match.timeup" } }
+    local all = true
+    for _, w in ipairs(WORDS) do
+        all = all and asked[w[1]] == ar(w[2])
+    end
+    check(all, "as the countdown starts, the match asks for ONE, TWO, THREE, FIGHT and TIME'S UP in Arabic: the tsv's")
+    local you = (ar("match.foe.score") or ""):match("· +(.-) %%d")
+    check(you ~= nil and asked["YOU"] == you, "and the duel's score over the foe's bar its YOU: " .. tostring(asked["YOU"]))
+    -- (arenaui.lua's own sayWord, found through the closures that use it: the fake's widgets have no TextBlock to show
+    -- what it gives.)
+    local function upvalue(fn, wanted)
+        for i = 1, type(fn) == "function" and 255 or 0 do
+            local n, v = debug.getupvalue(fn, i)
+            if n == nil or n == wanted then
+                return v
+            end
+        end
+    end
+    local ui = (upvalue(dh.env.PBZ.arena.blocker, "api") or {}).arenaui or {}
+    local sayWord = upvalue(upvalue(ui.prepareCount, "wordPart"), "sayWord")
+    local function words(arabic)                -- each in the tsv's Arabic in Roboto, or in English in the game's font
+        local good = sayWord ~= nil
+        for _, w in ipairs(WORDS) do
+            if sayWord then
+                local text, fontPath = sayWord(w[1])
+                good = good and (arabic and text == ar(w[2]) and fontPath == dgame.ARABIC_FONT
+                    or not arabic and text == w[1] and fontPath ~= dgame.ARABIC_FONT)
+            end
+        end
+        return good
+    end
+    check(words(true), "and arenaui.lua's sayWord gives each in the tsv's Arabic, in the font that draws it (Roboto)")
+    -- Without the font (game.arabicFont false: Roboto not loaded yet, or with no fallback face), English, not boxes. (The
+    -- fake's HUD makes no bar, so the match puts the foe's up again every second, with their name as it is then.)
+    local arabicFont = dgame.arabicFont
+    dgame.arabicFont = function() return false end
+    local before = #names
+    duel:run(1.5)
+    check(#names > before and names[#names] == "PLAYER 2", "without the Arabic font the foe's name is English: "
+        .. tostring(names[#names]))
+    check(words(false), "and so are the countdown's words, in the game's own font")
+    dgame.arabicFont = arabicFont
+    allErrors(duel)
+end
+
+local function width(s)                    -- a letter 1, a Chinese character 2
+    local w = 0
+    for _, cp in utf8.codes(s) do
+        w = w + (cp >= 0x2E80 and 2 or 1)
+    end
+    return w
+end
+
+local function linesOf(s)
+    local t = {}
+    for l in (s .. "\n"):gmatch("([^\n]*)\n") do
+        t[#t + 1] = l
+    end
+    return t
+end
+
+local function widest(ls)
+    local w = 0
+    for _, l in ipairs(ls) do
+        w = math.max(w, width(l))
+    end
+    return w
+end
+
+-- Nothing lost or added in the breaking: the fitted text and the line walked together. Each line break takes the place of
+-- one space, or sits between two characters (not first or last, not beside another break, not inside a character's
+-- UTF-8) with nothing skipped; every other character is the line's own, and both are walked to their ends. (i, j: where
+-- the walk is in each, for trying a break both ways.)
+local function brokenOnly(fitted, line, i, j)
+    i, j = i or 1, j or 1
+    while i <= #fitted do
+        local c, was = fitted:sub(i, i), line:sub(j, j)
+        if c == "\n" and was ~= "\n" then
+            if was == " " and brokenOnly(fitted, line, i + 1, j + 1) then
+                return true                     -- (a space became the break)
+            end
+            local b = line:byte(j)
+            if i == 1 or fitted:sub(i - 1, i - 1) == "\n" or fitted:sub(i + 1, i + 1) == "\n" or not b
+                or (b >= 0x80 and b < 0xC0) then
+                return false
+            end
+        elseif c == was then
+            j = j + 1
+        else
+            return false
+        end
+        i = i + 1
+    end
+    return j == #line + 1
+end
+
+-- Long lines broken for the screen (lang.fit, 11-10): the game's tip text never wraps, and the longest tips ran off the
+-- screen in one line, in English too. A short line stays as it is; a long one breaks at its spaces, or between Chinese
+-- characters, into lines no wider than asked and about as long as each other, with nothing lost.
+local function fitting()
+    part("long lines broken for the screen")
+    local lang = dofile(SIM_SCRIPTS .. "/lang.lua")(SIM_SCRIPTS .. "/")
+    check(lang.fit ~= nil, "lang.fit is there")
+    if not lang.fit then
+        return
+    end
+
+    local short = "Phantom Pact: partner connected (ping 9 ms)."
+    check(lang.fit(short, 150) == short, "a short line stays as it is")
+    local tip = "Phantom Pact: no friend hosting found. You must be Steam friends, and your partner needs Role = Host, "
+        .. "Connect = Steam and not to be Invisible in Steam (or put their SteamID64 in HostAddress), and the same Secret "
+        .. "and Phantom Pact version on both PCs."
+    local fitted = lang.fit(tip, 150)
+    local ls = linesOf(fitted)
+    check(#ls == 2 and widest(ls) <= 150, string.format("the longest tip (%d letters) in %d lines, the widest %d of 150",
+        width(tip), #ls, widest(ls)))
+    check(fitted:gsub("\n", " ") == tip, "nothing lost: its line break is where a space was")
+    check(#ls == 2 and math.abs(width(ls[1]) - width(ls[2])) <= 20, "the two lines about as long as each other")
+
+    local panel = "Couldn't start the relay: dlls\\main.dll can't be reached. Reinstall Phantom Pact, check your antivirus "
+        .. "didn't remove it, and use the UE4SS build from the install guide."
+    ls = linesOf(lang.fit(panel, 110))
+    check(#ls == 2 and widest(ls) <= 110, string.format("the panel's longest line in %d lines, the widest %d of 110", #ls,
+        widest(ls)))
+    local huge = (tip .. " "):rep(3)
+    ls = linesOf(lang.fit(huge, 110))
+    check(#ls >= 4 and widest(ls) <= 110, string.format("a line three times the tip's in %d lines, none over 110", #ls))
+
+    lang.set("Chinese")
+    local zh = "Phantom Pact: " .. lang.say("no friend hosting found. You must be Steam friends, and your partner needs "
+        .. "Role = Host, Connect = Steam and not to be Invisible in Steam (or put their SteamID64 in HostAddress), and the "
+        .. "same Secret and Phantom Pact version on both PCs.")
+    check(zh:find("没有找到", 1, true) ~= nil, "(the Chinese of it)")
+    fitted = lang.fit(zh, 90)
+    ls = linesOf(fitted)
+    local startsClosed = false
+    for _, l in ipairs(ls) do
+        local first = utf8.codepoint(l, 1)
+        startsClosed = startsClosed or first == utf8.codepoint("。") or first == utf8.codepoint("，")
+            or first == utf8.codepoint(",") or first == utf8.codepoint(".") or first == utf8.codepoint("、")
+    end
+    check(#ls >= 2 and widest(ls) <= 90, string.format("Chinese breaks between its characters: %d lines, the widest %d of 90",
+        #ls, widest(ls)))
+    check(not startsClosed, "and no line starts with a closing mark")
+    -- (Exactly: a check with every space taken out of both passed a fit that added spaces between the characters, or
+    -- dropped some.)
+    check(brokenOnly(fitted, zh), "nothing lost or added: each break where one space was, or between two characters")
+    check(not brokenOnly("Phantom\nPact:  " .. zh:sub(15), zh) and not brokenOnly(zh:gsub("你", "你 ", 1), zh)
+        and not brokenOnly(zh:gsub(" ", "", 1), zh) and not brokenOnly("\n" .. zh, zh),
+        "(and the walk tells: a space added, or one dropped, or a break before the first character, each fails it)")
+    local bad = ("\255"):rep(200)
+    check(lang.fit(bad, 100) == bad, "a line that isn't UTF-8 is left as it is")
+    check(lang.fit(nil, 100) == nil and lang.fit(tip, nil) == tip, "and no line, or no width, is no harm")
+end
+
+-- Long lines broken through the mod's own calls, in English. The part above takes lang.fit alone, so a screen that never
+-- asked for it passed. The longest tip reaches the tip's widget in lines no wider than status.lua's TIP_FIT, a long line
+-- of the online panel's (F5) in lines no wider than its WORDS_FIT (both read from the scripts), and the PvP page's (F6)
+-- words go through lang.fit at its own.
+local function fittedOnScreen()
+    part("long lines broken on the screen")
+    local function fitIn(script, name)
+        local f = io.open(SIM_SCRIPTS .. "/" .. script, "rb")
+        local text = f and f:read("a") or ""
+        if f then
+            f:close()
+        end
+        return tonumber(text:match("local " .. name .. "%s*=%s*(%d+)"))
+    end
+    local TIP_FIT, WORDS_FIT, PAGE_FIT = fitIn("status.lua", "TIP_FIT"), fitIn("onlinepanel.lua", "WORDS_FIT"),
+        fitIn("pvppanel.lua", "WORDS_FIT")
+    check(TIP_FIT and WORDS_FIT and PAGE_FIT, string.format("(the widths, from the scripts: a tip %s, F5's words %s, "
+        .. "F6's %s)", tostring(TIP_FIT), tostring(WORDS_FIT), tostring(PAGE_FIT)))
+    if not (TIP_FIT and WORDS_FIT and PAGE_FIT) then
+        return
+    end
+    -- A guest set to join a Steam friend by a name it can't use: the panel's Join says why, in a line longer than its box.
+    local s = Session.new(SIM_SCRIPTS, { "Guest" }, false, {}, "Connect = Steam\nHostAddress = a&b\n")
+    local g = s.pcs[1]
+    s:run(2)
+    local function shownIn(line)               -- the widget whose text is this line, its line breaks taken as spaces
+        for _, w in ipairs(g.widgets) do
+            local text = field(w, "lastText")
+            if text and text:gsub("\n", " ") == line then
+                return w
+            end
+        end
+    end
+    local said = "no friend hosting found. You must be Steam friends, and your partner needs Role = Host, Connect = Steam "
+        .. "and not to be Invisible in Steam (or put their SteamID64 in HostAddress), and the same Secret and Phantom Pact "
+        .. "version on both PCs."
+    local tip = "Phantom Pact: " .. said
+    Session.command(g, "tips " .. said)
+    s:run(1)
+    local w = shownIn(tip)
+    local ls = w and linesOf(field(w, "lastText")) or {}
+    check(#ls == 2 and widest(ls) <= TIP_FIT, string.format("the longest tip (%d letters, through tips ...) on its "
+        .. "widget in %d lines, each break where a space was, the widest %d of status.lua's %d", width(tip), #ls,
+        widest(ls), TIP_FIT))
+    local line = "PhantomPact.ini: HostAddress has a character that can't be used (\" % & | < > ^). Leave it empty to join "
+        .. "any friend who's hosting."
+    Session.command(g, "onlinepanel toggle")
+    Session.command(g, "onlinepanel join")
+    s:run(1)
+    w = shownIn(line)
+    ls = w and linesOf(field(w, "lastText")) or {}
+    check(#ls == 2 and widest(ls) <= WORDS_FIT, string.format("the online panel's (F5) why for that name (%d letters) in %d "
+        .. "lines, the widest %d of onlinepanel.lua's %d", width(line), #ls, widest(ls), WORDS_FIT))
+    -- (None of the F6 page's lines is that long in a sim: its words are seen going through lang.fit.)
+    local fits = {}
+    local fit = g.env.PBZ.lang.fit
+    g.env.PBZ.lang.fit = function(text, max)
+        fits[#fits + 1] = { text = text, max = max }
+        return fit(text, max)
+    end
+    Session.command(g, "onlinepanel toggle")
+    Session.command(g, "pvppanel toggle")
+    s:run(1)
+    local page = "Play online first (F5): PvP is between linked players. Your loadout is kept for when you are."
+    local through = false
+    for _, f in ipairs(fits) do
+        through = through or (f.text == page and f.max == PAGE_FIT)
+    end
+    check(through and shownIn(page) ~= nil, "the PvP page's (F6) words go through lang.fit at pvppanel.lua's " .. PAGE_FIT)
+    allErrors(s)
+end
+
 return function(print_, scripts)
     out = print_
     SIM_SCRIPTS = scripts
@@ -7542,6 +8417,10 @@ return function(print_, scripts)
     offThings()
     screens()
     panel()
+    arabic()
+    arabicScreens()
+    fitting()
+    fittedOnScreen()
     cost()
     backToTwo()
     return failed == 0

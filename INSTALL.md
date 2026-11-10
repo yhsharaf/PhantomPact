@@ -58,7 +58,7 @@ manager (on a Steam Deck, in Desktop Mode). We haven't tried it on a Steam Deck 
 Steam (nothing to set up: it finds your friend who's hosting), Tailscale, or Other Network, then press Host or Guest.
 For Tailscale and other networks, copy the host's address and press Paste. Tailscale also covers Hamachi, Radmin and
 a home network; Other Network is for ZeroTier and UU Accelerator. If you want a password, copy it and press Paste
-password on both PCs before you connect. English and 中文 at the top of the panel switch the language of the panel
+password on both PCs before you connect. English, 中文 and العربية (Arabic) at the top of the panel switch the language of the panel
 and the co-op messages. Your choices are kept for the next start.
 
 **MORE** opens the settings: TP > Partner, PvPvE, your partner on the map and Steam Direct, each ON or

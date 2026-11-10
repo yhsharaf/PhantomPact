@@ -53,14 +53,23 @@ def corners(d, w, h, size=14, inset=7):
         d.line((a, b, a, b + dy), fill=SILVER, width=K)
 
 
-def background():
+def ground(rule=True):
+    """A page with no words on it: see-through black, the frame, the corners and the rule under the title. (Each picture
+    here is drawn as its ground, then its words, so the Arabic ones can share the ground: make_arabic_art.py.)"""
     w, h = 900, 560
     img, d = canvas(w, h)
     d.rectangle((0, 0, w * K, h * K), fill=BLACK)
     frame(d, w, h, FAINT)
     corners(d, w, h)
+    if rule:
+        d.line(((w / 2 - 170) * K, 67 * K, (w / 2 + 170) * K, 67 * K), fill=FAINT, width=K)
+    return img, d
+
+
+def background():
+    w, h = 900, 560
+    img, d = ground()
     spaced(d, (w * K / 2, 42 * K), "LOCAL CO-OP", font(25), BRIGHT, gap=7)
-    d.line(((w / 2 - 170) * K, 67 * K, (w / 2 + 170) * K, 67 * K), fill=FAINT, width=K)
     spaced(d, (40 * K, 96 * K), "PLAYERS", font(13), DIM, gap=3, anchor="lm")
     spaced(d, (480 * K, 96 * K), "SCREEN", font(13), DIM, gap=3, anchor="lm")
     spaced(d, (40 * K, 214 * K), "CONTROLS", font(13), DIM, gap=3, anchor="lm")
@@ -109,11 +118,16 @@ def selected(name, w, h):
     save(img, name)
 
 
-def card(name, label, sub, face=font):
-    w, h = 176, 58
+def box(w, h):
+    """A dark box in a silver frame, with no words: a card's or an option's ground."""
     img, d = canvas(w, h)
     d.rectangle((0, 0, w * K, h * K), fill=(26, 27, 31, 240))
     frame(d, w, h)
+    return img, d
+
+
+def card(name, label, sub, face=font):
+    img, d = box(176, 58)
     d.text((14 * K, 22 * K), label, font=face(15), fill=BRIGHT, anchor="lm")
     d.text((14 * K, 42 * K), sub, font=face(11), fill=DIM, anchor="lm")
     save(img, name)
@@ -139,11 +153,18 @@ def hold():
         save(img, "hold%d" % i)
 
 
-def button(name, text, red=False, face=font, gap=3):
+def button_ground(red=False):
+    """A button with no words, and the colour its words go in: light with dark words, or red with white ones."""
     w, h = 170, 46
     img, d = canvas(w, h)
     d.rectangle((0, 0, w * K, h * K), fill=(150, 26, 22, 235) if red else (214, 217, 222, 235))
-    spaced(d, (w * K / 2, h * K / 2), text, face(16, True), BRIGHT if red else (10, 11, 13, 255), gap=gap)
+    return img, d, BRIGHT if red else (10, 11, 13, 255)
+
+
+def button(name, text, red=False, face=font, gap=3):
+    w, h = 170, 46
+    img, d, ink = button_ground(red)
+    spaced(d, (w * K / 2, h * K / 2), text, face(16, True), ink, gap=gap)
     save(img, name)
 
 

@@ -1880,7 +1880,14 @@ return function(api)
             if not before[bar:GetAddress()] then
                 foeBars[addr] = bar:GetAddress()
                 if name then
-                    pcall(function() bar.BossName:SetText(FText(name)) end)
+                    pcall(function()
+                        if api.lang and api.lang.arabic() then
+                            game.arabicText(bar.BossName)       -- (the one font with Arabic: game.arabicFont)
+                        else
+                            game.ownText(bar.BossName)          -- (its own font back after a switch from Arabic)
+                        end
+                        bar.BossName:SetText(FText(name))
+                    end)
                 end
             end
         end
@@ -1936,7 +1943,14 @@ return function(api)
     function game.setFoeName(addr, name, hud)
         local bar = game.foeBar(addr, hud)
         if bar then
-            pcall(function() bar.BossName:SetText(FText(name)) end)
+            pcall(function()
+                if api.lang and api.lang.arabic() then
+                    game.arabicText(bar.BossName)       -- (the one font with Arabic: game.arabicFont)
+                else
+                    game.ownText(bar.BossName)          -- (its own font back after a switch from Arabic)
+                end
+                bar.BossName:SetText(FText(name))
+            end)
         end
         return bar ~= nil
     end
@@ -2039,6 +2053,161 @@ return function(api)
         end
         local ok, id = pcall(function() return lib:PostEvent(ev, actor, 0, {}, false) end)
         return ok and id or nil
+    end
+
+    -- Arabic: none of the game's fonts has Arabic letters (bench 11-10: its tips dropped them, Roboto drew boxes), but the
+    -- engine's own Arabic font is in its files. Made Roboto's fallback face (in place of DroidSansFallback, the Chinese one,
+    -- so in Arabic only), any text in Roboto draws Arabic, joined and right to left (bench, the same day). Once, and as
+    -- early as can be: the game keeps a fallback it has used. True once it's in.
+    game.ARABIC_TTF = "../../../Engine/Content/Slate/Fonts/NotoNaskhArabicUI-Regular.ttf"
+    game.ARABIC_FONT = "/Engine/EngineFonts/Roboto.Roboto"
+    function game.arabicFont()
+        if game.arabicDone ~= nil then
+            return game.arabicDone
+        end
+        local font = StaticFindObject(game.ARABIC_FONT)
+        if not valid(font) then
+            return false        -- (not loaded yet: asked again next time)
+        end
+        local entry
+        pcall(function()
+            font.CompositeFont.FallbackTypeface.Typeface.Fonts:ForEach(function(_, e)
+                if entry == nil then
+                    entry = e:get()
+                end
+            end)
+        end)
+        local ok, err = false, "Roboto has no fallback face"
+        if entry ~= nil then
+            ok, err = pcall(function()
+                entry.Font.FontFilename = game.ARABIC_TTF
+                entry.Font.LoadingPolicy = 0        -- (LazyLoad: read from the file the first time it's drawn)
+                entry.Font.FontFaceAsset = nil
+            end)
+        end
+        game.arabicDone = ok
+        log(ok and "Arabic: the engine's Arabic font is in (Roboto's fallback)." or ("Arabic: no Arabic font: " .. tostring(err)))
+        return ok
+    end
+
+    -- A TextBlock in Roboto, for Arabic. pt: points, or its own size. One of the game's own (a foe's bar) keeps a note of
+    -- its own font, as plain words by its address, to have it back after a switch from Arabic (game.ownText): Roboto's
+    -- fallback is Arabic then, so Chinese in it drew boxes (the review, 11-10).
+    local ownFonts = {}         -- TextBlock address -> { path, face, size } of its own font
+    local function fontPath(font)
+        return (font:GetFullName():gsub("^%S+ ", ""))
+    end
+    function game.arabicText(tb, pt)
+        local roboto = game.arabicFont() and StaticFindObject(game.ARABIC_FONT)
+        if not (valid(tb) and valid(roboto)) then
+            return false
+        end
+        return pcall(function()
+            local f = tb.Font
+            local was = valid(f.FontObject) and fontPath(f.FontObject)
+            if was == fontPath(roboto) and (not pt or f.Size == pt) then
+                return                                      -- (already: the foe's label comes every second)
+            end
+            local addr = tb:GetAddress()
+            if was and was ~= fontPath(roboto) and not ownFonts[addr] then
+                ownFonts[addr] = { path = was, face = f.TypefaceFontName:ToString(), size = f.Size }
+            end
+            f.FontObject = roboto
+            f.TypefaceFontName = FName("Regular")
+            if pt then
+                f.Size = pt
+            end
+            tb:SetFont(f)
+        end)
+    end
+
+    -- Its own font back on a TextBlock game.arabicText put in Roboto, if it noted one.
+    function game.ownText(tb)
+        local own = valid(tb) and ownFonts[tb:GetAddress()]
+        if not own then
+            return false
+        end
+        ownFonts[tb:GetAddress()] = nil
+        return pcall(function()
+            local font = StaticFindObject(own.path)
+            if valid(font) then
+                local f = tb.Font
+                f.FontObject = font
+                f.TypefaceFontName = FName(own.face)
+                f.Size = own.size
+                tb:SetFont(f)
+            end
+        end)
+    end
+
+    -- The ink-bar tip (WB_TipsText, status.newTipWidget) saying an Arabic line. Its rich text (the game's
+    -- PBZCommonLocRichText) keeps to the game's own fonts whatever its default font is set to (bench 11-10: Roboto set,
+    -- the Arabic still dropped), so the line goes in a TextBlock of the mod's beside it, in Roboto, and the rich text
+    -- (holding the English, for the bar's size) is hidden but still laid out. text nil: the game's own text again (a
+    -- language switch). (Only the tip's class has ItemText: UE4SS answers a name on any class, so only ever a tip here.)
+    -- wrap: the width its lines wrap at (slate units, 1920 across a 16:9 screen), the tip's own 1700 if not given: the
+    -- longest lines ran off the screen in one line (as the English does; bench 11-10). It's read when the text is first
+    -- made, so a widget keeps the first it's given.
+    -- (An Arabic line goes in after a right-to-left mark: one starting with an English word, "Steam ...", was laid out
+    -- left to right, its Arabic in the wrong order. Not one left English: its full stop went to the left. The mark isn't
+    -- drawn; bench 11-10.)
+    game.ARABIC_TIP = "PPArabicTip"
+    game.RLM = "\226\128\143"
+    function game.arabicTip(tip, text, pt, wrap)
+        if not valid(tip) then
+            return false
+        end
+        return pcall(function()
+            local rich = tip.ItemText
+            local parent = valid(rich) and rich:GetParent()
+            if not valid(parent) then
+                return
+            end
+            local tb
+            for i = 0, parent:GetChildrenCount() - 1 do
+                local c = parent:GetChildAt(i)
+                if valid(c) and c:GetFName():ToString() == game.ARABIC_TIP then
+                    tb = c
+                end
+            end
+            if text == nil then
+                if tb then
+                    tb:SetVisibility(1)                             -- collapsed
+                    rich:SetVisibility(game.tipRichVisibility or 4)
+                end
+                return
+            end
+            local roboto = game.arabicFont() and StaticFindObject(game.ARABIC_FONT)
+            if not valid(roboto) then
+                return
+            end
+            local made = not tb
+            if made then
+                tb = StaticConstructObject(StaticFindObject("/Script/UMG.TextBlock"), tip.WidgetTree, FName(game.ARABIC_TIP))
+                tb.WrapTextAt = wrap or 1700                        -- (before it's added: it has no setter)
+                tb.AutoWrapText = false                             -- (on, it wrapped at the hidden English's width)
+                local slot = parent:AddChild(tb)
+                slot:SetHorizontalAlignment(2)                      -- centred, as the game's line
+                slot:SetVerticalAlignment(2)
+                tb:SetJustification(1)
+                tb:SetColorAndOpacity({ SpecifiedColor = { R = 0.92, G = 0.89, B = 0.84, A = 1.0 }, ColorUseRule = 0 })
+            end
+            local f = tb.Font
+            if made or (pt and f.Size ~= pt) then               -- (a new TextBlock is in Roboto already, but bold 24)
+                f.FontObject = roboto
+                f.TypefaceFontName = FName("Regular")
+                f.Size = pt or 20
+                tb:SetFont(f)
+            end
+            tb:SetText(FText((text:find("[\216-\219]") and game.RLM or "") .. text))     -- (Arabic letters: UTF-8 D8-DB ..)
+            tb:SetVisibility(4)                                     -- seen, never clicked
+            local v = rich:GetVisibility()
+            if v ~= 2 then
+                game.tipRichVisibility = v
+            end
+            rich:SetVisibility(2)                                   -- hidden, still laid out
+            game.arabicTipUsed = true
+        end)
     end
 
     -- The bar of a fight that ended without the game saying so (the other PC's boss, a refresh).
