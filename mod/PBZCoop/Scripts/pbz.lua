@@ -1893,13 +1893,21 @@ return function(api)
         showingRemoteBoss = false
         -- The new bar started with the boss (Init), as the game starts the bar of a fight of its own and local co-op starts
         -- player 2's: unstarted, its gold posture strip never moved, not even at this player's own blows (its health the
-        -- HUD follows by itself). The bench, 11-11, issue #16.
+        -- HUD follows by itself). The bench, 11-11, issue #16. Init names it too, as the codex does (put up unstarted, it
+        -- had no name): the elite swordsman "Jagged Steel, the Frenzied Brute". A boss the codex has no row for it names by
+        -- its internal name (the Gold-Masked One's BP_Monster_GoldMaskMan_C_...): that one keeps the name it had, none.
         if ok then
             for _, bar in ipairs(bossBarList(hud)) do
                 if not before[bar:GetAddress()] then
                     pcall(function()
                         if not valid(bar.Character) then
+                            local was, named = nil, nil
+                            pcall(function() was = bar.BossName:GetText():ToString() end)
                             bar:Init(boss)
+                            pcall(function() named = bar.BossName:GetText():ToString() end)
+                            if was and named == boss:GetFName():ToString() then
+                                pcall(function() bar.BossName:SetText(FText(was)) end)
+                            end
                         end
                     end)
                 end

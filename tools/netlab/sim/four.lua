@@ -2792,17 +2792,26 @@ end
 
 -- The game's boss bars on this PC's fake HUD (it lists none of its own): one made for each boss registered, as the game's
 -- (the bench, 11-11): no Character till it's started with Init(boss), keeping what it's told (shachi, health, how often its
--- strip was told, and its Inits). Returns the bar of a boss, and a function that adds a bar nobody started (a PvP foe's).
-local function bossBarsOn(pc)
+-- strip was told, and its Inits). Its name (BossName's text): none till Init, which names it as the codex does (codexName,
+-- a boss the codex has), or by the boss's internal name (one it has no row for, as the game named the Gold-Masked One).
+-- Returns the bar of a boss, and a function that adds a bar nobody started (a PvP foe's).
+local function bossBarsOn(pc, codexName)
     local hud = pc.hudLayout
     local f = rawget(hud, "__fields")
     local realUp, realDown = f.RegisterBossHPBar, f.UnRegisterBossHPBar
     local up, bars = {}, {}
     local function newBar()
-        local bar = Fake.object(pc, "WB_BossHPBar_C", { shachi = 1.0, health = 1.0, told = 0, inits = 0 }, true)
+        local name = Fake.object(pc, "PBZCommonLocText", { text = "" }, true)
+        Fake.put(name, "GetText", function(w)
+            local text = field(w, "text")
+            return { ToString = function() return text end }
+        end)
+        Fake.put(name, "SetText", function(w, text) Fake.put(w, "text", tostring(text)) end)
+        local bar = Fake.object(pc, "WB_BossHPBar_C", { shachi = 1.0, health = 1.0, told = 0, inits = 0, BossName = name }, true)
         Fake.put(bar, "Init", function(w, boss)
             Fake.put(w, "Character", boss)
             Fake.put(w, "inits", field(w, "inits") + 1)
+            Fake.put(name, "text", codexName or boss:GetFName():ToString())
         end)
         Fake.put(bar, "ForSeq_UpdateShachi", function(w, v)
             Fake.put(w, "shachi", v)
@@ -2864,6 +2873,9 @@ local function postureStrip()
     end
     check(field(gb, "Character") == copy and field(gb, "inits") == 1,
         "the bar put up for the host's fight is started with the guest's copy (Init), as a fight's own bar is")
+    check(field(field(gb, "BossName"), "text") == "",
+        "and keeps the name it had, none: not the boss's internal name that Init gives a boss the codex has no row for ("
+        .. tostring(field(field(gb, "BossName"), "text")) .. ")")
     local function shachi(e)
         return rawget(e, "__fields").AttributeSetBase.Shachi
     end
@@ -2944,6 +2956,19 @@ local function postureStrip()
     check(shachi(theirs).CurrentValue >= max - 1 and near(field(hb, "shachi"), 1),
         "and fills it as the bar is filled 6 s on (" .. tostring(field(hb, "shachi")) .. ")")
     allErrors(s)
+
+    -- A boss the codex has: Init gives the guest's bar the boss's name (the elite swordsman's, on the bench), and it keeps
+    -- it (put up unstarted, it had none).
+    local s2, h2, g2 = pair()
+    bossBarsOn(h2, "Jagged Steel, the Frenzied Brute")
+    local named = bossBarsOn(g2, "Jagged Steel, the Frenzied Brute")
+    h2.hudLayout:RegisterBossHPBar(Session.enemyOn(h2, "boss"))
+    s2:run(2)
+    local nb = named(Session.enemyOn(g2, "boss"))
+    check(nb ~= nil and field(nb, "inits") == 1 and field(field(nb, "BossName"), "text") == "Jagged Steel, the Frenzied Brute",
+        "a boss the codex has: the guest's bar for the host's fight takes its name with Init, and keeps it ("
+        .. tostring(nb and field(field(nb, "BossName"), "text")) .. ")")
+    allErrors(s2)
 end
 
 -- Issue #16 (2): a guest's call that takes the host's story flow (a flag, a flow step, a bell lit as the guest comes to it)
