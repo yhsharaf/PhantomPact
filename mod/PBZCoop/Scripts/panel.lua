@@ -18,7 +18,8 @@ return function(api)
 
     local TABS = { { x = 40, y = 116 }, { x = 116, y = 116 }, { x = 192, y = 116 }, { x = 268, y = 116 } }
     local TAB_LAST = 2              -- 3 and 4 players come later
-    local LAYOUTS = { tb = { x = 480, y = 116 }, lr = { x = 612, y = 116 } }
+    -- mon: two monitors, a player on each (localcoop.lua's two-monitor mode; PhantomPact.ini's Monitors = 2)
+    local LAYOUTS = { tb = { x = 480, y = 116 }, lr = { x = 612, y = 116 }, mon = { x = 744, y = 116 } }
     local SLOTS = { { x = 40, y = 232 }, { x = 248, y = 232 } }
     local POOL = {
         kbm = { x = 40, y = 340 }, joy1 = { x = 228, y = 340 }, joy2 = { x = 416, y = 340 },
@@ -159,9 +160,14 @@ return function(api)
         local size = lib:GetViewportSize(pc)
         local scale = lib:GetViewportScale(pc)
         local vw, vh = size.X / scale, size.Y / scale
-        local s = math.min(vw / (W + 80), vh / (H + 80), 1.4)
+        -- (Over two monitors, player 1's, where the game's menus are: the edge between them would cut it in half.)
+        local ax, ay, aw, ah = 0, 0, vw, vh
+        if api.localcoop and api.localcoop.playerOneArea then
+            ax, ay, aw, ah = api.localcoop.playerOneArea(vw, vh)
+        end
+        local s = math.min(aw / (W + 80), ah / (H + 80), 1.4)
         origin.scale, origin.dpi = s, scale
-        origin.x, origin.y = (vw - W * s) / 2, (vh - H * s) / 2
+        origin.x, origin.y = ax + (aw - W * s) / 2, ay + (ah - H * s) / 2
     end
 
     -- The mouse and keys, from Windows through main.dll: with the mouse let go of, the game itself sees no input.
@@ -341,7 +347,12 @@ return function(api)
             end
         end
         if inside(x, y, APPLY) and ready() then
+            local wasMon = api.localcoop.current().layout == "mon"
             api.localcoop.apply(choice)
+            -- Two monitors is kept in PhantomPact.ini, so the next start begins with it.
+            if (choice.layout == "mon") ~= wasMon then
+                save({ Monitors = choice.layout == "mon" and "2" or "1" })
+            end
             appliedUntil = os.clock() + APPLIED_S
             -- Apply may have moved the keyboard and mouse to the other player: the panel follows them.
             local now = api.localcoop.keyboardController()

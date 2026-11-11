@@ -104,7 +104,7 @@ return function(api)
     os.remove(modDir() .. "pads_watch.txt")
     os.remove(modDir() .. "pads_want.txt")      -- left by a crash with a panel open: main.dll would think one still is
     if role == "local" then
-        api.localcoop.start(tonumber(settings.joysticks) or 2)
+        api.localcoop.start(tonumber(settings.joysticks) or 2, tonumber(settings.monitors) or 1)
         return
     end
     -- What stops co-op from starting. The player reads it in the game, once in the world: a log line is easy to miss.

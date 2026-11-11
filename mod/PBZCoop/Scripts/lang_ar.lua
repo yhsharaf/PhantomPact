@@ -94,6 +94,10 @@ return {
         ["press E or Circle at the black wall to join the fight."] = "اضغط E أو زر الدائرة عند جدار الضباب الأسود للانضمام إلى القتال.",  -- local.tip.wall
         ["player 2 joined."] = "انضم اللاعب 2.",  -- local.tip.p2_joined
         ["player 2's gourd is empty: rest at a bell."] = "قرعة الشفاء لدى اللاعب 2 فارغة: استرح عند جرس.",  -- local.tip.gourd_empty
+        ["player 1 is on the left monitor, player 2 on the right one."] = "اللاعب 1 على الشاشة اليسرى، واللاعب 2 على الشاشة اليمنى.",  -- local.tip.mon_lr
+        ["player 1 is on the top monitor, player 2 on the bottom one."] = "اللاعب 1 على الشاشة العليا، واللاعب 2 على الشاشة السفلى.",  -- local.tip.mon_tb
+        ["two monitors: there's no monitor beside this one, so both players stay on this one."] = "وضع الشاشتين: لا توجد شاشة بجانب هذه الشاشة، لذا يبقى اللاعبان عليها.",  -- local.tip.mon_single
+        ["two monitors need the game's display mode on Borderless or Windowed."] = "يحتاج وضع الشاشتين إلى ضبط وضع العرض في اللعبة على «نافذة بلا حدود» أو «نافذة».",  -- local.tip.mon_mode
         -- the match screen (arenaui.lua): the countdown's words, a foe's name before their slot, YOU before the score
         ["ONE"] = "واحد",  -- match.count.one
         ["TWO"] = "اثنان",  -- match.count.two

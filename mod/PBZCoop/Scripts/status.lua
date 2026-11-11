@@ -26,6 +26,7 @@ return function(api)
         buildShown = false }
     local nextPoll = 0
     local tip
+    local tipOverTwo = false            -- whether tip was made for local co-op's two monitors (on player 1's screen)
 
     -- A new ink-bar text widget at viewport layer z, or nil. Made from the widget's class: copying an instance on
     -- screen (as first written) found none until the game had shown a tip itself, so nothing ever appeared.
@@ -46,9 +47,20 @@ return function(api)
         if not valid(w) then
             return nil
         end
-        w:AddToViewport(z)
+        -- (Local co-op over two monitors: on player 1's, where the game's own menus are. Over the whole window the edge
+        -- between the monitors would cut it in half.)
+        if status.overTwoMonitors() then
+            w:AddToPlayerScreen(z)
+        else
+            w:AddToViewport(z)
+        end
         w:SetVisibility(3)                          -- HitTestInvisible: seen, never clicked
         return w
+    end
+
+    function status.overTwoMonitors()
+        local lc = api.localcoop
+        return lc ~= nil and lc.spread ~= nil and lc.spread() == true
     end
 
     function status.onScreen(w)
@@ -63,8 +75,13 @@ return function(api)
             return
         end
         pcall(function()
-            if not status.onScreen(tip) then
+            local twoMonitors = status.overTwoMonitors()
+            if not status.onScreen(tip) or tipOverTwo ~= twoMonitors then
+                if valid(tip) then
+                    pcall(function() tip:RemoveFromParent() end)
+                end
                 tip = status.newTipWidget(400)
+                tipOverTwo = twoMonitors
                 if not tip then
                     return
                 end

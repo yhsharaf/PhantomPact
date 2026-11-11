@@ -35,7 +35,7 @@ share loot and dust, and rest at bells together. The host's world leads, and you
 - Optional `Secret` that signs every packet; works over Tailscale, Hamachi, Radmin, ZeroTier, UU Accelerator, and
   Steam (beta)
 - Local co-op (F5 > MORE > Mode > LOCAL, in testing): two players on one PC in split screen, one pad each or keyboard plus
-  pad. Player 2 climbs, opens chests, rings bells, drinks and fights on their own, with the game's own HUD, button prompts,
+  pad, or each on a monitor of their own (F4 panel, or `Monitors = 2`). Player 2 climbs, opens chests, rings bells, drinks and fights on their own, with the game's own HUD, button prompts,
   boss bars and execution points in their half of the screen, and one shared backpack
   ([docs/LOCAL_COOP.md](docs/LOCAL_COOP.md))
 - 4 players (beta) and 6 players (experimental): the host picks Players under MORE in the F5 panel, and up to three or

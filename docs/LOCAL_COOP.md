@@ -11,13 +11,39 @@ played through all ten regions of the story with player 2's presses injected, an
    `platform\steam\ue4ss\Mods\PBZCoop\PhantomPact.ini` set `Role = Local` before you start.) `Joysticks = 2` there means one pad
    per player, the default. `Joysticks = 1` means keyboard and mouse for player 1, the pad for player 2.
 3. Start the game and CONTINUE your save. Player 2 appears beside player 1 within a few seconds, as a second Soul.
-4. F4 opens the local co-op panel in the game: screen layout (left/right or top/bottom) and which pad is whose, by
-   dragging. Its choices replace the ini setting.
+4. F4 opens the local co-op panel in the game: screen layout (left/right, top/bottom, or two monitors) and which pad is
+   whose, by dragging. Its choices replace the ini setting.
 5. MULTIPLAYER in that panel goes back to online co-op, from the next start of the game: it sets `Role = Off`, and F5 works again.
    Local co-op can't be turned off live, since taking player 2 away at the wrong moment has killed the game's menus.
 
 Player 2 shares player 1's save, backpack, dust and gourd count, and rests at the same bells. Player 2 cannot die for
 good: at zero health they are down for a while and come back beside player 1.
+
+## Two monitors
+
+Each player can have a monitor of their own: pick the third picture under SCREEN in the F4 panel (two monitors) and press
+APPLY, or set `Monitors = 2` in `PhantomPact.ini` before you start.
+
+- While player 2 is in, the game's window covers the monitor it's on and the one next to it, with no border. Player 1 is
+  on the left monitor and player 2 on the right one; with one monitor above the other, player 1 is on top. Each player
+  gets a whole screen of the normal shape, with the game's normal camera.
+- The game's menus, the bell, dialogues, the game's pages and the F4 panel open on player 1's monitor, whole. Both pads
+  drive them, as on one screen; player 2's monitor keeps their own view meanwhile.
+- Story scenes play on player 1's monitor with their subtitles, and on player 2's monitor through the same camera.
+- The title screen, loading screens and single player are on one monitor, as the game had its window: the window spreads
+  again when player 2 is back. (A load that holds the game up can show its loading screen over both monitors for a while
+  first: the window is moved when the game lets it.)
+
+What it needs:
+
+- The game's display mode on Borderless or Windowed (the game's display settings). In exclusive Fullscreen the monitor is
+  the game's and the window can't be spread; the mod says so.
+- The two monitors next to each other in Windows' display settings (Settings > System > Display), their edges lined up.
+  Monitors of the same size work best. With different sizes each player gets the smaller one's size, against the edge
+  between them, and the rest of the bigger monitor shows what's behind the game.
+- Nothing else of the game or Windows is changed: the mod only moves and resizes the game's own window, and puts it
+  back. A window over two monitors can't use G-Sync or FreeSync, and two monitors with different refresh rates can
+  stutter on one of them. Run them at the same rate where you can.
 
 ## Pads
 

@@ -8,6 +8,7 @@
 #include "relay.hpp"
 #include "lua_link.hpp"
 #include "pad_route.hpp"
+#include "screens.hpp"
 
 namespace {
 
@@ -46,15 +47,20 @@ bool down(int key) {
 
 // The game keeps the real cursor pinned to the screen's centre until a click lands, whatever the input mode: click once
 // for the player as the panel opens, on the panel's empty middle, and again each time the game gets the focus back. False
-// while the cursor is over something else: a click there would land on that window.
+// while the cursor is over something else: a click there would land on that window. That includes UE4SS's console, which
+// Windows counts as this game's own: a click in it starts a text selection, and every log line then waits on it (the
+// game froze that way on the bench, its window over two monitors with the console on top).
 bool free_cursor() {
     HWND window = GetForegroundWindow();
     DWORD process = 0;
     GetWindowThreadProcessId(window, &process);
     POINT cursor{};
     if (process != GetCurrentProcessId() || !GetCursorPos(&cursor)) return false;
-    GetWindowThreadProcessId(WindowFromPoint(cursor), &process);
+    HWND under = WindowFromPoint(cursor);
+    GetWindowThreadProcessId(under, &process);
     if (process != GetCurrentProcessId()) return false;
+    wchar_t cls[32] = {};
+    if (!GetClassNameW(GetAncestor(under, GA_ROOT), cls, 32) || wcscmp(cls, L"UnrealWindow") != 0) return false;
     mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
     Sleep(FREE_CLICK_MS);
     mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
@@ -158,6 +164,7 @@ extern "C" __declspec(dllexport) void* start_mod() {
         CloseHandle(CreateThread(nullptr, 0, watch_thread, nullptr, 0, nullptr));
         CloseHandle(CreateThread(nullptr, 0, pads_thread, nullptr, 0, nullptr));
         CloseHandle(CreateThread(nullptr, 0, route::watch, &mod_dir, 0, nullptr));
+        CloseHandle(CreateThread(nullptr, 0, screens::watch, &mod_dir, 0, nullptr));
     }
     return nullptr;
 }

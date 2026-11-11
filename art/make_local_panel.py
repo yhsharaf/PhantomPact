@@ -111,6 +111,22 @@ def thumb(name, cells):
     save(img, name)
 
 
+def two_monitors(name):
+    """The two-monitor choice, beside the layouts: two little monitors on stands, a player on each."""
+    w, h = 118, 70
+    img, d = canvas(w, h)
+    d.rectangle((0, 0, w * K, h * K), fill=CELL)
+    for i, (x0, x1) in enumerate(((9, 55), (63, 109))):
+        box = (x0 * K, 8 * K, x1 * K, 47 * K)
+        d.rectangle(box, fill=(46, 48, 53, 255), outline=SILVER, width=K)
+        cx = (box[0] + box[2]) / 2
+        d.text((cx, (box[1] + box[3]) / 2), str(i + 1), font=font(14), fill=BRIGHT, anchor="mm")
+        d.line((cx, 47 * K, cx, 56 * K), fill=SILVER, width=2 * K)              # the stand
+        d.line((cx - 10 * K, 57 * K, cx + 10 * K, 57 * K), fill=SILVER, width=2 * K)  # its foot
+    frame(d, w, h, FAINT)
+    save(img, name)
+
+
 def selected(name, w, h):
     img, d = canvas(w, h)
     frame(d, w, h, BRIGHT, inset=0, width=2)
@@ -192,6 +208,7 @@ if __name__ == "__main__":
         slot(n)
     thumb("layout_tb", [(0, 0, 1, .5), (0, .5, 1, 1)])
     thumb("layout_lr", [(0, 0, .5, 1), (.5, 0, 1, 1)])
+    two_monitors("layout_mon")
     thumb("layout_3top", [(0, 0, 1, .5), (0, .5, .5, 1), (.5, .5, 1, 1)])
     thumb("layout_3bottom", [(0, 0, .5, .5), (.5, 0, 1, .5), (0, .5, 1, 1)])
     thumb("layout_4", [(0, 0, .5, .5), (.5, 0, 1, .5), (0, .5, .5, 1), (.5, .5, 1, 1)])

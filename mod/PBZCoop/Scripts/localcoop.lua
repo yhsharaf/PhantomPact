@@ -128,6 +128,183 @@ return function(api)
     V.FAR_MOVE_CM = 5000
     V.FAR_MOVE_HOLD_S = 3.0
     V.FAR_MOVE_MAX_S = 20.0
+
+    -- Two monitors (Monitors = 2, or the F4 panel's two-monitor picture): main.dll spreads the game's one window over the
+    -- monitor it's on and the one beside it, with no border, and the engine's own split puts each player on a monitor of
+    -- their own (native/screens.hpp). Only while player 2 is in: for one player (the title, a load, single player) the
+    -- window goes back as the game had it, so a screen made for one player is never cut by the edge between the monitors.
+    -- While it's spread the game's menus, screens and scenes keep the split: they're player 1's, so they sit whole on
+    -- player 1's monitor, and a scene plays on player 2's monitor too, through the scene's own camera.
+    V.mon = nil                     -- what main.dll last said: { state, split, w, h, mw, mh, why }
+    V.screensWant, V.screensSaid = nil, nil
+
+    function V.spread()
+        return V.mon ~= nil and V.mon.state == "two"
+    end
+
+    -- The engine's split: the monitors' own while spread (side by side or one above the other), else the panel's.
+    function V.layout()
+        if V.spread() and (V.mon.split == "lr" or V.mon.split == "tb") then
+            return V.mon.split
+        end
+        return config.layout
+    end
+
+    -- One view over the whole window: single player, or a menu or a scene on one monitor.
+    function V.fullWidth()
+        return paused or ((menuOpen or inScene) and not V.spread())
+    end
+
+    -- (Said again every few seconds as well: main.dll clears the file as it starts, and a wish it missed would never come again.)
+    function V.wantScreens(want)
+        if want == V.screensWant and os.clock() < (V.screensAt or 0) + 5.0 then
+            return
+        end
+        V.screensWant, V.screensAt = want, os.clock()
+        local path = api.modDir() .. "screens.txt"
+        if not want then
+            os.remove(path)
+            return
+        end
+        local f = io.open(path, "w")
+        if f then
+            f:write(want .. "\n")
+            f:close()
+        end
+    end
+
+    -- main.dll's line, when it changed: true then.
+    function V.readScreens()
+        local f = io.open(api.modDir() .. "screens_out.txt", "r")
+        local line = f and f:read("l") or nil
+        if f then
+            f:close()
+        end
+        if line == V.screensSaid then
+            return false
+        end
+        V.screensSaid = line
+        local state, split, w, h, mw, mh, why = (line or ""):match("^(%a+) (%S+) (%d+) (%d+) (%d+) (%d+) (%a+)")
+        V.mon = state and { state = state, split = split, w = tonumber(w), h = tonumber(h), mw = tonumber(mw),
+            mh = tonumber(mh), why = why } or nil
+        return true
+    end
+
+    -- The game sizes its words and pictures by the window's shorter side. Over two monitors side by side that's still one
+    -- monitor's height; one above the other it's a monitor's width, and everything would be drawn nearly twice its size.
+    -- So the scale is brought back to one monitor's, and put back as the game had it once the window is.
+    function V.uiScale()
+        local ui = StaticFindObject("/Script/Engine.Default__UserInterfaceSettings")
+        if not valid(ui) then
+            return
+        end
+        V.appScale = V.appScale or ui.ApplicationScale
+        local want, m = V.appScale, V.mon
+        if V.spread() and m.w > 0 and m.h > 0 and m.mw > 0 and m.mh > 0 then
+            want = V.appScale * math.min(m.mw, m.mh) / math.min(m.w, m.h)
+        end
+        if math.abs(ui.ApplicationScale - want) > 0.0005 then
+            ui.ApplicationScale = want
+        end
+    end
+
+    -- The game's display mode, looked at every few seconds: 0 is exclusive fullscreen, where the monitor is the game's and
+    -- there's no window to spread.
+    function V.displayMode()
+        if os.clock() >= (V.nextModeLook or 0) then
+            V.nextModeLook = os.clock() + 3.0
+            local ok, mode = pcall(function()
+                return StaticFindObject("/Script/Engine.Default__GameUserSettings"):GetGameUserSettings():GetFullscreenMode()
+            end)
+            V.mode = ok and tonumber(mode) or nil
+        end
+        return V.mode
+    end
+
+    V.MON_SAY = {
+        lr = "player 1 is on the left monitor, player 2 on the right one.",
+        tb = "player 1 is on the top monitor, player 2 on the bottom one.",
+        single = "two monitors: there's no monitor beside this one, so both players stay on this one.",
+        mode = "two monitors need the game's display mode on Borderless or Windowed.",
+    }
+    function V.monitorsTip(text)
+        log(text)
+        if api.status and api.status.notify then
+            pcall(api.status.notify, "monitors", text)
+        end
+    end
+
+    -- Each change in what main.dll did: the split, one view or two, the size of the game's words, and a word for the players.
+    function V.screensChanged(pc)
+        local maps = StaticFindObject("/Script/EngineSettings.Default__GameMapsSettings")
+        if valid(maps) then
+            maps.TwoPlayerSplitscreenLayout = V.layout() == "lr" and SPLIT_LEFT_RIGHT or SPLIT_TOP_BOTTOM
+        end
+        if valid(pc) then
+            pcall(function() api.gs():SetForceDisableSplitscreen(pc, V.fullWidth()) end)
+        end
+        pcall(V.uiScale)
+        local m = V.mon
+        if V.spread() then
+            log(string.format("Two monitors: the window is %dx%d, %s.", m.w, m.h, m.split))
+            if not V.monSaid then           -- (once a session: every load spreads it again)
+                V.monSaid = true
+                V.monitorsTip(V.MON_SAY[m.split] or V.MON_SAY.lr)
+            end
+        elseif m and m.state == "none" then
+            log("Two monitors: not now (" .. tostring(m.why) .. ").")
+            local say = (m.why == "fight" and V.MON_SAY.mode) or (m.why == "single" and V.MON_SAY.single) or nil
+            V.monSaidWhy = V.monSaidWhy or {}
+            if say and not V.monSaidWhy[m.why] then     -- (once a session each: every load would say it again)
+                V.monSaidWhy[m.why] = true
+                V.monitorsTip(say)
+            end
+        else
+            log("Two monitors: the window is as the game had it.")
+        end
+    end
+
+    -- Every look at the pads (WATCH_MS): spread while player 2 is in, as the game had it otherwise.
+    function V.watchScreens(pc)
+        if config.monitors ~= 2 then
+            V.wantScreens(nil)
+        else
+            local exclusive = V.displayMode() == 0
+            if exclusive and not V.modeSaid then
+                V.modeSaid = true
+                V.monitorsTip(V.MON_SAY.mode)
+            end
+            V.wantScreens((not paused and not exclusive and valid(state.p2Pawn)) and "two" or "one")
+        end
+        if V.readScreens() then
+            V.screensChanged(pc)
+        end
+    end
+
+    -- A story scene on two monitors: player 2's monitor shows it too, through whatever camera player 1's view cuts to,
+    -- and player 2 sees through their own eyes again when it ends. (Not over a close-up of player 2's own: that view is theirs.)
+    -- (Only the camera's address is kept between looks, never the camera: no game object is held from one frame to the next.)
+    function V.followSceneView(pc)
+        local pc2, soul = state.p2Controller, state.p2Pawn
+        if not (inScene and V.spread() and valid(pc) and valid(pc2) and valid(soul)) or V.closeUp then
+            if V.sceneViewAt then
+                V.sceneViewAt = nil
+                if valid(pc2) and valid(soul) and not V.closeUp then
+                    pcall(function() pc2:SetViewTargetWithBlend(soul, 0, 0, 0, false) end)
+                end
+            end
+            return
+        end
+        local view = pc:GetViewTarget()
+        if valid(view) then
+            local at = view:GetAddress()
+            if at ~= soul:GetAddress() and at ~= V.sceneViewAt then
+                pc2:SetViewTargetWithBlend(view, 0, 0, 0, false)
+                V.sceneViewAt = at
+            end
+        end
+    end
+
     local function besidePoint(p1, up)
         local q = p1:K2_GetActorLocation()
         local yaw = math.rad(p1:K2_GetActorRotation().Yaw) + math.pi / 2
@@ -286,7 +463,7 @@ return function(api)
         local size, scale = lib:GetViewportSize(pc), lib:GetViewportScale(pc)
         local vw, vh = size.X / scale, size.Y / scale
         local x, y, w, h = vw * 0.5, vh * 0.75, vw, vh * 0.5
-        if config.layout == "lr" then
+        if V.layout() == "lr" then
             x, y, w, h = vw * 0.75, vh * 0.5, vw * 0.5, vh
         end
         local size = math.min(h, w * 0.55)      -- (what the parts are measured against: a tall half is no reason to spill over the line)
@@ -833,8 +1010,10 @@ return function(api)
         end
     end
 
+    -- (Over two monitors each player has a whole screen of the game's own shape: the game's own camera, as for one player.)
     local function centreCamera(pawn)
-        pcall(function() pawn.NBCamera:SetAdditiveSocketOffset({ X = 0, Y = -SHOULDER_CM, Z = 0 }, CENTRE_SPEED) end)
+        local y = V.spread() and 0 or -SHOULDER_CM
+        pcall(function() pawn.NBCamera:SetAdditiveSocketOffset({ X = 0, Y = y, Z = 0 }, CENTRE_SPEED) end)
     end
 
     local function interactPressed(controller)
@@ -928,7 +1107,7 @@ return function(api)
         local size, scale = lib:GetViewportSize(pc), lib:GetViewportScale(pc)
         local vw, vh = size.X / scale, size.Y / scale
         local x, y = vw * 0.5, vh * 0.56
-        if config.layout == "lr" then
+        if V.layout() == "lr" then
             x, y = vw * 0.75, vh * 0.09
         end
         local frac = math.max(0, math.min(1, hp / maxHp))
@@ -988,7 +1167,7 @@ return function(api)
         local size, scale = lib:GetViewportSize(pc), lib:GetViewportScale(pc)
         local vw, vh = size.X / scale, size.Y / scale
         local left, top = vw * BAR_LEFT, vh * (0.5 + 0.5 * BAR_TOP)
-        if config.layout == "lr" then
+        if V.layout() == "lr" then
             left, top = vw * (0.5 + 0.5 * BAR_LEFT), vh * BAR_TOP
         end
         local width, height = vw * BAR_WIDTH, vw * BAR_WIDTH * 16 / 300
@@ -1254,19 +1433,39 @@ return function(api)
             return false
         end
         local settings = StaticFindObject("/Script/EngineSettings.Default__GameMapsSettings")
-        settings.TwoPlayerSplitscreenLayout = config.layout == "lr" and SPLIT_LEFT_RIGHT or SPLIT_TOP_BOTTOM
+        settings.TwoPlayerSplitscreenLayout = V.layout() == "lr" and SPLIT_LEFT_RIGHT or SPLIT_TOP_BOTTOM
         local keyboard = config.p1 == "kbm" or config.p2 == "kbm"
         api.setGamepadOffset(keyboard)
         routePads(not keyboard and tonumber(config.p1:match("%d")) or nil)
         local gs = api.gs()
         gs:SetPlayerControllerID(pc, config.p2 == "kbm" and 1 or 0)
         gs:SetPlayerControllerID(p2pc, config.p2 == "kbm" and 0 or 1)
-        log(string.format("Local co-op: %s, player 1 %s, player 2 %s.", config.layout, config.p1, config.p2))
+        log(string.format("Local co-op: %s%s, player 1 %s, player 2 %s.", V.layout(), V.spread() and " over two monitors" or "",
+            config.p1, config.p2))
         return true
     end
 
     function localcoop.current()
-        return { players = tonumber(config.players), layout = config.layout, p1 = config.p1, p2 = config.p2 }
+        -- (The panel shows two monitors as a third layout: "mon".)
+        return { players = tonumber(config.players), layout = config.monitors == 2 and "mon" or config.layout,
+            p1 = config.p1, p2 = config.p2 }
+    end
+
+    -- While the window is spread over two monitors: things drawn for everyone (the F4 panel, the mod's notices) go on
+    -- player 1's monitor, whole, where the game's own menus are.
+    function localcoop.spread()
+        return V.spread()
+    end
+
+    -- Player 1's monitor in the viewport's units: the whole window, or its first half while it's spread.
+    function localcoop.playerOneArea(vw, vh)
+        if not V.spread() then
+            return 0, 0, vw, vh
+        end
+        if V.layout() == "lr" then
+            return 0, 0, vw / 2, vh
+        end
+        return 0, 0, vw, vh / 2
     end
 
     local function tip(text)
@@ -1333,7 +1532,13 @@ return function(api)
 
     function localcoop.apply(choice)
         config.players = choice.players
-        config.layout, config.p1 = choice.layout, choice.p1
+        -- Two monitors keeps the one-screen layout for when the window isn't spread. (The panel keeps it in PhantomPact.ini.)
+        if choice.layout == "mon" then
+            config.monitors = 2
+        else
+            config.monitors, config.layout = 1, choice.layout
+        end
+        config.p1 = choice.p1
         config.p2 = choice.p2 or config.p2
         saveConfig()
         if choice.players == 1 then
@@ -1447,7 +1652,7 @@ return function(api)
         local playing = game.inCutscene()
         if playing ~= inScene then
             inScene = playing
-            api.gs():SetForceDisableSplitscreen(pc, playing or menuOpen)
+            api.gs():SetForceDisableSplitscreen(pc, V.fullWidth())      -- (over two monitors, the scene keeps the split)
             local out = playing or V.sailing
             if valid(p2) then
                 -- (A failed health read isn't 0: a floor of 0 made a hit in the scene player 2's real death.)
@@ -1538,6 +1743,13 @@ return function(api)
         if not paused and valid(pc) then
             followScene(pc)
         end
+        -- (Single player and under the panel too: the window goes back with player 2, and the panel's choice is seen at once.)
+        local okS, errS = pcall(V.watchScreens, pc)
+        if not okS and errS ~= V.lastScreensError then
+            V.lastScreensError = errS
+            log("Two monitors: " .. tostring(errS))
+        end
+        pcall(V.followSceneView, pc)
         if api.panel.open or not valid(p1) then
             return
         end
@@ -1556,7 +1768,7 @@ return function(api)
             menuOpen = menu             -- (single player: there's no split screen to put back, nor pads to share out)
         elseif menu ~= menuOpen then
             menuOpen = menu
-            api.gs():SetForceDisableSplitscreen(pc, menu or inScene)
+            api.gs():SetForceDisableSplitscreen(pc, V.fullWidth())      -- (over two monitors, on player 1's monitor)
             holdForScreen(menu)
             if menu then
                 api.setGamepadOffset(false)
@@ -2676,7 +2888,7 @@ return function(api)
     local function promptSpot(vw, vh, scale, target)
         local x, y = vw * 0.5, vh * (0.5 + 0.5 * PROMPT_Y)
         local left, top = 0, vh * 0.5
-        if config.layout == "lr" then
+        if V.layout() == "lr" then
             x, y = vw * 0.75, vh * PROMPT_Y
             left, top = vw * 0.5, 0
         end
@@ -3026,10 +3238,13 @@ return function(api)
 
     -- joysticks: 1 = keyboard for player 1, the joystick for player 2. 2 = one joystick for each player. The panel's
     -- last Apply, if there is one, wins.
-    function localcoop.start(joysticks)
+    -- monitors: 2 = each player on a monitor of their own (Monitors in PhantomPact.ini, which the panel keeps up to date).
+    function localcoop.start(joysticks, monitors)
         if on then
             return
         end
+        config.monitors = tonumber(monitors) == 2 and 2 or 1
+        os.remove(api.modDir() .. "screens.txt")       -- (main.dll's: a run that crashed spread leaves "two" behind)
         on = true
         config.players, config.layout = "2", "tb"
         config.p1 = joysticks < 2 and "kbm" or "joy1"
@@ -3071,6 +3286,12 @@ return function(api)
                         pcall(function() api.gs():SetPlayerControllerID(pc1, 0) end)
                     end
                     api.removePlayer2()
+                    -- (Over two monitors, the window goes back as the game had it for whatever the next map shows one
+                    -- player: main.dll moves it as soon as the game takes its window's messages, which a load can hold
+                    -- off until it's done. Player 2's return spreads it again.)
+                    if config.monitors == 2 then
+                        V.wantScreens("one")
+                    end
                     V.dropHud()
                     V.dropDeathCard()
                     V.real, V.realUp, V.pointsFor, V.points = nil, false, nil, nil
