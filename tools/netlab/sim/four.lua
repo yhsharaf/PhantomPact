@@ -6657,6 +6657,64 @@ local function localPlay()
     allErrors(f)
 end
 
+-- A player report on 1.6.9 ("monsters deal very little damage to me ... it feels like I have absurdly high armor") and the
+-- bench, 11-11: player 1's joystick read as unplugged held their health where it was, and they played on all the same (the
+-- keyboard and mouse reach player 1, and a DualSense the game reads itself can be missing from pads.txt), with nothing able
+-- to hurt them: 0 of 28 boss hits. A player 1 who steers isn't helpless: no hold. One standing still, their pad gone, is.
+local function padHold()
+    part("a joystick away: the hold on player 1's health")
+    local function floorOf(p)
+        return field(field(field(p, "AttributeSetBase"), "Health_Min"), "CurrentValue")
+    end
+    local function hit(p, amount)       -- (as the game takes a hit: never under the floor)
+        Fake.setHealth(p, math.max(floorOf(p), (Fake.health(p)) - amount))
+    end
+    local function steer(p, on)
+        Fake.put(field(p, "CharacterMovement"), "Acceleration", { X = on and 2048.0 or 0.0, Y = 0.0, Z = 0.0 })
+    end
+    local s, pc = localGame()
+    s:run(1.5)
+    local p1 = pc.pawn
+    local top = select(2, Fake.health(p1))
+    pc.files["pads.txt"] = "0\n1\n0\n0\n"           -- (player 1's joystick gone, player 2's in)
+    s:run(0.5)
+    hit(p1, 300)
+    check(floorOf(p1) == top and Fake.health(p1) == top, "player 1's joystick gone, standing still: held, a hit takes nothing")
+    steer(p1, true)
+    s:run(0.5)
+    hit(p1, 300)
+    check(floorOf(p1) == 0 and Fake.health(p1) == top - 300,
+        "steering all the same (keyboard and mouse, or a pad the game reads itself): no hold, the hit lands")
+    check(count(pc.logs, "plays on without their controller") == 1, "said once in the log")
+    steer(p1, false)
+    s:run(1)
+    hit(p1, 100)
+    check(floorOf(p1) == 0 and Fake.health(p1) == top - 400, "standing still again, that pad still away: not held again")
+    pc.files["pads.txt"] = "1\n1\n0\n0\n"
+    s:run(0.5)
+    pc.files["pads.txt"] = "0\n1\n0\n0\n"
+    s:run(0.5)
+    hit(p1, 100)
+    check(floorOf(p1) == top - 400 and Fake.health(p1) == top - 400, "the pad back and gone again, standing still: held again")
+    allErrors(s)
+
+    -- Alone in Local mode (player 2 out), no joystick at all, on the keyboard: the same.
+    local a, apc = localGame()
+    a:run(1.5)
+    Session.command(apc, "localcoop off")
+    a:run(1)
+    local q1 = apc.pawn
+    local qtop = select(2, Fake.health(q1))
+    apc.files["pads.txt"] = "0\n0\n0\n0\n"
+    a:run(0.5)
+    check(floorOf(q1) == qtop, "alone in Local mode, no joystick, standing still: held")
+    steer(q1, true)
+    a:run(0.5)
+    hit(q1, 250)
+    check(floorOf(q1) == 0 and Fake.health(q1) == qtop - 250, "on the keyboard: no hold, the hit lands")
+    allErrors(a)
+end
+
 local function elsewhere()
     part("what a partner on another map does")
     local y, yh, yg = pair()
@@ -9031,6 +9089,7 @@ return function(print_, scripts)
     whatsLeftOfAPartner()
     offAndBack()
     localPlay()
+    padHold()
     localScreen()
     elsewhere()
     travel()

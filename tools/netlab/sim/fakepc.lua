@@ -164,7 +164,9 @@ function Fake.character(pc, class, x, y, z, hp, posture)
     local cmc = object(pc, "Movement", { MovementMode = 1, Velocity = { X = 0.0, Y = 0.0, Z = 0.0 }, MaxWalkSpeed = 0, AirControl = 0,
         MaxAcceleration = 0, bRunPhysicsWithNoController = false, bOrientRotationToMovement = true })
     defs(pc, cmc, { SetMovementMode = function(self, mode) put(self, "MovementMode", mode) end, DisableMovement = false,
-        IsFalling = function() return false end })
+        IsFalling = function() return false end,
+        -- (From input alone, as the game's: someone steering the body. A test puts Acceleration.)
+        GetCurrentAcceleration = function(self) return rawget(self, "__fields").Acceleration or { X = 0.0, Y = 0.0, Z = 0.0 } end })
     put(a, "CharacterMovement", cmc)
     local capsule = object(pc, "Capsule")
     defs(pc, capsule, { SetCollisionResponseToChannel = false })

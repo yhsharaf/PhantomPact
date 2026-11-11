@@ -1695,6 +1695,17 @@ return function(api)
         return n == 1 and p1 or state.p2Pawn
     end
 
+    -- Someone steers this body: its movement's acceleration, which comes from input alone (not a knock back, a fall or a
+    -- move's own motion). (STEER_CM_S2: far under any walk's, over a rounding error.)
+    V.STEER_CM_S2 = 50
+    function V.steers(pawn)
+        local ok, size = pcall(function()
+            local a = pawn.CharacterMovement:GetCurrentAcceleration()
+            return math.sqrt(a.X * a.X + a.Y * a.Y)
+        end)
+        return ok and type(size) == "number" and size > V.STEER_CM_S2
+    end
+
     local function stopWaiting(n, p1)
         waiting[n] = nil
         local pawn = pawnOf(n, p1)
@@ -1800,6 +1811,9 @@ return function(api)
             local pad = tonumber((config["p" .. n] or ""):match("^joy(%d)$"))
             local pawn = pawnOf(n, p1)
             local gone = pad ~= nil and pads[pad] == 0 and (n == 1 or not paused) and valid(pawn)
+            if n == 1 and pad ~= nil and pads[pad] ~= 0 then
+                V.p1Steers = nil        -- (their pad is in: a drop from now is held again)
+            end
             if gone and not waiting[n] and not game.isDead(pawn) then
                 waiting[n] = game.getHealth(pawn)
                 if n == 1 then
@@ -1812,9 +1826,22 @@ return function(api)
                 tip(string.format("player %d's controller is back.", n))
             end
             if waiting[n] and valid(pawn) then
-                game.setMinHealth(pawn, waiting[n])
-                if n == 1 then
-                    V.waitFloor1 = waiting[n]
+                -- Player 1 steered all the same: the keyboard and mouse always reach player 1, and a pad the game reads itself
+                -- (a DualSense) can be missing from pads.txt. Held, they played on and nothing could hurt them ("monsters deal
+                -- very little damage to me", a player report on 1.6.9; the bench, 11-11: 0 of 28 boss hits). Not helpless,
+                -- so not held, till that pad is seen again.
+                if n == 1 and not V.p1Steers and V.steers(pawn) then
+                    V.p1Steers = true
+                    game.setMinHealth(pawn, V.preWaitFloor1 or 0)
+                    V.waitFloor1 = nil
+                    log("Player 1 plays on without their controller (the keyboard and mouse, or a pad the game reads itself): "
+                        .. "no hold on their health.")
+                end
+                if not (n == 1 and V.p1Steers) then
+                    game.setMinHealth(pawn, waiting[n])
+                    if n == 1 then
+                        V.waitFloor1 = waiting[n]
+                    end
                 end
             end
         end
