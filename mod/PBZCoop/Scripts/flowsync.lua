@@ -420,18 +420,31 @@ return function(api)
                 have[t:get().TagName:ToString()] = true
             end)
         end)
-        local raised = {}
+        local raised, kept, lost = {}, {}, 0
         game.granting = true        -- (what a flow they wake hands out isn't sent back as found)
         for _, o in ipairs(flow.owed) do
-            if not have[o.tag] and pcall(function() ep:AddTagsByString(o.tag) end) then
+            local key = "o " .. o.tag
+            if have[o.tag] then
+                flow.again[key] = nil
+            elseif pcall(function() ep:AddTagsByString(o.tag) end) then
                 have[o.tag] = true
                 raised[#raised + 1] = o.tag
+                flow.again[key] = nil
+            elseif tryAgain(key) then
+                have[o.tag] = true      -- (the same one twice in the list: kept once)
+                kept[#kept + 1] = o     -- (a call that failed: tried again a calm second on, as the host's flags are)
+            else
+                lost = lost + 1
             end
         end
         game.granting = false
-        flow.owed = {}
+        flow.owed = kept
         if #raised > 0 then
             log("Story flow: " .. table.concat(raised, " ") .. " raised here, for what the other player found.")
+        end
+        if lost > 0 then
+            log(string.format("Story flow: %d flag%s for what the other player found couldn't be raised here (tried %d times).",
+                lost, lost == 1 and "" or "s", TRIES))
         end
     end
 
@@ -442,6 +455,9 @@ return function(api)
         local now = os.clock()
         if not (coop.net and coop.net.enabled) then
             flow.told, flow.sent, flow.seen, flow.linkedN, flow.pending, flow.again = nil, {}, nil, 0, {}, {}
+            -- (And what waits, a call to try again among it: kept, it was taken at the next session's first calm second,
+            -- maybe in another save. The review of 339d057.)
+            flow.queue, flow.owed = {}, {}
             return
         end
         -- Not in a PvP match: nothing a match changes is saved, and the story's flow isn't the match's. After it the host

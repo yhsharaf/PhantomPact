@@ -1661,8 +1661,19 @@ function Fake.new(id, scripts, ini, link)
             return w
         end
         if cls == pc.bossBarClass then
-            local w = object(pc, "WB_BossHPBar_C", { owner = owner }, true)
-            put(w, "Init", function(self, boss) put(self, "boss", boss) end)
+            -- (Its name: none till Init, which names it as the game names a boss the codex has no row for, by its internal
+            -- name; the bench, 11-11.)
+            local name = object(pc, "PBZCommonLocText", { text = "" }, true)
+            put(name, "GetText", function(self)
+                local text = rawget(self, "__fields").text
+                return { ToString = function() return text end }
+            end)
+            put(name, "SetText", function(self, text) put(self, "text", tostring(text)) end)
+            local w = object(pc, "WB_BossHPBar_C", { owner = owner, BossName = name }, true)
+            put(w, "Init", function(self, boss)
+                put(self, "boss", boss)
+                put(name, "text", boss:GetFName():ToString())
+            end)
             put(w, "RemoveFromParent", function(self) put(self, "removed", true) end)
             put(w, "SetVisibility", function(self, v) put(self, "visibility", v) end)
             pc.bossBars[#pc.bossBars + 1] = w

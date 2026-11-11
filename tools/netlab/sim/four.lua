@@ -2790,16 +2790,18 @@ local function bossPosture()
     allErrors(s)
 end
 
--- The game's boss bars on this PC's fake HUD (it lists none of its own): one made for each boss registered, as the game's
--- (the bench, 11-11): no Character till it's started with Init(boss), keeping what it's told (shachi, health, how often its
--- strip was told, and its Inits). Its name (BossName's text): none till Init, which names it as the codex does (codexName,
--- a boss the codex has), or by the boss's internal name (one it has no row for, as the game named the Gold-Masked One).
+-- The game's boss bars on this PC's fake HUD (it lists none of its own), as the game's (the bench, 11-11): one a boss
+-- registered, no Character till it's started with Init(boss), keeping what it's told (shachi, health, how often its strip
+-- and its health were told, and its Inits). Its name (BossName's text): none till Init, which names it as the codex does
+-- (codex: one name for every boss, or the boss's internal name -> its name), or by the boss's internal name (one the codex
+-- has no row for, as the game named the Gold-Masked One). A bar taken down goes to a pool and is handed back as it was,
+-- Character and name, for the next boss registered (the HUD's BossPoint, a dynamic entry box with a widget pool).
 -- Returns the bar of a boss, and a function that adds a bar nobody started (a PvP foe's).
-local function bossBarsOn(pc, codexName)
+local function bossBarsOn(pc, codex)
     local hud = pc.hudLayout
     local f = rawget(hud, "__fields")
     local realUp, realDown = f.RegisterBossHPBar, f.UnRegisterBossHPBar
-    local up, bars = {}, {}
+    local active, pool = {}, {}         -- active: { boss = address or false, bar }, in order; pool: bars taken down
     local function newBar()
         local name = Fake.object(pc, "PBZCommonLocText", { text = "" }, true)
         Fake.put(name, "GetText", function(w)
@@ -2807,45 +2809,66 @@ local function bossBarsOn(pc, codexName)
             return { ToString = function() return text end }
         end)
         Fake.put(name, "SetText", function(w, text) Fake.put(w, "text", tostring(text)) end)
-        local bar = Fake.object(pc, "WB_BossHPBar_C", { shachi = 1.0, health = 1.0, told = 0, inits = 0, BossName = name }, true)
+        local bar = Fake.object(pc, "WB_BossHPBar_C", { shachi = 1.0, health = 1.0, told = 0, healthTold = 0, inits = 0,
+            BossName = name }, true)
         Fake.put(bar, "Init", function(w, boss)
             Fake.put(w, "Character", boss)
             Fake.put(w, "inits", field(w, "inits") + 1)
-            Fake.put(name, "text", codexName or boss:GetFName():ToString())
+            local own = boss:GetFName():ToString()
+            Fake.put(name, "text", (type(codex) == "table" and codex[own]) or (type(codex) == "string" and codex) or own)
         end)
         Fake.put(bar, "ForSeq_UpdateShachi", function(w, v)
             Fake.put(w, "shachi", v)
             Fake.put(w, "told", field(w, "told") + 1)
         end)
-        Fake.put(bar, "ForSeq_UpdateHealth", function(w, v) Fake.put(w, "health", v) end)
-        bars[#bars + 1] = bar
+        Fake.put(bar, "ForSeq_UpdateHealth", function(w, v)
+            Fake.put(w, "health", v)
+            Fake.put(w, "healthTold", field(w, "healthTold") + 1)
+        end)
         return bar
+    end
+    local function entryOf(a)
+        for _, e in ipairs(active) do
+            if e.boss == a then
+                return e
+            end
+        end
+        return nil
     end
     Fake.put(hud, "RegisterBossHPBar", function(self, b)
         local a = b:GetAddress()
-        if not up[a] then
-            up[a] = newBar()
+        if not entryOf(a) then
+            active[#active + 1] = { boss = a, bar = table.remove(pool, 1) or newBar() }
         end
         return realUp(self, b)
     end)
     Fake.put(hud, "UnRegisterBossHPBar", function(self, b)
         local a = b:GetAddress()
-        for i = #bars, 1, -1 do
-            if bars[i] == up[a] then
-                table.remove(bars, i)
+        for i = #active, 1, -1 do
+            if active[i].boss == a then
+                pool[#pool + 1] = active[i].bar
+                table.remove(active, i)
             end
         end
-        up[a] = nil
         return realDown(self, b)
     end)
     Fake.put(hud, "GetBossHPBarInstances", function()
         local list = {}
-        for i, bar in ipairs(bars) do
+        for i, e in ipairs(active) do
+            local bar = e.bar
             list[i] = { get = function() return bar end }
         end
         return list
     end)
-    return function(boss) return up[boss:GetAddress()] end, newBar
+    local function unstarted()
+        local bar = newBar()
+        active[#active + 1] = { boss = false, bar = bar }
+        return bar
+    end
+    return function(boss)
+        local e = entryOf(boss:GetAddress())
+        return e and e.bar
+    end, unstarted
 end
 
 -- Issue #16 (1), a player's report on 1.6.8: "boss posture not visibly changing on partner hits although HP changes". A
@@ -2971,6 +2994,100 @@ local function postureStrip()
     allErrors(s2)
 end
 
+-- A boss bar the HUD hands back from its pool, still on the boss before (the review of 339d057): the elite swordsman's
+-- bar on the guest, then the Gold-Masked One's (a boss the codex lacks), their arenas a few metres apart. Kept as it was,
+-- it showed the elite's name over the Gold-Masked One, and neither his health nor his strip moved on it. And the copy a
+-- pairing swaps in (keepBossBar) got the bar of the one swapped out.
+local function reusedBars()
+    part("a boss bar the HUD hands back")
+    local BOSSES = {
+        { "elite", "BP_Monster_EliteSword_C", 3000.0, 3000.0, 100.0, 5000, 400, true },
+        { "gold", "BP_Monster_GoldMaskMan_C", 3400.0, 3000.0, 100.0, 5000, 400, true },
+        { "gold2", "BP_Monster_GoldMaskMan_C", 3450.0, 3000.0, 100.0, 5000, 400, true },
+    }
+    local CODEX = { elite_actor = "Jagged Steel, the Frenzied Brute" }
+    local function shachi(e)
+        return rawget(e, "__fields").AttributeSetBase.Shachi
+    end
+    local function near(a, b)
+        return a ~= nil and b ~= nil and math.abs(a - b) < 0.005
+    end
+    -- The host's elite fight, then its Gold-Masked One fight, both on the guest; gone: the elite's copy gone before it.
+    local function twoFights(gone)
+        local s = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, BOSSES)
+        s:run(4)
+        local h, g = s.pcs[1], s.pcs[2]
+        bossBarsOn(h, CODEX)
+        local guestBar = bossBarsOn(g, CODEX)
+        Session.moveTo(h, 2900, 3000)
+        Session.moveTo(g, 3300, 3000)
+        s:run(2)
+        local eliteH, eliteG = Session.enemyOn(h, "elite"), Session.enemyOn(g, "elite")
+        local goldH, goldG = Session.enemyOn(h, "gold"), Session.enemyOn(g, "gold")
+        h.hudLayout:RegisterBossHPBar(eliteH)
+        s:run(2)
+        local eliteBar = guestBar(eliteG)
+        Fake.setHealth(eliteH, 0)
+        Fake.put(eliteH, "dead", true)
+        s:run(1)
+        h.hudLayout:UnRegisterBossHPBar(eliteH)
+        s:run(3)
+        if gone then
+            rawset(eliteG, "__alive", false)
+        end
+        h.hudLayout:RegisterBossHPBar(goldH)
+        s:run(2)
+        local gb = guestBar(goldG)
+        local r = { s = s, g = g, reused = eliteBar ~= nil and gb == eliteBar, gb = gb, copy = goldG }
+        if gb then
+            r.healthTold, r.told = field(gb, "healthTold"), field(gb, "told")
+            Fake.setHealth(goldH, select(1, Fake.health(goldH)) * 0.6)
+            Fake.put(shachi(goldH), "CurrentValue", shachi(goldH).BaseValue - 120)
+            Fake.put(shachi(goldH), "BaseValue", shachi(goldH).BaseValue - 120)
+            s:run(1.5)
+        end
+        return r
+    end
+    local a = twoFights(false)
+    local gb = a.gb
+    check(a.reused, "the Gold-Masked One's bar on the guest is the elite's, handed back (as the HUD does)")
+    check(gb ~= nil and field(gb, "Character") == a.copy and field(field(gb, "BossName"), "text") == "",
+        "started with the guest's copy of him, the elite's body still in the world: no name, not the elite's ("
+        .. tostring(gb and field(field(gb, "BossName"), "text")) .. ")")
+    local hp, max = Fake.health(a.copy)
+    local top = rawget(a.copy, "__fields").AttributeSetBase.Shachi_Max.CurrentValue
+    check(gb ~= nil and field(gb, "healthTold") > (a.healthTold or 0) and near(field(gb, "health"), hp / max)
+        and field(gb, "told") > (a.told or 0) and near(field(gb, "shachi"), shachi(a.copy).CurrentValue / top),
+        "and the host's blow moves its health and its strip there (" .. tostring(gb and field(gb, "health")) .. ", "
+        .. tostring(gb and field(gb, "shachi")) .. ")")
+    check(count(a.g.logs, "Showing boss bar for gold") == 1, "shown once, not again and again: "
+        .. count(a.g.logs, "Showing boss bar for gold"))
+    allErrors(a.s)
+    local b = twoFights(true)
+    check(b.gb ~= nil and field(b.gb, "Character") == b.copy and field(field(b.gb, "BossName"), "text") == "",
+        "the elite's body gone: no name either, not the elite's put back (" .. tostring(b.gb and field(field(b.gb, "BossName"), "text"))
+        .. ")")
+    allErrors(b.s)
+    -- keepBossBar's pairing swap, as its slow tick does it: the copy before let go, the copy now shown, the same tick.
+    local s = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, BOSSES)
+    s:run(4)
+    local g = s.pcs[2]
+    local guestBar = bossBarsOn(g, CODEX)
+    s:run(1)
+    local game = g.env.PBZ.game
+    local before, now = Session.enemyOn(g, "gold"), Session.enemyOn(g, "gold2")
+    game.showBossBar(before)
+    game.hideBossBar(before)
+    game.keepBossBar(now)
+    local nb = guestBar(now)
+    local healthTold, told = nb and field(nb, "healthTold") or 0, nb and field(nb, "told") or 0
+    game.setHealth(now, select(1, Fake.health(now)) * 0.5)
+    game.setPosture(now, shachi(now).BaseValue * 0.5)
+    check(nb ~= nil and field(nb, "Character") == now and field(nb, "healthTold") > healthTold and field(nb, "told") > told,
+        "the copy a pairing swaps in gets the bar started with it, its health and strip told")
+    allErrors(s)
+end
+
 -- Issue #16 (2): a guest's call that takes the host's story flow (a flag, a flow step, a bell lit as the guest comes to it)
 -- that failed once was let go with the rest of the queue: lost till the next link.
 local function flowRetries()
@@ -2978,7 +3095,7 @@ local function flowRetries()
     local s, h, g = pair()
     s:run(4)
     h.env.PBZ.game.storyFlags = nil
-    local fails, calls = { tag = 1, node = 1, bell = 1, late = 0 }, { bad = 0, late = 0 }
+    local fails, calls = { tag = 1, node = 1, bell = 1, late = 0, off = 0 }, { bad = 0, late = 0, off = 0 }
     local ep = g.eventPipeline
     local realTag = field(ep, "AddTagsByString")
     Fake.put(ep, "AddTagsByString", function(self, tag)
@@ -2986,9 +3103,9 @@ local function flowRetries()
             calls.bad = calls.bad + 1
             error("not now")
         end
-        local kind = tag == "zddy.retry.late" and "late" or "tag"
-        if kind == "late" then
-            calls.late = calls.late + 1
+        local kind = (tag == "zddy.retry.late" and "late") or (tag == "zddy.retry.off" and "off") or "tag"
+        if kind ~= "tag" then
+            calls[kind] = calls[kind] + 1
         end
         if fails[kind] > 0 then
             fails[kind] = fails[kind] - 1
@@ -3040,7 +3157,63 @@ local function flowRetries()
     check(calls.late == 1 and not g.storyMarks["zddy.retry.late"],
         "one waiting when the guest stops following the host's story is let go (" .. calls.late .. " tries)")
     g.env.PBZ.story.follow = true
+    -- A flag owed for what the other player found (OF: a pile or chest they searched) whose call failed: raised a calm
+    -- second on, on the host as on a guest (it was let go with the list; the review of 339d057).
+    local owedFails = 1
+    local hostTag = field(h.eventPipeline, "AddTagsByString")
+    Fake.put(h.eventPipeline, "AddTagsByString", function(self, tag)
+        if tag == "zddy.owed.flag" and owedFails > 0 then
+            owedFails = owedFails - 1
+            error("not now")
+        end
+        return hostTag(self, tag)
+    end)
+    h.inbox[#h.inbox + 1] = "~10 OF BP_Rubbish_C_Herb zddy.owed.flag"
+    s:run(4)
+    check(owedFails == 0 and h.storyMarks["zddy.owed.flag"] == true,
+        "a flag owed for the other player's search whose call failed once is raised a second on")
+    -- One waiting to be tried again when sync goes off: let go, not taken in the next session, maybe in another save. (The
+    -- host gone first: a host linked again tells everything again anyway.)
+    fails.off = 9
+    table.insert(h.globalTags, "zddy.retry.off")
+    for _ = 1, 300 do
+        s:run(0.1)
+        if calls.off >= 1 then
+            break
+        end
+    end
+    Session.command(h, "netoff")
+    Session.command(g, "netoff")
+    s:run(1)
+    fails.off = 0
+    Session.command(g, "neton client")
+    s:run(6)
+    check(calls.off == 1 and not g.storyMarks["zddy.retry.off"],
+        "one waiting when sync goes off is let go, not taken in the next session (" .. calls.off .. " tries)")
     allErrors(s)
+
+    -- A quest step's flag the game wouldn't take as a stuck save was mended (story.lua): mended again at the next read of
+    -- the quests (it was marked mended first, and stayed short that load; the review of 339d057).
+    local herbFails = 1
+    local m, mh = pair(nil, function(ph2, pg2)
+        for _, pc in ipairs({ ph2, pg2 }) do
+            pc.storyUpTo(5)
+            pc.storyStep("Main-Valley", "2", 1)
+            pc.storyTask("Main-Valley", "1", { "valley.herbs" })
+        end
+        local real = field(ph2.eventPipeline, "AddTagsByString")
+        Fake.put(ph2.eventPipeline, "AddTagsByString", function(self, tag)
+            if tag == "valley.herbs" and herbFails > 0 then
+                herbFails = herbFails - 1
+                error("not now")
+            end
+            return real(self, tag)
+        end)
+    end)
+    m:run(45)
+    check(herbFails == 0 and mh.storyMarks["valley.herbs"] == true,
+        "a step's flag the game wouldn't take as a stuck save was mended is mended again, a read of the quests on")
+    allErrors(m)
 end
 
 -- Issue #16 (3): a move heard while the partner's figure couldn't play it (none yet, hidden, its animation not up) was
@@ -3099,6 +3272,17 @@ local function heldMoves()
     s:run(0.6)
     check(hidden and played() == before + 1 and field(anim, "montage") ~= nil,
         "a move heard while their figure is hidden plays once it's shown again, a moment on")
+    -- In this PC's quiet after a load or a stall (5 s, the extra ticks held back): played all the same, as soon as it can
+    -- be (the review of 339d057: let go before the quiet lifted, a figure made after a trip standing through the move).
+    net(h).quietUntil = h.now + 5
+    ready(false)
+    before = played()
+    h.inbox[#h.inbox + 1] = "~10 U " .. A1 .. " 0.00"
+    s:run(0.3)
+    ready(true)
+    s:run(0.5)
+    check(played() == before + 1, "in the quiet after a load or a stall too: " .. played() - before)
+    net(h).quietUntil = nil
     -- A partner who links again while this player is in a move is told it, as far in as it is. (Moves go quick: Q U.)
     Session.startMove(h, A3)
     s:run(0.5)
@@ -6172,6 +6356,8 @@ local function localScreen()
     check(field(hpc.playerHud, "pointers")[foe] == nil, "and it goes when the enemy does")
     local bar = hpc.bossBars[1]
     check(#hpc.bossBars == 1 and field(bar, "boss") == boss and field(bar, "owner") == hstate.p2Controller, "the boss's bar is in their half, the game's own")
+    check(field(field(bar, "BossName"), "text") == "",
+        "with no internal name over it, a boss the codex lacks (" .. tostring(field(field(bar, "BossName"), "text")) .. ")")
     hpc.paused = true
     h:run(0.5)
     check(field(bar, "visibility") == 1, "away over a menu with the rest")
@@ -8811,6 +8997,7 @@ return function(print_, scripts)
     bossReactions()
     bossPosture()
     postureStrip()
+    reusedBars()
     bossArmour()
     partnerHitSounds()
     pickupsFresh()

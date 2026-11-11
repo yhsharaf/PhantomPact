@@ -930,6 +930,13 @@ return function(api)
                 log("moves: " .. tostring(err))
             end
         end
+        -- Held moves too, every frame: the quiet after a load or a stall (5 s) holds the extra ticks back, and a move held
+        -- for a figure made after a trip was let go before it could play (the review of 339d057). handlers.U plays then.
+        ok, err = pcall(parts.playHeld, os.clock())
+        if not ok and err ~= moves.lastHeldError then
+            moves.lastHeldError = err
+            log("moves (held): " .. tostring(err))
+        end
     end
 
     coop.extraTicks.moves = function()
@@ -957,11 +964,6 @@ return function(api)
         if not ok and err ~= props.lastError then
             props.lastError = err
             log("moves (props): " .. tostring(err))
-        end
-        ok, err = pcall(parts.playHeld, now)
-        if not ok and err ~= moves.lastHeldError then
-            moves.lastHeldError = err
-            log("moves (held): " .. tostring(err))
         end
     end
 

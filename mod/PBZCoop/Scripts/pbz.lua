@@ -1873,6 +1873,17 @@ return function(api)
         return true
     end
 
+    -- A boss bar's name after Init: a boss the codex has no row for it names by the boss's internal name
+    -- (BP_Monster_GoldMaskMan_C_...), no name to show anyone. Left with none, as a bar put up unstarted has. (Here and for
+    -- local co-op's player 2, localcoop.lua.)
+    function game.noInternalName(bar, boss)
+        pcall(function()
+            if bar.BossName:GetText():ToString() == boss:GetFName():ToString() then
+                bar.BossName:SetText(FText(""))
+            end
+        end)
+    end
+
     -- The other player's game started a fight with this boss: show its health bar here too (our copy of the
     -- boss mirrors the host's health, so the bar follows the real fight).
     function game.showBossBar(boss)
@@ -1893,21 +1904,19 @@ return function(api)
         showingRemoteBoss = false
         -- The new bar started with the boss (Init), as the game starts the bar of a fight of its own and local co-op starts
         -- player 2's: unstarted, its gold posture strip never moved, not even at this player's own blows (its health the
-        -- HUD follows by itself). The bench, 11-11, issue #16. Init names it too, as the codex does (put up unstarted, it
-        -- had no name): the elite swordsman "Jagged Steel, the Frenzied Brute". A boss the codex has no row for it names by
-        -- its internal name (the Gold-Masked One's BP_Monster_GoldMaskMan_C_...): that one keeps the name it had, none.
+        -- HUD follows by itself). The bench, 11-11, issue #16. Any bar that isn't this boss's already: the HUD hands back a
+        -- bar it took down, its Character and name as they were (a pool), and one still on the boss before (his body in the
+        -- world, or the copy a pairing swapped out) was left on him, his name over this boss and its health and strip still.
+        -- Init names it too, as the codex does: the elite swordsman "Jagged Steel, the Frenzied Brute". A boss the codex has
+        -- no row for it names by its internal name (the Gold-Masked One's BP_Monster_GoldMaskMan_C_...): that one has none.
         if ok then
             for _, bar in ipairs(bossBarList(hud)) do
                 if not before[bar:GetAddress()] then
                     pcall(function()
-                        if not valid(bar.Character) then
-                            local was, named = nil, nil
-                            pcall(function() was = bar.BossName:GetText():ToString() end)
+                        local who = bar.Character
+                        if not (valid(who) and who:GetAddress() == boss:GetAddress()) then
                             bar:Init(boss)
-                            pcall(function() named = bar.BossName:GetText():ToString() end)
-                            if was and named == boss:GetFName():ToString() then
-                                pcall(function() bar.BossName:SetText(FText(was)) end)
-                            end
+                            game.noInternalName(bar, boss)
                         end
                     end)
                 end

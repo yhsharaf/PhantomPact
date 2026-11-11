@@ -314,10 +314,11 @@ return function(api)
         return out
     end
 
-    -- Those of the flags this world hasn't got, raised. How many were.
+    -- Those of the flags this world hasn't got, raised: how many were, and the ones whose call failed (tag -> true).
     local function raiseFlags(ep, tags)
+        local failed = {}
         if #tags == 0 or not valid(ep) then
-            return 0
+            return 0, failed
         end
         local have, n = {}, 0
         pcall(function()
@@ -326,12 +327,16 @@ return function(api)
             end)
         end)
         for _, tag in ipairs(tags) do
-            if tag ~= "" and tag ~= "None" and not have[tag] and pcall(function() ep:AddTagsByString(tag) end) then
-                have[tag] = true
-                n = n + 1
+            if tag ~= "" and tag ~= "None" and not have[tag] then
+                if pcall(function() ep:AddTagsByString(tag) end) then
+                    have[tag] = true
+                    n = n + 1
+                else
+                    failed[tag] = true
+                end
             end
         end
-        return n
+        return n, failed
     end
 
     -- A quest's class, by our table's path for it (loaded: a quest this world hasn't begun isn't in memory).
@@ -457,7 +462,10 @@ return function(api)
     -- the finished steps of a quest still under way here get the flags their tasks wait for, if they're missing. Only steps
     -- the table has, the ones a catch-up or a partner's step could have finished; not a quest that's over, its flags done
     -- with. Called with a read of this world's quests (readQuests).
-    local mended, mendedIn = {}, nil
+    -- (A step one of whose flags the game wouldn't take is mended again at the next read of the quests, MEND_TRIES times
+    -- in all: marked mended first, a failed call left it short for that load. The review of 339d057.)
+    local MEND_TRIES = 3
+    local mended, mendedIn, mendTries = {}, nil, {}
     local function mend(states)
         local _, pawn = api.getPlayer1()
         local nc = narrative()
@@ -466,9 +474,9 @@ return function(api)
         end
         local here = nc:GetAddress()
         if here ~= mendedIn then
-            mended, mendedIn = {}, here         -- (a load: this world again from its save, or another)
+            mended, mendedIn, mendTries = {}, here, {}      -- (a load: this world again from its save, or another)
         end
-        local owed = {}
+        local owed, owedBy = {}, {}
         for _, row in ipairs(rows.quests) do
             for _, need in ipairs(row.needs) do
                 local q = states[need.quest]
@@ -479,9 +487,10 @@ return function(api)
                         underWay = underWay or st == 1
                     end
                     if underWay then
-                        mended[key] = true
+                        mended[key], mendTries[key] = true, (mendTries[key] or 0) + 1
                         for _, tag in ipairs(branchFlags(nc, need.quest, need.branch)) do
                             owed[#owed + 1] = tag
+                            owedBy[tag] = key
                         end
                     end
                 end
@@ -491,8 +500,14 @@ return function(api)
             return
         end
         game.granting = true
-        local n = raiseFlags(FindFirstOf("EventPipelineManager"), owed)
+        local n, failed = raiseFlags(FindFirstOf("EventPipelineManager"), owed)
         game.granting = false
+        for tag in pairs(failed) do
+            local key = owedBy[tag]
+            if key and mendTries[key] < MEND_TRIES then
+                mended[key] = nil
+            end
+        end
         if n > 0 then
             log(string.format("Story: %d flag%s of quest steps finished here before put back, for what waits on them.", n,
                 n == 1 and "" or "s"))
