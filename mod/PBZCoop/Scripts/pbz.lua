@@ -914,6 +914,22 @@ return function(api)
         return nil, nil
     end
 
+    -- The HUD's boss bars now, valid ones only (asked for each time: no widget kept across frames).
+    local function bossBarList(hud)
+        local out = {}
+        pcall(function()
+            local bars = hud:GetBossHPBarInstances()
+            for i = 1, #bars do
+                local bar = nil
+                pcall(function() bar = bars[i]:get() end)
+                if valid(bar) then
+                    out[#out + 1] = bar
+                end
+            end
+        end)
+        return out
+    end
+
     -- A value written here reaches no attribute listener, so the health bar on an enemy wouldn't move: it's told itself.
     -- The bar only exists once the game has shown it, and boss bars live on the HUD.
     local function refreshBar(actor, hp, maxhp)
@@ -1348,6 +1364,41 @@ return function(api)
         return (ok and type(v) == "number") and v or nil
     end
 
+    -- A boss's posture written here reaches no listener either: the gold strip under its health (BreakmeterBar) stood
+    -- still at a partner's blows while the health beside it moved (issue #16; the bench, 11-11). Its bar is told with its
+    -- own ForSeq_UpdateShachi, as a PvP foe's strip is (setFoeShachi): the bar started with this boss (its Character, see
+    -- showBossBar), or else one nobody started, as its health is told (refreshBar). Not that in a match: a foe's has none.
+    local function refreshShachi(actor, value)
+        local addr = actor:GetAddress()
+        if not game.bossAt(addr, actor) then
+            return
+        end
+        local ok, max = pcall(function() return actor.AttributeSetBase.Shachi_Max.CurrentValue end)
+        if not (ok and type(max) == "number" and max > 0) then
+            return
+        end
+        local hud = FindFirstOf("PBZHUDLayout")
+        if not valid(hud) then
+            return          -- (no HUD, mid-load: a call on nothing is a crash in UE4SS, not an error)
+        end
+        local own, unstarted = nil, {}
+        for _, bar in ipairs(bossBarList(hud)) do
+            local who = nil
+            pcall(function() who = bar.Character end)
+            if valid(who) then
+                if who:GetAddress() == addr then
+                    own = bar
+                end
+            else
+                unstarted[#unstarted + 1] = bar
+            end
+        end
+        local inMatch = api.coop and api.coop.net and api.coop.net.arena
+        for _, bar in ipairs(own and { own } or (inMatch and {} or unstarted)) do
+            pcall(function() bar:ForSeq_UpdateShachi(math.max(0, math.min(1, value / max))) end)
+        end
+    end
+
     function game.setPosture(actor, value)
         syncing = true
         pcall(function()
@@ -1356,6 +1407,7 @@ return function(api)
             s.CurrentValue = value
         end)
         syncing = false
+        refreshShachi(actor, value)
     end
 
     -- A bar a partner's hit emptied (player report 11-07): written to 0 here, the game's own break never ran, so nothing
@@ -1832,9 +1884,27 @@ return function(api)
             log("No HUD layout to show the boss bar on.")
             return
         end
+        local before = {}
+        for _, bar in ipairs(bossBarList(hud)) do
+            before[bar:GetAddress()] = true
+        end
         showingRemoteBoss = true
         local ok, err = pcall(function() hud:RegisterBossHPBar(boss) end)
         showingRemoteBoss = false
+        -- The new bar started with the boss (Init), as the game starts the bar of a fight of its own and local co-op starts
+        -- player 2's: unstarted, its gold posture strip never moved, not even at this player's own blows (its health the
+        -- HUD follows by itself). The bench, 11-11, issue #16.
+        if ok then
+            for _, bar in ipairs(bossBarList(hud)) do
+                if not before[bar:GetAddress()] then
+                    pcall(function()
+                        if not valid(bar.Character) then
+                            bar:Init(boss)
+                        end
+                    end)
+                end
+            end
+        end
         mirroredAt[boss:GetAddress()] = true
         bosses[boss:GetAddress()] = boss:GetFName():ToString()
         bossActors[boss:GetAddress()] = boss
@@ -1850,22 +1920,6 @@ return function(api)
     -- A PvP foe's health on the game's own boss bar (arena.lua: the bars are the game's, not ours). Never a boss to the
     -- mod: kept out of bosses and bossActors, so nothing that walks the bosses (the host telling its fights, fog walls,
     -- scaling, the arena putting the real boss's bar away) sees it. name: what the bar says over it, or nil for the game's.
-    -- The HUD's boss bars now, valid ones only (asked for each time: no widget kept across frames).
-    local function bossBarList(hud)
-        local out = {}
-        pcall(function()
-            local bars = hud:GetBossHPBarInstances()
-            for i = 1, #bars do
-                local bar = nil
-                pcall(function() bar = bars[i]:get() end)
-                if valid(bar) then
-                    out[#out + 1] = bar
-                end
-            end
-        end)
-        return out
-    end
-
     -- A player's figure on a boss bar gets no Character (the bench: the bar showed, but pointed at nothing), so its bar is
     -- known by the widget the HUD made for it: the one that wasn't there before.
     -- (hud, here and below: the HUD this frame's caller found already, or nil to find it. Each FindFirstOf is a search of

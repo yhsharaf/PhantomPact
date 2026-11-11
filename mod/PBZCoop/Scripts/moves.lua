@@ -139,11 +139,21 @@ return function(api)
             if last and not net.arena then
                 coop.sendEvent("U", "-", "0")     -- over or cut short: the ghost's copy mustn't play on (some loop)
             end
-            last = nil
+            last, moves.tellAgain = nil, false
             return
         end
         local addr = m:GetAddress()
         local pos = ai:Montage_GetPosition(m) or 0
+        -- (A partner who has just (re)started sync, or joined, wasn't told the move this player is in: told now, as far in
+        -- as it is, the same as a new one but for what a new one starts here. handlers.S and J below; issue #16.)
+        if moves.tellAgain and addr == last and pos >= lastPos - RESTART_S then
+            local path = pathOf(m)
+            if allowedPath(path) and (not net.arena or (game.isGuardMove and game.isGuardMove(path))) then
+                coop.sendEvent("U", path, string.format("%.2f", pos))
+                moves.sent = moves.sent + 1
+            end
+        end
+        moves.tellAgain = false
         if addr ~= last or pos < lastPos - RESTART_S then
             local path = pathOf(m)
             if path and path:find("StanceEnter", 1, true) then
@@ -222,10 +232,20 @@ return function(api)
     moves.montage = montage
     moves.countLoad = countLoad
 
+    -- A move heard while their figure can't play it (none yet, hidden, its animation not up, the montage not to be had):
+    -- held a moment, the newest only, and played as soon as it can be, as far in as it is by then. Dropped, it never came
+    -- again: a move is told only as it starts, and a figure made after a trip, or shown again as they got up, stood
+    -- through it (issue #16). Not in a match (a guard's move held there could cut their swing, M).
+    local HOLD_S, HOLD_TRY_S = 0.75, 0.1
+
+    function moves.hold(p, path, start)
+        p.heldMove = { path = path, start = start, at = os.clock(), tryAt = 0 }
+    end
+
     -- Their move is over ("U - 0", or their place says so: see heardMoveBits): the ghost's copy blends out, unless it's the
     -- guard stance's pose, held until the stance is left.
     function moves.endMove(p)
-        p.ghostMoveAt = nil
+        p.ghostMoveAt, p.heldMove = nil, nil
         if p.stance and (p.stanceHeld or (p.ghostPath or ""):find("StanceEnter", 1, true)) then
             return
         end
@@ -250,21 +270,57 @@ return function(api)
             return
         end
         moves.partnerSends = true
+        p.heldMove = nil            -- (a newer move: one held for them is over)
         -- (In PvP the figure plays their abilities, M, but for the guard's moves: see the sending side. One older than a move
         -- of theirs already started, come late behind it, would cut that move: dropped; the review.)
-        if (net.pvp and not (game.isGuardMove and game.isGuardMove(path))) or not valid(p.ghost) or p.ghostHidden then
+        if net.pvp and (not (game.isGuardMove and game.isGuardMove(path)) or not valid(p.ghost) or p.ghostHidden
+            or os.clock() - net.moveAge() < (p.lastMoveSentAt or -1e9)) then
             return
         end
-        if net.pvp and os.clock() - net.moveAge() < (p.lastMoveSentAt or -1e9) then
+        local start = pos + net.moveAge()
+        if not valid(p.ghost) or p.ghostHidden then
+            moves.hold(p, path, start)
             return
         end
         local m = montage(path)
         local ai = animOf(p.ghost)
         if not (m and ai) then
-            moves.failed = moves.failed + 1
+            if net.pvp then
+                moves.failed = moves.failed + 1
+            else
+                moves.hold(p, path, start)
+            end
             return
         end
-        local start = pos + net.moveAge()
+        moves.playOn(p, m, ai, path, start)
+    end
+
+    -- A held move, played once their figure can (looked at HOLD_TRY_S apart), as far in as it is by now. Let go after
+    -- HOLD_S, or in a match (counted as failed if their figure was there to play it).
+    local function playHeld(now)
+        for _, p in ipairs(coop.partners()) do
+            local h = p.heldMove
+            if h and now >= h.tryAt then
+                h.tryAt = now + HOLD_TRY_S
+                local shown = valid(p.ghost) and not p.ghostHidden
+                if net.pvp or now - h.at > HOLD_S then
+                    p.heldMove = nil
+                    if shown then
+                        moves.failed = moves.failed + 1
+                    end
+                elseif shown then
+                    local m, ai = montage(h.path), animOf(p.ghost)
+                    if m and ai then
+                        p.heldMove = nil
+                        moves.playOn(p, m, ai, h.path, h.start + (now - h.at))
+                    end
+                end
+            end
+        end
+    end
+
+    -- One of their moves on their figure, start seconds in.
+    function moves.playOn(p, m, ai, path, start)
         if game.isGuardReaction and game.isGuardReaction(path) then
             -- Their guard turned a blow aside: a flinch our own blow left on the figure (for show only) goes first, and the
             -- figure is shielded a moment (pvp.lua: p.guardAt) so a blow landing here after this doesn't flinch it again.
@@ -685,17 +741,18 @@ return function(api)
         end
     end
 
-    -- The partner has just (re)started sync: it knows nothing yet.
+    -- The partner has just (re)started sync: it knows nothing yet. (Gait and stance go with every place: nothing to tell
+    -- again. The move this player is in, if any, is told again: watch.)
     local partnerStarted = coop.handlers.S
     coop.handlers.S = function(rest, from)
-        gear.sentPath, gear.sentEdgePath = nil, nil      -- (gait and stance go with every place: nothing to tell again)
+        gear.sentPath, gear.sentEdgePath, moves.tellAgain = nil, nil, true
         return partnerStarted(rest, from)
     end
 
     -- Someone new in a party: the same.
     local someoneJoined = coop.handlers.J
     coop.handlers.J = function(rest, from)
-        gear.sentPath, gear.sentEdgePath = nil, nil
+        gear.sentPath, gear.sentEdgePath, moves.tellAgain = nil, nil, true
         return someoneJoined(rest, from)
     end
 
@@ -859,7 +916,7 @@ return function(api)
 
     -- The tick's parts, called through this table so tools/netlab/perf.lua's profile can time each one.
     local parts = { watch = watch, watchGear = watchGear, dressGhost = dressGhost, watchProps = watchProps,
-        ageProps = ageProps }
+        ageProps = ageProps, playHeld = playHeld }
     moves.parts = parts
 
     -- A move goes out in the frame it starts. With the tick below, every other frame at 60 FPS, half went a frame later,
@@ -900,6 +957,11 @@ return function(api)
         if not ok and err ~= props.lastError then
             props.lastError = err
             log("moves (props): " .. tostring(err))
+        end
+        ok, err = pcall(parts.playHeld, now)
+        if not ok and err ~= moves.lastHeldError then
+            moves.lastHeldError = err
+            log("moves (held): " .. tostring(err))
         end
     end
 

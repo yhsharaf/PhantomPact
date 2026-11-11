@@ -2790,6 +2790,312 @@ local function bossPosture()
     allErrors(s)
 end
 
+-- The game's boss bars on this PC's fake HUD (it lists none of its own): one made for each boss registered, as the game's
+-- (the bench, 11-11): no Character till it's started with Init(boss), keeping what it's told (shachi, health, how often its
+-- strip was told, and its Inits). Returns the bar of a boss, and a function that adds a bar nobody started (a PvP foe's).
+local function bossBarsOn(pc)
+    local hud = pc.hudLayout
+    local f = rawget(hud, "__fields")
+    local realUp, realDown = f.RegisterBossHPBar, f.UnRegisterBossHPBar
+    local up, bars = {}, {}
+    local function newBar()
+        local bar = Fake.object(pc, "WB_BossHPBar_C", { shachi = 1.0, health = 1.0, told = 0, inits = 0 }, true)
+        Fake.put(bar, "Init", function(w, boss)
+            Fake.put(w, "Character", boss)
+            Fake.put(w, "inits", field(w, "inits") + 1)
+        end)
+        Fake.put(bar, "ForSeq_UpdateShachi", function(w, v)
+            Fake.put(w, "shachi", v)
+            Fake.put(w, "told", field(w, "told") + 1)
+        end)
+        Fake.put(bar, "ForSeq_UpdateHealth", function(w, v) Fake.put(w, "health", v) end)
+        bars[#bars + 1] = bar
+        return bar
+    end
+    Fake.put(hud, "RegisterBossHPBar", function(self, b)
+        local a = b:GetAddress()
+        if not up[a] then
+            up[a] = newBar()
+        end
+        return realUp(self, b)
+    end)
+    Fake.put(hud, "UnRegisterBossHPBar", function(self, b)
+        local a = b:GetAddress()
+        for i = #bars, 1, -1 do
+            if bars[i] == up[a] then
+                table.remove(bars, i)
+            end
+        end
+        up[a] = nil
+        return realDown(self, b)
+    end)
+    Fake.put(hud, "GetBossHPBarInstances", function()
+        local list = {}
+        for i, bar in ipairs(bars) do
+            list[i] = { get = function() return bar end }
+        end
+        return list
+    end)
+    return function(boss) return up[boss:GetAddress()] end, newBar
+end
+
+-- Issue #16 (1), a player's report on 1.6.8: "boss posture not visibly changing on partner hits although HP changes". A
+-- boss's posture written by hand (a partner's blow on the host, the host's line on a guest's copy, a blow the copy takes
+-- back, a refill) moved nothing on its bar: the gold strip under the health follows the game's own changes only. Each is
+-- told now, with the bar's own ForSeq_UpdateShachi.
+local function postureStrip()
+    part("a boss's posture bar and a partner's blows")
+    local DEFLECT = "/PBZCombatAsset/ActorData/Move/Boss_Deflect_R_Success.Boss_Deflect_R_Success"
+    local BREAK = "CharacterState.HitReact.State.Break.Normal"
+    local s, h, g = pair()
+    local hostBar, unstartedBar = bossBarsOn(h)
+    local guestBar = bossBarsOn(g)
+    Session.moveTo(h, 2700, 3000)
+    Session.moveTo(g, 3300, 3000)
+    s:run(2)
+    local theirs, copy = Session.enemyOn(h, "boss"), Session.enemyOn(g, "boss")
+    h.hudLayout:RegisterBossHPBar(theirs)           -- (the host's own fight: its bar, not started yet)
+    s:run(2)
+    local hb, gb = hostBar(theirs), guestBar(copy)
+    check(hb ~= nil and gb ~= nil, "the boss's bar on both HUDs, the guest's for the host's fight")
+    if not (hb and gb) then
+        allErrors(s)
+        return
+    end
+    check(field(gb, "Character") == copy and field(gb, "inits") == 1,
+        "the bar put up for the host's fight is started with the guest's copy (Init), as a fight's own bar is")
+    local function shachi(e)
+        return rawget(e, "__fields").AttributeSetBase.Shachi
+    end
+    local function setShachi(e, v)
+        Fake.put(shachi(e), "CurrentValue", v)
+        Fake.put(shachi(e), "BaseValue", v)
+    end
+    local max = shachi(theirs).BaseValue
+    local function share(e)
+        return shachi(e).CurrentValue / max
+    end
+    local function near(a, b)
+        return a ~= nil and b ~= nil and math.abs(a - b) < 0.005
+    end
+    -- A guest's blow: the host's boss takes its posture by hand. Its bar not started (one put up by hand): told the same.
+    setShachi(copy, shachi(copy).CurrentValue - 40)
+    swing(g, copy, select(1, Fake.health(copy)) - 50)
+    s:run(0.5)
+    check(shachi(theirs).CurrentValue < max - 30 and near(field(hb, "shachi"), share(theirs)),
+        "a guest's blow on the host's boss moves the gold strip on its bar there, one nobody started too ("
+        .. tostring(field(hb, "shachi")) .. " for " .. share(theirs) .. ")")
+    check(field(hb, "health") < 1, "as it moves its health (" .. tostring(field(hb, "health")) .. ")")
+    -- Started with the boss, as the game starts the bar of its own fight: told as that boss's.
+    field(hb, "Init")(hb, theirs)
+    setShachi(copy, shachi(copy).CurrentValue - 40)
+    swing(g, copy, select(1, Fake.health(copy)) - 50)
+    s:run(0.5)
+    check(shachi(theirs).CurrentValue < max - 70 and near(field(hb, "shachi"), share(theirs)),
+        "and on a bar started with the boss (" .. tostring(field(hb, "shachi")) .. " for " .. share(theirs) .. ")")
+    -- The host's own blow: the guest's copy takes the host's line by hand.
+    setShachi(theirs, shachi(theirs).CurrentValue - 60)
+    s:run(1.5)
+    check(near(share(copy), share(theirs)) and near(field(gb, "shachi"), share(copy)),
+        "the host's blow moves the strip on the guest's bar for its copy (" .. tostring(field(gb, "shachi")) .. " for "
+        .. share(copy) .. ")")
+    -- A blow the copy takes back (the boss deflecting it, as the host's does): the strip back where the copy's bar is.
+    Session.enemyMove(h, "boss", DEFLECT)
+    Session.enemyMove(g, "boss", DEFLECT)
+    s:run(0.3)
+    local kept = shachi(copy).CurrentValue
+    setShachi(copy, kept - 40)
+    Fake.put(gb, "shachi", (kept - 40) / max)          -- (the game's own bar follows its own blow)
+    swing(g, copy, select(1, Fake.health(copy)) - 50)
+    s:run(0.5)
+    check(shachi(copy).CurrentValue == kept and near(field(gb, "shachi"), kept / max),
+        "a blow the guest's copy takes back puts its strip back too (" .. tostring(field(gb, "shachi")) .. ")")
+    Session.enemyMove(h, "boss", nil)
+    Session.enemyMove(g, "boss", nil)
+    -- An enemy that isn't in a boss fight: no bar told.
+    local told = field(hb, "told")
+    h.env.PBZ.game.setPosture(Session.enemyOn(h, "thug1"), 10)
+    check(field(hb, "told") == told, "a thug's posture written tells no boss bar")
+    -- A bar nobody started beside the boss's own (a PvP foe's has no Character): only the boss's own is told; in a match
+    -- none with no Character is, even with no boss bar of its own.
+    local foe = unstartedBar()
+    h.env.PBZ.game.setPosture(theirs, shachi(theirs).CurrentValue - 10)
+    local besideOwn = field(foe, "told") == 0 and near(field(hb, "shachi"), share(theirs))
+    Fake.put(hb, "Character", nil)
+    net(h).arena = true
+    h.env.PBZ.game.setPosture(theirs, shachi(theirs).CurrentValue + 10)
+    net(h).arena = nil
+    Fake.put(hb, "Character", theirs)
+    check(besideOwn and field(foe, "told") == 0, "a bar with no Character isn't told beside the boss's own, nor in a match")
+    -- Its guard broken by a guest's blow: the strip empty on the host's bar, and full again when the bar is filled 6 s on.
+    setShachi(theirs, 40)
+    s:run(1.5)
+    setShachi(copy, 40)
+    s:run(0.1)
+    Fake.put(field(copy, "hit"), "state", BREAK)
+    setShachi(copy, 0)
+    swing(g, copy, select(1, Fake.health(copy)) - 50)
+    s:run(0.5)
+    check(shachi(theirs).CurrentValue == 0 and near(field(hb, "shachi"), 0),
+        "a guest's break empties the strip on the host's bar (" .. tostring(field(hb, "shachi")) .. ")")
+    Fake.put(field(copy, "hit"), "state", "None")
+    Fake.put(field(theirs, "hit"), "state", "None")
+    s:run(6.5)
+    check(shachi(theirs).CurrentValue >= max - 1 and near(field(hb, "shachi"), 1),
+        "and fills it as the bar is filled 6 s on (" .. tostring(field(hb, "shachi")) .. ")")
+    allErrors(s)
+end
+
+-- Issue #16 (2): a guest's call that takes the host's story flow (a flag, a flow step, a bell lit as the guest comes to it)
+-- that failed once was let go with the rest of the queue: lost till the next link.
+local function flowRetries()
+    part("a story step whose call fails")
+    local s, h, g = pair()
+    s:run(4)
+    h.env.PBZ.game.storyFlags = nil
+    local fails, calls = { tag = 1, node = 1, bell = 1, late = 0 }, { bad = 0, late = 0 }
+    local ep = g.eventPipeline
+    local realTag = field(ep, "AddTagsByString")
+    Fake.put(ep, "AddTagsByString", function(self, tag)
+        if tag == "zddy.always.fails" then
+            calls.bad = calls.bad + 1
+            error("not now")
+        end
+        local kind = tag == "zddy.retry.late" and "late" or "tag"
+        if kind == "late" then
+            calls.late = calls.late + 1
+        end
+        if fails[kind] > 0 then
+            fails[kind] = fails[kind] - 1
+            error("not now")
+        end
+        return realTag(self, tag)
+    end)
+    local guids = field(ep, "ExecuteNodeGuid")
+    local realAdd = field(guids, "Add")
+    Fake.put(guids, "Add", function(self, k, v)
+        if fails.node > 0 then
+            fails.node = fails.node - 1
+            error("not now")
+        end
+        return realAdd(self, k, v)
+    end)
+    local realBell = field(g.bellManager, "ActivateBellByID")
+    Fake.put(g.bellManager, "ActivateBellByID", function(self, id)
+        if fails.bell > 0 then
+            fails.bell = fails.bell - 1
+            error("not now")
+        end
+        return realBell(self, id)
+    end)
+    table.insert(h.globalTags, "zddy.retry.flag")
+    table.insert(h.globalTags, "zddy.always.fails")
+    h.eventPipeline.ExecuteNodeGuid:Add("RETRY0123456789ABCDEF0123456789AB")
+    table.insert(h.bellIds, "Bell_YXZR_005")
+    s:run(24)
+    check(g.storyMarks["zddy.retry.flag"] and g.storyGuids["RETRY0123456789ABCDEF0123456789AB"],
+        "a flag and a flow step whose call failed once are taken a second on")
+    check(calls.bad == 5 and count(g.logs, "couldn't be taken here") == 1,
+        "one that always fails is tried 5 times in all, then let go (" .. calls.bad .. ")")
+    Session.moveTo(g, 30000, 2000)
+    s:run(4)
+    check(g.storyMarks["Bell_YXZR_005"], "a bell whose lighting failed once is lit a second on")
+    Session.moveTo(g, 500, 0)
+    -- One waiting to be tried again when the guest stops following the host's story: let go.
+    fails.late = 3
+    table.insert(h.globalTags, "zddy.retry.late")
+    for _ = 1, 300 do
+        s:run(0.1)
+        if calls.late >= 1 then
+            break
+        end
+    end
+    g.env.PBZ.story.follow = false
+    s:run(6)
+    check(calls.late == 1 and not g.storyMarks["zddy.retry.late"],
+        "one waiting when the guest stops following the host's story is let go (" .. calls.late .. " tries)")
+    g.env.PBZ.story.follow = true
+    allErrors(s)
+end
+
+-- Issue #16 (3): a move heard while the partner's figure couldn't play it (none yet, hidden, its animation not up) was
+-- dropped, and a move is told only as it starts: the figure stood through it. Held a moment now, the newest only; and one
+-- a partner who links again missed is told again.
+local function heldMoves()
+    part("a move their figure can't play yet")
+    local s, h, g = pair()
+    s:run(1)
+    local ghost = net(h).ghost              -- (two players: the partner is net itself)
+    local mesh, anim = field(ghost, "Mesh"), field(ghost, "anim")
+    local realAnim = field(mesh, "GetAnimInstance")
+    local function ready(yes)
+        Fake.put(mesh, "GetAnimInstance", yes and realAnim or function() return nil end)
+    end
+    local function played()
+        return field(anim, "played") or 0
+    end
+    local A1, A2, A3 = "/PBZCombatAsset/ActorData/Move/A1.A1", "/PBZCombatAsset/ActorData/Move/A2.A2",
+        "/PBZCombatAsset/ActorData/Move/A3.A3"
+    -- Its animation not up (a figure just made): a move heard then plays as soon as it is, as far in as it is by then.
+    ready(false)
+    local before = played()
+    h.inbox[#h.inbox + 1] = "~40 U " .. A1 .. " 0.10"
+    s:run(0.3)
+    local waited = played() == before
+    ready(true)
+    s:run(0.2)
+    local start = field(anim, "start")
+    check(waited and played() == before + 1, "a move heard while their figure's animation isn't up plays as soon as it is")
+    check(start and start > 0.43 and start < 0.66, "as far in as the move is by then (" .. tostring(start) .. ")")
+    -- Not up for longer than a moment: let go, nothing played late.
+    ready(false)
+    before = played()
+    h.inbox[#h.inbox + 1] = "~10 U " .. A2 .. " 0.00"
+    s:run(1.2)
+    ready(true)
+    s:run(0.5)
+    check(played() == before, "one their figure couldn't play for longer than a moment isn't played late")
+    -- Ended before their figure could play it ("U - 0"): nothing.
+    ready(false)
+    h.inbox[#h.inbox + 1] = "~10 U " .. A1 .. " 0.00"
+    s:run(0.2)
+    h.inbox[#h.inbox + 1] = "~10 U - 0"
+    s:run(0.1)
+    ready(true)
+    s:run(0.5)
+    check(played() == before, "nor one they ended before it could be")
+    -- Their figure hidden (they were down) and shown again as they get up: the move heard in between plays.
+    Session.die(g)
+    s:run(2)
+    local hidden = net(h).ghostHidden == true
+    h.inbox[#h.inbox + 1] = "~10 U " .. A2 .. " 0.00"
+    s:run(0.1)
+    Session.revive(g)
+    s:run(0.6)
+    check(hidden and played() == before + 1 and field(anim, "montage") ~= nil,
+        "a move heard while their figure is hidden plays once it's shown again, a moment on")
+    -- A partner who links again while this player is in a move is told it, as far in as it is. (Moves go quick: Q U.)
+    Session.startMove(h, A3)
+    s:run(0.5)
+    local told = count(h.sent, "U " .. A3)
+    Session.command(g, "netoff")
+    s:run(1)
+    for _, made in ipairs(g.spawned) do         -- (its figures of the host: what they played before is gone)
+        local a = field(made, "anim")
+        if a then
+            Fake.put(a, "montage", nil)
+        end
+    end
+    Session.command(g, "neton client")
+    s:run(3)
+    check(count(h.sent, "U " .. A3) > told, "a partner who links again is told the move this player is in")
+    local theirAnim = net(g).ghost and field(net(g).ghost, "anim")
+    check(theirAnim ~= nil and field(theirAnim, "montage") ~= nil and rawget(field(theirAnim, "montage"), "__path") == A3,
+        "and their new figure of this player plays it")
+    Session.endMove(h)
+    allErrors(s)
+end
+
 -- Boss super armour (CoopBossArmor; the user, 11-10: "the bosses should not be able to be knocked back"): while a partner
 -- is here, a boss the host runs lets go of a flinch at once and never sends it as a move; its guard break, an execution, a
 -- scripted reaction and one on the ground stay; a thug's flinch is the game's; a partner's flinch isn't played on it, their
@@ -8470,6 +8776,7 @@ return function(print_, scripts)
     SIM_SCRIPTS = scripts
     joining()
     movesAndGear()
+    heldMoves()
     sharing()
     enemiesAndHits()
     farEnemy()
@@ -8478,6 +8785,7 @@ return function(print_, scripts)
     hitReactions()
     bossReactions()
     bossPosture()
+    postureStrip()
     bossArmour()
     partnerHitSounds()
     pickupsFresh()
@@ -8502,6 +8810,7 @@ return function(print_, scripts)
     hostsEnemiesHere()
     bossScenes()
     playerReports()
+    flowRetries()
     afterATrip()
     phantomEdge()
     shots()

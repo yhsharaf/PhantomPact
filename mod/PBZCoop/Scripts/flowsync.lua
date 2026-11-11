@@ -27,6 +27,11 @@ return function(api)
     -- told: what the guests have (the baseline and what was sent); sent: what was sent, in order, told again to a guest
     -- (re)linked; seen: new last look, sent if it's still there this one (a tag on for a moment isn't story).
     local flow = { told = nil, sent = {}, seen = nil, linkedN = 0, queue = {}, applied = 0 }
+    -- A guest's flag, flow step or bell whose call failed is tried again a calm second on, TRIES times in all: let go
+    -- with the rest of the queue, it was lost till the next link (issue #16). No more than AGAIN_MAX wait at once.
+    -- again: "kind item" -> the tries so far.
+    local TRIES, AGAIN_MAX = 5, 400
+    flow.again = {}
 
     local function skipped(tag)
         for _, p in ipairs(SKIP) do
@@ -280,6 +285,13 @@ return function(api)
         return places
     end
 
+    -- A call that failed: true while it's to be tried again (its tries counted), false once it has had all TRIES.
+    local function tryAgain(key)
+        local tries = (flow.again[key] or 0) + 1
+        flow.again[key] = tries < TRIES and tries or nil
+        return tries < TRIES
+    end
+
     -- The host's bells waiting here that this player stands by now, lit. One lit here already, or not in the game's table
     -- (once it's read), is let go.
     local function lightNearBells(bm, have)
@@ -298,14 +310,22 @@ return function(api)
         for id in pairs(flow.pending) do
             local p = places[id]
             if have.b[id] or (flow.places and not p) then
-                flow.pending[id] = nil
+                flow.pending[id], flow.again["b " .. id] = nil, nil
             elseif p and (here == nil or p.map == nil or p.map == here)
                 and (l.X - p.x) ^ 2 + (l.Y - p.y) ^ 2 + (l.Z - p.z) ^ 2 <= BELL_NEAR_CM * BELL_NEAR_CM then
-                if pcall(function() bm:ActivateBellByID(FName(id)) end) then
+                local ok = pcall(function() bm:ActivateBellByID(FName(id)) end)
+                if ok then
                     lit = lit + 1
+                    flow.again["b " .. id] = nil
                     log("Story flow: the host's bell " .. id .. " lit here, as you came to it.")
                 end
-                flow.pending[id] = nil
+                -- (One whose call failed stays, for the next calm second: see TRIES.)
+                if ok or not tryAgain("b " .. id) then
+                    flow.pending[id] = nil
+                    if not ok then
+                        log("Story flow: the host's bell " .. id .. " couldn't be lit here (tried " .. TRIES .. " times).")
+                    end
+                end
             end
         end
         return lit
@@ -313,7 +333,13 @@ return function(api)
 
     local function guestTick()
         if (#flow.queue > 0 or next(flow.pending) ~= nil) and game.inPrologue and game.inPrologue() then
-            flow.queue, flow.pending = {}, {}       -- (nothing of the host's into this player's prologue: see hostTick)
+            flow.queue, flow.pending, flow.again = {}, {}, {}   -- (nothing of the host's into this player's prologue: see hostTick)
+            return
+        end
+        -- (Not following now, or the host's story table another: what waits is let go, one to be tried again too.)
+        if (#flow.queue > 0 or next(flow.pending) ~= nil) and api.story
+            and (api.story.follow == false or api.story.mismatch) then
+            flow.queue, flow.pending, flow.again = {}, {}, {}
             return
         end
         if (#flow.queue == 0 and next(flow.pending) == nil) or not calm() then
@@ -325,32 +351,44 @@ return function(api)
         end
         -- (Only bells waiting: theirs alone are read, not the thousands of flags, once a second.)
         local have = #flow.queue > 0 and read() or { t = {}, n = {}, b = readBells(bm) }
-        local done = 0
+        local done, kept, lost = 0, {}, 0
         game.granting = true        -- (what a flow step hands out isn't sent back as found)
         for _, q in ipairs(flow.queue) do
-            if not have[q.kind][q.item] then
-                if q.kind == "b" then
-                    flow.pending[q.item] = true         -- (lit when this player stands by it: lightNearBells)
-                else
-                    local ok = pcall(function()
-                        if q.kind == "t" then
-                            ep:AddTagsByString(q.item)
-                        else
-                            ep.ExecuteNodeGuid:Add(q.item, true)
-                        end
-                    end)
-                    if ok then
-                        done = done + 1
+            local key = q.kind .. " " .. q.item
+            if have[q.kind][q.item] then
+                flow.again[key] = nil
+            elseif q.kind == "b" then
+                flow.pending[q.item] = true         -- (lit when this player stands by it: lightNearBells)
+            else
+                local ok = pcall(function()
+                    if q.kind == "t" then
+                        ep:AddTagsByString(q.item)
+                    else
+                        ep.ExecuteNodeGuid:Add(q.item, true)
                     end
+                end)
+                have[q.kind][q.item] = true         -- (the same one twice in the queue, a relink's say: once)
+                if ok then
+                    done = done + 1
+                    flow.again[key] = nil
+                elseif #kept < AGAIN_MAX and tryAgain(key) then
+                    kept[#kept + 1] = q             -- (tried again the next calm second)
+                else
+                    flow.again[key] = nil
+                    lost = lost + 1
                 end
             end
         end
         done = done + lightNearBells(bm, have)
         game.granting = false
-        flow.queue = {}
+        flow.queue = kept
         if done > 0 then
             flow.applied = flow.applied + done
             log(string.format("Story flow: %d of the host's flags, flow steps and bells taken here.", done))
+        end
+        if lost > 0 then
+            log(string.format("Story flow: %d of the host's flags and flow steps couldn't be taken here (tried %d times).",
+                lost, TRIES))
         end
     end
 
@@ -403,7 +441,7 @@ return function(api)
     local function tick()
         local now = os.clock()
         if not (coop.net and coop.net.enabled) then
-            flow.told, flow.sent, flow.seen, flow.linkedN, flow.pending = nil, {}, nil, 0, {}
+            flow.told, flow.sent, flow.seen, flow.linkedN, flow.pending, flow.again = nil, {}, nil, 0, {}, {}
             return
         end
         -- Not in a PvP match: nothing a match changes is saved, and the story's flow isn't the match's. After it the host
