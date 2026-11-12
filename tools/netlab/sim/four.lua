@@ -5715,14 +5715,21 @@ local function memoryFlowers()
     check(Session.items(g, "F_02056") == 1 and Session.items(g, "F_02055") == 1 and #g.petalsRefused == 0,
         "back from a drop: still one each, nothing given again")
     check(has(g, SIX) == 1 and has(h, FIVE) == 1, "and no flag twice")
-    -- A story's flower (no petal named on it: its flow gives one; viewing it opens a quest, the story table's "慈母记忆之花"):
-    -- its petal comes once, and the copy stays for the other player to see.
-    local story = flowerOn({ h, g }, "BP_FlowInteract_MemoryFlower_C_UAID_CiMu", "F_02011", {}, 1500.0, true)
+    -- A quest's flower: a story's (no petal named on it: its quest's flow gives one; viewing it opens a quest, the story
+    -- table's "慈母记忆之花"), or a collection's (its quest class named on it, as each of Inanis' flowers names "Resonant
+    -- Strings": begun only by the flower's own flow). Its petal comes once; the copy stays for the other player to see.
+    local story = flowerOn({ h, g }, "BP_FlowInteract_MemoryFlower_C_UAID_CiMu", "F_02011", {}, 1500.0, "story")
     s:run(2)
     Fake.pickFlower(h, story[1])
     s:run(12)
     check(Session.items(g, "F_02011") == 1 and Fake.flowerState(g, story[2]) == "here",
         "a story's flower: its petal for the guest, once, and the guest's copy stays to be seen")
+    local collect = flowerOn({ h, g }, "BP_FlowInteract_MemoryFlower_C_UAID_XianYin", "F_02012", {}, 2100.0, "collect")
+    s:run(2)
+    Fake.pickFlower(g, collect[2])
+    s:run(12)
+    check(Session.items(h, "F_02012") == 1 and Fake.flowerState(h, collect[1]) == "here",
+        "a collection's flower: its petal for the host, once, and the host's copy stays to be seen")
     -- A flower gone with no petal after it (not a pick: a story's own doing, say) tells nothing, and takes no copy.
     local quiet = flowerOn({ h, g }, "BP_FlowInteract_MemoryFlower_C_UAID_Q", "F_02056", {}, 1800.0)
     s:run(2)

@@ -1027,16 +1027,17 @@ function Fake.loadedFlowers(pc)
     return loaded
 end
 
--- story: a story's flower, which names no petal of its own (FlowerItem empty: its flow gives one) and opens a quest.
-function Fake.memoryFlower(pc, id, x, y, z, petal, flags, story)
+-- quest: a quest's flower. "story": it names no petal of its own (FlowerItem empty: its quest's flow gives one);
+-- "collect": it names its petal and a quest class (FlowerQuest: XianYin_C on each of Inanis' flowers, the bench).
+function Fake.memoryFlower(pc, id, x, y, z, petal, flags, quest)
     local f = object(pc, "BP_FlowInteract_MemoryFlower_C")
     rawset(f, "__name", id)
     put(f, "loc", { X = x, Y = y, Z = z })
     put(f, "HasDestory", false)
     put(f, "collision", true)
     put(f, "petal", petal)
-    put(f, "FlowerItem", name(story and "" or petal or ""))
-    put(f, "FlowerQuest", { IsValid = function() return false end })     -- (no quest class on a plain one: the bench)
+    put(f, "FlowerItem", name(quest == "story" and "" or petal or ""))
+    put(f, "FlowerQuest", { IsValid = function() return quest == "collect" end })
     put(f, "flags", flags or {})
     local tags = {}
     for _, t in ipairs(flags or {}) do

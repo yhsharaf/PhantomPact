@@ -5478,8 +5478,10 @@ return function(api)
     -- gave nothing either. (The flow step a pick runs, which the host's flowsync sends on, doesn't hide a copy at a load.)
     -- So now, another player's pick: their petal comes by T as any find does and goes in once (game.givePetal), and their
     -- word MF names the flower, its petal and its flags (coop.lua): our copy goes the game's way once that petal is in our
-    -- bag, now or as it loads (game.flowerTaken). Not a story's flower: viewing one opens or moves a quest (the story table:
-    -- "后街-慈母记忆之花", CiMuXin_1), the story's own in each world, so it stays for each player to see.
+    -- bag, now or as it loads (game.flowerTaken). Not a quest's flower: viewing one opens or moves a quest, a story's (the
+    -- story table: "后街-慈母记忆之花", CiMuXin_1) or a collection's (FlowerQuest XianYin_C, "Resonant Strings", on each of
+    -- Inanis' flowers: begun only by the flower's own flow as it ends, never by its flags, the bench), each world's own. It
+    -- stays for each player to see: their own view later runs it, the petal refused as had (its card shows once more).
     -- (Fields, not locals: this file is at its 200.)
     game.flowers = { CLASS = "BP_FlowInteract_MemoryFlower_C", LOOK_S = 5, LATE_S = 30, OLD_S = 120, nextS = 5,
         GONE = "/Game/PBZContent/VFX/SceneFX/Common/BP_FlowInteract_MemoryFlower.BP_FlowInteract_MemoryFlower_C:FlowerDissapear",
@@ -5661,10 +5663,10 @@ return function(api)
     -- The flowers owed here that are loaded now, gone the game's way: FlowerDissapear, which pays nothing (the bench) and is
     -- kept with the flower. Only once its petal is in this bag: a copy whose petal never came stays, for this player to pick
     -- themselves. Not one they're picking right now (its collision is off while they use it): their own memory plays out, and
-    -- the game vanishes it at its end. Not a story's flower: one that names no petal of its own (its flow gives it) or a
-    -- quest (FlowerQuest) stays for this player to see; its petal came, and the game won't give it twice. (A search: every
-    -- LOOK_S while a word is new, every LATE_S once all are older than OLD_S, as a copy far off may never load this run;
-    -- never two in a frame.)
+    -- the game vanishes it at its end. Not a quest's flower: one that names no petal of its own (a quest's flow gives it)
+    -- or names a quest (FlowerQuest) stays for this player to see; its petal came, and the game won't give it twice. (A
+    -- search: every LOOK_S while a word is new, every LATE_S once all are older than OLD_S, as a copy far off may never load
+    -- this run; never two in a frame.)
     function game.watchFlowers(pawn)
         local fl = game.flowers
         if next(fl.owed) == nil or not maySearch() then
@@ -5687,7 +5689,7 @@ return function(api)
                     fl.owed[key], fl.told[key] = nil, true
                 elseif item == "" or quest then
                     fl.owed[key] = nil
-                    log("A Memory Flower another player picked is a story's: it stays here, for this player to see (" .. name .. ").")
+                    log("A Memory Flower another player picked belongs to a quest: it stays here, for this player to see (" .. name .. ").")
                 elseif not used and bp and (o.petal == nil or game.hadItem(bp, o.petal)) then
                     fl.ours = true
                     local ok = pcall(function() f:FlowerDissapear() end)
