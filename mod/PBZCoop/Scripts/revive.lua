@@ -432,14 +432,11 @@ return function(api)
         if kind == "gone" then
             partnerBack()
         end
+        -- (A sit of this player's own clears the count; a partner's ("partnersit") does nothing here, and one who's down stays
+        -- down: their partner's strikes bring them back, or the timer runs out. The user, 11-12: "you only heal when you
+        -- yourself sit on the bell or die". It had got them up.)
         if kind == "bell" or kind == "sit" then
             downs = 0
-        end
-        if kind == "sit" and down then      -- (the one who sat can't be down: this is their partner hearing of it)
-            local pc, pawn = api.getPlayer1()
-            if valid(pc) and valid(pawn) then
-                getUp(pc, pawn)
-            end
         end
     end
 

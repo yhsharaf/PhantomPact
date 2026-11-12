@@ -35,8 +35,7 @@ return function(scriptDir)
         ["your partner is back."] = "队友回来了。",
         ["your partner is watching a cutscene."] = "队友正在观看过场动画。",
         ["your partner rested at a bell: you'll join them."] = "队友在钟旁休息了:你会前往队友身边。",
-        ["your partner rested at a bell: you're rested too."] = "队友在钟旁休息了:你也恢复了。",
-        ["your partner rested at a bell: you're rested, and so is the boss."] = "队友在钟旁休息了:你恢复了,首领也恢复了。",
+        ["your partner rested at a bell: the boss is back to full health."] = "队友在钟旁休息了:首领的生命值已回满。",
         ["your partner needs PvPvE on too, or their moves won't show here."] = "队友也要开启 PvPvE,否则这里看不到对方的动作。",
         ["PvPvE on for everyone: the host's rules count for all."] = "PvPvE 已为所有人开启:房主的规则对所有人生效。",
         ["partner disconnected."] = "队友已断开连接。",
@@ -196,8 +195,7 @@ return function(scriptDir)
             { " left%. (%d) players now%.$", " 离开了。现在有 %1 名玩家。" }, { " is down%.$", " 倒下了。" }, { " is back%.$", " 回来了。" },
             { " is watching a cutscene%.$", " 正在观看过场动画。" }, { " is on another map%.$", " 在另一张地图上。" },
             { " is (%d+) m away%.$", " 在 %1 米外。" }, { " rested at a bell: you'll join them%.$", " 在钟旁休息了:你会前往对方身边。" },
-            { " rested at a bell: you're rested too%.$", " 在钟旁休息了:你也恢复了。" },
-            { " rested at a bell: you're rested, and so is the boss%.$", " 在钟旁休息了:你恢复了,首领也恢复了。" },
+            { " rested at a bell: the boss is back to full health%.$", " 在钟旁休息了:首领的生命值已回满。" },
             { " turned co%-op sync off%.$", " 关闭了联机同步。" } }) do
             PARTS[#PARTS + 1] = { "^" .. who[1] .. line[1], who[2] .. line[2] }
         end

@@ -1512,14 +1512,6 @@ function Fake.new(id, scripts, ini, link)
     put(bag, "MedicineExtraUsage", 1)
     put(bag, "ult", { n = 1, pct = 40, max = 3 })
     defs(pc, bag, {
-        -- (The game's own refill, as a real sit calls it: the gourd to its whole size, its extra drinks counted in. The
-        -- bench, 11-12: 2 to 4 with two extra drinks over a gourd of 2.)
-        RestoreQuickItems = function(self)
-            put(gourd, "CurrentTime", rawget(gourd, "__fields").MaxTime + rawget(self, "__fields").MedicineExtraUsage)
-        end,
-        GetMedicineTotalMaxUsage = function(self)
-            return rawget(gourd, "__fields").MaxTime + rawget(self, "__fields").MedicineExtraUsage
-        end,
         GetMedicineExtraUsage = function(self) return rawget(self, "__fields").MedicineExtraUsage end,
         AddMedicineExtraUsage = function(self, n)
             put(self, "MedicineExtraUsage", rawget(self, "__fields").MedicineExtraUsage + n)

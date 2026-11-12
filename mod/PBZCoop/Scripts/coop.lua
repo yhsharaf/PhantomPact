@@ -2949,7 +2949,8 @@ return function(api)
     --   Client died: only the client's world refreshed. The host's world, and its boss fight, go on untouched;
     --     the client's copies of what the host already killed are killed again, and a boss fight the host is
     --     still in is shown again (bar and fog walls).
-    local restListeners = {}   -- name -> function(kind): a bell or death rest, here or the partner's (revive.lua)
+    local restListeners = {}   -- name -> function(kind): a rest, here or the partner's (revive.lua): bell, death, sit (this
+                                -- player's own), partnersit (a partner's), gone
 
     local function restEvent(kind)
         for _, fn in pairs(restListeners) do
@@ -3188,8 +3189,57 @@ return function(api)
         end
     end
 
-    -- A sit at a bell is everyone's: whoever's dead, down or watching comes to the one who sat, and anyone else is rested where
-    -- they stand. It says the sitter's fight is over too, or a bar left up there would hold a partner's respawn for good.
+    -- A boss back to full health, if it's there and alive. (Fields, not locals: this function is at its 200.)
+    function net.bossFull(actor)
+        if valid(actor) and not game.isDead(actor) and game.setHealth then
+            local _, maxhp = game.getHealth(actor)
+            if maxhp and maxhp > 0 then
+                game.setHealth(actor, maxhp)
+                return true
+            end
+        end
+        return false
+    end
+
+    -- Any sit: the bosses of fights still on back to full health, in the world that runs them, and this world's copies of
+    -- the fights this player is in. True if this player is in one. Their own (a bar of this game's); the ones they started
+    -- (net.bossesTold: its bar goes with their death, the fight going on with the others, the boss still this world's); on
+    -- the host every partner's fight, run on this world's actor; and a partner's fight they joined or struck, on its copy
+    -- here (the copy is the boss when the host is far off). Reviews, 11-12: a guest's own fight on a boss the host's world
+    -- runs, its copy put back alone and taken down again by the next line, the guest told it was full; a party's host down
+    -- and waiting in its own fight, its boss left as it was; a guest's copy of a fight far from the host, the same.
+    function net.sitBossesToFull()
+        local inFight = false
+        for _, boss in ipairs(net.ownBosses()) do
+            net.bossFull(boss)
+            inFight = true
+        end
+        for name in pairs(net.bossesTold or {}) do
+            net.bossFull(enemyByName[name])
+        end
+        -- (On the host, a partner's fight this world ran, ended with its boss alive: they walked out or died, the boss left
+        -- as it was here, and a sit then back in found it so. A review, 11-12. A fresh one is full already.)
+        for name in pairs(isHost() and net.bossesSeen or {}) do
+            net.bossFull(enemyByName[name])
+        end
+        for name in pairs(net.partnerBosses) do
+            local mine = net.joinedBoss == name or net.struck[name]
+            if mine or isHost() then
+                net.bossFull(enemyByName[name])
+            end
+            if mine then
+                inFight = true
+            end
+        end
+        return inFight
+    end
+
+    -- A sit at a bell brings everyone together: whoever's dead or watching a fight comes to the one who sat. Nobody else is
+    -- rested: each rests at their own sit, as in the game (the user, 11-12: "you only heal when you yourself sit on the bell
+    -- or die"); one who's down stays down (revive.lua). But any sit puts the bosses of fights still on back to full health,
+    -- in the world that runs them ("a sit should make boss health go full i am scared people will abuse it": a sit, then
+    -- back into the fight). It says the sitter's fight is over too, or a bar left up there would hold a partner's respawn
+    -- for good.
     local function onLocalSit()
         if net.arena then
             if api.arena and api.arena.restDuring then     -- (a bell in a PvP match heals nobody else: it's a forfeit)
@@ -3204,6 +3254,7 @@ return function(api)
             return
         end
         restEvent("sit")
+        net.sitBossesToFull()
         if game.resetBosses then
             game.resetBosses()
         end
@@ -3216,35 +3267,27 @@ return function(api)
         local p = peerOf(from)
         p.fights = false
         countFights()
-        restEvent("sit")
+        restEvent("partnersit")         -- (not "sit": a partner's sit rests nothing here, revive.lua's down count included)
+        -- (Before the sitter's fights end here: theirs is reset too, a sit then back in finding it full, and one of theirs this
+        -- player is in is still known, to tell them.)
+        local inFight = not net.arena and net.sitBossesToFull()     -- (a PvP match's bosses are parked: none of this)
         endFights(net.party and p.number or nil)
         local _, pawn = getPlayer1()
-        if net.pvp or not valid(pawn) then
+        if not valid(pawn) then
             return
         end
         local who = net.party and PLAYERS[p.number].name or "your partner"
-        if game.isDead(pawn) or net.watchingFight then
+        local down = game.isDead(pawn) or net.watchingFight
+        if down and not net.pvp then
             if not net.partnerFighting then       -- (with more than two, someone else's fight can still be on)
                 api.partner.comeTo(p)
                 api.status.notify("rest", who .. " rested at a bell: you'll join them.")
             end
-        else
-            game.restHere(pawn)
-            -- In a boss fight of one's own, the boss is rested too, back to full health (the user's rule): the rest is no free
-            -- heal in the middle of a fight, with the partner sitting down for it on purpose.
-            local bosses = net.ownBosses()
-            for _, boss in ipairs(bosses) do
-                local _, maxhp = game.getHealth(boss)
-                if maxhp and maxhp > 0 and game.setHealth then
-                    game.setHealth(boss, maxhp)
-                end
-            end
-            if #bosses > 0 then
-                log("The other player sat at a bell during your boss fight: you're rested, and so is the boss.")
-                api.status.notify("rest", who .. " rested at a bell: you're rested, and so is the boss.")
-            else
-                api.status.notify("rest", who .. " rested at a bell: you're rested too.")
-            end
+        elseif inFight and not down then
+            -- Not rested here. In a fight, its boss went back to full health above: told, or the boss's jump looks like a
+            -- fault (with PvP on too, where nobody's brought to the sitter). Out of a fight nothing changed, and nothing's said.
+            log("The other player sat at a bell during your boss fight: the boss is back to full health.")
+            api.status.notify("rest", who .. " rested at a bell: the boss is back to full health.")
         end
         log("The other player sat at a bell.")
     end
@@ -3708,6 +3751,10 @@ return function(api)
             net.pendingDeaths[name] = nil
         end
         net.partnerBosses[name] = true
+        if isHost() then
+            net.bossesSeen = net.bossesSeen or {}
+            net.bossesSeen[name] = true     -- (any sit puts it back to full health, the fight over or not: net.sitBossesToFull)
+        end
         if net.party then
             net.fightOf[name] = from or 1
         end
@@ -3786,6 +3833,8 @@ return function(api)
         end
         if not net.partnerBosses[name] then
             sendEvent("B", name)
+            net.bossesTold = net.bossesTold or {}
+            net.bossesTold[name] = true     -- (any sit puts it back to full health, this player down or not: net.sitBossesToFull)
             if isClient() then
                 net.hostBosses[name] = true    -- the host fights it too from now on
                 net.ownAnnounced = net.ownAnnounced or {}
