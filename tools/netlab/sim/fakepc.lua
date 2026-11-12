@@ -312,6 +312,9 @@ Fake.ITEMS = {
     { "Weapon_Material_02", "Material" },
     { "I_RELIC_1", "NarrativeItem", "relic.one" },
     { "I_RELIC_2", "NarrativeItem", "relic.two" },
+    { "I_RELIC_3", "NarrativeItem" },
+    { "I_RELIC_4", "NarrativeItem" },
+    { "I_RELIC_5", "NarrativeItem" },
     { "K_TOKEN_9", "NarrativeItem", nil, "2" },
 }
 
@@ -1560,8 +1563,9 @@ function Fake.new(id, scripts, ini, link)
     -- (pc.cards). While a card waits the bag says one is up (IsDisplayPickupUI) and no line goes. TryToPushPickupUI then
     -- readies the first card and ReadyToPlayConfirmUI puts it up, as the game's own pickup does once its animation is
     -- through; Space (Fake.closeCard) takes it down, and the game goes on to the next, then the lines. With no card, the
-    -- lines go at TryToPushPickupUI. Nothing goes while pc.noPickupUI (CanPushPickupUI false).
-    pc.tips, pc.cards, pc.cardsHeld = {}, {}, {}
+    -- lines go at TryToPushPickupUI. Nothing goes while pc.noPickupUI (CanPushPickupUI false). What either call does over a
+    -- card that's up isn't known (nothing here): pc.overCard counts those calls.
+    pc.tips, pc.cards, pc.cardsHeld, pc.overCard = {}, {}, {}, 0
     local seen, queue = {}, {}
     local function cardAlways(key)
         if key:find("^R_%d") then
@@ -1629,6 +1633,9 @@ function Fake.new(id, scripts, ini, link)
         CanPushPickupUI = function() return not pc.noPickupUI and not pc.cardReady and not pc.cardUp end,
         IsDisplayPickupUI = function() return pc.cardUp == true or pc.cardReady ~= nil or #pc.cardsHeld > 0 end,
         TryToPushPickupUI = function()
+            if pc.cardUp then
+                pc.overCard = pc.overCard + 1
+            end
             if pc.noPickupUI or pc.cardUp then
                 return
             end
@@ -1639,6 +1646,9 @@ function Fake.new(id, scripts, ini, link)
             end
         end,
         ReadyToPlayConfirmUI = function()
+            if pc.cardUp then
+                pc.overCard = pc.overCard + 1
+            end
             if pc.cardReady and not pc.cardUp then
                 pc.cards[#pc.cards + 1] = pc.cardReady
                 pc.cardReady, pc.cardUp = nil, true

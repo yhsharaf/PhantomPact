@@ -2122,21 +2122,94 @@ local function pickupsShown()
     check(up and h.tips[#h.tips] == "Weapon_Material_01 + 1",
         string.format("out of the fight the note's card goes up, with no find of the host's own, and the line once it's "
             .. "closed: %d cards, last line %s", #h.cards - cards, tostring(h.tips[#h.tips])))
-    -- A scene holds a card the same way, and its line: shown a moment after it ends.
+    -- A scene holds a card the same way, and its line: shown a moment after it ends. (Longer than the 12 s a share waits out
+    -- a scene, coop.lua's takeGifts: the card is in the bag by then, and only game.calmForCard holds it. In a scene of 5 s
+    -- the share itself waited, and the scene's own test was never asked: a review of 18d340e.)
     cards, tips = #h.cards, #h.tips
     Session.scene(h, true)
     Session.gainItem(g, "I_KEY_9", 1)
     Session.gainItem(g, "Weapon_Material_01", 2)
-    s:run(5)
-    local inScene = #h.cards - cards + #h.tips - tips
+    s:run(20)
+    local inScene, inBag = #h.cards - cards + #h.tips - tips, Session.items(h, "I_KEY_9")
     Session.scene(h, false)
     s:run(4)
     local upAfter = #h.cards == cards + 1 and h.cardUp == true
     h.closeCard()
     s:run(1)
-    check(inScene == 0 and upAfter and #h.tips == tips + 1,
-        string.format("a quest item's card waits out a scene with its line, then both show: %d in it, %d cards and %d lines after",
-            inScene, #h.cards - cards, #h.tips - tips))
+    check(inBag == 1 and inScene == 0 and upAfter and #h.tips == tips + 1,
+        string.format("a quest item's card waits out a scene with its line, then both show: %d in the bag, %d in it, %d cards "
+            .. "and %d lines after", inBag, inScene, #h.cards - cards, #h.tips - tips))
+    -- One a fight held when a scene began, the fight over in it: it waits out the scene all the same.
+    cards = #h.cards
+    h.inCombat = 1
+    Session.gainItem(g, "R_78", 1)
+    s:run(5)
+    Session.scene(h, true)
+    h.inCombat = 0
+    s:run(8)
+    local inIt = #h.cards - cards
+    Session.scene(h, false)
+    s:run(4)
+    check(inIt == 0 and #h.cards == cards + 1 and h.cardUp == true,
+        string.format("a card a fight held, a scene begun and the fight over in it: it waits out the scene, %d in it, %d after",
+            inIt, #h.cards - cards))
+    h.closeCard()
+    s:run(1)
+    -- Two cards of a partner's: the first goes up, and while it's open (read a while) nothing is put up over it; the game
+    -- puts the next up itself once it's closed, then the line. (A review of 18d340e: both calls ran again every few seconds
+    -- over the first, still open, what the game does then unknown.)
+    cards, tips = #h.cards, #h.tips
+    local over = h.overCard
+    Session.gainItem(g, "R_79", 1)
+    Session.gainItem(g, "I_RELIC_5", 1)
+    Session.gainItem(g, "Weapon_Material_01", 1)
+    s:run(8)
+    local firstUp = #h.cards == cards + 1 and h.cardUp == true
+    s:run(15)
+    local stillOne = #h.cards == cards + 1
+    h.closeCard()
+    s:run(1)
+    local secondUp = #h.cards == cards + 2 and h.cardUp == true
+    h.closeCard()
+    s:run(2)
+    check(firstUp and stillOne and secondUp and h.overCard == over and #h.tips == tips + 1,
+        string.format("two cards of a partner's: the first up, nothing over it while it's open (%d calls), the second after it, "
+            .. "then the line: %d cards, %d lines", h.overCard - over, #h.cards - cards, #h.tips - tips))
+    -- Being hit, a montage of the host's own (a swing, a pickup's) or a game screen up: a card waits, then goes up.
+    local function heldBy(what, on, off, secs)
+        local before = #h.cards
+        Session.gainItem(g, "R_" .. (80 + #h.cards), 1)
+        on()
+        s:run(secs or 8)
+        local held = #h.cards - before
+        off()
+        s:run(5)
+        check(held == 0 and #h.cards == before + 1 and h.cardUp == true,
+            string.format("%s, a card waits, then goes up: %d while, %d after", what, held, #h.cards - before))
+        h.closeCard()
+        s:run(1)
+    end
+    local hp = select(1, Fake.health(h.pawn))
+    heldBy("while the host is being hit", function()
+        for i = 1, 8 do
+            Fake.setHealth(h.pawn, hp - 5 * i)
+            s:run(1)
+        end
+    end, function() end, 0.1)
+    heldBy("while a montage of the host's own plays", function()
+        Session.startMove(h, "/PBZCombatAsset/ActorData/Move/A1.A1")
+    end, function() Session.endMove(h) end)
+    local page
+    heldBy("while a game screen is up", function()
+        page = Fake.screen(h, "W_SystemMenu_C")
+    end, function()
+        for i = #h.screens, 1, -1 do
+            if h.screens[i] == page then
+                table.remove(h.screens, i)
+            end
+        end
+    end)
+    -- (Not a pause: linked, coop.lua's noPause lets none last. Nor a boss fight or a talk: nothing here makes either.)
     -- On a guest the game counts no fight with the host's copies, whose minds the host runs: a live enemy of the host's near
     -- holds a card the same way, till the guest is away from it.
     local gcards = #g.cards
@@ -2566,6 +2639,132 @@ local function storyOnce()
         string.format("one who had a story item takes their copy again, the word takes the host's: the host gets it from it, "
             .. "%d and %d", Session.items(hh, "I_RELIC_2"), Session.items(g, "I_RELIC_2")))
     allErrors(s)
+
+    -- The same with the host's copy not loaded at the word (a review of 18d340e: the host had none for the session, their
+    -- copy gone as it loaded; the bag on joining goes host to guest only, so a guest can hold what the host lacks): given
+    -- as it goes, loaded 25 s on, or in the wait, once the wait is out.
+    do
+        local s2, h2, g2 = pair()
+        local X, Y = "I_RELIC_3", "I_RELIC_4"
+        g2.bag:AddPropsToBackPack(1, g2.env.FName(X), false)        -- (the guest's, another host's share once)
+        Fake.pickup(g2, "relicW", X, 560.0, 60.0, 100.0)
+        s2:run(3)
+        pickupOn(g2, "relicW"):K2_DestroyActor()
+        Session.gainItem(g2, X, 1)
+        s2:run(25)
+        local before = Session.items(h2, X)
+        local late = Fake.pickup(h2, "relicW", X, 60.0, 60.0, 100.0)
+        s2:run(4)
+        check(before == 0 and Session.items(h2, X) == 1 and Session.items(g2, X) == 1 and rawget(late, "__alive") == false
+            and count(g2.sent, "^E T " .. X) == 0,
+            string.format("the guest, who has a story item, takes their copy; the host's, loaded 25 s on, gives it to the host as "
+                .. "it goes: %d then %d, the guest %d", before, Session.items(h2, X), Session.items(g2, X)))
+        g2.bag:AddPropsToBackPack(1, g2.env.FName(Y), false)
+        Fake.pickup(g2, "relicY", Y, 560.0, -60.0, 100.0)
+        s2:run(3)
+        pickupOn(g2, "relicY"):K2_DestroyActor()
+        Session.gainItem(g2, Y, 1)
+        s2:run(8)
+        local mid = Fake.pickup(h2, "relicY", Y, 60.0, -60.0, 100.0)
+        s2:run(20)
+        check(Session.items(h2, Y) == 1 and rawget(mid, "__alive") == false,
+            "and the host's copy loaded in the wait: gone, and given from once the wait is out: " .. Session.items(h2, Y))
+        allErrors(s2)
+    end
+
+    -- A pile (Yuer's herbs lie in piles): the guest, who has its thing, searches theirs. The host's goes with the word and gives
+    -- it once the wait is out; one not loaded then, as it loads.
+    do
+        local s3, h3, g3 = pair()
+        local function pileOf(pc, name, item, x)
+            local p = Fake.pile(pc, name, x, 0.0, 100.0, {})
+            Fake.put(p, "Item ID", Fake.name("XiGu." .. item))
+            return p
+        end
+        g3.bag:AddPropsToBackPack(1, g3.env.FName("I_RELIC_1"), false)
+        local hp = pileOf(h3, "BP_Rubbish_C_UAID_herbs1", "I_RELIC_1", 300.0)
+        local gp = pileOf(g3, "BP_Rubbish_C_UAID_herbs1", "I_RELIC_1", 600.0)
+        s3:run(3)
+        Fake.search(g3, gp)
+        Session.gainItem(g3, "I_RELIC_1", 1)
+        s3:run(25)
+        check(Session.items(h3, "I_RELIC_1") == 1 and Session.items(g3, "I_RELIC_1") == 1 and rawget(hp, "__alive") == false
+            and count(g3.sent, "^E T I_RELIC_1") == 0,
+            string.format("a pile of a story item the guest has, searched: the host's goes and gives it, %d and %d",
+                Session.items(h3, "I_RELIC_1"), Session.items(g3, "I_RELIC_1")))
+        g3.bag:AddPropsToBackPack(1, g3.env.FName("I_RELIC_2"), false)
+        local gp2 = pileOf(g3, "BP_Rubbish_C_UAID_herbs2", "I_RELIC_2", 620.0)
+        s3:run(3)
+        Fake.search(g3, gp2)
+        Session.gainItem(g3, "I_RELIC_2", 1)
+        s3:run(20)
+        local before = Session.items(h3, "I_RELIC_2")
+        local hp2 = pileOf(h3, "BP_Rubbish_C_UAID_herbs2", "I_RELIC_2", 320.0)
+        s3:run(22)
+        check(before == 0 and Session.items(h3, "I_RELIC_2") == 1 and rawget(hp2, "__alive") == false,
+            string.format("and one not loaded on the host at the search: it goes as it loads and gives it, %d then %d", before,
+                Session.items(h3, "I_RELIC_2")))
+        allErrors(s3)
+    end
+
+    -- One the host had and handed in stays handed in. Their first came by the guest's share, their copy not loaded then:
+    -- gone as it loads, nothing again. A later copy of the guest's, taken with the thing held (kept to one, nothing sent), its
+    -- word taking the host's loaded copy: nothing, the host has had it. And a share to one who has the thing: not a second.
+    do
+        local s4, h4, g4 = pair()
+        local Z = "I_RELIC_1"
+        Fake.pickup(g4, "relicZ", Z, 560.0, 60.0, 100.0)
+        s4:run(3)
+        pickupOn(g4, "relicZ"):K2_DestroyActor()
+        Session.gainItem(g4, Z, 1)
+        s4:run(25)
+        local first = Session.items(h4, Z)
+        h4.bag:RemovePropsFromBackPack(1, h4.env.FName(Z))          -- (handed in)
+        local late = Fake.pickup(h4, "relicZ", Z, 60.0, 60.0, 100.0)
+        s4:run(4)
+        Fake.pickup(g4, "relicZ2", Z, 560.0, -60.0, 100.0)
+        local loaded = Fake.pickup(h4, "relicZ2", Z, 60.0, -60.0, 100.0)
+        s4:run(3)
+        pickupOn(g4, "relicZ2"):K2_DestroyActor()
+        Session.gainItem(g4, Z, 1)
+        s4:run(25)
+        check(first == 1 and Session.items(h4, Z) == 0 and Session.items(g4, Z) == 1 and rawget(late, "__alive") == false
+            and rawget(loaded, "__alive") == false,
+            string.format("a story item the host had and handed in stays so: its copy loaded later gone, and the guest's take of "
+                .. "another copy, theirs held, gives nothing from the host's: %d then %d", first, Session.items(h4, Z)))
+        h4.bag:AddPropsToBackPack(1, h4.env.FName("I_RELIC_2"), false)
+        Fake.pickup(g4, "relicH", "I_RELIC_2", 560.0, 30.0, 100.0)
+        s4:run(3)
+        pickupOn(g4, "relicH"):K2_DestroyActor()
+        Session.gainItem(g4, "I_RELIC_2", 1)
+        s4:run(20)
+        check(Session.items(h4, "I_RELIC_2") == 1 and Session.items(g4, "I_RELIC_2") == 1
+            and count(g4.sent, "^E T I_RELIC_2") == 1 and count(h4.logs, "I_RELIC_2 is a story item this player has already") >= 1,
+            string.format("the guest's first of a story item the host has: its share isn't a second, %d and %d",
+                Session.items(h4, "I_RELIC_2"), Session.items(g4, "I_RELIC_2")))
+        -- One held from the save (another session's share), never given this run, then handed in: not given back from a copy
+        -- either (a review of this fix: only what came this run counted).
+        h4.bag:AddPropsToBackPack(1, h4.env.FName("I_RELIC_3"), false)
+        g4.bag:AddPropsToBackPack(1, g4.env.FName("I_RELIC_3"), false)
+        s4:run(6)
+        h4.bag:RemovePropsFromBackPack(1, h4.env.FName("I_RELIC_3"))     -- (handed in)
+        Fake.pickup(g4, "relicS", "I_RELIC_3", 560.0, 90.0, 100.0)
+        local saved = Fake.pickup(h4, "relicS", "I_RELIC_3", 60.0, 90.0, 100.0)
+        s4:run(3)
+        pickupOn(g4, "relicS"):K2_DestroyActor()
+        Session.gainItem(g4, "I_RELIC_3", 1)
+        s4:run(22)
+        check(Session.items(h4, "I_RELIC_3") == 0 and Session.items(g4, "I_RELIC_3") == 1 and rawget(saved, "__alive") == false,
+            "one held from the save and handed in isn't given back from a copy either: " .. Session.items(h4, "I_RELIC_3"))
+        -- Co-op off, the bag hook still there for the game's run: the bag is the game's, a second isn't taken back.
+        net(g4).enabled = false
+        Session.gainItem(g4, "I_RELIC_2", 1)
+        s4:run(2)
+        local alone = Session.items(g4, "I_RELIC_2")
+        net(g4).enabled = true
+        check(alone == 2, "with co-op off the game's second of a story item stays: the bag is the game's: " .. alone)
+        allErrors(s4)
+    end
 
     -- The host holds two of one already (from an older version): a guest joining gets one from the host's bag, not two.
     local j = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES)

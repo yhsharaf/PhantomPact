@@ -2646,9 +2646,9 @@ return function(api)
         end
     end
 
-    handlers.O = function(name)
+    handlers.O = function(name, from)
         if name and #name <= MAX_CHEST_NAME and game.partnerOpened then
-            game.partnerOpened(name)
+            game.partnerOpened(name, net.party and (from or 1) or nil)
         end
     end
 

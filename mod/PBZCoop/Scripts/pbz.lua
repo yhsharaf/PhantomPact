@@ -1701,6 +1701,7 @@ return function(api)
             -- on 1.7.1, three players: "story items still duplicate (twin flesh lilies for example, I have 2)". The game's
             -- own second one: game.storyAgain.)
             if game.oneOfAKind(itemId) then
+                game.hadStory(itemId, true)         -- (theirs now, or already: never again from a copy, game.giveFromCopy)
                 if before >= 1 then
                     log("Shared loot: " .. itemId .. " is a story item this player has already: not given twice.")
                     game.granting = false
@@ -1793,7 +1794,8 @@ return function(api)
                 card = true         -- (a note's page waits in a queue of its own: a card too)
             end)
         end)
-        local ok, can = pcall(function() return bp:CanPushPickupUI() and not bp:IsDisplayPickupUI() end)
+        local ok, free, shown = pcall(function() return bp:CanPushPickupUI(), bp:IsDisplayPickupUI() end)
+        local can = free and not shown
         if not ok then
             game.tipsWanted = false         -- (the game's own pickup flow shows them all)
         elseif not card then
@@ -1805,9 +1807,12 @@ return function(api)
             -- (Put up that many times and still waiting: left for the game's own next pickup, as it was before.)
             game.tipsWanted, game.cardTries, game.cardCalm.from = false, 0, nil
             log("A partner's find's card still waits after " .. game.CARD_TRIES .. " tries: left for the next pickup here.")
-        elseif os.clock() - game.cardAt >= game.CARD_AGAIN_S and game.calmForCard(pawn) then
-            -- (Both calls, as the game's own pickup makes them. Again a while on if the card still waits: the player may
-            -- not have closed it yet. The lines go once it's closed, the game's own flow or the next look.)
+        elseif free and os.clock() - game.cardAt >= game.CARD_AGAIN_S and game.calmForCard(pawn) then
+            -- (Both calls, as the game's own pickup makes them. Never over a card that's up: from the first call till the
+            -- last card waiting is closed the bag can't push (CanPushPickupUI), the game putting each next one up by itself
+            -- after Space (the bench, 11-12). What a second pair does over an open card is unknown, maybe a card with no
+            -- button (game.closeStuckCards): with two partner cards it ran every few seconds over the first, still open (a
+            -- review of 18d340e). Again a while on only if none came up. The lines go once the last is closed.)
             game.cardAt, game.cardTries = os.clock(), game.cardTries + 1
             pcall(function() bp:TryToPushPickupUI() end)
             pcall(function() bp:ReadyToPlayConfirmUI() end)
@@ -1818,7 +1823,8 @@ return function(api)
 
     -- Whether a full-screen card may go up now: no scene, no talk, no boss fight, no game screen or pause up, the game
     -- doesn't count this player in a fight (game.inCombat) nor, on a guest, does a live enemy of the host's stand near
-    -- (coop.lua's net.enemyNear), and they haven't swung, dodged or used anything (a move of theirs) or lost health, for
+    -- (coop.lua's net.enemyNear), and they haven't swung, dodged or used anything (a move of theirs: moves.lua counts every
+    -- moment of a montage of their own, a pickup's too, whose end puts up the game's own card) or lost health, for
     -- CARD_CALM_S in a row. (Looked at twice a second at most: the talk's look is a search. Not looked at for a while, the
     -- calm counts from now.) The game's count of a fight can stay up a while after it (seen stuck 8 s on the bench, 11-11),
     -- and an enemy may stand near and idle: a card that has waited CARD_WAIT_S goes by the rest alone.
@@ -1837,13 +1843,18 @@ return function(api)
         c.hp = hp
         local net = api.coop and api.coop.net
         local fight = game.inCombat(pawn) or (net and net.enemyNear and net.enemyNear(game.CARD_FIGHT_CM))
-        local screen = false
-        pcall(function()
-            local pc = api.getPlayer1()
-            screen = api.localcoop.bellMenuUp() or api.localcoop.screenUp() or (valid(pc) and api.gs():IsGamePaused(pc))
-        end)
-        if hurt or game.localMoveRecent(game.CARD_CALM_S) or (fight and now - c.from < game.CARD_WAIT_S) or screen
-            or game.bossFightActive() or game.sequenceOn() or game.inDialogue() then
+        local busy = hurt or game.localMoveRecent(game.CARD_CALM_S) or (fight and now - c.from < game.CARD_WAIT_S)
+            or game.bossFightActive() or game.sequenceOn()
+        if not busy then
+            -- (The searches last, only when all else is calm: each walks the game's object list, and a card waits through a
+            -- whole fight. A review of 18d340e.)
+            pcall(function()
+                local pc = api.getPlayer1()
+                busy = api.localcoop.bellMenuUp() or api.localcoop.screenUp() or (valid(pc) and api.gs():IsGamePaused(pc))
+            end)
+            busy = busy or game.inDialogue()
+        end
+        if busy then
             c.since = nil
         else
             c.since = c.since or now
@@ -4923,7 +4934,8 @@ return function(api)
             watched, game.nearPickups = {}, {}
         end
         local present, spots, newOnes = {}, {}, 0
-        local gone = game.goneHere[game.goneKey(api.coop and api.coop.net.localMap or map)]
+        local goneAt = game.goneKey(api.coop and api.coop.net.localMap or map)
+        local gone = goneAt and game.goneHere[goneAt]
         for _, p in ipairs(all) do
             local addr = p:GetAddress()
             local spot = pickupSpots[addr]
@@ -4938,6 +4950,7 @@ return function(api)
                         pcall(function() p:K2_DestroyActor() end)
                         spot.gone = true
                         log("A pickup the other player took was here again (" .. spot.name .. "): gone again.")
+                        game.copyWent(pawn, goneAt .. " " .. spot.name)
                     end
                 end
             end
@@ -5083,7 +5096,10 @@ return function(api)
                 mineToo(held)
                 return
             end
-            game.awaitShare(held, n, from)
+            -- (Our copy named: a story item's share that never comes is given from it as it goes, game.copyWent. One who has
+            -- it already sends none (game.storyAgain), and a player without it had none at all, their copy gone as it
+            -- loaded: a review of 18d340e.)
+            game.awaitShare(held, n, from, key and (key .. " " .. name))
         end
         if itemId and itemId ~= "?" then
             game.grantLoot(pawn, itemId, kind)
@@ -5158,10 +5174,12 @@ return function(api)
     -- The game gives this player a story item they have already (game.oneOfAKind: one it hands out once):
     -- the same thing again, from this world's copy (theirs of a partner's take, one this world made again, a pile a partner
     -- searched in another session). Kept to one, the extra taken back once it's in, and not sent: everyone has theirs
-    -- (game.grantLoot). Asked as the game starts to add it (the hook comes first). True if it's that.
+    -- (game.grantLoot). Asked as the game starts to add it (the hook comes first). True if it's that. Only while co-op is on:
+    -- the hook outlives a session, and alone the bag is the game's (a review of 18d340e).
     function game.storyAgain(id)
         local _, pawn = api.getPlayer1()
-        local bp = valid(pawn) and game.oneOfAKind(id) and worldSubsystem(pawn, BACKPACK)
+        local net = api.coop and api.coop.net
+        local bp = net and net.enabled and valid(pawn) and game.oneOfAKind(id) and worldSubsystem(pawn, BACKPACK)
         if not (bp and game.itemCount(bp, id) >= 1) then
             return false
         end
@@ -5184,6 +5202,9 @@ return function(api)
         if game.granting or os.clock() < ownUntil or id == "None" or count < 1 or game.keptApart(id)
             or (api.arena and api.arena.match) then
             return
+        end
+        if game.oneOfAKind(id) then
+            game.hadStory(id, true)
         end
         if game.storyAgain(id) then
             return          -- (a story item this player has already: kept to one, and not sent)
@@ -5279,6 +5300,20 @@ return function(api)
                 end)
             end)
         end
+        -- (A story item held from the save, seen here, is one this player has had: handed in later, it isn't given back from
+        -- a copy of theirs, game.giveFromCopy. Before, only what came this game run counted: a review of this fix. The item
+        -- table read first, once: not a try for each thing in the bag.)
+        game.isNarrative("x")
+        if game.narrative ~= nil then
+            pcall(function()
+                bp.Inventories:ForEach(function(k, v)
+                    local id = k:get():ToString()
+                    if (tonumber(v:get().CurrentAmount) or 0) > 0 and game.oneOfAKind(id) then
+                        game.hadStory(id, true)
+                    end
+                end)
+            end)
+        end
     end
 
     -- from: who it came from, with more than two players: two partners given the same thing in a moment are one thing too.
@@ -5353,8 +5388,59 @@ return function(api)
     game.pickupShares, game.sharesGiven, game.dupShares = {}, {}, {}
     game.PICKUP_SHARE_S = 16        -- (past the 12 s a share waits out a scene: coop.lua's takeGifts)
     game.SAME_EVENT_S = 3           -- this world's own give this long before a share came is the same event's
+    -- Story items owed from a copy of ours not loaded at a partner's word, its share never come: copy (goneHere's key and
+    -- the pickup's name) -> item, given as it goes (game.copyWent). And the story items (game.oneOfAKind) this player has
+    -- had, by save: one handed in since isn't given again from a copy (game.giveFromCopy).
+    game.copyOwed, game.storyHad = {}, {}
+
+    function game.hadStory(id, set)
+        if game.saveSlot == nil then
+            game.readSaveSlot()         -- (a share as this player joins can come before this world's first look)
+        end
+        local key = (game.saveSlot or "") .. "|" .. tostring(id)
+        if set then
+            game.storyHad[key] = true
+        end
+        return game.storyHad[key] == true
+    end
+
+    -- A thing given from our copy of what a partner took, its share never come (game.pickupSharesDue, game.copyWent). A story
+    -- item not to one who has had it in this save and game: handed in since, it came back (one held, grantLoot keeps to one).
+    function game.giveFromCopy(pawn, id, count)
+        if game.oneOfAKind(id) and game.hadStory(id) then
+            log("A story item this player has had, " .. id .. ": not given again from the pickup here.")
+            return
+        end
+        log("The share of " .. id .. " the other player picked up never came: given from the pickup here.")
+        game.grantLoot(pawn, id, nil, count or 1)
+    end
+
+    -- Our copy of what a partner took, not loaded at their word, went just now (watchPickups' "gone again"): a share still
+    -- waited for is given from it if it never comes, and a story item owed already, its share never come, now.
+    function game.copyWent(pawn, copy)
+        for _, s in ipairs(game.pickupShares) do
+            if s.copy == copy then
+                s.copy = true
+            end
+        end
+        local id = game.copyOwed[copy]
+        if id then
+            game.copyOwed[copy] = nil
+            game.giveFromCopy(pawn, id, 1)
+        end
+    end
+
+    -- A partner searched their pile or chest, and ours goes (game.partnerOpened, or watchChests as it loads): if its thing is
+    -- a story item, waited for as a ground pickup's is, and given from ours if its share never comes. One who has it already
+    -- sends none (game.storyAgain): a player without it had none at all (Yuer's herbs lie in piles), a review of 18d340e.
+    function game.storyCopyGoes(item, from)
+        if game.oneOfAKind(item) then
+            game.awaitShare(item, 1, from ~= true and from or nil, true)
+        end
+    end
     -- (A partner's: their share alone answers it, where who it is is known. count: how many their game gave, for the copy's.)
-    -- (copy: our copy was here, and went with the word: a story item is given from it too, as below.)
+    -- (copy: true, our copy was here and went with the word: a story item is given from it too, as below; a string, our copy
+    -- not loaded, named: a story item is given from it as it goes, game.copyWent.)
     function game.awaitShare(id, count, from, copy)
         if type(id) ~= "string" or id == "?" or id == "None" then
             return
@@ -5416,9 +5502,10 @@ return function(api)
     end
 
     -- The waits run out: given from the copy's item (a thing of the game's item table: a weapon or a piece of gear comes its
-    -- own way), kept a while longer as given. Not in a scene: a share waits one out. A story item only if our copy went with
-    -- the word: one taken by a player who had it already sends none (game.storyAgain), and given here with no copy of ours
-    -- taken, one this player had handed in came back. (grantLoot gives none of one held.)
+    -- own way), kept a while longer as given. Not in a scene: a share waits one out. A story item only from a copy of ours
+    -- that went: one taken by a player who had it already sends none (game.storyAgain), and given here with no copy of ours
+    -- taken, one this player had handed in came back. Our copy went with the word: now; not loaded then: owed, given as it
+    -- goes (game.copyWent). (grantLoot gives none of one held, game.giveFromCopy none to one who has had it.)
     function game.pickupSharesDue(pawn)
         local now, kept = os.clock(), {}
         local scene = game.inCutscene and game.inCutscene()
@@ -5430,9 +5517,10 @@ return function(api)
                 if age < 2 * game.PICKUP_SHARE_S then
                     kept[#kept + 1] = s
                 end
-            elseif game.itemKinds and game.itemKinds[s.id] and (s.copy or not game.oneOfAKind(s.id)) then
-                log("The share of " .. s.id .. " the other player picked up never came: given from the pickup here.")
-                game.grantLoot(pawn, s.id, nil, s.count or 1)
+            elseif type(s.copy) == "string" and game.oneOfAKind(s.id) then
+                game.copyOwed[s.copy] = s.id
+            elseif game.itemKinds and game.itemKinds[s.id] and (s.copy == true or not game.oneOfAKind(s.id)) then
+                game.giveFromCopy(pawn, s.id, s.count or 1)
                 s.given, s.at = true, now
                 kept[#kept + 1] = s
             end
@@ -5906,8 +5994,11 @@ return function(api)
                         offer(name)
                     end
                 elseif retiring[name] then
+                    local from = retiring[name]
                     retiring[name] = nil
-                    if not game.holdsQuestItem(c) then
+                    local quest, item = game.holdsQuestItem(c)
+                    if not quest then
+                        game.storyCopyGoes(item, from)
                         pcall(function() c:SwitchWithoutPlaySequence() end)
                         chests.showOpen(c, false)
                     end
@@ -5929,9 +6020,13 @@ return function(api)
         closedNear = closed
         if next(retiring) then
             for _, p in ipairs(FindAllOf(PILE_CLASS) or {}) do
-                if valid(p) and retiring[p:GetFName():ToString()] then
-                    retiring[p:GetFName():ToString()] = nil
-                    if not game.holdsQuestItem(p) then
+                local pile = valid(p) and p:GetFName():ToString()
+                if pile and retiring[pile] then
+                    local from = retiring[pile]
+                    retiring[pile] = nil
+                    local quest, item = game.holdsQuestItem(p)
+                    if not quest then
+                        game.storyCopyGoes(item, from)
                         pcall(function() p:K2_DestroyActor() end)
                     end
                 end
@@ -5952,7 +6047,8 @@ return function(api)
         return item ~= nil and item ~= "None" and game.keptApart(item), item
     end
 
-    function game.partnerOpened(name)
+    -- from: who searched it (a party's slot), or nil.
+    function game.partnerOpened(name, from)
         local isPile = name:find("^BP_Rubbish") ~= nil
         closedNear[name] = nil
         for _, c in ipairs(FindAllOf(isPile and PILE_CLASS or CHEST_CLASS) or {}) do
@@ -5962,16 +6058,19 @@ return function(api)
                     log("The other player opened " .. name .. ": it holds a quest item (" .. tostring(item) .. "), left here for you.")
                     return
                 end
+                -- (Only one of ours that goes now: a chest open here already paid this player before.)
                 if isPile then
+                    game.storyCopyGoes(item, from)
                     pcall(function() c:K2_DestroyActor() end)
                 elseif not chestOpen(c) then
+                    game.storyCopyGoes(item, from)
                     pcall(function() c:SwitchWithoutPlaySequence() end)
                     chests.showOpen(c, true)
                 end
                 return
             end
         end
-        retiring[name] = true
+        retiring[name] = from or true
     end
 
     -- How many of this item the backpack holds (0 if it has no entry).
