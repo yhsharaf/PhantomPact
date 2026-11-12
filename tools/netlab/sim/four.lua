@@ -5675,10 +5675,10 @@ local function memoryFlowers()
         end
         return n
     end
-    local function flowerOn(pcs, id, petal, flags, x)
+    local function flowerOn(pcs, id, petal, flags, x, story)
         local out = {}
         for i, pc in ipairs(pcs) do
-            out[i] = Fake.memoryFlower(pc, id, x or 600.0, 0.0, 100.0, petal, flags)
+            out[i] = Fake.memoryFlower(pc, id, x or 600.0, 0.0, 100.0, petal, flags, story)
         end
         return out
     end
@@ -5690,8 +5690,9 @@ local function memoryFlowers()
     check(Session.items(h, "F_02056") == 1 and Session.items(g, "F_02056") == 1,
         "the host picks a Memory Flower: its petal for the host, and one for the guest")
     check(#g.petalsRefused == 0, "given once, as it came: the game never refused it (held a moment first, it would for good)")
-    check(Fake.flowerState(g, six[2]) == "gone", "the guest's copy goes, the game's way")
-    s:run(16)
+    s:run(6)
+    check(Fake.flowerState(g, six[2]) == "gone", "the guest's copy goes, the game's way, once the petal is in")
+    s:run(10)
     check(has(g, SIX) == 1, "and the flower's quest flag is raised for the guest")
     check(Session.items(g, "F_02056") == 1 and #g.petalsRefused == 0 and Session.items(h, "F_02056") == 1,
         "still one each a while on")
@@ -5702,6 +5703,7 @@ local function memoryFlowers()
     s:run(5)
     check(Session.items(h, "F_02055") == 1 and Session.items(g, "F_02055") == 1 and #h.petalsRefused == 0,
         "the guest picks one first: its petal for the host too, once")
+    s:run(6)
     check(Fake.flowerState(h, five[1]) == "gone", "and the host's copy goes")
     check(has(h, FIVE) == 1, "the host's quest counts it")
     check(count(h.sent, "^E MF ") == 1 and count(g.sent, "^E MF ") == 1, "each pick told once, and none told back")
@@ -5713,7 +5715,47 @@ local function memoryFlowers()
     check(Session.items(g, "F_02056") == 1 and Session.items(g, "F_02055") == 1 and #g.petalsRefused == 0,
         "back from a drop: still one each, nothing given again")
     check(has(g, SIX) == 1 and has(h, FIVE) == 1, "and no flag twice")
+    -- A story's flower (no petal named on it: its flow gives one; viewing it opens a quest, the story table's "慈母记忆之花"):
+    -- its petal comes once, and the copy stays for the other player to see.
+    local story = flowerOn({ h, g }, "BP_FlowInteract_MemoryFlower_C_UAID_CiMu", "F_02011", {}, 1500.0, true)
+    s:run(2)
+    Fake.pickFlower(h, story[1])
+    s:run(12)
+    check(Session.items(g, "F_02011") == 1 and Fake.flowerState(g, story[2]) == "here",
+        "a story's flower: its petal for the guest, once, and the guest's copy stays to be seen")
+    -- A flower gone with no petal after it (not a pick: a story's own doing, say) tells nothing, and takes no copy.
+    local quiet = flowerOn({ h, g }, "BP_FlowInteract_MemoryFlower_C_UAID_Q", "F_02056", {}, 1800.0)
+    s:run(2)
+    local sent = count(h.sent, "^E MF ")
+    quiet[1]:FlowerDissapear()
+    s:run(8)
+    check(count(h.sent, "^E MF ") == sent and Fake.flowerState(g, quiet[2]) == "here",
+        "a flower gone with no petal after it is told to nobody")
     allErrors(s)
+
+    -- The copy goes only once its petal is here: a guest who's down when the word comes takes the share as they're up.
+    local d, dh, dg = pair()
+    local late = flowerOn({ dh, dg }, "BP_FlowInteract_MemoryFlower_C_UAID_D", "F_02056", { SIX })
+    d:run(2)
+    Session.die(dg)
+    Fake.pickFlower(dh, late[1])
+    d:run(8)
+    check(Session.items(dg, "F_02056") == 0 and Fake.flowerState(dg, late[2]) == "here",
+        "a guest who's down: their copy waits for the petal")
+    Session.revive(dg)
+    d:run(10)
+    check(Session.items(dg, "F_02056") == 1 and Fake.flowerState(dg, late[2]) == "gone", "up again: the petal, then the copy goes")
+    -- A copy that never loads is looked for less often once the word is old.
+    local far = flowerOn({ dh, dg }, "BP_FlowInteract_MemoryFlower_C_UAID_F", "F_02055", {}, 2400.0)
+    Fake.unloadFlower(far[2])
+    d:run(2)
+    Fake.pickFlower(dh, far[1])
+    d:run(125)
+    local before = dg.flowerSearches or 0
+    d:run(60)
+    local looks = (dg.flowerSearches or 0) - before
+    check(looks >= 1 and looks <= 3, "a copy that never loads: looked for every 30 s once the word is old (" .. looks .. " in a minute)")
+    allErrors(d)
 
     -- A copy not loaded at the word: it goes as it loads, and stays gone after (kept with the flower, as the game keeps it).
     local l, lh, lg = pair()
@@ -5746,8 +5788,8 @@ local function memoryFlowers()
     check(Fake.flowerState(lg, same[2]) == "gone" and Session.items(lg, "F_02056") == 1, "and it ends the game's way, one petal")
     allErrors(l)
 
-    -- Three players: a guest's pick reaches the host and the other guest. A quest's flower (no petal named on the actor):
-    -- its petal comes as its flow gives it; one with a flag of its own while held brings that too.
+    -- Three players: a guest's pick reaches the host and the other guest. A petal with a flag of its own while held brings
+    -- that too.
     local p = party(nil, nil, { "Host", "Guest", "Guest" })
     local ph, pa, pb = p.pcs[1], p.pcs[2], p.pcs[3]
     local quest = flowerOn({ ph, pa, pb }, "BP_FlowInteract_MemoryFlower_C_UAID_NongShe", "F_02012", {})

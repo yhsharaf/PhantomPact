@@ -1027,13 +1027,16 @@ function Fake.loadedFlowers(pc)
     return loaded
 end
 
-function Fake.memoryFlower(pc, id, x, y, z, petal, flags)
+-- story: a story's flower, which names no petal of its own (FlowerItem empty: its flow gives one) and opens a quest.
+function Fake.memoryFlower(pc, id, x, y, z, petal, flags, story)
     local f = object(pc, "BP_FlowInteract_MemoryFlower_C")
     rawset(f, "__name", id)
     put(f, "loc", { X = x, Y = y, Z = z })
     put(f, "HasDestory", false)
     put(f, "collision", true)
     put(f, "petal", petal)
+    put(f, "FlowerItem", name(story and "" or petal or ""))
+    put(f, "FlowerQuest", { IsValid = function() return false end })     -- (no quest class on a plain one: the bench)
     put(f, "flags", flags or {})
     local tags = {}
     for _, t in ipairs(flags or {}) do

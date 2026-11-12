@@ -2828,24 +2828,26 @@ return function(api)
         end
     end
 
-    -- This player picked a Memory Flower (pbz.lua's game.hookFlowers): named to the others with its quest flags, for their
-    -- copy to go and their quest to count it. Its petal goes by T, as any find does. MF <flower> [<flag> ...]
-    function net.reportFlower(name, flags)
-        log("Picked the Memory Flower " .. name .. ": telling the other players.")
-        sendEvent("MF", name, table.concat(flags, " "))
+    -- This player picked a Memory Flower (pbz.lua's game.hookFlowers): named to the others with its petal and quest flags,
+    -- for their copy to go once they have the petal and their quest to count it. The petal itself goes by T, as any find
+    -- does. MF <flower> <petal> [<flag> ...]
+    function net.reportFlower(name, petal, flags)
+        log("Picked the Memory Flower " .. name .. " (" .. petal .. "): telling the other players.")
+        sendEvent("MF", name, petal, table.concat(flags, " "))
     end
 
-    -- Another player picked a Memory Flower: our copy goes too, the game's way (game.flowerTaken), and the flags the game
-    -- raises for it as its card closes are raised here when it's calm (flowsync.lua), as a pick here would: a quest counting
-    -- the flowers ("Resonant Strings: Collect Memory Flowers of Inanis and the Chord") counts theirs. Either way, the host's
-    -- pick or a guest's: the host takes no story flags from guests, and the host's own reach guests by FLOW as well.
+    -- Another player picked a Memory Flower: our copy goes too, the game's way, once its petal is in our bag
+    -- (game.flowerTaken: looked for in the slow tick, after the quiet of a load), and the flags the game raises for it as its
+    -- card closes are raised here when it's calm (flowsync.lua), as a pick here would: a quest counting the flowers
+    -- ("Resonant Strings: Collect Memory Flowers of Inanis and the Chord") counts theirs. Either way, the host's pick or a
+    -- guest's: the host takes no story flags from guests, and the host's own reach guests by FLOW as well.
     handlers.MF = function(rest)
-        local name, flags = (rest or ""):match("^(%S+)%s*(.*)$")
-        if not (name and #name <= MAX_CHEST_NAME and #flags <= 1600 and game.flowerTaken) then
+        local name, petal, flags = (rest or ""):match("^(%S+) (%S+)%s*(.*)$")
+        if not (name and #name <= MAX_CHEST_NAME and #petal <= MAX_ITEM_NAME and #flags <= 1600 and game.flowerTaken) then
             return
         end
-        log("The other player picked the Memory Flower " .. name .. ".")
-        game.flowerTaken(name)
+        log("The other player picked the Memory Flower " .. name .. " (" .. petal .. ").")
+        game.flowerTaken(name, petal ~= "-" and petal or nil)
         local list = {}
         for flag in flags:gmatch("%S+") do
             if #flag <= 200 and #list < 8 then
@@ -4007,9 +4009,9 @@ return function(api)
                 end)
             end
         elseif game.watchFlowers and next(game.flowers.owed) ~= nil and now >= (slow.flowersAt or 0) then
-            -- (A Memory Flower another player picked, our copy not loaded at their word: gone as it loads. pbz.lua.)
-            slow.flowersAt = now + game.flowers.LOOK_S
-            game.watchFlowers()
+            -- (A Memory Flower another player picked: our copy gone once its petal is here, or as it loads. pbz.lua.)
+            game.watchFlowers(pawn)
+            slow.flowersAt = now + (game.flowers.nextS or game.flowers.LOOK_S)
         end
         if (#giftsWaiting > 0 or dustWaiting > 0) and not game.isDead(pawn) and not net.arena then
             takeGifts(pawn)
