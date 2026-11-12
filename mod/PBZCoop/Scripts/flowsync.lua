@@ -10,6 +10,10 @@
 --
 -- FLOW t <tag> ... | FLOW n <node> ... | FLOW b <bell id> ...  (host to guests)
 --
+-- A guest's bells reach the other guests too: one a guest wakes while linked goes out as FLOW b, passed on by the relay,
+-- and waits there as the host's do (a report on 1.7.1: "unless we're near each other ... bells ... don't sync"). The
+-- host's world takes none: it holds the story. An older PC passes over a guest's.
+--
 -- The one way back: what another player found raises its own flags here too, host or guest (flow.raise): a pile or chest
 -- they searched (coop.lua's OF), since their search took ours away, and a thing of theirs that came here (grantLoot).
 
@@ -205,9 +209,11 @@ return function(api)
         flow.seen = new
     end
 
-    -- Guest: what the host's flow added, applied here when it's quiet.
+    -- Guest: what the host's flow added, applied here when it's quiet, and a bell another guest woke.
     coop.handlers.FLOW = function(rest, from)
-        if from ~= nil or coop.isHost() or type(rest) ~= "string" or #rest > CHUNK + 20 then
+        -- (The host's world takes nothing: it holds the story, and a bell lit there by word, not rung, would never have had
+        -- its first ring's flags and flow steps: the camp's crane bell raises Yu'er's arrival.)
+        if coop.isHost() or type(rest) ~= "string" or #rest > CHUNK + 20 then
             return
         end
         if api.story and (api.story.follow == false or api.story.mismatch) then
@@ -217,9 +223,13 @@ return function(api)
         if not kind then
             return
         end
+        -- (Flags and flow steps are the host's word alone; another guest's bell is passed on by the relay.)
+        if kind ~= "b" and from ~= nil then
+            return
+        end
         for item in items:gmatch("%S+") do
             if #item <= 200 then
-                flow.queue[#flow.queue + 1] = { kind = kind, item = item }
+                flow.queue[#flow.queue + 1] = { kind = kind, item = item, host = from == nil }
             end
         end
     end
@@ -237,14 +247,19 @@ return function(api)
             and not (api.story and api.story.isBusy and api.story.isBusy())
     end
 
-    -- The host's bells are lit here only where this player stands by one: within BELL_NEAR_CM of it, on its map. (Every
-    -- bell the host had ever woken was lit at the link, and each one it woke after: a guest reached Pangzhen with every
-    -- bell there awake and the fast travel open, and passed them on when they hosted in turn; a Nexus report on 1.6.6. A
-    -- bell the host woke in a scene this player missed is still theirs, as report 8 asked: it's lit when they walk up to
-    -- it.) flow.pending: bell id -> true.
-    local BELL_NEAR_CM = 3000
+    -- The host's bells are lit here only where this player has been: by one (within BELL_NEAR_CM of it, on its map), then
+    -- off again (past BELL_LEAVE_CM) without ringing it. (Every bell the host had ever woken was lit at the link, and each
+    -- one it woke after: a guest reached Pangzhen with every bell there awake and the fast travel open, and passed them on
+    -- when they hosted in turn; a Nexus report on 1.6.6. A bell the host woke in a scene this player missed is still
+    -- theirs, as report 8 asked: it's lit when they've walked up to it.) Not while they stand by it: they ring it
+    -- themselves, and its first ring is theirs, a crane bell's scene with it. Lit under their feet, the game took it as
+    -- rung, and only the player who rang first had the scene (point 3 of a report on 1.7.1). flow.pending: bell id ->
+    -- "host" (the host rang it) or true (another guest did); flow.visited: bell id -> true once this player has stood by
+    -- it, in this world (forgotten at each load: another save's player never stood there).
+    local BELL_NEAR_CM, BELL_LEAVE_CM = 3000, 6000
     local BELLS = "/Game/PBZContent/DataTable/UI/DT_BellData.DT_BellData"
-    flow.pending, flow.places = {}, nil
+    local MAPS = "/Game/PBZContent/DataTable/UI/DT_MapData.DT_MapData"
+    flow.pending, flow.places, flow.visited = {}, nil, {}
 
     local function text(v)
         pcall(function() v = v:get() end)
@@ -271,11 +286,20 @@ return function(api)
             local ids = lib:GetDataTableColumnAsString(dt, FName("BellID"))
             local maps = lib:GetDataTableColumnAsString(dt, FName("MapID"))
             local where = lib:GetDataTableColumnAsString(dt, FName("TeleportTransform"))
+            -- (Each bell by its row's name too: most rows aren't named as their BellID, NLES_003 holding Bell_NLES_003,
+            -- and a bell is looked up by whichever the woken list holds.)
+            local rows = {}
+            pcall(function() lib:GetDataTableRowNames(dt, rows) end)
             for i = 1, #ids do
                 local id, at = text(ids[i]), text(where[i]) or ""
                 local x, y, z = at:match("Translation=%(X=([%-%d%.]+),Y=([%-%d%.]+),Z=([%-%d%.]+)")
                 if id and x then
-                    places[id] = { map = text(maps[i]), x = tonumber(x), y = tonumber(y), z = tonumber(z) }
+                    local row = #rows == #ids and text(rows[i]) or nil
+                    local place = { map = text(maps[i]), x = tonumber(x), y = tonumber(y), z = tonumber(z), id = id, row = row }
+                    places[id] = place
+                    if row and row ~= id then
+                        places[row] = place
+                    end
                 end
             end
         end)
@@ -285,6 +309,44 @@ return function(api)
         return places
     end
 
+    -- Each map's level, from the game's map table, kept once read (looked for again every LEVELS_S till then): the map
+    -- subsystem said "None" for the map on the bench (11-12), so a bell's map is matched by its level.
+    local LEVELS_S = 30
+    flow.levels, flow.levelsAt = nil, -1e9
+    local function levelOf()
+        if flow.levels then
+            return flow.levels
+        end
+        local now = os.clock()
+        if now - flow.levelsAt < LEVELS_S then
+            return {}
+        end
+        flow.levelsAt = now
+        local levels = {}
+        pcall(function()
+            local mt = StaticFindObject(MAPS)
+            if not valid(mt) and type(LoadAsset) == "function" then
+                mt = LoadAsset((MAPS:gsub("%.[^.]*$", "")))
+            end
+            local lib = StaticFindObject("/Script/Engine.Default__DataTableFunctionLibrary")
+            if not (valid(mt) and valid(lib)) then
+                return
+            end
+            local mapIds = lib:GetDataTableColumnAsString(mt, FName("MapID"))
+            local names = lib:GetDataTableColumnAsString(mt, FName("LevelName"))
+            for i = 1, #mapIds do
+                local m, lv = text(mapIds[i]), text(names[i])
+                if m and lv and lv ~= "None" then
+                    levels[m] = lv
+                end
+            end
+        end)
+        if next(levels) ~= nil then
+            flow.levels = levels
+        end
+        return levels
+    end
+
     -- A call that failed: true while it's to be tried again (its tries counted), false once it has had all TRIES.
     local function tryAgain(key)
         local tries = (flow.again[key] or 0) + 1
@@ -292,38 +354,67 @@ return function(api)
         return tries < TRIES
     end
 
-    -- The host's bells waiting here that this player stands by now, lit. One lit here already, or not in the game's table
-    -- (once it's read), is let go.
-    local function lightNearBells(bm, have)
-        if next(flow.pending) == nil then
-            return 0
-        end
+    -- This player's place, map and level: { l, here, level }, or nil with no body. ("None" is no map: said by the map
+    -- subsystem now and then, it kept every bell from being lit, as on another map.)
+    local function whereNow()
         local _, pawn = api.getPlayer1()
         if not valid(pawn) then
-            return 0
+            return nil
         end
-        local l = pawn:K2_GetActorLocation()
         local ms = FindFirstOf("MapSubsystem")
         local here = valid(ms) and text(ms:GetCurrentMapID()) or nil
+        local level = game.mapName and game.mapName(pawn) or nil
+        return { l = pawn:K2_GetActorLocation(), here = here ~= "None" and here ~= "" and here or nil,
+            level = level ~= "?" and level ~= "" and level or nil }
+    end
+
+    -- How far a bell of the table is from this player, squared; nil on another map (by its level, else its map).
+    local function bellGap2(p, w)
+        if not p then
+            return nil
+        end
+        local level = p.map and levelOf()[p.map]
+        if w.level and level then
+            if level ~= w.level then
+                return nil
+            end
+        elseif w.here and p.map and p.map ~= "None" and p.map ~= w.here then
+            return nil
+        end
+        return (w.l.X - p.x) ^ 2 + (w.l.Y - p.y) ^ 2 + (w.l.Z - p.z) ^ 2
+    end
+
+    -- Another player's bells waiting here that this player has been by and walked off from, lit. One lit here already
+    -- (their own ring among it), or not in the game's table (once it's read), is let go.
+    local function lightNearBells(bm, have, w)
+        if next(flow.pending) == nil or not w then
+            return 0
+        end
         local places = bellPlaces()
         local lit = 0
         for id in pairs(flow.pending) do
             local p = places[id]
+            local d2 = bellGap2(p, w)
             if have.b[id] or (flow.places and not p) then
-                flow.pending[id], flow.again["b " .. id] = nil, nil
-            elseif p and (here == nil or p.map == nil or p.map == here)
-                and (l.X - p.x) ^ 2 + (l.Y - p.y) ^ 2 + (l.Z - p.z) ^ 2 <= BELL_NEAR_CM * BELL_NEAR_CM then
+                flow.pending[id], flow.again["b " .. id], flow.visited[id] = nil, nil, nil
+            elseif d2 and d2 <= BELL_NEAR_CM * BELL_NEAR_CM then
+                flow.visited[id] = true         -- (by it: theirs to ring)
+            elseif d2 and flow.visited[id] and d2 > BELL_LEAVE_CM * BELL_LEAVE_CM then
                 local ok = pcall(function() bm:ActivateBellByID(FName(id)) end)
                 if ok then
                     lit = lit + 1
                     flow.again["b " .. id] = nil
-                    log("Story flow: the host's bell " .. id .. " lit here, as you came to it.")
+                    if flow.own then
+                        flow.own[id] = true     -- (another's: not told back as this world's own)
+                    end
+                    log("Story flow: the bell " .. id .. " another player woke lit here, as you came to it and went on.")
                 end
                 -- (One whose call failed stays, for the next calm second: see TRIES.)
                 if ok or not tryAgain("b " .. id) then
-                    flow.pending[id] = nil
+                    flow.pending[id], flow.visited[id] = nil, nil
                     if not ok then
-                        log("Story flow: the host's bell " .. id .. " couldn't be lit here (tried " .. TRIES .. " times).")
+                        log("Story flow: the bell " .. id .. " another player woke couldn't be lit here (tried " .. TRIES
+                            .. " times).")
                     end
                 end
             end
@@ -331,34 +422,153 @@ return function(api)
         return lit
     end
 
+    -- A guest's own bells, woken here while linked, go to the other guests (FLOW b, passed on by the relay; the host's
+    -- world takes none, see the handler). Not those from before the link: a guest further on would light the others'
+    -- way through a region they haven't reached. own: this world's bells as last read; nil until the first read, and
+    -- again after a load (another save, maybe), which also forgets which waiting bells this player had been by.
+    flow.own, flow.ownBody = nil, nil
+    local OWN_AT_ONCE = 5           -- more new at once than this is a world loaded, not bells rung: the new baseline
+    local nextOwn = 0
+    local function tellOwnBells(now)
+        if now < nextOwn then
+            return
+        end
+        nextOwn = now + LOOK_S
+        local _, pawn = api.getPlayer1()
+        local bm, ep = FindFirstOf("BellManager"), FindFirstOf("EventPipelineManager")
+        local loaded = valid(ep) and select(2, pcall(function() return ep.LoadComplete end))
+        if not (valid(pawn) and valid(bm) and loaded ~= false) or (game.inPrologue and game.inPrologue()) then
+            return
+        end
+        local body = pawn:GetAddress()
+        if body ~= flow.ownBody then
+            -- (A load: this world's bells as they are now are the baseline, and the bells it was by were another's.)
+            flow.own, flow.ownBody, flow.visited = nil, body, {}
+        end
+        local cur = readBells(bm)
+        if flow.own == nil then
+            flow.own = cur
+            return
+        end
+        local out = {}
+        for id in pairs(cur) do
+            if not flow.own[id] then
+                out[#out + 1] = id
+            end
+        end
+        flow.own = cur
+        if #out > OWN_AT_ONCE then
+            log(string.format("Story flow: %d bells new here at once (a load?): taken as this world's, not told.", #out))
+        elseif #out > 0 and coop.net.party then
+            table.sort(out)
+            send("b", out)
+            log(string.format("Story flow: %d bell%s woken here, told the other guests.", #out, #out == 1 and "" or "s"))
+        end
+    end
+
+    -- While this player stands by a bell the host rang (one waiting here) that isn't rung here yet, the host's flags and
+    -- flow steps wait, up to HOLD_MAX_S a stand: the host's ring of it raises its flags, and taken here first they made
+    -- this player's own ring a plain sit, no scene. On the bench (11-12) the crane bell's two flags came from the host four
+    -- minutes after its ring (it plays its scene first), and the guest's own first ring of that bell then went straight
+    -- to the bell's menu (point 3 of a report on 1.7.1). Rung here, the game raises the same ones itself; walked off,
+    -- they're taken. The stand (flow.standBell, since flow.standSince) is followed each calm second something waits. The
+    -- bell this player stands by, or nil.
+    local HOLD_MAX_S, TOUCH_HOLD_S = 600, 15
+    flow.standBell, flow.standSince, flow.standSaid = nil, nil, nil
+    local function byUnrungBell(woken, w)
+        local places = w and bellPlaces() or {}
+        for id, who in pairs(flow.pending) do
+            local p = places[id]
+            -- (The host's only: its ring's flags are what's held. One only another guest rang brings none.)
+            if who == "host" and p and not woken[id] and not woken[p.id] and not (p.row and woken[p.row]) then
+                local d2 = bellGap2(p, w)
+                if d2 and d2 <= BELL_NEAR_CM * BELL_NEAR_CM then
+                    return id
+                end
+            end
+        end
+        return nil
+    end
+
+    -- The stand: started as this player comes by such a bell with something waiting, over as they leave or ring it.
+    local function followStand(woken, w)
+        local by = byUnrungBell(woken, w)
+        if by ~= flow.standBell then
+            flow.standBell, flow.standSince, flow.standSaid = by, by and os.clock() or nil, nil
+        end
+        return by
+    end
+
     local function guestTick()
         if (#flow.queue > 0 or next(flow.pending) ~= nil) and game.inPrologue and game.inPrologue() then
-            flow.queue, flow.pending, flow.again = {}, {}, {}   -- (nothing of the host's into this player's prologue: see hostTick)
+            -- (Nothing of the host's into this player's prologue: see hostTick.)
+            flow.queue, flow.pending, flow.again, flow.visited = {}, {}, {}, {}
             return
         end
         -- (Not following now, or the host's story table another: what waits is let go, one to be tried again too.)
         if (#flow.queue > 0 or next(flow.pending) ~= nil) and api.story
             and (api.story.follow == false or api.story.mismatch) then
-            flow.queue, flow.pending, flow.again = {}, {}, {}
+            flow.queue, flow.pending, flow.again, flow.visited = {}, {}, {}, {}
             return
+        end
+        if #flow.queue == 0 and next(flow.pending) == nil then
+            flow.standBell, flow.standSince, flow.standSaid = nil, nil, nil
+            return
+        end
+        local ep, bm = FindFirstOf("EventPipelineManager"), FindFirstOf("BellManager")
+        local woken = valid(bm) and readBells(bm) or nil
+        if woken then
+            -- (A bell from the queue waits as one straight away, calm or not: the flags and flow steps that came with it
+            -- are held while this player stands by it, and it's marked as been to, lit once they go on.)
+            local rest = {}
+            for _, q in ipairs(flow.queue) do
+                if q.kind ~= "b" then
+                    rest[#rest + 1] = q
+                elseif woken[q.item] then
+                    flow.again["b " .. q.item] = nil
+                else
+                    flow.pending[q.item] = (q.host or flow.pending[q.item] == "host") and "host" or true
+                end
+            end
+            flow.queue = rest
         end
         if (#flow.queue == 0 and next(flow.pending) == nil) or not calm() then
             return
         end
-        local ep, bm = FindFirstOf("EventPipelineManager"), FindFirstOf("BellManager")
-        if not (valid(ep) and valid(bm)) then
+        if not (valid(ep) and woken) then
+            return
+        end
+        -- (Just after this player's own first ring of a bell nothing comes either: the bell is woken at the touch, and its
+        -- scene starts some 5 s on (bench, 11-12); taken in that gap, the host's flags of that ring could still stop it.
+        -- During the scene itself it isn't calm.)
+        if game.firstTouchAt and os.clock() - game.firstTouchAt < TOUCH_HOLD_S then
+            return
+        end
+        local w = whereNow()
+        local by = nil
+        if #flow.queue > 0 then
+            by = followStand(woken, w)
+        else
+            flow.standBell, flow.standSince, flow.standSaid = nil, nil, nil
+        end
+        if by and os.clock() - flow.standSince < HOLD_MAX_S then
+            if flow.standSaid ~= by then
+                flow.standSaid = by
+                log("Story flow: by " .. by .. ", not rung here yet: the host's flow waits for your own ring.")
+            end
+            game.granting = true
+            flow.applied = flow.applied + lightNearBells(bm, { t = {}, n = {}, b = woken }, w)   -- (others walked off from)
+            game.granting = false
             return
         end
         -- (Only bells waiting: theirs alone are read, not the thousands of flags, once a second.)
-        local have = #flow.queue > 0 and read() or { t = {}, n = {}, b = readBells(bm) }
+        local have = #flow.queue > 0 and read() or { t = {}, n = {}, b = woken }
         local done, kept, lost = 0, {}, 0
         game.granting = true        -- (what a flow step hands out isn't sent back as found)
         for _, q in ipairs(flow.queue) do
             local key = q.kind .. " " .. q.item
             if have[q.kind][q.item] then
                 flow.again[key] = nil
-            elseif q.kind == "b" then
-                flow.pending[q.item] = true         -- (lit when this player stands by it: lightNearBells)
             else
                 local ok = pcall(function()
                     if q.kind == "t" then
@@ -379,7 +589,7 @@ return function(api)
                 end
             end
         end
-        done = done + lightNearBells(bm, have)
+        done = done + lightNearBells(bm, have, w)
         game.granting = false
         flow.queue = kept
         if done > 0 then
@@ -457,7 +667,8 @@ return function(api)
             flow.told, flow.sent, flow.seen, flow.linkedN, flow.pending, flow.again = nil, {}, nil, 0, {}, {}
             -- (And what waits, a call to try again among it: kept, it was taken at the next session's first calm second,
             -- maybe in another save. The review of 339d057.)
-            flow.queue, flow.owed = {}, {}
+            flow.queue, flow.owed, flow.own, flow.visited = {}, {}, nil, {}
+            flow.standBell, flow.standSince, flow.standSaid = nil, nil, nil
             return
         end
         -- Not in a PvP match: nothing a match changes is saved, and the story's flow isn't the match's. After it the host
@@ -477,22 +688,31 @@ return function(api)
                 log("Story flow: " .. tostring(err))
             end
         end
-        if coop.isHost() then
-            local ok, err = pcall(hostTick, now)
-            if not ok and err ~= flow.lastError then
-                flow.lastError = err
-                log("Story flow: " .. tostring(err))
-            end
-        elseif now >= nextGuest then
-            nextGuest = now + 1
-            local ok, err = pcall(guestTick)
+        local function try(fn, ...)
+            local ok, err = pcall(fn, ...)
             if not ok and err ~= flow.lastError then
                 flow.lastError = err
                 log("Story flow: " .. tostring(err))
             end
         end
+        if coop.isHost() then
+            try(hostTick, now)
+        elseif now >= nextGuest then
+            nextGuest = now + 1
+            try(guestTick)
+            if coop.linked() then
+                try(tellOwnBells, now)
+            end
+        end
     end
     flow.tick = tick
+    -- A load (a trip, another save): the bells this player stood by, and the baseline of its own, were that world's.
+    pcall(function()
+        RegisterLoadMapPreHook(function()
+            flow.visited, flow.own, flow.ownBody = {}, nil, nil
+            flow.standBell, flow.standSince, flow.standSaid = nil, nil, nil
+        end)
+    end)
     LoopInGameThreadWithDelay(1000, function()
         pcall(tick)
         return false

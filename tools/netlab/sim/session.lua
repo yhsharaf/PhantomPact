@@ -192,6 +192,14 @@ function Session.sit(pc)
     pc.bell:RestoreHealth()
 end
 
+-- A player rings a bell for the first time: its first touch, then its sit. (A crane bell's scene follows.)
+function Session.firstTouch(pc)
+    for _, fn in ipairs(pc.hooks["/Game/PBZContent/Blueprint/Item/BP_MelodiousBell.BP_MelodiousBell_C:OnFirstTouchBell"] or {}) do
+        fn()
+    end
+    Session.sit(pc)
+end
+
 function Session.respawned(pc)
     for _, fn in ipairs(pc.hooks["/Game/RenewalContent/Prototypes/Character/BP_RenewalPlayer.BP_RenewalPlayer_C:Respawn Refresh Monster"]) do
         fn()

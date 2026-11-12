@@ -373,7 +373,7 @@ return function(api)
         p.ghostAddr, p.ghostAt = p.ghost:GetAddress(), os.clock()
         p.ghostWalks = false
         p.ghostGliding = false
-        p.ghostHidden = nil         -- the last one went with the old world: this one is told afresh whether to show
+        p.ghostHidden, p.ghostSolid = nil, nil      -- the last one went with the old world: this one is told afresh
         if net.ghostMode == "clone" then
             -- Steered with movement input (see steerGhost) so the game's own locomotion animations play.
             -- It needs collision for the floor, but should not shove player 1 around.
@@ -450,15 +450,27 @@ return function(api)
             p.awaySince = nil
         end
         local hide = dead or gone or (away and os.clock() - p.awaySince >= GHOST_AWAY_S)
+        -- Hidden for a scene alone, the partner's or this player's, it keeps its collision. Turned off, the figure left the
+        -- trigger of the bell (or chest, or door) it stood by, and the game, which counts one player at a thing, shut that
+        -- thing's prompt for this player too: a partner's crane bell scene shut everyone else out of the bell till it
+        -- ended (point 3 of a report on 1.7.1; on the bench the prompt went and came back with the figure, 11-12).
+        local solid = p.ghostWalks and (not hide or not (dead or gone or otherMap))
+        if hide == p.ghostHidden and solid ~= p.ghostSolid then
+            p.ghostSolid = solid
+            pcall(function()
+                p.ghost:SetActorEnableCollision(solid)
+                p.ghost.CharacterMovement:SetMovementMode(solid and MOVE_WALKING or MOVE_NONE, 0)
+            end)
+        end
         if hide ~= p.ghostHidden then
-            p.ghostHidden = hide
+            p.ghostHidden, p.ghostSolid = hide, solid
             p.ghostGliding = false
             pcall(function()
                 p.ghost:SetActorHiddenInGame(hide)
-                p.ghost:SetActorEnableCollision(p.ghostWalks and not hide)
+                p.ghost:SetActorEnableCollision(solid)
                 if p.ghostWalks then
                     -- Without collision it would fall through the world: 20 km by the time it came back.
-                    p.ghost.CharacterMovement:SetMovementMode(hide and MOVE_NONE or MOVE_WALKING, 0)
+                    p.ghost.CharacterMovement:SetMovementMode(solid and MOVE_WALKING or MOVE_NONE, 0)
                 end
             end)
             if api.moves then
@@ -4209,7 +4221,7 @@ return function(api)
         end
         p.ghost = nil
         p.ghostCmc = nil
-        p.ghostHidden = nil
+        p.ghostHidden, p.ghostSolid = nil, nil
         p.ghostGliding = false
         p.ghostClone = nil
         p.zeroSince = nil
