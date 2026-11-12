@@ -238,8 +238,8 @@ return function(api)
     -- through it (issue #16). Not in a match (a guard's move held there could cut their swing, M).
     local HOLD_S, HOLD_TRY_S = 0.75, 0.1
 
-    function moves.hold(p, path, start)
-        p.heldMove = { path = path, start = start, at = os.clock(), tryAt = 0 }
+    function moves.hold(p, path, start, told)
+        p.heldMove = { path = path, start = start, told = told, at = os.clock(), tryAt = 0 }
     end
 
     -- Their move is over ("U - 0", or their place says so: see heardMoveBits): the ghost's copy blends out, unless it's the
@@ -279,7 +279,7 @@ return function(api)
         end
         local start = pos + net.moveAge()
         if not valid(p.ghost) or p.ghostHidden then
-            moves.hold(p, path, start)
+            moves.hold(p, path, start, pos)
             return
         end
         local m = montage(path)
@@ -288,11 +288,11 @@ return function(api)
             if net.pvp then
                 moves.failed = moves.failed + 1
             else
-                moves.hold(p, path, start)
+                moves.hold(p, path, start, pos)
             end
             return
         end
-        moves.playOn(p, m, ai, path, start)
+        moves.playOn(p, m, ai, path, start, pos)
     end
 
     -- A held move, played once their figure can (looked at HOLD_TRY_S apart), as far in as it is by now. Let go after
@@ -312,15 +312,15 @@ return function(api)
                     local m, ai = montage(h.path), animOf(p.ghost)
                     if m and ai then
                         p.heldMove = nil
-                        moves.playOn(p, m, ai, h.path, h.start + (now - h.at))
+                        moves.playOn(p, m, ai, h.path, h.start + (now - h.at), h.told)
                     end
                 end
             end
         end
     end
 
-    -- One of their moves on their figure, start seconds in.
-    function moves.playOn(p, m, ai, path, start)
+    -- One of their moves on their figure, start seconds in (told: as far in as they said it was).
+    function moves.playOn(p, m, ai, path, start, told)
         if game.isGuardReaction and game.isGuardReaction(path) then
             -- Their guard turned a blow aside: a flinch our own blow left on the figure (for show only) goes first, and the
             -- figure is shielded a moment (pvp.lua: p.guardAt) so a blow landing here after this doesn't flinch it again.
@@ -342,6 +342,9 @@ return function(api)
             end
             if game.noteGhostMove then
                 game.noteGhostMove(p.ghost)
+            end
+            if api.hitfx and api.hitfx.swung then
+                api.hitfx.swung(p, m, path, start, told)    -- (its swing's sounds, which their ability made: hitfx.lua)
             end
         else
             moves.failed = moves.failed + 1

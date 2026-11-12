@@ -148,9 +148,10 @@ guard still staggers it, and you can still execute it. `Off` = no super armour: 
 them. Both players should use the same setting. (With it Off, `CoopBossPoise = 200` makes a boss take half the poise
 damage, which the game uses to knock it out of a move; 100 = normal.)
 
-Your partner's hits on enemies play the game's own hit sound and blood on your screen too, as your own do
-(`PartnerHitSounds = On`): each game tells the other what its hits play. `Off` = their hits stay silent on your screen,
-and yours on theirs. Both players should use the same setting.
+Your partner's swings and hits sound on your screen too, as your own do (`PartnerHitSounds = On`): your game plays
+the sounds of their swing (the whoosh, their shout) as their figure swings, hit or miss, and each game tells the other
+what its hits play (the hit sound and blood). `Off` = their swings and hits stay silent on your screen, and your hits
+on theirs. Both players should use the same setting.
 
 Bosses have their own numbers: `CoopBossPosture` (200) and `CoopBossHealth` (left out; either one with a `;` in front,
 bosses take `CoopEnemyHealth` or `CoopEnemyPosture`). And how hard things hit you while your partner is with you:

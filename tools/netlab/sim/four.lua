@@ -4035,6 +4035,390 @@ local function partnerHitSounds()
     check(Session.shippedIni():match("\nPartnerHitSounds = ([^\r\n]+)") == "On", "the ini as it ships has PartnerHitSounds = On")
 end
 
+-- Partner swing sounds (PartnerHitSounds; a player report on 1.7.1, three players: "they want air swings (non-hit)
+-- audible"): a swing's whoosh is a weapon-sound step in its attack's ability timeline, which a partner's figure never runs
+-- (it plays their montages). Each PC reads those steps for the weapons a partner holds, from the game's own data, and plays
+-- each one's sound on the figure as its montage gets there: once, on time, the weapon's own sound, from a timeline of its
+-- own or a parent's, an owning ability's or the Phantom Edge's. Not for a move cut short or ended before its step, nor a
+-- step long past when the move came (held or late); not off, far off or in PvP; never on the swinger's own PC; and with
+-- nothing new sent.
+local function partnerSwingSounds()
+    part("partner swing sounds")
+    local ON = "PartnerHitSounds = On\n"
+    local SWORD, CANNON = "/PBZCombatAsset/ActorData/Weapon/Sword.Sword", "/PBZCombatAsset/ActorData/Weapon/Cannon.Cannon"
+    local function move(name)
+        return "/PBZCombatAsset/ActorData/Move/" .. name .. "." .. name
+    end
+    local A1, A2, B1, D1, C1, LOOK = move("SwA1"), move("SwA2"), move("SwB1"), move("SwD1"), move("CnC1"), move("Look")
+    local E1, E2, F1 = move("SwE1"), move("SwE2"), move("SwF1")
+    local LIGHT, HEAVY, FIRE = "Weapon.Sound.Swing.Light", "Weapon.Sound.Swing.Heavy", "Weapon.Sound.Cannon.Fire"
+    local function eventPath(name)
+        return "/Game/Wwise/Events/Combat/" .. name .. "." .. name
+    end
+    local LIGHT_EV, HEAVY_EV, FIRE_EV = eventPath("SFX_Swing_Sword_Light"), eventPath("SFX_Swing_Sword_Heavy"),
+        eventPath("SFX_Cannon_Fire")
+    local SOUND_FIELD = "Sound_21_D6348F8E4FAA4263E62C63AFE8750487"
+    -- (Play-sound steps of the game's kinds, as the bench read them: a shout, a whoosh... and ones that mustn't play.)
+    local VO_EV, WAVE_EV = "/Game/Wwise/Events/VO/Int/Hun/Battle/SFX_VO_Shout.SFX_VO_Shout", eventPath("SFX_Wave_Light")
+    local BODY_EV, DEFAULT_EV, LOOP_EV = eventPath("SFX_Body_Turn"), eventPath("SFX_Wave_Plain"), eventPath("SFX_Spark_Loop")
+    local UI_EV, MUS_EV = "/Game/Wwise/Events/UI/UI_General/SFX_UI_QTE.SFX_UI_QTE", "/Game/Wwise/Events/Mus/Mus_Stinger/Mus_Hit.Mus_Hit"
+    local AT_PLAYER_EV, KIND3_EV, TRACE_EV = eventPath("SFX_At_Player"), eventPath("SFX_Interact"), eventPath("SFX_Trace_Step")
+    local PAD_EV, STOP_EV = "/Game/Wwise/Events/Motion/CommonHaptic/Haptic_VibrateL2.Haptic_VibrateL2",
+        eventPath("SFX_Slide_Sword_Stop")
+
+    -- The game's data on one PC, as hitfx.lua reads it: a weapon config's Sounds (tag -> event) and its abilities, each
+    -- ability class's timelines (or its parent's), and a timeline's steps (when, which action): the montage it plays and its
+    -- weapon-sound steps. The sound engine keeps what's posted: pc.swingSounds.
+    local function swingData(pc)
+        local f = pc.found
+        f["/Script/LegoAbility.LGAAction_PlayMontage"] = Fake.object(pc, "Class")
+        local function event(path)
+            local e = Fake.object(pc, "AkAudioEvent")
+            rawset(e, "__path", path)
+            f[path] = e
+            return e
+        end
+        local light, heavy, fire = event(LIGHT_EV), event(HEAVY_EV), event(FIRE_EV)
+        pc.swingSounds = {}
+        local ak = Fake.object(pc, "AkGameplayStatics")
+        Fake.put(ak, "PostEvent", function(_, ev, actor)
+            pc.swingSounds[#pc.swingSounds + 1] = { ev = ev and rawget(ev, "__path"), on = actor, at = pc.now }
+            return 1
+        end)
+        f["/Script/AkAudio.Default__AkGameplayStatics"] = ak
+        local function step(t, action)
+            return { StartTime = t, duration = 0.1, Action = action }
+        end
+        local function montageAt(t, path)
+            return step(t, Fake.object(pc, "LGAAction_PlayMontage", { MontageToPlay = pc.env.StaticFindObject(path), PlayRate = 1.0 }))
+        end
+        local function soundAt(t, tag)
+            return step(t, Fake.object(pc, "GAA_PBZWeaponSound_C", { ["Sound Tag"] = { TagName = Fake.name(tag) } }))
+        end
+        local function playSoundAt(t, class, kind, path, extra)
+            local fields = { PlaySoundType = kind, StopOnEnd = false, AkEvent = event(path), PostAtPlayerLocation = false,
+                PostAtFixedLocation = false }
+            for k, v in pairs(extra or {}) do
+                fields[k] = v
+            end
+            return step(t, Fake.object(pc, class, fields))
+        end
+        local function timeline(steps)
+            return Fake.object(pc, "LGATimeline", { Actions = Fake.list(steps) })
+        end
+        local function ability(name, timelines, parent)
+            local path = "/PBZCombatAsset/Abilities/" .. name .. "." .. name .. "_C"
+            local c = Fake.object(pc, "LegoAbilityBlueprintGeneratedClass", { AbilityTimelines = Fake.list(timelines or {}) })
+            rawset(c, "__path", path)
+            Fake.put(c, "GetSuperStruct", function() return parent end)
+            f[path] = c
+            return c
+        end
+        local function sounds(list)
+            return { ForEach = function(_, fn)
+                for _, kv in ipairs(list) do
+                    fn({ get = function() return { TagName = Fake.name(kv[1]) } end },
+                        { get = function() return { [SOUND_FIELD] = kv[2] } end })
+                end
+            end }
+        end
+        local sword = pc.env.StaticFindObject(SWORD)
+        local base = ability("GA_Sword_B_Base", { timeline({ montageAt(0, B1), soundAt(0.40, HEAVY) }) })
+        Fake.put(sword, "Sounds", sounds({ { LIGHT, light }, { HEAVY, heavy } }))
+        Fake.put(sword, "Equip Abilities", Fake.list({
+            ability("GA_Sword_A", { timeline({ montageAt(0, A1), step(0.10, Fake.object(pc, "GAA_CameraShake_C")),
+                soundAt(0.30, LIGHT) }) }),
+            ability("GA_Sword_AA", { timeline({ soundAt(0.55, HEAVY), montageAt(0.05, A2), soundAt(0.25, LIGHT) }) }),
+            ability("GA_Sword_Look", { timeline({ montageAt(0, LOOK) }) }),
+            ability("GA_Sword_B", {}, base),
+            ability("GA_Sword_E", { timeline({ montageAt(0, E1), soundAt(0.20, LIGHT), montageAt(0.50, E2),
+                soundAt(0.70, HEAVY) }) }),
+            ability("GA_Sword_F", { timeline({ montageAt(0, F1),
+                playSoundAt(0.25, "GAA_PlaySound_Opt_C", 0, VO_EV),
+                playSoundAt(0.27, "GAA_PlaySound_Opt_C", 2, WAVE_EV),
+                playSoundAt(0.30, "GAA_PlaySound_Opt_C", 1, BODY_EV),
+                playSoundAt(0.32, "GAA_PlaySound_Opt_C", 2, LOOP_EV, { StopOnEnd = true }),
+                playSoundAt(0.34, "GAA_PlaySound_Opt_C", 0, UI_EV),
+                playSoundAt(0.35, "GAA_PlaySound_Opt_C", 2, MUS_EV),
+                playSoundAt(0.36, "GAA_PlaySound_Opt_C", 2, AT_PLAYER_EV, { PostAtPlayerLocation = true }),
+                playSoundAt(0.38, "GAA_PlaySound_Opt_C", 3, KIND3_EV),
+                playSoundAt(0.40, "GAA_PlaySound_TraceEnvi_C", 0, TRACE_EV),
+                playSoundAt(0.405, "GAA_PlaySound_Opt_C", 0, PAD_EV),
+                playSoundAt(0.41, "GAA_PlaySound_Opt_C", 2, STOP_EV),
+                playSoundAt(0.42, "LGAAction_PlaySoundDefault", 2, DEFAULT_EV) }) }),
+        }))
+        Fake.put(sword, "Owning Abilities", Fake.list({ ability("GA_Sword_Dash", { timeline({ montageAt(0, D1), soundAt(0.15, LIGHT) }) }) }))
+        local cannon = pc.env.StaticFindObject(CANNON)
+        Fake.put(cannon, "Sounds", sounds({ { FIRE, fire } }))
+        Fake.put(cannon, "Equip Abilities", Fake.list({ ability("GA_Cannon_Fire", { timeline({ montageAt(0, C1), soundAt(0.20, FIRE) }) }) }))
+        Fake.put(cannon, "Owning Abilities", Fake.list({}))
+    end
+    local function both(a, b)
+        swingData(a)
+        swingData(b)
+    end
+    -- What one PC posted from n on: each { ev, on, at }.
+    local function since(pc, n)
+        local out = {}
+        for i = n + 1, #pc.swingSounds do
+            out[#out + 1] = pc.swingSounds[i]
+        end
+        return out
+    end
+    local function show(list, t0)
+        local out = {}
+        for _, x in ipairs(list) do
+            out[#out + 1] = string.format("%s +%.2f", (x.ev or "?"):match("([^.]+)$") or "?", x.at - (t0 or 0))
+        end
+        return #out > 0 and table.concat(out, ", ") or "none"
+    end
+    -- A swing of the player on pc, heard on others: what each posted in the next 0.8 s (they stay in the move that long).
+    local function swingOn(s, pc, path, others)
+        local marks = {}
+        for _, o in ipairs(others) do
+            marks[o] = #o.swingSounds
+        end
+        local t0 = pc.now
+        Session.startMove(pc, path)
+        s:run(0.8)
+        Session.endMove(pc)
+        s:run(0.3)
+        local heard = {}
+        for _, o in ipairs(others) do
+            heard[o] = since(o, marks[o])
+        end
+        return heard, t0
+    end
+
+    local s, h, g = pair(ON, both)
+    Session.hold(g, SWORD, true)
+    Session.hold(h, SWORD, true)
+    s:run(2)
+    check(count(h.logs, "Partner swing sounds: Sword learned %(7 moves with a sound, 2 of its own sounds%)") == 1
+        and count(g.logs, "Partner swing sounds: Sword learned %(7 moves with a sound, 2 of its own sounds%)") == 1,
+        "each PC learns the partner's weapon from the game's data: 7 moves with a sound (own timelines, a parent's, an "
+        .. "owning ability's, two in one timeline, play-sound steps), its 2 own sounds")
+    local sentBefore = #g.sent
+    local heard, t0 = swingOn(s, g, A1, { h, g })
+    local onHost, onGuest = heard[h], heard[g]
+    local x = onHost[1] or {}
+    check(#onHost == 1 and x.ev == LIGHT_EV and x.on == net(h).ghost and math.abs(x.at - t0 - 0.30) <= 0.06,
+        "a guest's swing that hits nothing: the host plays its weapon's whoosh on the guest's figure, once, as the montage "
+        .. "gets to the step (0.30 s in): " .. show(onHost, t0))
+    check(#onGuest == 0, "the guest, whose own game plays it, nothing from the mod: " .. show(onGuest, t0))
+    local kinds = {}
+    for i = sentBefore + 1, #g.sent do
+        local k = g.sent[i]:match("^[EQ] (%S+)")
+        if k then
+            kinds[k] = true
+        end
+    end
+    local other = nil
+    for k in pairs(kinds) do
+        if k ~= "U" then
+            other = k
+        end
+    end
+    check(kinds.U and other == nil, "and nothing new goes for it: the guest sent its move (U) and no other event ("
+        .. tostring(other) .. ")")
+    heard, t0 = swingOn(s, h, A1, { h, g })
+    x = heard[g][1] or {}
+    check(#heard[g] == 1 and x.ev == LIGHT_EV and x.on == net(g).ghost and math.abs(x.at - t0 - 0.30) <= 0.06
+        and #heard[h] == 0, "the host's swing: the guest plays it on the host's figure, the host nothing: "
+        .. show(heard[g], t0))
+    heard, t0 = swingOn(s, g, A2, { h })
+    local a, b = heard[h][1] or {}, heard[h][2] or {}
+    check(#heard[h] == 2 and a.ev == LIGHT_EV and b.ev == HEAVY_EV and math.abs(a.at - t0 - 0.20) <= 0.06
+        and math.abs(b.at - t0 - 0.50) <= 0.06, "two steps in one attack, its montage started 0.05 s into the timeline: "
+        .. "light at 0.20, heavy at 0.50: " .. show(heard[h], t0))
+    heard, t0 = swingOn(s, g, B1, { h })
+    x = heard[h][1] or {}
+    check(#heard[h] == 1 and x.ev == HEAVY_EV and math.abs(x.at - t0 - 0.40) <= 0.06,
+        "an attack whose timeline is its parent class's: " .. show(heard[h], t0))
+    heard, t0 = swingOn(s, g, D1, { h })
+    check(#heard[h] == 1 and (heard[h][1] or {}).ev == LIGHT_EV, "an owning ability's (a dash's): " .. show(heard[h], t0))
+    heard, t0 = swingOn(s, g, E2, { h })
+    x = heard[h][1] or {}
+    check(#heard[h] == 1 and x.ev == HEAVY_EV and math.abs(x.at - t0 - 0.20) <= 0.06,
+        "a timeline that plays two montages: a step goes with the one it falls in (0.70 s in, 0.20 s into the second): "
+        .. show(heard[h], t0))
+    heard, t0 = swingOn(s, g, LOOK, { h })
+    check(#heard[h] == 0, "a move with no weapon-sound step: nothing: " .. show(heard[h], t0))
+    -- The game's play-sound steps: of the character (their shout), the weapon (the whoosh) or the body, played whole on
+    -- them. Not a loop (stopped at its step's end), a menu or music event, one at this player's place, the interact kind,
+    -- nor one that sets a surface switch first.
+    heard, t0 = swingOn(s, g, F1, { h })
+    local want = { { VO_EV, 0.25 }, { WAVE_EV, 0.27 }, { BODY_EV, 0.30 }, { DEFAULT_EV, 0.42 } }
+    local right = #heard[h] == #want
+    for i, wnt in ipairs(want) do
+        local got = heard[h][i]
+        right = right and got ~= nil and got.ev == wnt[1] and math.abs(got.at - t0 - wnt[2]) <= 0.06
+    end
+    check(right, "play-sound steps: their shout, the whoosh, the body's and a plain one play, each on time; a loop, a "
+        .. "menu, music, controller or stop event, one at this player's place, the interact kind and a surface-traced one "
+        .. "don't: " .. show(heard[h], t0))
+
+    -- Cut short by a newer move before its step, or ended (U - 0): what's left of it isn't played.
+    local n = #h.swingSounds
+    t0 = g.now
+    Session.startMove(g, A2)
+    s:run(0.1)
+    Session.startMove(g, LOOK)
+    s:run(0.8)
+    Session.endMove(g)
+    s:run(0.3)
+    check(#since(h, n) == 0, "an attack cut short by a newer move before its steps: none of them: " .. show(since(h, n), t0))
+    n = #h.swingSounds
+    t0 = g.now
+    Session.startMove(g, A1)
+    s:run(0.15)
+    Session.endMove(g)
+    s:run(0.8)
+    check(#since(h, n) == 0, "one ended (U - 0) before its step: nothing: " .. show(since(h, n), t0))
+    -- Told again mid-move (as after someone joined), then a part of it looping back: the steps already played aren't
+    -- played again, as their own game played each once. The same attack started anew plays them again.
+    n = #h.swingSounds
+    t0 = g.now
+    Session.startMove(g, A2)
+    s:run(0.6)
+    h.inbox[#h.inbox + 1] = "~10 U " .. A2 .. " 0.60"
+    s:run(0.1)
+    h.inbox[#h.inbox + 1] = "~10 U " .. A2 .. " 0.15"
+    s:run(0.6)
+    Session.endMove(g)
+    s:run(0.3)
+    check(#since(h, n) == 2, "a move told again mid-way, then looping back before its steps: each step once in all: "
+        .. show(since(h, n), t0))
+    n = #h.swingSounds
+    t0 = g.now
+    Session.startMove(g, A1)
+    s:run(0.4)
+    local t1 = g.now
+    Session.startMove(g, A1)
+    s:run(0.6)
+    Session.endMove(g)
+    s:run(0.3)
+    local again = since(h, n)
+    check(#again == 2 and math.abs(again[2].at - t1 - 0.30) <= 0.06, "the same attack started anew while the first "
+        .. "plays: its step again, 0.30 s into the new one: " .. show(again, t0))
+    -- Their figure made anew before a step's moment: nothing on the new one.
+    n = #h.swingSounds
+    Session.startMove(g, A1)
+    s:run(0.1)
+    net(h).ghostAt = net(h).ghostAt + 0.5
+    s:run(0.7)
+    Session.endMove(g)
+    s:run(0.3)
+    check(#since(h, n) == 0, "their figure made anew before the step: nothing: " .. show(since(h, n)))
+
+    -- Heard late (the move's age): a step still ahead plays on time, one just passed at once, one long past not at all.
+    for _, case in ipairs({ { "0.20", 0.09, 1 }, { "0.50", 0, 1 }, { "0.70", nil, 0 } }) do
+        n = #h.swingSounds
+        t0 = h.now
+        h.inbox[#h.inbox + 1] = "~10 U " .. A1 .. " " .. case[1]
+        s:run(0.6)
+        h.inbox[#h.inbox + 1] = "~10 U - 0"
+        s:run(0.3)
+        local got = since(h, n)
+        local ok = #got == case[3]
+        if ok and case[2] then
+            ok = math.abs(got[1].at - t0 - case[2]) <= 0.05
+        end
+        check(ok, "a move heard " .. case[1] .. " s in: " .. (case[3] == 1 and "its step plays, "
+            .. (case[2] == 0 and "at once" or "on time") or "its step, long past, doesn't") .. ": " .. show(got, t0))
+    end
+    -- Held till their figure could play it (issue #16): played from there, its step with it.
+    local ghost = net(h).ghost
+    local mesh = field(ghost, "Mesh")
+    local realAnim = field(mesh, "GetAnimInstance")
+    Fake.put(mesh, "GetAnimInstance", function() return nil end)
+    n = #h.swingSounds
+    t0 = h.now
+    h.inbox[#h.inbox + 1] = "~10 U " .. A1 .. " 0.00"
+    s:run(0.15)
+    Fake.put(mesh, "GetAnimInstance", realAnim)
+    s:run(0.6)
+    h.inbox[#h.inbox + 1] = "~10 U - 0"
+    s:run(0.3)
+    x = since(h, n)[1] or {}
+    check(#since(h, n) == 1 and math.abs(x.at - t0 - 0.30) <= 0.06,
+        "a move held till their figure could play it: its step plays, on time: " .. show(since(h, n), t0))
+
+    -- Their Phantom Edge's attack: from its own config.
+    Session.holdEdge(g, CANNON, true)
+    s:run(1.5)
+    heard, t0 = swingOn(s, g, C1, { h })
+    x = heard[h][1] or {}
+    check(#heard[h] == 1 and x.ev == FIRE_EV and math.abs(x.at - t0 - 0.20) <= 0.06,
+        "a Phantom Edge attack: its own config's sound: " .. show(heard[h], t0))
+
+    -- Off on the host (the hitsounds command, as the ini's row): nothing there; on again, it plays.
+    Session.command(h, "hitsounds off")
+    s:run(0.3)
+    heard = swingOn(s, g, A1, { h })
+    local off = #heard[h]
+    Session.command(h, "hitsounds on")
+    s:run(0.3)
+    heard = swingOn(s, g, A1, { h })
+    check(off == 0 and #heard[h] == 1, "PartnerHitSounds off on the host: nothing there (" .. off .. "); on again: plays ("
+        .. #heard[h] .. ")")
+    -- Their figure over 60 m off: not played.
+    Session.moveTo(h, -6500, 0)
+    s:run(1)
+    heard = swingOn(s, g, A1, { h })
+    check(#heard[h] == 0, "their figure 70 m off: not played (" .. #heard[h] .. ")")
+    allErrors(s)
+
+    -- Left out of the ini: off, as before.
+    s, h, g = pair(nil, both)
+    Session.hold(g, SWORD, true)
+    s:run(2)
+    heard = swingOn(s, g, A1, { h })
+    check(#heard[h] == 0 and count(h.logs, "Partner swing sounds") == 0, "the row left out of the ini: nothing learned or played")
+    allErrors(s)
+
+    -- In PvP the figure plays their abilities (M), which make their own sounds: nothing from here.
+    s, h, g = pair(ON .. "PvP = On\n", both)
+    Session.hold(g, SWORD, true)
+    s:run(2)
+    heard = swingOn(s, g, A1, { h })
+    check(net(h).pvp == true and #heard[h] == 0, "in PvP: nothing played (" .. #heard[h] .. ")")
+    allErrors(s)
+
+    -- Four players (the report's three and one more): a guest's swing is heard by the host and the other two guests, each
+    -- on their figure of that guest, once; the swinger hears none from the mod.
+    s = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest", "Guest" }, true, ENEMIES, ON)
+    for _, pc in ipairs(s.pcs) do
+        swingData(pc)
+    end
+    s:run(4)
+    spread(s)
+    s:run(3)
+    -- (Player 2 said they hold a weapon these PCs can't load: it mustn't hold up learning player 3's.)
+    for _, pc in ipairs({ s.pcs[1], s.pcs[4] }) do
+        pc.inbox[#pc.inbox + 1] = "@2 W /HuaShira/Characters/Hun/Weapon/Missing.Missing 1"
+    end
+    s:run(0.5)
+    Session.hold(s.pcs[3], SWORD, true)
+    s:run(2)
+    local swinger = s.pcs[3]
+    heard, t0 = swingOn(s, swinger, A1, s.pcs)
+    local all = true
+    for i, pc in ipairs(s.pcs) do
+        local got = heard[pc]
+        if i == 3 then
+            all = all and #got == 0
+        else
+            all = all and #got == 1 and got[1].on == ghostOf(pc, 3) and got[1].ev == LIGHT_EV
+                and math.abs(got[1].at - t0 - 0.30) <= 0.08
+        end
+    end
+    check(all, "four players, one holding a weapon the others can't load: the host and the two other guests each play "
+        .. "another guest's swing on their figure of that guest, once; the swinger none (" .. show(heard[s.pcs[1]], t0) .. " | " .. show(heard[s.pcs[2]], t0) .. " | "
+        .. show(heard[s.pcs[4]], t0) .. " | " .. show(heard[s.pcs[3]], t0) .. ")")
+    allErrors(s)
+end
+
 -- A boss beaten in co-op is beaten in both saves, and two saves that disagree are brought round to the host's.
 local function beatenInBoth()
     part("a boss beaten in both worlds")
@@ -9058,6 +9442,7 @@ return function(print_, scripts)
     reusedBars()
     bossArmour()
     partnerHitSounds()
+    partnerSwingSounds()
     pickupsFresh()
     pickupsShown()
     pickupsRaced()
