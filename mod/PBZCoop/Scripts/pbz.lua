@@ -1672,8 +1672,8 @@ return function(api)
             return
         end
         game.granting = true        -- (what the mod adds isn't sent back: see "what the game gives")
-        if game.isPetal(itemId) then
-            game.givePetal(bp, itemId, quiet)       -- (a Memory Flower's petal goes in once or never: see there)
+        if game.keptOnce(itemId) then
+            game.giveOnce(bp, itemId, quiet)        -- (a petal, a book or its page goes in once or never: see there)
             game.granting = false
             return
         end
@@ -5488,7 +5488,18 @@ return function(api)
         BAG = BACKPACK .. ":AddPropsByMap", hooked = false, bagHooked = false, ours = false, told = {}, owed = {},
         petals = nil, pending = nil, report = nil }
 
-    -- A Memory Flower's petal, by the game's item table (ItemType MemoryFlowerPetal), read once.
+    -- What the game keeps once a save, by the item table's ItemType: a petal, a whole Memory Flower, a book and a book's
+    -- page. Once in the bag, even taken out at once, each is never taken again (the bench, 11-12: add, take, add gave
+    -- 1/0/0 for Page_XC_01, FA_0201, Book_XC_01 and FS_12001; 1/0/1 for K_, TU_, T_ and R_ items). (The 192 pages named R_
+    -- dodged grantLoot's hold; the 26 named Page_, the 22 books and the whole flowers didn't.)
+    game.ONCE_TYPES = { MemoryFlowerPetal = true, MemoryFlower = true, Book = true, BookPage = true }
+    function game.keptOnce(id)
+        game.isPetal(id)        -- (the table read once: game.flowers.once with it)
+        local once = game.flowers.once
+        return once ~= nil and once[id] == true
+    end
+
+    -- A Memory Flower's petal, by the game's item table (ItemType MemoryFlowerPetal), read once (game.flowers.once too).
     function game.isPetal(id)
         local fl = game.flowers
         if type(id) ~= "string" or id == "?" or id == "None" then
@@ -5516,15 +5527,19 @@ return function(api)
                     return
                 end
                 -- (Read once, even with no such column: an item that isn't a petal goes grantLoot's own way.)
-                local set, n = {}, 0
-                fl.petals = set
+                local set, once, n, m = {}, {}, 0, 0
+                fl.petals, fl.once = set, once
                 local kinds = lib:GetDataTableColumnAsString(t, FName("ItemType"))
                 for i = 1, #ids do
-                    if text(kinds[i]) == "MemoryFlowerPetal" then
+                    local kind = text(kinds[i])
+                    if kind == "MemoryFlowerPetal" then
                         set[text(ids[i])], n = true, n + 1
                     end
+                    if game.ONCE_TYPES[kind] then
+                        once[text(ids[i])], m = true, m + 1
+                    end
                 end
-                log("Memory Flower petals in the game's table: " .. n .. ".")
+                log("Memory Flower petals in the game's table: " .. n .. "; things it keeps once a save: " .. m .. ".")
             end)
             if fl.petals == nil then
                 return false        -- (asked again next time: the table may not be loaded yet)
@@ -5546,12 +5561,12 @@ return function(api)
         return had
     end
 
-    -- A petal another player's find brought (grantLoot): in once, as it came, with its card unless quiet (a note's way: the
-    -- card waits for the game's own moment). Never one this player has had: the game would refuse it all the same, and still
-    -- put its card up, for nothing (the bench).
-    function game.givePetal(bp, itemId, quiet)
+    -- A thing kept once a save (a petal, a whole flower, a book or its page) another player's find brought (grantLoot): in
+    -- once, as it came, with its card unless quiet (a note's way: the card waits for the game's own moment). Never one this
+    -- player has had: the game would refuse it all the same, and still put its card up, for nothing (the bench).
+    function game.giveOnce(bp, itemId, quiet)
         if game.hadItem(bp, itemId) then
-            log("Shared loot: " .. itemId .. " is a Memory Flower petal this player has had: not again.")
+            log("Shared loot: " .. itemId .. " is kept once a save, and this player has had it: not again.")
             return
         end
         pcall(function() bp:AddPropsToBackPack(1, FName(itemId), not quiet) end)
@@ -5559,7 +5574,7 @@ return function(api)
         if not quiet and after > 0 then
             game.cardIds[itemId] = true
         end
-        log(string.format("Shared loot: %s, a Memory Flower petal (0 -> %d)%s", itemId, after, quiet and "" or ", its card"))
+        log(string.format("Shared loot: %s, kept once a save (0 -> %d)%s", itemId, after, quiet and "" or ", its card"))
         game.isNarrative(itemId)
         local flag = game.heldFlags and game.heldFlags[itemId]
         if flag and after > 0 and api.flowsync and api.flowsync.raise then

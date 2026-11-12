@@ -309,6 +309,8 @@ Fake.ITEMS = {
     { "F_02056", "None", type = "MemoryFlowerPetal" },
     { "F_02011", "None", type = "MemoryFlowerPetal" },
     { "F_02012", "None", "jl.弄蛇.记忆之花2", type = "MemoryFlowerPetal" },
+    { "Page_XC_01", "None", type = "BookPage" },
+    { "FA_0201", "None", type = "MemoryFlower" },
     { "R_500", "Material" },
     { "I_KEY_9", "NarrativeItem" },
     { "Weapon_Material_01", "Material" },
@@ -1015,6 +1017,17 @@ function Fake.isPetal(id)
     return false
 end
 
+-- Whether the game keeps it once a save (a petal, a whole flower, a book, a book's page: the bench, 11-12).
+Fake.ONCE = { MemoryFlowerPetal = true, MemoryFlower = true, Book = true, BookPage = true }
+function Fake.keptOnce(id)
+    for _, r in ipairs(Fake.ITEMS) do
+        if r[1] == id then
+            return Fake.ONCE[r.type or ""] == true
+        end
+    end
+    return false
+end
+
 -- The flowers loaded in this world now.
 function Fake.loadedFlowers(pc)
     local loaded = {}
@@ -1715,7 +1728,7 @@ function Fake.new(id, scripts, ini, link)
         local items = rawget(self, "__fields").items
         local had = items[key]
         plainAdd(self, count, id, push)
-        if had ~= nil and Fake.isPetal(key) then
+        if had ~= nil and Fake.keptOnce(key) then
             items[key] = had
             pc.petalsRefused[#pc.petalsRefused + 1] = key
         end
@@ -1736,7 +1749,7 @@ function Fake.new(id, scripts, ini, link)
         end
         local items = rawget(self, "__fields").items
         for _, id in ipairs(ids) do
-            if items[id] ~= nil and Fake.isPetal(id) then
+            if items[id] ~= nil and Fake.keptOnce(id) then
                 pc.petalsRefused[#pc.petalsRefused + 1] = id
             else
                 items[id] = (items[id] or 0) + map[id]

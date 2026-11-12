@@ -5812,6 +5812,16 @@ local function memoryFlowers()
     check(#ph.petalsRefused == 0 and #pb.petalsRefused == 0, "nothing refused anywhere")
     allErrors(p)
 
+    -- The game keeps more than petals once a save: a book's page named Page_ and a whole flower too (the bench). A partner's
+    -- find of either went the share's way (held a moment first) and was lost the same way.
+    local k, kh, kg = pair()
+    Session.gainItem(kh, "Page_XC_01", 1)
+    Session.gainItem(kg, "FA_0201", 1)
+    k:run(6)
+    check(Session.items(kg, "Page_XC_01") == 1 and Session.items(kh, "FA_0201") == 1 and #kg.petalsRefused == 0
+        and #kh.petalsRefused == 0, "a book's page and a whole flower another player found: theirs once, never refused")
+    allErrors(k)
+
     -- A guest who joins after the host's pick: the petal in the host's bag on joining, quietly, once.
     local j, jh, jg = pair(nil, function(ph2)
         ph2.bag:AddPropsByMap({ F_02011 = 1 }, true)
