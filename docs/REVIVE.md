@@ -15,7 +15,7 @@ in `PhantomPact.ini` by default until two real PCs have tested it. Nothing here 
 - Hits drain the gauge smoothly. At zero the player gets up with 50% of their health.
 - With no hit for 3.5 s, it refills toward full. It never adds a bar.
 - One step of the down count goes away after 3 minutes alive, and all of it at a bell you sit at yourself.
-- A partner's sit at a bell doesn't bring you back: only your own sit rests you (the user's rule, 11-12). Their strikes do, or the timer runs out.
+- A partner's sit at a bell doesn't bring you back (the user's pick, 11-12): their strikes do, or the timer runs out.
 
 ## Hit values
 

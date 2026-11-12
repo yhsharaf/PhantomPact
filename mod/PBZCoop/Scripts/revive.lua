@@ -461,6 +461,11 @@ return function(api)
         revive.on = on
     end
 
+    -- This player is down, waiting for a partner's strike (coop.lua: a partner's sit rests nobody down).
+    function revive.isDown()
+        return down == true
+    end
+
     -- revive [on|off|trace]
     function revive.command(args)
         local a = (args or ""):lower()

@@ -26,7 +26,7 @@ return {
         ["your partner is back."] = "عاد شريكك.",  -- tip.partner.back
         ["your partner is watching a cutscene."] = "يشاهد شريكك مشهدًا سينمائيًا.",  -- tip.partner.cutscene
         ["your partner rested at a bell: you'll join them."] = "استراح شريكك عند جرس: ستنتقل إليه.",  -- tip.partner.rest_join
-        ["your partner rested at a bell: the boss is back to full health."] = "استراح شريكك عند جرس: عادت صحة الزعيم كاملة.",  -- tip.partner.rest_boss_full
+        ["your partner rested at a bell: you're rested, and so is the boss."] = "استراح شريكك عند جرس، واستعدت عافيتك، وكذلك الزعيم.",  -- tip.partner.rest_boss
         ["your partner needs PvPvE on too, or their moves won't show here."] = "يجب أن يفعّل شريكك PvPvE أيضًا، وإلا فلن تظهر حركاته هنا.",  -- f5more.tip.pvpve_partner
         ["PvPvE on for everyone: the host's rules count for all."] = "فُعِّل PvPvE للجميع: قواعد المضيف تسري على كل اللاعبين.",  -- f5more.tip.pvpve_all
         ["partner disconnected."] = "انقطع اتصال شريكك.",  -- tip.conn.disconnected
@@ -206,7 +206,7 @@ return {
         { "^the host %(purple%) is on another map%.$", "المضيف (بنفسجي) في خريطة أخرى." },  -- tip.party.other_map
         { "^the host %(purple%) is (%d+) m away%.$", "المضيف (بنفسجي) على بُعد %1 متر." },  -- tip.party.far
         { "^the host %(purple%) rested at a bell: you'll join them%.$", "استراح المضيف (بنفسجي) عند جرس: ستنتقل إليه." },  -- tip.party.rest_join
-        { "^the host %(purple%) rested at a bell: the boss is back to full health%.$", "استراح المضيف (بنفسجي) عند جرس: عادت صحة الزعيم كاملة." },  -- tip.party.rest_boss_full
+        { "^the host %(purple%) rested at a bell: you're rested, and so is the boss%.$", "استراح المضيف (بنفسجي) عند جرس، واستعدت عافيتك، وكذلك الزعيم." },  -- tip.party.rest_boss
         { "^the host %(purple%) turned co%-op sync off%.$", "أوقف المضيف (بنفسجي) مزامنة اللعب التعاوني." },  -- tip.party.sync_off
         { " You're the host %(purple%)%.$", " أنت المضيف (بنفسجي)." },  -- f5.words.youre
         { "^player 2 %(green%) joined%. (%d) players now%.$", "انضم اللاعب 2 (أخضر). عدد اللاعبين الآن: %1." },  -- tip.conn.party_joined
@@ -217,7 +217,7 @@ return {
         { "^player 2 %(green%) is on another map%.$", "اللاعب 2 (أخضر) في خريطة أخرى." },  -- tip.party.other_map
         { "^player 2 %(green%) is (%d+) m away%.$", "اللاعب 2 (أخضر) على بُعد %1 متر." },  -- tip.party.far
         { "^player 2 %(green%) rested at a bell: you'll join them%.$", "استراح اللاعب 2 (أخضر) عند جرس: ستنتقل إليه." },  -- tip.party.rest_join
-        { "^player 2 %(green%) rested at a bell: the boss is back to full health%.$", "استراح اللاعب 2 (أخضر) عند جرس: عادت صحة الزعيم كاملة." },  -- tip.party.rest_boss_full
+        { "^player 2 %(green%) rested at a bell: you're rested, and so is the boss%.$", "استراح اللاعب 2 (أخضر) عند جرس، واستعدت عافيتك، وكذلك الزعيم." },  -- tip.party.rest_boss
         { "^player 2 %(green%) turned co%-op sync off%.$", "أوقف اللاعب 2 (أخضر) مزامنة اللعب التعاوني." },  -- tip.party.sync_off
         { " You're player 2 %(green%)%.$", " أنت اللاعب 2 (أخضر)." },  -- f5.words.youre
         { "^player 3 %(gold%) joined%. (%d) players now%.$", "انضم اللاعب 3 (ذهبي). عدد اللاعبين الآن: %1." },  -- tip.conn.party_joined
@@ -228,7 +228,7 @@ return {
         { "^player 3 %(gold%) is on another map%.$", "اللاعب 3 (ذهبي) في خريطة أخرى." },  -- tip.party.other_map
         { "^player 3 %(gold%) is (%d+) m away%.$", "اللاعب 3 (ذهبي) على بُعد %1 متر." },  -- tip.party.far
         { "^player 3 %(gold%) rested at a bell: you'll join them%.$", "استراح اللاعب 3 (ذهبي) عند جرس: ستنتقل إليه." },  -- tip.party.rest_join
-        { "^player 3 %(gold%) rested at a bell: the boss is back to full health%.$", "استراح اللاعب 3 (ذهبي) عند جرس: عادت صحة الزعيم كاملة." },  -- tip.party.rest_boss_full
+        { "^player 3 %(gold%) rested at a bell: you're rested, and so is the boss%.$", "استراح اللاعب 3 (ذهبي) عند جرس، واستعدت عافيتك، وكذلك الزعيم." },  -- tip.party.rest_boss
         { "^player 3 %(gold%) turned co%-op sync off%.$", "أوقف اللاعب 3 (ذهبي) مزامنة اللعب التعاوني." },  -- tip.party.sync_off
         { " You're player 3 %(gold%)%.$", " أنت اللاعب 3 (ذهبي)." },  -- f5.words.youre
         { "^player 4 %(blue%) joined%. (%d) players now%.$", "انضم اللاعب 4 (أزرق). عدد اللاعبين الآن: %1." },  -- tip.conn.party_joined
@@ -239,7 +239,7 @@ return {
         { "^player 4 %(blue%) is on another map%.$", "اللاعب 4 (أزرق) في خريطة أخرى." },  -- tip.party.other_map
         { "^player 4 %(blue%) is (%d+) m away%.$", "اللاعب 4 (أزرق) على بُعد %1 متر." },  -- tip.party.far
         { "^player 4 %(blue%) rested at a bell: you'll join them%.$", "استراح اللاعب 4 (أزرق) عند جرس: ستنتقل إليه." },  -- tip.party.rest_join
-        { "^player 4 %(blue%) rested at a bell: the boss is back to full health%.$", "استراح اللاعب 4 (أزرق) عند جرس: عادت صحة الزعيم كاملة." },  -- tip.party.rest_boss_full
+        { "^player 4 %(blue%) rested at a bell: you're rested, and so is the boss%.$", "استراح اللاعب 4 (أزرق) عند جرس، واستعدت عافيتك، وكذلك الزعيم." },  -- tip.party.rest_boss
         { "^player 4 %(blue%) turned co%-op sync off%.$", "أوقف اللاعب 4 (أزرق) مزامنة اللعب التعاوني." },  -- tip.party.sync_off
         { " You're player 4 %(blue%)%.$", " أنت اللاعب 4 (أزرق)." },  -- f5.words.youre
         { "^player 5 %(orange%) joined%. (%d) players now%.$", "انضم اللاعب 5 (برتقالي). عدد اللاعبين الآن: %1." },  -- tip.conn.party_joined
@@ -250,7 +250,7 @@ return {
         { "^player 5 %(orange%) is on another map%.$", "اللاعب 5 (برتقالي) في خريطة أخرى." },  -- tip.party.other_map
         { "^player 5 %(orange%) is (%d+) m away%.$", "اللاعب 5 (برتقالي) على بُعد %1 متر." },  -- tip.party.far
         { "^player 5 %(orange%) rested at a bell: you'll join them%.$", "استراح اللاعب 5 (برتقالي) عند جرس: ستنتقل إليه." },  -- tip.party.rest_join
-        { "^player 5 %(orange%) rested at a bell: the boss is back to full health%.$", "استراح اللاعب 5 (برتقالي) عند جرس: عادت صحة الزعيم كاملة." },  -- tip.party.rest_boss_full
+        { "^player 5 %(orange%) rested at a bell: you're rested, and so is the boss%.$", "استراح اللاعب 5 (برتقالي) عند جرس، واستعدت عافيتك، وكذلك الزعيم." },  -- tip.party.rest_boss
         { "^player 5 %(orange%) turned co%-op sync off%.$", "أوقف اللاعب 5 (برتقالي) مزامنة اللعب التعاوني." },  -- tip.party.sync_off
         { " You're player 5 %(orange%)%.$", " أنت اللاعب 5 (برتقالي)." },  -- f5.words.youre
         { "^player 6 %(pink%) joined%. (%d) players now%.$", "انضم اللاعب 6 (وردي). عدد اللاعبين الآن: %1." },  -- tip.conn.party_joined
@@ -261,7 +261,7 @@ return {
         { "^player 6 %(pink%) is on another map%.$", "اللاعب 6 (وردي) في خريطة أخرى." },  -- tip.party.other_map
         { "^player 6 %(pink%) is (%d+) m away%.$", "اللاعب 6 (وردي) على بُعد %1 متر." },  -- tip.party.far
         { "^player 6 %(pink%) rested at a bell: you'll join them%.$", "استراح اللاعب 6 (وردي) عند جرس: ستنتقل إليه." },  -- tip.party.rest_join
-        { "^player 6 %(pink%) rested at a bell: the boss is back to full health%.$", "استراح اللاعب 6 (وردي) عند جرس: عادت صحة الزعيم كاملة." },  -- tip.party.rest_boss_full
+        { "^player 6 %(pink%) rested at a bell: you're rested, and so is the boss%.$", "استراح اللاعب 6 (وردي) عند جرس، واستعدت عافيتك، وكذلك الزعيم." },  -- tip.party.rest_boss
         { "^player 6 %(pink%) turned co%-op sync off%.$", "أوقف اللاعب 6 (وردي) مزامنة اللعب التعاوني." },  -- tip.party.sync_off
         { " You're player 6 %(pink%)%.$", " أنت اللاعب 6 (وردي)." },  -- f5.words.youre
         -- last, names anywhere in a line, after the lines' own rows: the arenas (longer first), Here, bosses, players

@@ -4163,7 +4163,8 @@ return function(api)
     -- stayed in the prologue's young body. The game's own skip at New Game is the one: see prologue.lua.)
 
     -- Sitting at a bell heals, fills the gourd and saves, and runs no Refresh Monster. RestoreHealth is the step every sit has,
-    -- the first ring included. It works on player 1 from any bell, however far (game.refillPlayer's way in a match).
+    -- the first ring included. It works on player 1 from any bell, however far: a partner's sit during this player's own boss
+    -- fight rests them with it (game.restHere).
     local SIT_FN = "/Script/ProjectPBZ.MelodiousBell:RestoreHealth"
     local sitHooked, restingHere = false, false
 
@@ -4183,12 +4184,46 @@ return function(api)
         return sitHooked
     end
 
-    -- (A partner's sit rests nobody here any more: each player rests at their own sit, as in the game, the user's rule of
-    -- 11-12. The rest by hand it had (game.restHere, health through a loaded bell's own step, the gourd filled) is gone. Its
-    -- gourd fill is a lesson kept: the extra drinks a skill node or a talisman gives are counted into the gourd's own count,
-    -- CurrentTime, so filled to its base size by hand (MaxTime) a full gourd lost them, a player report on 1.7.1, "5 uses to 1
-    -- use"; GetMedicineTotalMaxUsage is its whole size. Never the bell's "Restore BackPack Data": that one also saves, with
-    -- that bell as the place to respawn.)
+    -- Rest this player as a sit would: only for a partner's sit during a boss fight of this player's own, the fight starting
+    -- over (coop.lua handlers.SIT; the user's rule, 11-12). Health through the bell's own step: written by hand it leaves the
+    -- low health look on the screen. The gourd to its whole size as the game counts it, the extra drinks a skill node or a
+    -- talisman gives counted in (GetMedicineTotalMaxUsage; the bench, 11-12: 4 with two extra drinks over a gourd of 2, and a
+    -- real sit's own refill, the bag's RestoreQuickItems, filled it to 4): set to its base size (MaxTime), a partner's sit
+    -- took those extra drinks away. Never below what it holds. Not RestoreQuickItems itself: it fills the D-pad's top item
+    -- too, which a partner's sit never did. Not the bell's "Restore BackPack Data": that one also saves, with that bell as the
+    -- place to respawn.
+    function game.restHere(pawn)
+        local bell = FindFirstOf("MelodiousBell")
+        local healed = false
+        if valid(bell) then
+            restingHere = true
+            healed = pcall(function() bell:RestoreHealth() end)
+            restingHere = false
+        end
+        if not healed then
+            local _, maxhp = game.getHealth(pawn)
+            if maxhp then
+                game.setHealth(pawn, maxhp)
+            end
+        end
+        local gourd = game.gourdInfo(pawn)
+        if gourd then
+            pcall(function()
+                local max = gourd.MaxTime
+                local bp = game.backpackOf(pawn)
+                local okT, total = pcall(function()
+                    return bp:GetMedicineTotalMaxUsage(FName(bp.BottomMedicineID:ToString()))
+                end)
+                if okT and type(total) == "number" and type(max) == "number" and total > max then
+                    max = total
+                end
+                if type(max) == "number" and gourd.CurrentTime < max then
+                    gourd:SetCurrentTime(max)
+                    gourd:SetDisplayTime(max)
+                end
+            end)
+        end
+    end
 
     -- This player's own health bar, told by hand what the health is now and shown a moment, as for a real change (the HUD's
     -- own ForSeq_UpdatePlayerHP, as local co-op tells player 2's). Health written by hand reaches no listener: the bar follows
@@ -4211,8 +4246,8 @@ return function(api)
     -- the player's bar nor the game's low health look: on the bench (11-07) a duel's player refilled for the next round stood
     -- at full health with an empty bar and the near-death look on till the next blow (issue #13 had warned of the bar). So
     -- it's filled the game's way first, which tells both: the game's own recovery effects (REFILL_EFFECTS, health alone
-    -- first; one that would stay on is taken off at once, so nothing heals on after), else a loaded bell's own step (no sit
-    -- hook hears it: in a match a sit is a forfeit). Then hp written, if that didn't reach it or a lower one
+    -- first; one that would stay on is taken off at once, so nothing heals on after), else a loaded bell's own step, as
+    -- restHere (no sit hook hears it: in a match a sit is a forfeit). Then hp written, if that didn't reach it or a lower one
     -- is wanted (home: the health from before the match; the look stays off), and the bar told where the game didn't.
     -- game.refillHow says which way it went: full (nothing to fill), an effect's name, bell, or hand.
     game.REFILL_EFFECTS = {

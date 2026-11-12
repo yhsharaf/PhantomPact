@@ -1512,6 +1512,11 @@ function Fake.new(id, scripts, ini, link)
     put(bag, "MedicineExtraUsage", 1)
     put(bag, "ult", { n = 1, pct = 40, max = 3 })
     defs(pc, bag, {
+        -- (The gourd's whole size, its extra drinks counted in: what a real sit fills it to. The bench, 11-12: 4 with two extra
+        -- drinks over a gourd of 2.)
+        GetMedicineTotalMaxUsage = function(self)
+            return rawget(gourd, "__fields").MaxTime + rawget(self, "__fields").MedicineExtraUsage
+        end,
         GetMedicineExtraUsage = function(self) return rawget(self, "__fields").MedicineExtraUsage end,
         AddMedicineExtraUsage = function(self, n)
             put(self, "MedicineExtraUsage", rawget(self, "__fields").MedicineExtraUsage + n)
