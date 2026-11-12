@@ -1828,6 +1828,151 @@ local function doorsOpenedBefore()
     check(field(hostDoor, "CurSwitchState") == true, "(the host's stays open)")
     allErrors(s)
 end
+
+-- Point 6 of a report on 1.7.1 (three players): "unless we're near each other (like within 75m), bells and certain things
+-- don't sync". The game loads a level's things only around the player: a chain or a lever another player opened far off
+-- wasn't there to open at the word. The chain was let go at once, the lever two minutes on, and a guest on another map at
+-- the word never heard of either.
+local function farThings()
+    part("chains and levers another player opened far off")
+    local s = party(nil, nil, { "Host", "Guest", "Guest" })
+    local h, a, b = s.pcs[1], s.pcs[2], s.pcs[3]
+    Session.moveTo(h, 0, 0)
+    Session.moveTo(a, 60000, 0)
+    Session.moveTo(b, 0, 500)
+    b.map = "Map_Other"
+    s:run(3)
+    local CHAIN, LEVER = "BP_GameplayBlocker_Chain_C_UAID_7", "ABP_Switch_C_UAID_7"
+    local function chainOn(pc, x)
+        return Fake.blocker(pc, CHAIN, x, 0.0, 100.0)
+    end
+    local function leverOn(pc, x)
+        local lv = Fake.switch(pc, "ABP_Switch_C", x, 0.0, 100.0)
+        rawset(lv, "__name", LEVER)
+        Fake.put(lv, "SwitchWithoutPlaySequence", function(self) Fake.put(self, "CurSwitchState", true) end)
+        return lv
+    end
+    -- Guest a breaks a chain and pulls a lever out where only its world has them loaded.
+    local chain, lever = chainOn(a, 60200.0), leverOn(a, 60300.0)
+    s:run(2)
+    Fake.put(chain, "bBroken", true)
+    Fake.put(lever, "CurSwitchState", true)
+    s:run(3)
+    check(count(a.sent, "^E BLK " .. CHAIN .. "$") == 1 and count(a.sent, "^E SWO " .. LEVER .. "$") == 1, "(guest a tells both)")
+    -- Three minutes on, the host gets there: its world loads them, the chain still whole, the lever shut.
+    s:run(180)
+    local hChain, hLever = chainOn(h, 60200.0), leverOn(h, 60300.0)
+    Session.moveTo(h, 59000, 0)
+    s:run(4)
+    check(field(hChain, "bBroken") == true, "a chain another player broke far off is broken as the host's world loads it")
+    check(field(hLever, "CurSwitchState") == true, "and a lever they pulled, opened as it loads, three minutes on too")
+    check(count(h.logs, "Broke " .. CHAIN .. ": broken for the others") == 0 and count(h.logs, "Opened " .. LEVER) == 0,
+        "neither told back as the host's own doing")
+    -- Guest b was on another map at the word. Back on this one, its world loads them too: the host names them again.
+    b.map = "Map_Xigu"
+    s:run(3)
+    local bChain, bLever = chainOn(b, 60200.0), leverOn(b, 60300.0)
+    Session.moveTo(b, 59500, 0)
+    s:run(25)
+    check(field(bChain, "bBroken") == true and field(bLever, "CurSwitchState") == true,
+        "a guest who was on another map at the word has them too, once back and loaded: the host names them again")
+    check(count(b.sent, "^E BLK") == 0 and count(b.sent, "^E SWO") == 0, "and tells nobody of them")
+    -- What the host names again costs no search where it's known: a world that has them, or waits for them, looks for nothing.
+    local searched = 0
+    local real = b.env.FindAllOf
+    b.env.FindAllOf = function(class)
+        if class == "BP_GameplayBlocker_Base_C" or class == "PBZSwitchBase" then
+            searched = searched + 1
+        end
+        return real(class)
+    end
+    b.env.PBZ.coop.handlers.BLK(CHAIN)
+    b.env.PBZ.coop.handlers.SWO(LEVER)
+    b.env.FindAllOf = real
+    check(searched == 0, "naming again what a world has already costs it no search")
+    allErrors(s)
+end
+
+-- The review of the first version of farThings' fix: what waits was forgotten at a trip away and back, wasn't applied with
+-- nobody else on the map, outlived the session, and was searched for in the quiet after a load.
+local function farThingsKept()
+    part("chains and levers waited for: kept by map, for the session")
+    local s = party(nil, nil, { "Host", "Guest", "Guest" })
+    local h, a, b = s.pcs[1], s.pcs[2], s.pcs[3]
+    Session.moveTo(h, 0, 0)
+    Session.moveTo(a, 60000, 0)
+    Session.moveTo(b, 0, 500)
+    s:run(3)
+    local CHAIN, LEVER = "BP_GameplayBlocker_Chain_C_UAID_8", "ABP_Switch_C_UAID_8"
+    local function leverOn(pc, x)
+        local lv = Fake.switch(pc, "ABP_Switch_C", x, 0.0, 100.0)
+        rawset(lv, "__name", LEVER)
+        Fake.put(lv, "SwitchWithoutPlaySequence", function(self) Fake.put(self, "CurSwitchState", true) end)
+        return lv
+    end
+    local chain, lever = Fake.blocker(a, CHAIN, 60200.0, 0.0, 100.0), leverOn(a, 60300.0)
+    s:run(2)
+    Fake.put(chain, "bBroken", true)
+    Fake.put(lever, "CurSwitchState", true)
+    s:run(3)
+    -- Everyone to another map and back: what the host waits for there is still that map's.
+    for _, pc in ipairs({ h, a, b }) do
+        pc.map = "Map_Other"
+    end
+    s:run(8)
+    for _, pc in ipairs({ h, a, b }) do
+        pc.map = "Map_Xigu"
+    end
+    s:run(4)
+    -- Guest a goes off for good (another map); the host walks there alone and its world loads them.
+    a.map = "Map_Other"
+    b.map = "Map_Other"
+    s:run(4)
+    local hChain, hLever = Fake.blocker(h, CHAIN, 60200.0, 0.0, 100.0), leverOn(h, 60300.0)
+    Session.moveTo(h, 59000, 0)
+    s:run(4)
+    check(field(hChain, "bBroken") == true and field(hLever, "CurSwitchState") == true,
+        "kept over a trip away and back, and done with nobody else on the map")
+    allErrors(s)
+    -- Sync off and on: a new session, what the last one waited for is gone.
+    local p, ph, pg = pair()
+    Session.moveTo(pg, 60000, 0)
+    p:run(3)
+    local pChain = Fake.blocker(pg, "BP_GameplayBlocker_Chain_C_UAID_9", 60200.0, 0.0, 100.0)
+    p:run(2)
+    Fake.put(pChain, "bBroken", true)
+    p:run(3)
+    Session.command(ph, "netoff")
+    p:run(3)
+    Session.command(ph, "neton host")
+    p:run(6)
+    local late = Fake.blocker(ph, "BP_GameplayBlocker_Chain_C_UAID_9", 60200.0, 0.0, 100.0)
+    Session.moveTo(ph, 59000, 0)
+    p:run(4)
+    check(field(late, "bBroken") == false, "sync off: what was waited for went with that session")
+    allErrors(p)
+    -- The quiet after a load: a batch named then costs no search, and lands at the first look after it.
+    local q, qh, qg = pair()
+    q:run(3)
+    local qChain = Fake.blocker(qg, "BP_GameplayBlocker_Chain_C_UAID_10", 320.0, 0.0, 100.0)
+    q:run(2)
+    net(qg).quietUntil = qg.now + 5
+    local searched = 0
+    local real = qg.env.FindAllOf
+    qg.env.FindAllOf = function(class)
+        if class == "BP_GameplayBlocker_Base_C" then
+            searched = searched + 1
+        end
+        return real(class)
+    end
+    qg.env.PBZ.coop.handlers.BLK("BP_GameplayBlocker_Chain_C_UAID_10 BP_GameplayBlocker_Chain_C_UAID_11")
+    qg.env.FindAllOf = real
+    check(searched == 0, "named in the quiet after a load: no search then")
+    net(qg).quietUntil = 0
+    q:run(3)
+    check(field(qChain, "bBroken") == true, "and broken at the first look after it")
+    allErrors(q)
+end
 -- A player report (11-09): three players, an hour, the host at 1.5m dust, the guests at 600k. A wallet's rise across a death
 -- (or a new body) went out whole as a gain and was paid to everyone.
 local function dustOnlyEarned()
@@ -9102,6 +9247,8 @@ return function(print_, scripts)
     holdingForTwo()
     hostDiesFirst()
     doorsOpenedBefore()
+    farThings()
+    farThingsKept()
     dustOnlyEarned()
     coopDifficulty()
     lateJoiner()
