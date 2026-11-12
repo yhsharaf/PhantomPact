@@ -4747,6 +4747,9 @@ return function(api)
         local ok = pcall(function() pawn:ChangeDustNumInternal(amount) end)
         if ok then
             syncedDust = syncedDust + amount
+            if game.downAt then
+                game.downAt.shared = game.downAt.shared + amount     -- (no pay of a boss's: game.payOwed)
+            end
             log("Shared dust: +" .. amount)
         end
     end
@@ -5331,6 +5334,193 @@ return function(api)
         return out
     end
 
+    -- What this player holds: id -> count, gear and quest things too. (game.noteDown, game.payOwed)
+    function game.holding(pawn)
+        local bp = valid(pawn) and worldSubsystem(pawn, BACKPACK)
+        local out = {}
+        if not bp then
+            return nil
+        end
+        for _, list in ipairs({ "MainWeaponInfos", "ShaqiWeaponInfos", "Accessories", "MedicineInfos" }) do
+            pcall(function()
+                bp[list]:ForEach(function(k)
+                    out[k:get():ToString()] = 1
+                end)
+            end)
+        end
+        pcall(function()
+            bp.Inventories:ForEach(function(k, v)
+                local n = v:get().CurrentAmount
+                if type(n) == "number" and n > 0 then
+                    out[k:get():ToString()] = math.floor(n)
+                end
+            end)
+        end)
+        return out
+    end
+
+    -- A boss of this world that died while this player was down: a partner's blow killed it, this player's respawn held
+    -- for the fight (a report on 1.7.1, three players: "if host dies during fight, they don't get items"). On the bench
+    -- (11-12) the game paid a player down the boss's dust and kept it after the respawn, but the dust watch shares no rise
+    -- while down, so the partners never got their share; a game that paid nobody who's down is covered too. So the bag and
+    -- wallet at the death are kept (noteDown), the boss's pay is owed (oweBoss: its loot table, as rollLoot rolls it for
+    -- the partners), they're read each turn till it's settled (watchOwed), and once this player is up and settled
+    -- (payOwed) the game's own pay, if it came, goes to the partners as at a live kill; else each thing it lacks of that
+    -- pay is given: never more than the boss's own, no other loss made good.
+    -- fight: the names of the bosses of the fight this player went down in (coop's watchOwnDeath), or nil.
+    -- (shared: the partners' shares since the death, no pay of a boss's; best: the most the wallet rose by since the death
+    -- in a read, those shares not counted; stillBest: the same, in reads while the dust watch holds gains back, down or in
+    -- its quiet just after; bagBest: the most of each thing held in a read.)
+    function game.noteDown(pawn, fight)
+        if game.owedBosses then
+            return          -- (down again before it was paid: that death's bag stays the one to go by)
+        end
+        game.downAt = { held = game.holding(pawn) or {}, dust = dust(pawn) or 0, shared = 0, bagBest = {}, fight = fight or {} }
+    end
+
+    -- Whether a death here now, this player down, is a boss's to owe: one by the mod's word (boss), or one of the fight they
+    -- went down in. (The game takes the bar down as its player dies, and a boss the codex doesn't call one, the gold-masked
+    -- man of the first map, was then a boss to nobody: on the bench, 11-12, nothing of his was owed.)
+    function game.downBoss(name, boss)
+        local was = game.downAt
+        if was == nil or was.up then
+            return false
+        end
+        return boss and true or was.fight[name] == true
+    end
+
+    function game.oweBoss(name, dustPaid, items)
+        if game.downAt and not game.downAt.up then
+            game.owedBosses = game.owedBosses or {}
+            table.insert(game.owedBosses, { name = name, dust = tonumber(dustPaid) or 0, items = items or {} })
+            game.owedNames = game.owedNames or {}
+            game.owedNames[name] = os.clock()       -- (and its win's steps from a guest's world: flowsync.lua's DB)
+        end
+    end
+
+    -- A boss owed that got up again (coop's shareEnemy): its fall was a phase's (Xiaoxue's), no win, and nothing of it is
+    -- owed. (Owed, the host was paid a boss's dust for the fall, and the partners a share of it: the review of the draft.)
+    function game.dropOwed(name)
+        if game.owedNames then
+            game.owedNames[name] = nil
+        end
+        for i = #(game.owedBosses or {}), 1, -1 do
+            if game.owedBosses[i].name == name then
+                table.remove(game.owedBosses, i)
+            end
+        end
+        if game.owedBosses and #game.owedBosses == 0 then
+            game.owedBosses = nil
+        end
+    end
+
+    -- A boss owed, down or up till it's settled: the wallet's rise since the death and the bag, the most of each kept. The
+    -- most, not the last: spending only lowers it, so dust spent at the bell after the respawn isn't a pay lost (read once
+    -- up, it was given back: the review), a pay that comes late is seen before it's spent, and the dust can read low for a
+    -- moment as a respawn starts (the dust watch's own note). A share comes with its own count, so it's never the pay.
+    function game.watchOwed(pawn)
+        local was = game.downAt
+        if not (was and game.owedBosses) then
+            return
+        end
+        local wallet = dust(pawn)
+        if wallet then
+            local rise = wallet - was.dust - was.shared
+            was.best = math.max(was.best or rise, rise)
+            if game.isDead(pawn) or os.clock() < game.dustWatch.quietUntil then
+                was.stillBest = math.max(was.stillBest or rise, rise)
+            end
+        end
+        if os.clock() >= (was.bagAt or 0) then
+            was.bagAt = os.clock() + 1.0
+            for id, n in pairs(game.holding(pawn) or {}) do
+                was.bagBest[id] = math.max(was.bagBest[id] or 0, n)
+            end
+        end
+    end
+
+    -- What's owed against what came: { kept, rise, now, want, cash }, or nil while it can't be told (no body, or no wallet
+    -- or bag to read yet: read as empty, all of it was given). kept: the game's own pay came here (its dust, at least half:
+    -- it's rolled; or a counted thing of it, all of it): nothing is given, a second roll would only add to it.
+    function game.owedState(pawn)
+        local owed, was = game.owedBosses, game.downAt
+        local bag = owed and was and game.holding(pawn)
+        local wallet = bag and dust(pawn)
+        if not wallet or (next(bag) == nil and next(was.held) ~= nil) then
+            return nil
+        end
+        local rise = math.max(was.best or -math.huge, wallet - was.dust - was.shared)
+        local now = {}
+        for id, n in pairs(bag) do
+            now[id] = n
+        end
+        for id, n in pairs(was.bagBest) do
+            now[id] = math.max(now[id] or 0, n)
+        end
+        local want, cash = {}, 0
+        for _, boss in ipairs(owed) do
+            cash = cash + boss.dust
+            for _, it in ipairs(boss.items) do
+                if it.id:find("^[RI]_%d") then
+                    -- (Notes and keys aren't counted in the bag: one kept can't be told from one lost. Not given.)
+                elseif it.kind and it.kind ~= "-" then
+                    want[it.id] = { n = 1, kind = it.kind }
+                else
+                    want[it.id] = { n = ((want[it.id] or {}).n or 0) + it.count }
+                end
+            end
+        end
+        local kept = cash > 0 and rise >= cash / 2
+        for id, w in pairs(want) do
+            kept = kept or (not w.kind and (now[id] or 0) >= (was.held[id] or 0) + w.n)
+        end
+        return { kept = kept, rise = rise, now = now, want = want, cash = cash, was = was }
+    end
+
+    -- Down again before what was owed was settled, the game's pay not come (coop's watchOwnDeath): this down is the last
+    -- one's again, so a boss of this fight is owed too (fight: its names), and what's lacking is given once they're up.
+    -- (Settled with nothing given to a player down, the dust watch holding it back, it was lost: the review.)
+    function game.reopenDown(fight)
+        if game.downAt then
+            game.downAt.up = false
+            for name in pairs(fight or {}) do
+                game.downAt.fight[name] = true
+            end
+        end
+    end
+
+    -- Settles what's owed: returns the words for what was given ({} for nothing), the partners' share of the game's own pay
+    -- kept here (coop's to send as C: it went nowhere while down), and whether it was kept; nil while it can't be told.
+    function game.payOwed(pawn)
+        local st = game.owedState(pawn)
+        if not st then
+            return nil
+        end
+        local was, want, now = st.was, st.want, st.now
+        game.owedBosses, game.downAt = nil, nil
+        if st.kept then
+            -- (The partners' share: the rise while the dust watch held gains back, down or just up; one that came later
+            -- went to them as earned already. The review: counted from the dust watch's steps, a low read and the
+            -- wallet back was taken for a gain.)
+            return {}, math.max(0, math.min(st.cash, was.stillBest or 0)), true
+        end
+        local paid = {}
+        for id, w in pairs(want) do
+            -- (Gear is had or not; a counted thing up to what it was at the death and the boss's count on top.)
+            local lack = w.kind and ((now[id] or 0) > 0 and 0 or 1)
+                or math.min(w.n, (was.held[id] or 0) + w.n - (now[id] or 0))
+            if lack > 0 then
+                game.grantLoot(pawn, id, w.kind, lack)
+                paid[#paid + 1] = id .. " x" .. lack
+            end
+        end
+        local lack = math.min(st.cash, st.cash - math.max(st.rise, 0))
+        if lack > 0 and pcall(function() pawn:ChangeDustNumInternal(lack) end) then
+            paid[#paid + 1] = lack .. " dust"
+        end
+        return paid, 0, false
+    end
+
     -- A quest item ("NarrativeItem" in the game's item table: keys, the Flesh Flower, letters): never shared. Each player picks
     -- up their own, through the game, so its card shows and the quest moves on. Shared, the other player got it quietly in
     -- the bag, their copy of the pickup gone: the quest never knew (the tower key), or they handed in what they never found
@@ -5382,6 +5572,23 @@ return function(api)
             end
         end
         return game.narrative[id] == true
+    end
+
+    -- Whether a tag is a thing's own flag while it's held (the table's AddTagWhenHas): its holder's alone, as the thing is.
+    -- (flowsync's DB: a guest's own find in the look after a boss's death isn't the boss's win, and on the host a hand-in
+    -- that reads the flag took it for the thing held: the review.)
+    function game.isHeldFlag(tag)
+        if game.heldSet == nil then
+            game.isNarrative("-")       -- (the table read, once)
+            if game.heldFlags == nil then
+                return false
+            end
+            game.heldSet = {}
+            for _, flag in pairs(game.heldFlags) do
+                game.heldSet[flag] = true
+            end
+        end
+        return game.heldSet[tag] == true
     end
 
     -- Quest items are shared now (a player report, 11-06: letters, notes, the Black and Orange Stones, keys "just disappear

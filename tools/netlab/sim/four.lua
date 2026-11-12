@@ -1806,6 +1806,335 @@ local function hostDiesFirst()
     allErrors(s)
     allErrors(t)
 end
+-- A report on 1.7.1, three players: "if host dies during fight, they don't get items and bell (if it spawns afterwards)
+-- doesn't show up". The host down first and held, a guest's blow kills the boss: the game's death runs in the host's world
+-- with its player down, none of its win's steps (the bench, 11-12). The guests' worlds ran the win: what it added there
+-- reaches the host once it's up (DB), and the boss's pay the host kept goes to the guests (C), or, where the game paid
+-- nothing, is given to the host.
+local function hostDownAtBossDeath()
+    part("the host down when the boss dies: its win, its pay, its dust for the others")
+    local BELL, OLD_BELL, ITEM, WEAPON = "Bell_ARENA_001", "Bell_ARENA_002", "Weapon_Material_07", "IronBlade"
+    table.insert(Fake.BELLS, { BELL, "YXZR", 3300.0, 3200.0, 100.0 })        -- (the arena's, by the boss)
+    table.insert(Fake.BELLS, { OLD_BELL, "YXZR", 2500.0, 2500.0, 100.0 })    -- (one near it, woken long before)
+    local WIN = { tags = { "boss.win" }, nodes = { "N_WIN", "N_BELL" }, bells = { BELL }, reward = WEAPON }
+    -- (A guard of the fight, a boss the codex doesn't call one, as the gold-masked man of the first map, and one 65 m off.)
+    local enemies = { { "guard", THUG, 3100.0, 2900.0, 100.0, 600, 100 },
+        { "masked", "BP_Monster_GoldMaskMan_C", 3000.0, 3200.0, 100.0, 4000, 300 },
+        { "far", THUG, 9500.0, 2800.0, 100.0, 600, 100 } }
+    for _, e in ipairs(ENEMIES) do
+        enemies[#enemies + 1] = e
+    end
+    local function has(list, x)
+        for _, v in ipairs(list) do
+            if v == x then
+                return true
+            end
+        end
+        return false
+    end
+    local function tagOff(pc, tag)
+        for i = #pc.globalTags, 1, -1 do
+            if pc.globalTags[i] == tag then
+                table.remove(pc.globalTags, i)
+            end
+        end
+    end
+    -- Host and two guests at the fight with id, its bar up on the host, the guests in it; the boss's pay (dust, items) and
+    -- its win on every world's copy of winOn (the boss, or the last of the fight to fall), 11 s after its death there (the
+    -- gold-masked man's came 10 to 15 s on, the bench, 11-12). The host dies, its bar goes.
+    local function downFight(id, o)
+        local s = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest" }, true, enemies)
+        s:run(4)
+        local h, g1, g2 = s.pcs[1], s.pcs[2], s.pcs[3]
+        h.deathPaysDown = o.paysDown ~= false
+        Session.moveTo(h, 3000, 2800)
+        Session.moveTo(g1, 3000, 2700)
+        Session.moveTo(g2, 2900, 2800)
+        s:run(3)
+        local boss = Session.enemyOn(h, id)
+        Fake.put(boss, "dustLoot", 700)
+        Fake.put(boss, "lootItems", o.items)
+        for _, pc in ipairs(s.pcs) do
+            Fake.put(Session.enemyOn(pc, o.winOn or id), "winSteps", WIN)
+            Fake.put(Session.enemyOn(pc, o.winOn or id), "winDelay", 11)
+        end
+        for _, pc in ipairs({ g1, g2 }) do
+            pc.bellIds[#pc.bellIds + 1] = OLD_BELL                          -- (the guests' saves have it, the host's not)
+        end
+        if o.items then
+            Session.gainItem(h, ITEM, 1)                -- (one held already)
+        end
+        if o.wallet then
+            Session.gainDust(h, o.wallet)
+        end
+        s:run(2)
+        h.hudLayout:RegisterBossHPBar(boss)
+        s:run(2)
+        for _, pc in ipairs({ g1, g2 }) do
+            local c = Session.enemyOn(pc, id)
+            swing(pc, c, select(1, Fake.health(c)) - 10)
+        end
+        s:run(5)
+        Session.die(h)
+        h.hudLayout:UnRegisterBossHPBar(boss)           -- (the game takes the bar down as its player dies)
+        s:run(6)
+        return s, h, g1, g2, boss
+    end
+    local function upAgain(s, h, after)
+        Session.respawned(h)
+        Session.revive(h)
+        s:run(after or 25)
+    end
+    local function hasWin(h)
+        return has(h.storyGuids, "N_WIN") and has(h.storyGuids, "N_BELL") and has(h.globalTags, "boss.win")
+    end
+
+    -- (The bench, 11-12: the game pays a boss's dust to a player down as it dies, and keeps it; a model where it pays
+    -- nothing too.)
+    for _, model in ipairs({ "the game's own", "nothing paid while down" }) do
+        local s, h, g1, g2, boss = downFight("boss", { items = { { ITEM, 2 } }, paysDown = model == "the game's own" })
+        local gave = { Session.dust(g1), Session.dust(g2) }
+        check(field(h.deathWidget, "NotTick") == true, model .. ": the host down first waits")
+        swing(g2, Session.enemyOn(g2, "boss"), 1)       -- (guest 2's killing blow)
+        s:run(14)
+        check(field(boss, "realDeath") == true and not has(h.storyGuids, "N_WIN"), model .. ": the guest's blow is the "
+            .. "boss's whole death in the host's world, its win not run there with its player down")
+        check(has(g1.storyGuids, "N_WIN") and has(g2.storyGuids, "N_WIN"), model .. ": the guests' worlds ran its win")
+        upAgain(s, h)
+        check(hasWin(h), model .. ": the host up again has the win's flag and flow steps, the bell's among them")
+        check(has(h.bellIds, BELL) and not has(h.bellIds, OLD_BELL), model .. ": and the bell it woke, not one near it the "
+            .. "guests had before")
+        check(rawget(h.bag, "__fields").weapons[WEAPON] == true, model .. ": and its reward, the guests' find")
+        check(Session.items(h, ITEM) == 3 and Session.dust(h) == 700, string.format("%s: its loot and dust, once (%d of 3, "
+            .. "dust %d of 700)", model, Session.items(h, ITEM), Session.dust(h)))
+        check(Session.dust(g1) - gave[1] == 700 and Session.dust(g2) - gave[2] == 700, string.format("%s: and the guests get "
+            .. "its dust, as from a live host (%d, %d of 700)", model, Session.dust(g1) - gave[1], Session.dust(g2) - gave[2]))
+        allErrors(s)
+    end
+
+    -- A boss the codex doesn't call one, its bar gone as the host died: still the boss of the host's fight. (The bench,
+    -- 11-12: the gold-masked man was then a boss to nobody on the host, and the guest's word of his win was turned down.)
+    local s, h, g1, g2 = downFight("masked", {})
+    local gave = { Session.dust(g1), Session.dust(g2) }
+    swing(g2, Session.enemyOn(g2, "masked"), 1)
+    s:run(14)
+    upAgain(s, h)
+    check(hasWin(h) and has(h.bellIds, BELL), "a boss the codex doesn't call one, its bar gone with the host: its win "
+        .. "reaches the host all the same")
+    check(Session.dust(h) == 700 and Session.dust(g1) - gave[1] == 700, string.format("and its dust, kept by the host (%d),"
+        .. " goes to the guests (%d)", Session.dust(h), Session.dust(g1) - gave[1]))
+    allErrors(s)
+
+    -- The win waiting for the last of the fight, a guard falling after the boss's own look is over, the host still down.
+    -- (And not one 65 m off, by a guest gone over there: no guard of that fight. The review.)
+    s, h, g1, g2 = downFight("boss", { winOn = "guard" })
+    for _, pc in ipairs(s.pcs) do
+        Fake.put(Session.enemyOn(pc, "far"), "winSteps", { nodes = { "N_FAR" } })
+    end
+    swing(g2, Session.enemyOn(g2, "boss"), 1)
+    s:run(25)
+    check(not hasWin(h) and not has(g2.storyGuids, "N_WIN"), "a guard of the fight still up: no win anywhere yet")
+    swing(g2, Session.enemyOn(g2, "guard"), 1)
+    s:run(14)
+    check(has(g2.storyGuids, "N_WIN") and not hasWin(h), "the guard falls 25 s after the boss: the guests' worlds win, "
+        .. "the host's, still down, not")
+    Session.moveTo(g2, 9300, 2800)
+    s:run(9)                                        -- (the guard's own look over: 20 s)
+    swing(g2, Session.enemyOn(g2, "far"), 1)
+    s:run(14)
+    check(has(g2.storyGuids, "N_FAR"), "an enemy 65 m off falls too, within the minute, its own step in the guests' worlds")
+    upAgain(s, h)
+    check(hasWin(h), "and the host up again has the guard's win too")
+    check(not has(h.storyGuids, "N_FAR"), "but not the far enemy's step")
+    allErrors(s)
+
+    -- What else a guest's world adds about then isn't the win's (the review of the draft): guest 1's death of the boss
+    -- refused (a phase of its world's own: the quiet kill, no win), and its own flag 2 s on; a scene's tag in guest 2's
+    -- world for 4 s; guest 2's own flag 25 s after the boss's death there, its look over.
+    s, h, g1, g2 = downFight("boss", {})
+    Fake.put(Session.enemyOn(g1, "boss"), "locked", true)
+    swing(g2, Session.enemyOn(g2, "boss"), 1)
+    s:run(2)
+    g1.globalTags[#g1.globalTags + 1] = "Quest.G1Only.Step2"
+    g2.globalTags[#g2.globalTags + 1] = "Level.Arena.SceneBusy"
+    g2.globalTags[#g2.globalTags + 1] = "relic.one"         -- (a relic of guest 2's own find: the flag it has while held)
+    s:run(4)
+    tagOff(g2, "Level.Arena.SceneBusy")
+    s:run(19)
+    g2.globalTags[#g2.globalTags + 1] = "Quest.G2Only.Later"
+    s:run(10)
+    upAgain(s, h)
+    check(hasWin(h), "the win's steps reach the host from guest 2's world")
+    check(not has(h.globalTags, "Quest.G1Only.Step2"), "not guest 1's own flag: its death of the boss never ran there")
+    check(not has(h.globalTags, "Level.Arena.SceneBusy"), "nor a scene's tag on for a moment in guest 2's world")
+    check(not has(h.globalTags, "relic.one"), "nor the flag of a thing guest 2 found and holds")
+    check(not has(h.globalTags, "Quest.G2Only.Later"), "nor guest 2's own flag, raised after the win's look was over")
+    s:run(15)
+    check(not has(g2.globalTags, "Quest.G1Only.Step2"), "nor guest 2 guest 1's flag, by the host's flow")
+    allErrors(s)
+
+    -- The host spends at a bell after its respawn, before the pay owed is looked at: the boss's dust kept, nothing given back.
+    s, h, g1, g2 = downFight("boss", {})
+    gave = { Session.dust(g1), Session.dust(g2) }
+    swing(g2, Session.enemyOn(g2, "boss"), 1)
+    s:run(14)
+    local paidDown = Session.dust(h)
+    upAgain(s, h, 6)
+    Fake.put(h.pawn, "ConsciousnessDust", Session.dust(h) - 500)        -- (500 spent at the bell)
+    s:run(25)
+    check(paidDown == 700 and Session.dust(h) == paidDown - 500, string.format("spent after the respawn: not given back "
+        .. "(%d, %d expected)", Session.dust(h), paidDown - 500))
+    check(Session.dust(g1) - gave[1] == 700, string.format("and the guests still get the boss's dust (%d of 700)",
+        Session.dust(g1) - gave[1]))
+    allErrors(s)
+
+    -- A partner's share comes as the host gets up, no look of its own between (the bench, 11-12): not taken for the boss's
+    -- pay, nor the boss's kept dust for none paid.
+    s, h, g1, g2 = downFight("boss", {})
+    gave = { Session.dust(g1), Session.dust(g2) }
+    swing(g2, Session.enemyOn(g2, "boss"), 1)
+    s:run(14)
+    paidDown = Session.dust(h)
+    h.env.PBZ.game.addCurrency(h.pawn, 600)
+    upAgain(s, h)
+    check(paidDown == 700 and Session.dust(h) == paidDown + 600, string.format("a share as it got up: the boss's dust "
+        .. "not given again (%d, %d expected)", Session.dust(h), paidDown + 600))
+    check(Session.dust(g1) - gave[1] == 700, string.format("and the guests get the boss's dust (%d of 700)",
+        Session.dust(g1) - gave[1]))
+    allErrors(s)
+
+    -- Where the game paid nothing while down, its pay coming after all once the host is up (3 s on, in the dust watch's
+    -- quiet; 7 s on, after it): not given again, and the guests' share once. (The review: both were paid twice.)
+    for _, late in ipairs({ 3, 7 }) do
+        s, h, g1, g2 = downFight("boss", { paysDown = false })
+        gave = { Session.dust(g1), Session.dust(g2) }
+        swing(g2, Session.enemyOn(g2, "boss"), 1)
+        s:run(14)
+        upAgain(s, h, late)
+        Session.gainDust(h, 700)                    -- (the game's own pay, late)
+        s:run(25)
+        check(Session.dust(h) == 700 and Session.dust(g1) - gave[1] == 700, string.format("the game's pay %d s after the "
+            .. "respawn: the host has it once (%d of 700), the guests their share once (%d)", late, Session.dust(h),
+            Session.dust(g1) - gave[1]))
+        allErrors(s)
+    end
+
+    -- (The second review.) Nothing paid while down, the wallet read low a moment and back as the host gets up, then the
+    -- game's pay 7 s on: the guests get it once. And a pay 3 s on, 500 of it spent at the bell 6 s on: nothing given again.
+    s, h, g1, g2 = downFight("boss", { paysDown = false, wallet = 5000 })
+    gave = { Session.dust(g1), Session.dust(g2) }
+    swing(g2, Session.enemyOn(g2, "boss"), 1)
+    s:run(14)
+    Fake.put(h.pawn, "ConsciousnessDust", 0)
+    s:run(0.6)
+    Fake.put(h.pawn, "ConsciousnessDust", 5000)
+    upAgain(s, h, 7)
+    Session.gainDust(h, 700)
+    s:run(30)
+    check(Session.dust(h) == 5700 and Session.dust(g1) - gave[1] == 700, string.format("a low read and back, the pay 7 s "
+        .. "after: the host has it once (%d of 5700), the guests their share once (%d)", Session.dust(h),
+        Session.dust(g1) - gave[1]))
+    allErrors(s)
+    s, h, g1, g2 = downFight("boss", { paysDown = false })
+    gave = { Session.dust(g1), Session.dust(g2) }
+    swing(g2, Session.enemyOn(g2, "boss"), 1)
+    s:run(14)
+    upAgain(s, h, 3)
+    Session.gainDust(h, 700)
+    s:run(3)
+    Fake.put(h.pawn, "ConsciousnessDust", Session.dust(h) - 500)
+    s:run(30)
+    check(Session.dust(h) == 200 and Session.dust(g1) - gave[1] == 700, string.format("the pay 3 s after, 500 spent: "
+        .. "nothing given again (%d of 200), the guests' share once (%d)", Session.dust(h), Session.dust(g1) - gave[1]))
+    allErrors(s)
+
+    -- Nothing paid while down, and down again 3 s after getting up, no boss this time: what's owed waits for the next time
+    -- up, given then and shared as earned. (The second review: given to a player down, the dust watch kept it back.)
+    s, h, g1, g2 = downFight("boss", { paysDown = false })
+    gave = { Session.dust(g1), Session.dust(g2) }
+    swing(g2, Session.enemyOn(g2, "boss"), 1)
+    s:run(14)
+    upAgain(s, h, 3)
+    Session.die(h)
+    s:run(8)
+    upAgain(s, h, 40)
+    check(Session.dust(h) == 700 and Session.dust(g1) - gave[1] == 700, string.format("nothing paid, down again before it "
+        .. "was settled: given once up (%d of 700), the guests' share once (%d)", Session.dust(h), Session.dust(g1) - gave[1]))
+    allErrors(s)
+
+    -- The wallet reads low a moment just before the respawn (as the dust watch knows it can): the pay read before it counts.
+    s, h, g1, g2 = downFight("boss", {})
+    gave = { Session.dust(g1), Session.dust(g2) }
+    swing(g2, Session.enemyOn(g2, "boss"), 1)
+    s:run(14)
+    Fake.put(h.pawn, "ConsciousnessDust", 0)
+    s:run(0.3)
+    Fake.put(h.pawn, "ConsciousnessDust", 700)
+    upAgain(s, h)
+    check(Session.dust(h) == 700 and Session.dust(g1) - gave[1] == 700, string.format("a low read just before the respawn: "
+        .. "the boss's dust not given again (%d of 700), the guests' share once (%d)", Session.dust(h),
+        Session.dust(g1) - gave[1]))
+    allErrors(s)
+
+    -- Down again in another fight before the first boss's pay is settled: that one settled at the second death, and the
+    -- second boss owed as the first was. (The review: it was owed nothing, the guests short of its share.)
+    s, h, g1, g2 = downFight("boss", {})
+    gave = { Session.dust(g1), Session.dust(g2) }
+    swing(g2, Session.enemyOn(g2, "boss"), 1)
+    s:run(14)
+    upAgain(s, h, 3)
+    local masked = Session.enemyOn(h, "masked")
+    Fake.put(masked, "dustLoot", 300)
+    h.hudLayout:RegisterBossHPBar(masked)
+    s:run(2)
+    for _, pc in ipairs({ g1, g2 }) do
+        local c = Session.enemyOn(pc, "masked")
+        swing(pc, c, select(1, Fake.health(c)) - 10)
+    end
+    s:run(3)
+    Session.die(h)
+    h.hudLayout:UnRegisterBossHPBar(masked)
+    s:run(6)
+    swing(g2, Session.enemyOn(g2, "masked"), 1)
+    s:run(14)
+    upAgain(s, h)
+    check(Session.dust(h) == 1000 and Session.dust(g1) - gave[1] == 1000, string.format("down twice, a boss each time: the "
+        .. "host keeps both (%d of 1000), the guests get both shares (%d of 1000)", Session.dust(h), Session.dust(g1) - gave[1]))
+    allErrors(s)
+
+    -- A fall the boss gets up from (Xiaoxue's), the host down: no win, nothing owed for it.
+    local boss
+    s, h, g1, g2, boss = downFight("boss", {})
+    gave = { Session.dust(g1), Session.dust(g2), Session.dust(h) }
+    Fake.setHealth(boss, 0)
+    Fake.put(boss, "dead", true)
+    s:run(3)
+    Fake.setHealth(boss, 5000)
+    Fake.put(boss, "dead", false)
+    s:run(8)
+    upAgain(s, h)
+    check(Session.dust(h) == gave[3] and Session.dust(g1) == gave[1] and Session.dust(g2) == gave[2], string.format("a fall "
+        .. "the boss gets up from: nobody paid for it (host +%d, guests +%d, +%d)", Session.dust(h) - gave[3],
+        Session.dust(g1) - gave[1], Session.dust(g2) - gave[2]))
+    check(not has(h.storyGuids, "N_WIN"), "and no win's step taken by the host from the guests' worlds")
+    allErrors(s)
+
+    -- Not a guest's word for a boss the host doesn't owe: nothing of a guest's world goes the host's way.
+    s = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest" }, true, ENEMIES)
+    s:run(4)
+    h = s.pcs[1]
+    local db = h.env.PBZ.coop.handlers.DB
+    if db then
+        db("sp:boss n N_STRAY", 2)
+        db("sp:boss b Bell_YXZR_005", 2)
+    end
+    s:run(25)
+    check(not has(h.storyGuids, "N_STRAY") and not has(h.bellIds, "Bell_YXZR_005"),
+        "a guest's word of a boss that didn't fall with the host down: nothing taken")
+    allErrors(s)
+    table.remove(Fake.BELLS)
+    table.remove(Fake.BELLS)
+end
 -- A player report (11-09): a door the host opened before the guest got there, or before it had loaded in the guest's world,
 -- stayed shut for the guest (a hand-in door, the Phantom Tavern's): only F3 got them past.
 local function doorsOpenedBefore()
@@ -9238,6 +9567,7 @@ return function(print_, scripts)
     holding()
     holdingForTwo()
     hostDiesFirst()
+    hostDownAtBossDeath()
     doorsOpenedBefore()
     dustOnlyEarned()
     coopDifficulty()

@@ -331,6 +331,199 @@ return function(api)
         return lit
     end
 
+    -- A boss of the host's world fell while the host was down, its respawn held for the fight (a report on 1.7.1, three
+    -- players: "if host dies during fight, they don't get items and bell (if it spawns afterwards) doesn't show up"). On the
+    -- bench (11-12, the Gold-Masked One and his two guards at Xigu) the game runs a boss's death with its player down another
+    -- way: its "killed" flag and a step of its own, but none of its win's steps (the reward, a step on the arena's bell, two
+    -- more), and the respawn never brings them. A guest's world ran the same death with its player up (coop's K,
+    -- killForReal): its win's steps. What that death added here (flags, flow steps, bells it woke by the boss; not what was
+    -- here before it) is told to the host over the next seconds (DB <boss> <t|n|b> <items>), and the host takes what its
+    -- world lacks once it's up and settled, as a guest takes the host's flow. Only for a boss it owes (game.owedNames):
+    -- nothing else of a guest's world goes the host's way. (The reward itself reaches the host as any of the guest's
+    -- finds, T.)
+    -- (Only once the death ran here: from the K on, a flag of this player's own play went to the host, and from there to
+    -- every guest. A flag is told only if it was there the look before too, as the host's own are: one on for a moment, a
+    -- scene's, isn't the win's. The review of the draft. The bench, 11-12: the gold-masked man's win came 10 to 15 s after
+    -- his death ran here, his "killed" flag with it, in both worlds; looked at only till 10 s, one step was missed. A scene
+    -- here stops the clock: a win after a fight's scene comes when it's over. A load ends it: what comes then is the trip's.)
+    local DOWN_AT = { 4, 8, 12, 16, 20 }        -- seconds after the death ran here it's looked at, scenes not counted
+    local DOWN_SCENE_MAX_S = 120                -- scenes it waits out, in all
+    local DOWN_BELL_CM = 8000                   -- a woken bell this near the boss's place is its arena's
+    local DOWN_OWED_S = 180                     -- host: a boss owed this long ago still takes its steps
+    local DOWN_MAX = 1000                       -- more new at once than this, or waiting on the host, isn't a win's
+    flow.downFlow = {}                          -- guest: { name, x, y, since, step, told, before, seen, last, waited }
+    flow.owedFlow = {}                          -- host: "kind item" -> the boss's name
+
+    -- Guest: this world's flags, flow steps and bells, read just before a death runs here (coop's net.killWatched).
+    function flow.readFlow()
+        return read()
+    end
+
+    -- Guest: that death ran here (killForReal) with the host down: what it adds is told to the host. before: readFlow's.
+    function flow.watchDownFlow(name, at, before)
+        if type(name) == "string" and type(at) == "table" and tonumber(at.X) and tonumber(at.Y) and type(before) == "table"
+            and #flow.downFlow < 8 then
+            table.insert(flow.downFlow, { name = name, x = at.X, y = at.Y, since = os.clock(), step = 1, told = {},
+                before = before })
+        end
+    end
+
+    -- (Not a thing's own flag while held, a find of this player's (game.isHeldFlag); none at all from another story table,
+    -- as FLOW takes none; and more new at once than DOWN_MAX is a load or a restore, not a win. Not FLOOD: a boss's scene
+    -- can mark hundreds of flow steps at once, see hostTick.)
+    local function tellDownFlow(now)
+        local scene = game.inCutscene and game.inCutscene()
+        local cur = nil
+        if api.story and api.story.mismatch then
+            flow.downFlow = {}
+            return
+        end
+        for i = #flow.downFlow, 1, -1 do
+            local d = flow.downFlow[i]
+            if scene and d.last and (d.waited or 0) < DOWN_SCENE_MAX_S then
+                d.since, d.waited = d.since + (now - d.last), (d.waited or 0) + (now - d.last)
+            end
+            d.last = now
+            if now - d.since >= DOWN_AT[d.step] then
+                d.step = d.step + 1
+                cur = cur or read()         -- (once a second for all of them)
+                local places = cur and next(cur.b) and bellPlaces() or {}
+                local said, seen = 0, {}
+                for _, kind in ipairs({ "t", "n", "b" }) do
+                    local out = {}
+                    for item in pairs(cur and cur[kind] or {}) do
+                        -- (What was here before first: thousands of flags and steps, a key made for each was a hitch.)
+                        if not d.before[kind][item] and #item <= 200 then
+                            local key, p = kind .. " " .. item, kind == "b" and places[item]
+                            if not d.told[key]
+                                and (kind ~= "b" or (p and (p.x - d.x) ^ 2 + (p.y - d.y) ^ 2 <= DOWN_BELL_CM * DOWN_BELL_CM))
+                                and not (kind == "t" and game.isHeldFlag and game.isHeldFlag(item)) then
+                                seen[key] = true
+                                if kind ~= "t" or (d.seen and d.seen[key]) then
+                                    d.told[key] = true
+                                    out[#out + 1] = item
+                                end
+                            end
+                        end
+                    end
+                    if #out > DOWN_MAX then
+                        log(string.format("Story flow: %d new %s here at once (a load?): not told to the host.", #out, kind))
+                        out = {}
+                    end
+                    if #out > 0 then
+                        table.sort(out)
+                        local line, n = {}, 0
+                        for _, item in ipairs(out) do
+                            if n + #item + 1 > CHUNK and #line > 0 then
+                                coop.sendEvent("DB", d.name .. " " .. kind .. " " .. table.concat(line, " "))
+                                line, n = {}, 0
+                            end
+                            line[#line + 1] = item
+                            n = n + #item + 1
+                        end
+                        coop.sendEvent("DB", d.name .. " " .. kind .. " " .. table.concat(line, " "))
+                        said = said + #out
+                    end
+                end
+                d.seen = seen
+                if said > 0 then
+                    log(string.format("Story flow: the host was down when %s fell: %d of its steps here told to the host.",
+                        d.name, said))
+                end
+                if d.step > #DOWN_AT then
+                    table.remove(flow.downFlow, i)
+                end
+            end
+        end
+    end
+
+    -- Host: a boss owed that got up again (coop's shareEnemy): its fall was a phase's, and what a guest's world added at it
+    -- isn't a win here. (pbz.lua's game.dropOwed for its pay.)
+    function flow.dropOwed(name)
+        for key, whose in pairs(flow.owedFlow) do
+            if whose == name then
+                flow.owedFlow[key], flow.again[key] = nil, nil
+            end
+        end
+    end
+
+    coop.handlers.DB = function(rest)
+        if not coop.isHost() or type(rest) ~= "string" or #rest > CHUNK + 220 then
+            return
+        end
+        local name, kind, items = rest:match("^(%S+) ([tnb]) (.+)$")
+        -- (owedNames outlives the pay, for this: a guest's word comes over the 20 s after its own death of the boss, and
+        -- its look waits out a scene there. pbz.lua's oweBoss.)
+        local owed = name and game.owedNames and game.owedNames[name]
+        if not (owed and os.clock() - owed < DOWN_OWED_S) then
+            return
+        end
+        local n = 0
+        for _ in pairs(flow.owedFlow) do
+            n = n + 1
+        end
+        for item in items:gmatch("%S+") do
+            if #item <= 200 and n < DOWN_MAX and not (kind == "t" and (skipped(item)
+                or (game.isHeldFlag and game.isHeldFlag(item)))) then
+                if not flow.owedFlow[kind .. " " .. item] then
+                    n = n + 1
+                end
+                flow.owedFlow[kind .. " " .. item] = name
+            end
+        end
+    end
+
+    -- Host: what a boss's win added in a guest's world, for one that fell while this player was down, taken here once
+    -- they're up and settled, as its pay is (coop's watchOwnDeath), and calm. What this world has already is let go.
+    local function takeOwedFlow()
+        local net = coop.net
+        if next(flow.owedFlow) == nil or net.deadSince ~= nil or os.clock() - (net.upAt or -1e9) < (net.OWED_AFTER_S or 15)
+            or not calm() then
+            return
+        end
+        local ep, bm = FindFirstOf("EventPipelineManager"), FindFirstOf("BellManager")
+        local have = valid(ep) and valid(bm) and read()
+        if not have then
+            return
+        end
+        local done, already, names = 0, 0, {}
+        game.granting = true        -- (what a step hands out isn't sent back as found)
+        for key, name in pairs(flow.owedFlow) do
+            local kind, item = key:match("^(%a) (.+)$")
+            if have[kind][item] then
+                flow.owedFlow[key], flow.again[key] = nil, nil
+                already = already + 1
+            else
+                local ok = pcall(function()
+                    if kind == "t" then
+                        ep:AddTagsByString(item)
+                    elseif kind == "n" then
+                        ep.ExecuteNodeGuid:Add(item, true)
+                    else
+                        bm:ActivateBellByID(FName(item))
+                    end
+                end)
+                if ok or not tryAgain(key) then
+                    flow.owedFlow[key] = nil
+                    if ok then
+                        done = done + 1
+                        names[name] = true
+                        flow.again[key] = nil
+                    end
+                end
+            end
+        end
+        game.granting = false
+        if done > 0 then
+            local list = {}
+            for name in pairs(names) do
+                list[#list + 1] = name
+            end
+            log(string.format("Story flow: %d of the steps of %s's win taken here from the others' worlds (%d here already): "
+                .. "you were down when it fell.", done, table.concat(list, ", "), already))
+        end
+    end
+
     local function guestTick()
         if (#flow.queue > 0 or next(flow.pending) ~= nil) and game.inPrologue and game.inPrologue() then
             flow.queue, flow.pending, flow.again = {}, {}, {}   -- (nothing of the host's into this player's prologue: see hostTick)
@@ -457,7 +650,7 @@ return function(api)
             flow.told, flow.sent, flow.seen, flow.linkedN, flow.pending, flow.again = nil, {}, nil, 0, {}, {}
             -- (And what waits, a call to try again among it: kept, it was taken at the next session's first calm second,
             -- maybe in another save. The review of 339d057.)
-            flow.queue, flow.owed = {}, {}
+            flow.queue, flow.owed, flow.downFlow, flow.owedFlow = {}, {}, {}, {}
             return
         end
         -- Not in a PvP match: nothing a match changes is saved, and the story's flow isn't the match's. After it the host
@@ -477,6 +670,9 @@ return function(api)
                 log("Story flow: " .. tostring(err))
             end
         end
+        -- (A boss's win's steps for a host down when it fell: on their own, not stopped by an error of the ticks above.)
+        local job = coop.isHost() and next(flow.owedFlow) ~= nil and takeOwedFlow
+            or not coop.isHost() and #flow.downFlow > 0 and now >= nextGuest and tellDownFlow
         if coop.isHost() then
             local ok, err = pcall(hostTick, now)
             if not ok and err ~= flow.lastError then
@@ -486,6 +682,13 @@ return function(api)
         elseif now >= nextGuest then
             nextGuest = now + 1
             local ok, err = pcall(guestTick)
+            if not ok and err ~= flow.lastError then
+                flow.lastError = err
+                log("Story flow: " .. tostring(err))
+            end
+        end
+        if job then
+            local ok, err = pcall(job, now)
             if not ok and err ~= flow.lastError then
                 flow.lastError = err
                 log("Story flow: " .. tostring(err))

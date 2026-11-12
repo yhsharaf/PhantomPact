@@ -873,6 +873,7 @@ return function(api)
         if #paid > 0 then
             log(string.format("Your partner's kill (%s, level %d): %s.", name, level, table.concat(paid, ", ")))
         end
+        return dust, items
     end
 
     -- The host, an enemy's aggro turn: every ghost here goes on its hatred list, and who it goes for is steered among the
@@ -1037,14 +1038,20 @@ return function(api)
                 -- (Once for each body: a restart or a map change forgets which bodies were told, and a boss's body still
                 -- lying there was told again, its items paid again.)
                 net.bossPaid = net.bossPaid or {}
-                if boss and not paidThere and game.rollLoot and net.bossPaid[addr] ~= body then
+                -- (A boss of the fight this player went down in, dead with them down: its pay is owed till they're up, and
+                -- its win's steps come from a guest's world. pbz.lua's payOwed, flowsync.lua's DB.)
+                local owed = net.deadSince ~= nil and game.downBoss and game.downBoss(name, boss)
+                if (boss or owed) and not paidThere and game.rollLoot and net.bossPaid[addr] ~= body then
                     net.bossPaid[addr] = body
                     -- The game paid the host. A boss's items are the client's too.
-                    local _, items = game.rollLoot(actor)
+                    local bossDust, items = game.rollLoot(actor)
                     local paid = {}
                     sendItems(name, items, paid)
                     if #paid > 0 then
                         log("Boss items for your partner too: " .. table.concat(paid, ", ") .. ".")
+                    end
+                    if owed then
+                        game.oweBoss(name, bossDust, items)
                     end
                 end
                 -- (A copy of another's fight only: this game's own fight is its own to end, its bar and walls the game's. At
@@ -1081,6 +1088,14 @@ return function(api)
             net.deadBodies[addr] = nil
             if net.bossPaid then
                 net.bossPaid[addr] = nil
+            end
+            -- (And nothing is owed for it: a fall it gets up from, Xiaoxue's, with this player down, isn't a win. The review.)
+            if game.owedNames and game.owedNames[name] and game.dropOwed then
+                game.dropOwed(name)
+                if api.flowsync and api.flowsync.dropOwed then
+                    api.flowsync.dropOwed(name)
+                end
+                log("Boss " .. name .. " is up again: nothing owed for its fall.")
             end
             if handover.guestRuns(name, actor, addr, x, y, z) and handover.follow(name, actor, addr, hp, posture) then
                 return              -- (the guest's game runs it: what it does comes from there)
@@ -2277,6 +2292,54 @@ return function(api)
         end
     end
 
+    -- Guest, the host's K, the host down as it fell, its respawn held for the fight (a report on 1.7.1, three players: "if
+    -- host dies during fight, they don't get items and bell (if it spawns afterwards) doesn't show up"). The host's world
+    -- ran that death the "player down" way, with none of its win's steps; this world's, run with this player up, has them,
+    -- and they're told to the host (flowsync.lua's DB). Down by its health (held, it says F 1), or F 2 a moment ago. A
+    -- boss: { name }. Another enemy falling within DOWN_GUARD_S of such a boss and DOWN_NEAR_CM of where it fell (a guard,
+    -- the win waiting for the last of them): { name, at } of that boss. Else nil.
+    net.DOWN_GUARD_S, net.DOWN_NEAR_CM = 60, 6000
+    function net.downWatch(name, wasBoss, quiet, actor)
+        local t = net.target
+        if quiet or not (api.flowsync and api.flowsync.watchDownFlow) then
+            return nil
+        end
+        if not ((t and t.MaxHp and t.MaxHp > 0 and t.Hp and t.Hp <= 0)
+            or (net.hostDownAt and os.clock() - net.hostDownAt < 15)) then
+            return nil
+        end
+        if wasBoss then
+            return { name = name }
+        end
+        local last = net.downBossFell
+        if last and os.clock() - last.at < net.DOWN_GUARD_S and valid(actor) then
+            local ok, l = pcall(function() return actor:K2_GetActorLocation() end)
+            if ok and l and (l.X - last.where.X) ^ 2 + (l.Y - last.where.Y) ^ 2 <= net.DOWN_NEAR_CM ^ 2 then
+                return { name = last.name, at = last.where }
+            end
+        end
+        return nil
+    end
+
+    -- Guest: killForReal, the death run here. With down (downWatch's), what it adds from then on is watched for the host:
+    -- only once it ran here (one killed quietly ran no win, and what came meanwhile was this player's own play).
+    function net.killWatched(actor, down)
+        local flow = api.flowsync
+        local before = down and flow.readFlow()
+        local where = down and (down.at or select(2, pcall(function()
+            local l = actor:K2_GetActorLocation()
+            return { X = l.X, Y = l.Y }
+        end)))
+        local ran = game.killForReal(actor)
+        if ran and before and type(where) == "table" then
+            flow.watchDownFlow(down.name, where, before)
+            if not down.at then
+                net.downBossFell = { name = down.name, at = os.clock(), where = where }
+            end
+        end
+        return ran
+    end
+
     -- quiet: a death from before (BEATEN), not the end of a fight going on.
     handlers.K = function(name, _, quiet)
         local actor = enemyByName[name]
@@ -2317,6 +2380,7 @@ return function(api)
                 net.endedInFight = net.endedInFight or {}
                 net.endedInFight[name] = os.clock()
             end
+            local down = net.downWatch(name, wasBoss, quiet, actor)
             if valid(actor) then
                 if api.puppets then
                     api.puppets.drop(actor)
@@ -2329,7 +2393,7 @@ return function(api)
                 elseif fought and not quiet and game.killForReal then
                     -- The boss of a fight both are in: the whole death here too, so this world's story goes on with the
                     -- host's, its scene after the fight first (a quiet kill skipped it, and the next phase came unseen).
-                    if game.killForReal(actor) then
+                    if net.killWatched(actor, down) then
                         log("Host says " .. name .. " died; its death runs here too.")
                     elseif game.kill then
                         -- (Refused here (a phase or floor of this world's own): the host's word stands, the quiet death.)
@@ -2341,7 +2405,7 @@ return function(api)
                     -- The game's own death, at level 0 so it pays nothing here: the quiet kill skipped what listens for
                     -- deaths, and a quest waiting for the monsters to be dealt with (Fierce Axe) never moved, not even after
                     -- a reload.
-                    if game.killForReal(actor) then
+                    if net.killWatched(actor, down) then
                         log("Host says " .. name .. " died; it dies here too.")
                     else
                         log("Host says " .. name .. " died; its death was refused here: tried again, then dissolved.")
@@ -2523,17 +2587,29 @@ return function(api)
                     end
                 end
                 if wasAlive and (real or (game.isDead and game.isDead(actor))) then
-                    if real and boss and game.rollLoot then
+                    -- (A boss of the fight this player went down in, its respawn held: what it pays here is owed till
+                    -- they're up, its win's steps from a guest's world. See shareEnemy. The bench, 11-12: the game had
+                    -- taken the gold-masked man's bar down as the host died, he was no boss here then, and nothing of
+                    -- his was owed: the guest's word of his win was turned down.)
+                    local owed = net.deadSince ~= nil and game.downBoss and game.downBoss(name, boss)
+                    if real and (boss or owed) and game.rollLoot then
                         -- The game ran the whole death and paid this player, as for their own blow. A boss's items are
                         -- the client's too.
-                        local _, items = game.rollLoot(actor)
+                        local bossDust, items = game.rollLoot(actor)
                         local paid = {}
                         sendItems(name, items, paid)
                         if #paid > 0 then
                             log("Boss items for your partner too: " .. table.concat(paid, ", ") .. ".")
                         end
+                        if owed then
+                            game.oweBoss(name, bossDust, items)
+                        end
                     elseif not real and game.rollLoot then
-                        payKillLoot(name, actor, nil, not boss and from or nil)     -- (a boss's: everyone's, as by its real death)
+                        -- (A boss's: everyone's, as by its real death.)
+                        local bossDust, items = payKillLoot(name, actor, nil, not (boss or owed) and from or nil)
+                        if owed then
+                            game.oweBoss(name, bossDust, items)
+                        end
                     end
                     -- At once, not at the enemy's next turn: the partner is looking at a copy held at 1 health.
                     net.deadSent[name] = true
@@ -4329,6 +4405,7 @@ return function(api)
     -- bench, each just after a trip; the trace named the chains-and-levers job). They wait till it's over.
     net.QUIET_AFTER_LOAD_S = 5
     net.SETTLE_S = 30               -- (how long after a load a hitch still counts as loading in)
+    net.OWED_AFTER_S = 15           -- (up this long after a respawn before a boss's pay owed is given: watchOwnDeath)
     pcall(function()
         RegisterLoadMapPostHook(function()
             net.quietUntil = os.clock() + net.QUIET_AFTER_LOAD_S
@@ -4346,6 +4423,10 @@ return function(api)
             -- Enemies this world brought back for the host go back to dead in it before it's saved and left: put back at the
             -- end of the session, they'd be put back in whatever world is loaded then.
             pcall(bring.putBackAll)
+            -- (What a boss's death here adds is no longer looked at for a host who was down: what comes now is the trip's.)
+            if api.flowsync then
+                api.flowsync.downFlow = {}
+            end
             -- With a player in the world this is a trip: the same world on another map, and a partner's fight goes on. Only a
             -- load from outside it (the title screen) is a world loaded anew.
             if valid(select(2, getPlayer1())) then
@@ -4355,6 +4436,11 @@ return function(api)
             -- (Put-backs still owed were that world's: in another save, or a new game, they'd kill an enemy it has alive.)
             if game.owed then
                 game.owed.ids = {}
+            end
+            -- (So was a boss's pay owed to this player for a death there, and its bell: pbz.lua's payOwed, flowsync's DB.)
+            game.owedBosses, game.downAt, game.owedNames = nil, nil, nil
+            if api.flowsync then
+                api.flowsync.owedFlow, api.flowsync.downFlow = {}, {}
             end
             -- A guest's world loaded anew: the host's kills are still kills, and its save may not have them all. As after
             -- this player's death, each is put down again as it loads (bring.pending): the host's re-tell after the load's
@@ -4394,6 +4480,9 @@ return function(api)
         net.partnerFighting, net.toldFighting = false, nil
         game.holdRespawn(nil, false)
         net.holdLooking, net.holdWanted, net.respawnHeld, net.deadSince, net.struck = false, false, false, nil, {}
+        -- (And what a boss owed this player for a death while down: given in a session after, its share went to whoever
+        -- was there then. pbz.lua's payOwed.)
+        game.owedBosses, game.downAt, game.owedNames, net.downBossFell = nil, nil, nil, nil
         watchFight(false)
         if net.arriveUntil then
             -- (The hold's end is watched by the tick that's stopping here.)
@@ -4961,6 +5050,22 @@ return function(api)
         end
     end
 
+    -- What a boss of this world paid while this player was down (pbz.lua's payOwed), settled: what it lacks given, or the
+    -- dust the game kept here shared (C). False while it can't be told yet.
+    function net.settleOwed(pawn)
+        local paid, share, kept = game.payOwed(pawn)
+        if kept then
+            log(string.format("Down when the boss died: what it paid was kept here; %d dust of it to the others.",
+                math.floor(share)))
+        elseif paid and #paid > 0 then
+            log("Down when the boss died: what it paid is yours now: " .. table.concat(paid, ", ") .. ".")
+        end
+        if share and share > 0 then
+            sendEvent("C", math.floor(share))
+        end
+        return paid ~= nil
+    end
+
     local function watchOwnDeath()
         local pawn = localPawn()
         if pawn == nil or not game.isDead then
@@ -4975,6 +5080,26 @@ return function(api)
                 if game.hideAliveScreen then
                     game.hideAliveScreen()
                 end
+                if game.noteDown then
+                    -- (Down again before what a boss owed was settled: its pay come, settled now; not come, this down is
+                    -- the last one's again (pbz.lua's reopenDown). Left as it was, a boss falling now was owed nothing.
+                    -- The reviews.)
+                    if game.owedBosses and game.downAt and game.downAt.up then
+                        local st = game.owedState(pawn)
+                        if st and st.kept then
+                            net.settleOwed(pawn)
+                        elseif st then
+                            game.reopenDown(net.holdLooking and net.fightNames or nil)
+                        else
+                            game.owedBosses, game.downAt = nil, nil
+                        end
+                    end
+                    -- (What a boss of that fight pays while this player is down is owed against this: pbz.lua's payOwed.)
+                    game.noteDown(pawn, net.holdLooking and net.fightNames or nil)
+                end
+            end
+            if game.watchOwed then
+                game.watchOwed(pawn)
             end
             if not game.spectate then
                 return
@@ -4997,6 +5122,9 @@ return function(api)
         else
             if net.deadSince ~= nil then
                 net.upAt = os.clock()       -- (see onLocalSit)
+                if game.downAt then
+                    game.downAt.up = true   -- (what the bag and wallet do from here on is this player's own)
+                end
             end
             net.deadSince = nil
             if net.holdLooking then
@@ -5005,6 +5133,27 @@ return function(api)
             end
             if game.bossFightActive() then
                 net.fightSeenAt = os.clock()
+                -- (Its bosses by name, a second apart: the game takes the bar down as its player dies, and one the codex
+                -- doesn't call a boss was nobody's boss then. pbz.lua's downBoss.)
+                if net.fightSeenAt >= (net.fightNamesAt or 0) then
+                    net.fightNamesAt = net.fightSeenAt + 1.0
+                    net.fightNames = {}
+                    for _, a in ipairs(net.ownBosses()) do
+                        net.fightNames[enemyName(a, a:GetAddress())] = true
+                    end
+                end
+            end
+            -- What a boss of this world paid while this player was down, given once they're up and settled (pbz.lua's
+            -- payOwed): past the respawn's quiet and the wallet's, so a dust rise goes to the partners as earned, as at a
+            -- live kill. The game's own pay kept here: its dust to them as well, which went nowhere while down.
+            if game.watchOwed then
+                game.watchOwed(pawn)
+            end
+            local now = os.clock()
+            if game.owedBosses and now - (net.upAt or -1e9) >= net.OWED_AFTER_S and now >= (net.quietUntil or 0)
+                and now >= ((game.dustWatch or {}).quietUntil or 0) and now >= (net.owedLookAt or 0) then
+                net.owedLookAt = now + 1.0
+                net.settleOwed(pawn)
             end
             -- (Not while a PvP match has the camera on a teammate: arena.lua's, down at 1 health, not dead.)
             if game.isSpectating and game.isSpectating() and not net.watchingFight and not net.arenaWatching then
