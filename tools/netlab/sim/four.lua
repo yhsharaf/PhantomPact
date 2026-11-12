@@ -5658,6 +5658,120 @@ local function kickStones()
     allErrors(s)
 end
 
+-- Memory Flowers (a player report on 1.7.1/1.7.2: "The blue Memory Flower cannot be synced; only the first person to pick it
+-- up gets it"). A pick gives a petal, which the game keeps once a save: once in the bag, even a moment, it never takes it
+-- again. The share's way with a thing new to a player (held a moment, taken back, given) spent it: the partner had none,
+-- and their own copy gave nothing either. Now a partner's petal goes in once, their copy goes the game's way, and the
+-- flower's quest flags come with it, either way round.
+local function memoryFlowers()
+    part("Memory Flowers")
+    local SIX, FIVE, FOUR = "quest.弦音.记忆之花6", "quest.弦音.记忆之花5", "quest.弦音.记忆之花4"
+    local function has(pc, tag)
+        local n = 0
+        for _, t in ipairs(pc.globalTags) do
+            if t == tag then
+                n = n + 1
+            end
+        end
+        return n
+    end
+    local function flowerOn(pcs, id, petal, flags, x)
+        local out = {}
+        for i, pc in ipairs(pcs) do
+            out[i] = Fake.memoryFlower(pc, id, x or 600.0, 0.0, 100.0, petal, flags)
+        end
+        return out
+    end
+    local s, h, g = pair()
+    local six = flowerOn({ h, g }, "BP_FlowInteract_MemoryFlower_C_UAID_6", "F_02056", { SIX })
+    s:run(2)
+    Fake.pickFlower(h, six[1])
+    s:run(4)
+    check(Session.items(h, "F_02056") == 1 and Session.items(g, "F_02056") == 1,
+        "the host picks a Memory Flower: its petal for the host, and one for the guest")
+    check(#g.petalsRefused == 0, "given once, as it came: the game never refused it (held a moment first, it would for good)")
+    check(Fake.flowerState(g, six[2]) == "gone", "the guest's copy goes, the game's way")
+    s:run(16)
+    check(has(g, SIX) == 1, "and the flower's quest flag is raised for the guest")
+    check(Session.items(g, "F_02056") == 1 and #g.petalsRefused == 0 and Session.items(h, "F_02056") == 1,
+        "still one each a while on")
+    -- The other way: the guest picks first. The host takes no story flags from guests: its count came with the word alone.
+    local five = flowerOn({ h, g }, "BP_FlowInteract_MemoryFlower_C_UAID_5", "F_02055", { FIVE }, 900.0)
+    s:run(2)
+    Fake.pickFlower(g, five[2])
+    s:run(5)
+    check(Session.items(h, "F_02055") == 1 and Session.items(g, "F_02055") == 1 and #h.petalsRefused == 0,
+        "the guest picks one first: its petal for the host too, once")
+    check(Fake.flowerState(h, five[1]) == "gone", "and the host's copy goes")
+    check(has(h, FIVE) == 1, "the host's quest counts it")
+    check(count(h.sent, "^E MF ") == 1 and count(g.sent, "^E MF ") == 1, "each pick told once, and none told back")
+    -- A re-sync: the guest drops out and comes back. The host's bag on joining has both petals; nothing comes twice.
+    Session.command(g, "netoff")
+    s:run(1)
+    Session.command(g, "neton client")
+    s:run(20)
+    check(Session.items(g, "F_02056") == 1 and Session.items(g, "F_02055") == 1 and #g.petalsRefused == 0,
+        "back from a drop: still one each, nothing given again")
+    check(has(g, SIX) == 1 and has(h, FIVE) == 1, "and no flag twice")
+    allErrors(s)
+
+    -- A copy not loaded at the word: it goes as it loads, and stays gone after (kept with the flower, as the game keeps it).
+    local l, lh, lg = pair()
+    local four = flowerOn({ lh, lg }, "BP_FlowInteract_MemoryFlower_C_UAID_4", "F_02055", { FOUR })
+    Fake.unloadFlower(four[2])
+    l:run(2)
+    Fake.pickFlower(lh, four[1])
+    l:run(4)
+    check(Session.items(lg, "F_02055") == 1 and Fake.flowerState(lg, four[2]) == "unloaded",
+        "a pick far from the guest: the petal comes, the copy isn't there to go yet")
+    Fake.loadFlower(lg, four[2])
+    l:run(7)
+    check(Fake.flowerState(lg, four[2]) == "gone", "it goes once it loads")
+    Fake.unloadFlower(four[2])
+    Fake.loadFlower(lg, four[2])
+    check(Fake.flowerState(lg, four[2]) == "gone", "and is gone at the next load too")
+    local searches = lg.flowerSearches or 0
+    l:run(20)
+    check((lg.flowerSearches or 0) == searches, "nothing more looked for once it went")
+    -- A guest picking the same flower as the host's word comes: theirs plays out, the game vanishes it at its end.
+    local same = flowerOn({ lh, lg }, "BP_FlowInteract_MemoryFlower_C_UAID_6b", "F_02056", { SIX }, 1200.0)
+    l:run(2)
+    Fake.pickFlower(lg, same[2], "start")
+    Fake.pickFlower(lh, same[1])
+    l:run(5)
+    check(Fake.flowerState(lg, same[2]) == "here" and Session.items(lg, "F_02056") == 1,
+        "a guest in the middle of picking it keeps their own memory going (the share came)")
+    Fake.pickFlower(lg, same[2], "done")
+    l:run(3)
+    check(Fake.flowerState(lg, same[2]) == "gone" and Session.items(lg, "F_02056") == 1, "and it ends the game's way, one petal")
+    allErrors(l)
+
+    -- Three players: a guest's pick reaches the host and the other guest. A quest's flower (no petal named on the actor):
+    -- its petal comes as its flow gives it; one with a flag of its own while held brings that too.
+    local p = party(nil, nil, { "Host", "Guest", "Guest" })
+    local ph, pa, pb = p.pcs[1], p.pcs[2], p.pcs[3]
+    local quest = flowerOn({ ph, pa, pb }, "BP_FlowInteract_MemoryFlower_C_UAID_NongShe", "F_02012", {})
+    p:run(2)
+    Fake.pickFlower(pa, quest[2])
+    p:run(6)
+    check(Session.items(ph, "F_02012") == 1 and Session.items(pb, "F_02012") == 1 and Session.items(pa, "F_02012") == 1,
+        "three players: a guest's petal for the host and the other guest, once each")
+    check(Fake.flowerState(ph, quest[1]) == "gone" and Fake.flowerState(pb, quest[3]) == "gone", "both their copies go")
+    p:run(6)
+    check(has(ph, "jl.弄蛇.记忆之花2") == 1 and has(pb, "jl.弄蛇.记忆之花2") == 1,
+        "the petal's own flag while held comes with it")
+    check(#ph.petalsRefused == 0 and #pb.petalsRefused == 0, "nothing refused anywhere")
+    allErrors(p)
+
+    -- A guest who joins after the host's pick: the petal in the host's bag on joining, quietly, once.
+    local j, jh, jg = pair(nil, function(ph2)
+        ph2.bag:AddPropsByMap({ F_02011 = 1 }, true)
+    end)
+    j:run(20)
+    check(Session.items(jg, "F_02011") == 1 and #jg.petalsRefused == 0, "a petal the host had before the guest joined: theirs once")
+    allErrors(j)
+end
+
 -- Walking, jogging and sprinting: a figure has no stick for its locomotion to read, so it jogged at any speed.
 local function gaits()
     part("walking, jogging, sprinting")
@@ -9077,6 +9191,7 @@ return function(print_, scripts)
     guardStance()
     gaits()
     kickStones()
+    memoryFlowers()
     hostsEnemiesHere()
     bossScenes()
     playerReports()
