@@ -1894,6 +1894,143 @@ local function coopDifficulty()
         "after a crash while held at another setting's pick, alone: back to Wayfarer")
     allErrors(u)
 end
+-- As s:run, with the games of `still` standing still (a load): their time goes on and nothing of theirs runs, their relay
+-- still answering, as main.dll's does. each() after every frame.
+local function runStill(s, seconds, still, each)
+    for _ = 1, math.floor(seconds * 60 + 0.5) do
+        for _, pc in ipairs(s.pcs) do
+            if still[pc] then
+                pc.now = pc.now + 1 / 60
+            else
+                Fake.frame(pc, 1 / 60)
+            end
+        end
+        s.relay:step(s.pcs[1].now)
+        if each then
+            each()
+        end
+    end
+end
+-- A report on 1.7.1, three players online: "our boss damage seems to break at random times (sometimes it's right, then swaps
+-- over to wayfarer damage)". Everyone's down after a wipe and respawns at once, each load as long as that PC makes it, and
+-- nobody tells of a respawn's load: the first back saw the others silent for 12 s, gone, and its own load counted as time
+-- alone, so its own Wayfarer came back at once, till the next one was back.
+local function partyDifficulty()
+    part("the game's difficulty in a party of three, through loads")
+    local s = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest" }, true, ENEMIES)
+    for _, pc in ipairs(s.pcs) do
+        pc.difficulty = 1                           -- (each save on Wayfarer)
+    end
+    s:run(8)
+    check(everyone(s, function(pc) return pc.difficulty == 3 end), "all three on Hellwalker while they play together")
+    local least = {}
+    local function low()
+        for _, pc in ipairs(s.pcs) do
+            least[pc] = math.min(least[pc] or 9, pc.difficulty)
+        end
+    end
+    local h, g1, g2 = s.pcs[1], s.pcs[2], s.pcs[3]
+    -- (The host back first, then each guest: 20, 30 and 40 s of loading.)
+    local still = {}
+    for _, pc in ipairs(s.pcs) do
+        rawset(pc.pawn, "__alive", false)
+        still[pc] = true
+    end
+    local t = 0
+    runStill(s, 60, still, function()
+        t = t + 1 / 60
+        for pc, back in pairs({ [h] = 20, [g1] = 30, [g2] = 40 }) do
+            if still[pc] and t >= back then
+                still[pc] = nil
+                rawset(pc.pawn, "__alive", true)
+            end
+        end
+        low()
+    end)
+    check(least[h] == 3, "a wipe, the host back from its load first, the guests still loading: the host stays on Hellwalker"
+        .. " (" .. least[h] .. ")")
+    check(least[g1] == 3 and least[g2] == 3, "and so do the guests, each back in turn")
+    -- (Longer apart: the host back in 15 s, the guests' slow loads of over a minute.)
+    for _, pc in ipairs(s.pcs) do
+        rawset(pc.pawn, "__alive", false)
+        still[pc] = true
+    end
+    t, least = 0, {}
+    runStill(s, 85, still, function()
+        t = t + 1 / 60
+        for pc, back in pairs({ [h] = 15, [g1] = 65, [g2] = 70 }) do
+            if still[pc] and t >= back then
+                still[pc] = nil
+                rawset(pc.pawn, "__alive", true)
+            end
+        end
+        low()
+    end)
+    check(least[h] == 3, "the guests' loads of over a minute, the host back long before: still Hellwalker (" .. least[h] .. ")")
+    allErrors(s)
+
+    -- (The review of this fix.) Everyone loading 30 s, and both guests' links gone for 12 s just as the host is back: the
+    -- host's own load isn't time alone, so a moment's gap there doesn't put its own mode back.
+    for _, pc in ipairs(s.pcs) do
+        rawset(pc.pawn, "__alive", false)
+        still[pc] = true
+    end
+    t, least = 0, {}
+    runStill(s, 50, still, function()
+        t = t + 1 / 60
+        for _, pc in ipairs({ g1, g2 }) do
+            pc.cut = t >= 28 and t < 40
+        end
+        for pc, back in pairs({ [h] = 30, [g1] = 40, [g2] = 40 }) do
+            if still[pc] and t >= back then
+                still[pc] = nil
+                rawset(pc.pawn, "__alive", true)
+            end
+        end
+        low()
+    end)
+    check(least[h] == 3, "the guests' links gone a moment as the host comes back from its load: still Hellwalker ("
+        .. least[h] .. ")")
+    allErrors(s)
+
+    -- A guest's game standing still for good, its link up all the same (a hang): gone after LOAD_MAX_S, 90 s.
+    still = { [g1] = true, [g2] = true }
+    runStill(s, 60, still)
+    check(h.difficulty == 3, "both guests' games standing still a minute, their links up: still Hellwalker")
+    runStill(s, 60, still)
+    check(h.difficulty == 1, "two minutes: gone, the host's own Wayfarer back")
+    s:run(6)
+    check(h.difficulty == 3, "and Hellwalker again as they play on")
+    allErrors(s)
+
+    -- Really alone: both guests gone (their sync off), the host's own Wayfarer back 20 s on, as before.
+    for _, pc in ipairs({ g1, g2 }) do
+        Session.command(pc, "netoff")
+    end
+    s:run(15)
+    check(h.difficulty == 3, "both guests gone a moment: still Hellwalker")
+    s:run(15)
+    check(h.difficulty == 1, "alone a while: the host's own Wayfarer back")
+    allErrors(s)
+
+    -- (The review of this fix.) A partner's game crashes, and comes back a while on: its relay links again before the game
+    -- is in the world. Alone meanwhile, the host's own mode stays: no Hellwalker for a relay with nobody in the game yet.
+    local c, ch, cg = pair(nil, function(hpc) hpc.difficulty = 1 end)
+    c:run(2)
+    check(ch.difficulty == 3, "two players: the host's Wayfarer is Hellwalker")
+    c.relay:leave(cg)                               -- (the guest's game and its relay gone)
+    local quiet = { [cg] = true }
+    runStill(c, 40, quiet)
+    check(ch.difficulty == 1, "the guest's game crashed: the host alone, its own Wayfarer back")
+    local highest = 0
+    cg.relay = "client"                             -- (started again: its relay links, its game still loading)
+    runStill(c, 30, quiet, function() highest = math.max(highest, ch.difficulty) end)
+    check(highest == 1, "its relay back before its game: the host stays on its own Wayfarer (up to " .. highest .. ")")
+    quiet[cg] = nil
+    c:run(6)
+    check(ch.difficulty == 3, "its game back: Hellwalker again")
+    allErrors(c)
+end
 -- A guest's hit that makes their copy flinch: the host's enemy itself flinches the same way, and its next move doesn't cut the
 -- copy's reaction short.
 local function hitReactions()
@@ -9104,6 +9241,7 @@ return function(print_, scripts)
     doorsOpenedBefore()
     dustOnlyEarned()
     coopDifficulty()
+    partyDifficulty()
     lateJoiner()
     lateJoinerGuestFight()
     toldOnChange()
