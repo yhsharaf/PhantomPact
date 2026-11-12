@@ -2167,6 +2167,21 @@ return function(api)
         end
     end
 
+    -- Guest: a live enemy of the host's within cm of this player, by its line of the last second. The guest's own game counts
+    -- no fight with copies whose minds the host runs, so a card (game.calmForCard) goes by this too.
+    function net.enemyNear(cm)
+        local here, now = net.localLoc, net.frameNow or link.now()     -- (the lines' own clock: readEnemies)
+        if not (isClient() and here) then
+            return false
+        end
+        for _, r in pairs(net.remoteEnemies) do
+            if r.at and now - r.at < 1 and (r.Hp or 0) > 0 and (r.X - here.X) ^ 2 + (r.Y - here.Y) ^ 2 < cm * cm then
+                return true
+            end
+        end
+        return false
+    end
+
     -- Host: whose game runs this enemy now ("1": the guest's, which sends its lines and moves from now on; see handover).
     handlers.RUN = function(rest)
         local name, on = (rest or ""):match("^(%S+) ([01])$")
@@ -3983,8 +3998,8 @@ return function(api)
         if game.pickupShares and #game.pickupShares > 0 and not game.isDead(pawn) and not net.arena then
             game.pickupSharesDue(pawn)
         end
-        if game.tipsWanted and not game.isDead(pawn) then
-            game.showPickupTips(pawn)
+        if game.tipsWanted and not game.isDead(pawn) and not net.arena then
+            game.showPickupTips(pawn)       -- (a card waiting from before isn't put up in a PvP match)
         end
         if game.watchGear and now >= (slow.gearAt or 0) and not net.arena then
             slow.gearAt = now + GEAR_S

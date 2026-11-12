@@ -1695,6 +1695,23 @@ return function(api)
             -- (Notes and keys, R_ and I_, aren't counted in the backpack: no second try for those.)
             local before = game.itemCount(bp, itemId)
             local counted = not itemId:find("^[RI]_%d")
+            -- A story item (the game's NarrativeItem: a key, the Twin Flesh Lily) is mostly one of a kind, which the game hands
+            -- out once (game.oneOfAKind). One this player has already, come again from another world (a partner's take of
+            -- their copy, the host's bag on joining, the host's chest), is the same thing: not given twice. (A player report
+            -- on 1.7.1, three players: "story items still duplicate (twin flesh lilies for example, I have 2)". The game's
+            -- own second one: game.storyAgain.)
+            if game.oneOfAKind(itemId) then
+                if before >= 1 then
+                    log("Shared loot: " .. itemId .. " is a story item this player has already: not given twice.")
+                    game.granting = false
+                    local flag = game.heldFlags and game.heldFlags[itemId]
+                    if flag and api.flowsync and api.flowsync.raise then
+                        api.flowsync.raise({ flag }, itemId)      -- (its flag still goes with it, as below)
+                    end
+                    return
+                end
+                count = 1
+            end
             -- What a partner found shows on the right, as the game shows a find of this player's (the user, 11-09: "people
             -- want to be notified what their friends picked up on the right same as when you pick items the small
             -- notification that appears"): the backpack's notice flag on, then shown at once (game.showPickupTips). Not for a
@@ -1720,6 +1737,7 @@ return function(api)
                 game.tipsWanted = true
             elseif card then
                 game.cardIds[itemId] = true
+                game.tipsWanted = true      -- (put up at a calm moment: game.showPickupTips)
             end
             local after = game.itemCount(bp, itemId)
             -- (Not when quiet: GiveItem is the player blueprint's own helper, with no way to keep its card down. Only when the
@@ -1744,10 +1762,16 @@ return function(api)
     -- The game's own notice on the right (WB_ItemTips: "Forged Metal + 1") for what grantLoot gave with its flag. That only
     -- waits in the backpack's queue (PushGetPropInfos) till the game's own pickup flow shows it: the next chest this player
     -- opened (a report on 1.6.9: "all items will only show as picked up after opening the chest"). TryToPushPickupUI shows it
-    -- now (the bench, 11-09), when the game can (CanPushPickupUI, no card up): else at the next look. A card in the queue (a
-    -- note, a quest item) waits for the game's own moment with the rest, as it did: shown now it would take the screen
-    -- mid-fight, in a game that isn't paused for it. (Fields, not locals: this file is at its 200.)
-    game.tipsWanted, game.cardIds = false, {}
+    -- now (the bench, 11-09), when the game can (CanPushPickupUI, no card up): else at the next look. A card (a note, a key, a
+    -- quest item new to this player) waits in the bag's display list (DisplayItemData) for the game's own pickup, which, its
+    -- animation through, runs TryToPushPickupUI and then ReadyToPlayConfirmUI. Meanwhile the bag says a card is up
+    -- (IsDisplayPickupUI) with nothing on screen, and every line after it waited too: a partner's finds showed only when this
+    -- player picked something up (a player report on 1.7.1, three players; the bench, 11-12: a partner's note, then their
+    -- metal, nothing on the host till both calls put the note's card up and Space closed it, the metal's line at once after).
+    -- So a card goes up the game's way at a calm moment (game.calmForCard): mid-fight it would take the screen, in a game
+    -- that isn't paused for it. (Fields, not locals: this file is at its 200.)
+    game.tipsWanted, game.cardIds, game.CARD_AGAIN_S, game.cardAt = false, {}, 5, -1e9
+    game.CARD_TRIES, game.cardTries = 6, 0
     function game.showPickupTips(pawn)
         local bp = valid(pawn) and worldSubsystem(pawn, "/Script/ProjectPBZ.PBZBackPackSubsystem")
         if not bp then
@@ -1755,16 +1779,77 @@ return function(api)
         end
         local card = false
         pcall(function()
+            bp.DisplayItemData:ForEach(function()
+                card = true         -- (a card waiting for its moment)
+            end)
+        end)
+        pcall(function()
             bp.PushGetPropInfos:ForEach(function(_, e)
                 card = card or game.cardIds[e:get().ItemName:ToString()] == true
             end)
         end)
+        pcall(function()
+            bp.PushGetBookInfos:ForEach(function()
+                card = true         -- (a note's page waits in a queue of its own: a card too)
+            end)
+        end)
         local ok, can = pcall(function() return bp:CanPushPickupUI() and not bp:IsDisplayPickupUI() end)
-        if card or not ok then
-            game.tipsWanted = false         -- (the game's own pickup flow shows them all: as before)
-        elseif can and pcall(function() bp:TryToPushPickupUI() end) then
-            game.tipsWanted = false
+        if not ok then
+            game.tipsWanted = false         -- (the game's own pickup flow shows them all)
+        elseif not card then
+            game.cardTries = 0
+            if can and pcall(function() bp:TryToPushPickupUI() end) then
+                game.tipsWanted, game.cardCalm.from = false, nil
+            end
+        elseif game.cardTries >= game.CARD_TRIES then
+            -- (Put up that many times and still waiting: left for the game's own next pickup, as it was before.)
+            game.tipsWanted, game.cardTries, game.cardCalm.from = false, 0, nil
+            log("A partner's find's card still waits after " .. game.CARD_TRIES .. " tries: left for the next pickup here.")
+        elseif os.clock() - game.cardAt >= game.CARD_AGAIN_S and game.calmForCard(pawn) then
+            -- (Both calls, as the game's own pickup makes them. Again a while on if the card still waits: the player may
+            -- not have closed it yet. The lines go once it's closed, the game's own flow or the next look.)
+            game.cardAt, game.cardTries = os.clock(), game.cardTries + 1
+            pcall(function() bp:TryToPushPickupUI() end)
+            pcall(function() bp:ReadyToPlayConfirmUI() end)
+            local again = game.cardTries > 1 and (" (again: " .. game.cardTries .. ")") or ""
+            log("A partner's find's card put up, the game's way" .. again .. ".")
         end
+    end
+
+    -- Whether a full-screen card may go up now: no scene, no talk, no boss fight, no game screen or pause up, the game
+    -- doesn't count this player in a fight (game.inCombat) nor, on a guest, does a live enemy of the host's stand near
+    -- (coop.lua's net.enemyNear), and they haven't swung, dodged or used anything (a move of theirs) or lost health, for
+    -- CARD_CALM_S in a row. (Looked at twice a second at most: the talk's look is a search. Not looked at for a while, the
+    -- calm counts from now.) The game's count of a fight can stay up a while after it (seen stuck 8 s on the bench, 11-11),
+    -- and an enemy may stand near and idle: a card that has waited CARD_WAIT_S goes by the rest alone.
+    game.CARD_CALM_S, game.CARD_WAIT_S, game.CARD_FIGHT_CM, game.cardCalm = 2, 120, 1500, { at = -1e9, since = nil, ok = false }
+    function game.calmForCard(pawn)
+        local c, now = game.cardCalm, os.clock()
+        if now - c.at < 0.5 then
+            return c.ok
+        end
+        if now - c.at > 1.5 then
+            c.since, c.from, c.hp = nil, nil, nil
+        end
+        c.at, c.from = now, c.from or now
+        local hp = game.getHealth(pawn)
+        local hurt = hp ~= nil and c.hp ~= nil and hp < c.hp
+        c.hp = hp
+        local net = api.coop and api.coop.net
+        local fight = game.inCombat(pawn) or (net and net.enemyNear and net.enemyNear(game.CARD_FIGHT_CM))
+        local screen = false
+        pcall(function()
+            local pc = api.getPlayer1()
+            screen = api.localcoop.bellMenuUp() or api.localcoop.screenUp() or (valid(pc) and api.gs():IsGamePaused(pc))
+        end)
+        if hurt or game.localMoveRecent(game.CARD_CALM_S) or (fight and now - c.from < game.CARD_WAIT_S) or screen
+            or game.bossFightActive() or game.sequenceOn() or game.inDialogue() then
+            c.since = nil
+        else
+            c.since = c.since or now
+        end
+        c.ok = c.since ~= nil and now - c.since >= game.CARD_CALM_S
+        return c.ok
     end
 
     game.commands.lootlevel = function(arg)
@@ -2727,6 +2812,18 @@ return function(api)
             end)
         end
         return on
+    end
+
+    -- Whether the game counts this player in a fight: its own CharacterState.InCombat on their abilities, one for each enemy
+    -- in combat with them, gone some seconds after the last gives up (the local co-op bench, 11-12).
+    function game.inCombat(pawn)
+        local asc = valid(pawn) and abilitySystem(pawn)
+        if not asc then
+            return false
+        end
+        game.combatTag = game.combatTag or FName("CharacterState.InCombat")
+        local ok, n = pcall(function() return asc:GetGameplayTagCount({ TagName = game.combatTag }) end)
+        return ok and (tonumber(n) or 0) > 0
     end
 
     -- Ten times a second, co-op or PvP: an item coming into use, and the effects it puts on the body for a while. True as a
@@ -4076,7 +4173,12 @@ return function(api)
     end
 
     -- Rest this player as a sit would. Health through the bell's own step: written by hand it leaves the low health look on
-    -- the screen. The gourd by hand: the bell's "Restore BackPack Data" also saves, with that bell as the place to respawn.
+    -- the screen. The gourd to its whole size as the game counts it, the extra drinks a skill node or a talisman gives
+    -- counted in (GetMedicineTotalMaxUsage; the bench, 11-12: 4 with two extra drinks over a gourd of 2, and a real sit's
+    -- own refill, the bag's RestoreQuickItems, filled it to 4). Set to its base size (MaxTime), a partner's sit took those
+    -- extra drinks away, and the next drink seemed to take several (a player report on 1.7.1, three players: "5 uses to 1
+    -- use"). Never below what it holds. Not RestoreQuickItems itself: it fills the D-pad's top item too, which a partner's
+    -- sit never did. Not the bell's "Restore BackPack Data": that one also saves, with that bell as the place to respawn.
     function game.restHere(pawn)
         local bell = FindFirstOf("MelodiousBell")
         local healed = false
@@ -4095,7 +4197,14 @@ return function(api)
         if gourd then
             pcall(function()
                 local max = gourd.MaxTime
-                if type(max) == "number" then
+                local bp = game.backpackOf(pawn)
+                local okT, total = pcall(function()
+                    return bp:GetMedicineTotalMaxUsage(FName(bp.BottomMedicineID:ToString()))
+                end)
+                if okT and type(total) == "number" and type(max) == "number" and total > max then
+                    max = total
+                end
+                if type(max) == "number" and gourd.CurrentTime < max then
                     gourd:SetCurrentTime(max)
                     gourd:SetDisplayTime(max)
                 end
@@ -4958,7 +5067,7 @@ return function(api)
                 -- by T: what it held is waited for.)
                 p:K2_DestroyActor()
                 if ground then
-                    game.awaitShare(item ~= "?" and item or held, n, from)
+                    game.awaitShare(item ~= "?" and item or held, n, from, true)
                 end
                 break
             end
@@ -5046,11 +5155,38 @@ return function(api)
     local gotFrom = {}              -- with more than two players: what came from whom, and when
     local giftsHooked = false
 
+    -- The game gives this player a story item they have already (game.oneOfAKind: one it hands out once):
+    -- the same thing again, from this world's copy (theirs of a partner's take, one this world made again, a pile a partner
+    -- searched in another session). Kept to one, the extra taken back once it's in, and not sent: everyone has theirs
+    -- (game.grantLoot). Asked as the game starts to add it (the hook comes first). True if it's that.
+    function game.storyAgain(id)
+        local _, pawn = api.getPlayer1()
+        local bp = valid(pawn) and game.oneOfAKind(id) and worldSubsystem(pawn, BACKPACK)
+        if not (bp and game.itemCount(bp, id) >= 1) then
+            return false
+        end
+        game.after(0.5, function()
+            local _, p = api.getPlayer1()
+            local b = valid(p) and worldSubsystem(p, BACKPACK)
+            local n = b and game.itemCount(b, id) or 0
+            if n > 1 then
+                game.granting = true
+                pcall(function() b:RemovePropsFromBackPack(n - 1, FName(id), false) end)
+                game.granting = false
+                log("The game gave " .. id .. " again, a story item this player had already: kept to one.")
+            end
+        end)
+        return true
+    end
+
     local function given(id, count, kind, send)
         -- (Nor in a PvP match: there's no loot in one, and what it adds, a lent weapon, is the match's own: the bench, 11-08.)
         if game.granting or os.clock() < ownUntil or id == "None" or count < 1 or game.keptApart(id)
             or (api.arena and api.arena.match) then
             return
+        end
+        if game.storyAgain(id) then
+            return          -- (a story item this player has already: kept to one, and not sent)
         end
         givenHere[id .. "x" .. count] = os.clock()
         game.lastGiven[id] = { n = count, at = os.clock() }
@@ -5218,7 +5354,8 @@ return function(api)
     game.PICKUP_SHARE_S = 16        -- (past the 12 s a share waits out a scene: coop.lua's takeGifts)
     game.SAME_EVENT_S = 3           -- this world's own give this long before a share came is the same event's
     -- (A partner's: their share alone answers it, where who it is is known. count: how many their game gave, for the copy's.)
-    function game.awaitShare(id, count, from)
+    -- (copy: our copy was here, and went with the word: a story item is given from it too, as below.)
+    function game.awaitShare(id, count, from, copy)
         if type(id) ~= "string" or id == "?" or id == "None" then
             return
         end
@@ -5237,7 +5374,7 @@ return function(api)
                 return
             end
         end
-        game.pickupShares[#game.pickupShares + 1] = { id = id, count = count, from = from, at = now }
+        game.pickupShares[#game.pickupShares + 1] = { id = id, count = count, from = from, at = now, copy = copy }
     end
 
     -- The ground pickup waited for that a share of id (count of it) from this partner answers: one still waiting for as
@@ -5279,7 +5416,9 @@ return function(api)
     end
 
     -- The waits run out: given from the copy's item (a thing of the game's item table: a weapon or a piece of gear comes its
-    -- own way), kept a while longer as given. Not in a scene: a share waits one out.
+    -- own way), kept a while longer as given. Not in a scene: a share waits one out. A story item only if our copy went with
+    -- the word: one taken by a player who had it already sends none (game.storyAgain), and given here with no copy of ours
+    -- taken, one this player had handed in came back. (grantLoot gives none of one held.)
     function game.pickupSharesDue(pawn)
         local now, kept = os.clock(), {}
         local scene = game.inCutscene and game.inCutscene()
@@ -5291,7 +5430,7 @@ return function(api)
                 if age < 2 * game.PICKUP_SHARE_S then
                     kept[#kept + 1] = s
                 end
-            elseif game.itemKinds and game.itemKinds[s.id] then
+            elseif game.itemKinds and game.itemKinds[s.id] and (s.copy or not game.oneOfAKind(s.id)) then
                 log("The share of " .. s.id .. " the other player picked up never came: given from the pickup here.")
                 game.grantLoot(pawn, s.id, nil, s.count or 1)
                 s.given, s.at = true, now
@@ -5364,16 +5503,25 @@ return function(api)
                     return out
                 end
                 local ids, kinds, held = col("ItemId"), col("ItemDetailType"), col("AddTagWhenHas")
-                local all, flags = {}, {}   -- (every item's kind: game.pickupSharesDue gives only these)
+                -- (A story item made of several (IntegrationItemNum over 1: the dragon token, of its two halves) isn't one
+                -- of a kind: game.oneOfAKind. Of the table's 85 quest items only that one is (the bench, 11-12). Its
+                -- bShowUIOnSubsequentGet is no sign: True on all 85.)
+                local okP, parts = pcall(col, "IntegrationItemNum")
+                parts = okP and parts or {}
+                local all, flags, many = {}, {}, {}  -- (every item's kind: game.pickupSharesDue gives only these)
                 for i = 1, #ids do
                     all[ids[i]] = kinds[i] or "?"
                     if (kinds[i] or ""):find("Narrative", 1, true) then
                         set[ids[i]] = true
                     end
                     flags[ids[i]] = (held[i] or ""):match('TagName="([^"]+)"')
+                    if (tonumber(parts[i]) or 0) > 1 then
+                        many[ids[i]] = true
+                    end
                 end
                 game.itemKinds = all
                 game.heldFlags = flags  -- (a thing's own flag while it's held: grantLoot)
+                game.storyMany = many
                 game.narrative = set
                 log("Quest items in the game's table: " .. tostring(#ids) .. " items read.")
             end)
@@ -5382,6 +5530,12 @@ return function(api)
             end
         end
         return game.narrative[id] == true
+    end
+
+    -- A story item there's one of: a quest item (game.isNarrative) the game gives once. Held once in co-op (grantLoot,
+    -- game.storyAgain).
+    function game.oneOfAKind(id)
+        return game.isNarrative(id) and not (game.storyMany and game.storyMany[id])
     end
 
     -- Quest items are shared now (a player report, 11-06: letters, notes, the Black and Orange Stones, keys "just disappear

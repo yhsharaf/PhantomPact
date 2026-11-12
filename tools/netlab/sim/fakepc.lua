@@ -302,8 +302,9 @@ end
 
 Fake.object = object      -- (for a test that needs an object of its own, a class say)
 
--- The game's item table, as far as the mod reads it: { ItemId, ItemDetailType, AddTagWhenHas }. Quest items are
--- "NarrativeItem"; some raise a flag of their own while held (one of the Bagua boy's relics: "ljc.小雪.收集物1").
+-- The game's item table, as far as the mod reads it: { ItemId, ItemDetailType, AddTagWhenHas, IntegrationItemNum }. Quest
+-- items are "NarrativeItem"; some raise a flag of their own while held (one of the Bagua boy's relics: "ljc.小雪.收集物1");
+-- one is made of several (the dragon token, IntegrationItemNum 2: the bench, 11-12), not one of a kind.
 Fake.ITEMS = {
     { "R_500", "Material" },
     { "I_KEY_9", "NarrativeItem" },
@@ -311,6 +312,7 @@ Fake.ITEMS = {
     { "Weapon_Material_02", "Material" },
     { "I_RELIC_1", "NarrativeItem", "relic.one" },
     { "I_RELIC_2", "NarrativeItem", "relic.two" },
+    { "K_TOKEN_9", "NarrativeItem", nil, "2" },
 }
 
 -- The player's skill tree (PBZAbilityNodesComponent), as the bench measured it on 11-07: 32 nodes; ActivateNode by its
@@ -757,7 +759,8 @@ function Fake.story(pc)
                 for i, r in ipairs(Fake.ITEMS) do
                     local held = '(TagName="' .. (r[3] or "") .. '")'     -- (as the game's table has it)
                     out[i] = { get = function() return name(c == "ItemId" and r[1] or c == "ItemDetailType" and r[2]
-                        or c == "AddTagWhenHas" and held or "") end }
+                        or c == "AddTagWhenHas" and held or c == "IntegrationItemNum" and (r[4] or "0")
+                        or c == "bShowUIOnSubsequentGet" and "True" or "") end }     -- (True for every row, as the game's)
                 end
                 return out
             end
@@ -1506,6 +1509,14 @@ function Fake.new(id, scripts, ini, link)
     put(bag, "MedicineExtraUsage", 1)
     put(bag, "ult", { n = 1, pct = 40, max = 3 })
     defs(pc, bag, {
+        -- (The game's own refill, as a real sit calls it: the gourd to its whole size, its extra drinks counted in. The
+        -- bench, 11-12: 2 to 4 with two extra drinks over a gourd of 2.)
+        RestoreQuickItems = function(self)
+            put(gourd, "CurrentTime", rawget(gourd, "__fields").MaxTime + rawget(self, "__fields").MedicineExtraUsage)
+        end,
+        GetMedicineTotalMaxUsage = function(self)
+            return rawget(gourd, "__fields").MaxTime + rawget(self, "__fields").MedicineExtraUsage
+        end,
         GetMedicineExtraUsage = function(self) return rawget(self, "__fields").MedicineExtraUsage end,
         AddMedicineExtraUsage = function(self, n)
             put(self, "MedicineExtraUsage", rawget(self, "__fields").MedicineExtraUsage + n)
@@ -1543,22 +1554,60 @@ function Fake.new(id, scripts, ini, link)
     end })
     pc.bell = bell
     local BACKPACK = "/Script/ProjectPBZ.PBZBackPackSubsystem"
-    -- The game's pickup notices, as the bench found them (11-09): given with the flag on, a thing waits in the queue
-    -- (PushGetPropInfos) till TryToPushPickupUI shows it: a line on the right (pc.tips), or the full-screen card (pc.cards)
-    -- for a thing this player never held, even a moment. Nothing shows while pc.noPickupUI (CanPushPickupUI false) or a
-    -- card is up (pc.cardUp, IsDisplayPickupUI).
-    pc.tips, pc.cards = {}, {}
+    -- The game's pickup notices, as the bench found them (11-09, 11-12): given with the flag on, a thing this player has
+    -- held before waits in the queue (PushGetPropInfos) as a line on the right (pc.tips); one never held, a note's page, or
+    -- a quest item (shown again at every get) waits in the display list (DisplayItemData) as the full-screen card
+    -- (pc.cards). While a card waits the bag says one is up (IsDisplayPickupUI) and no line goes. TryToPushPickupUI then
+    -- readies the first card and ReadyToPlayConfirmUI puts it up, as the game's own pickup does once its animation is
+    -- through; Space (Fake.closeCard) takes it down, and the game goes on to the next, then the lines. With no card, the
+    -- lines go at TryToPushPickupUI. Nothing goes while pc.noPickupUI (CanPushPickupUI false).
+    pc.tips, pc.cards, pc.cardsHeld = {}, {}, {}
     local seen, queue = {}, {}
+    local function cardAlways(key)
+        if key:find("^R_%d") then
+            return true
+        end
+        for _, r in ipairs(Fake.ITEMS) do
+            if r[1] == key then
+                return r[2] == "NarrativeItem"
+            end
+        end
+        return false
+    end
+    local function showLines()
+        for _, e in ipairs(queue) do
+            pc.tips[#pc.tips + 1] = e.id .. " + " .. e.n
+        end
+        queue = {}
+    end
     local function given(self, count, id, push)
         local key = id.ToString and id:ToString() or id
+        -- (The mod's hook runs first, as UE4SS's first callback does: before the game adds the thing.)
+        for _, fn in ipairs(pc.hooks[BACKPACK .. ":AddPropsToBackPack"] or {}) do
+            fn(self, { get = function() return count end }, { get = function() return name(key) end }, { get = function() return push end })
+        end
         local items = rawget(self, "__fields").items
         items[key] = (items[key] or 0) + count
         if push then
-            queue[#queue + 1] = { id = key, n = count, card = not seen[key] }
+            if not seen[key] or cardAlways(key) then
+                pc.cardsHeld[#pc.cardsHeld + 1] = key
+            else
+                queue[#queue + 1] = { id = key, n = count }
+            end
         end
         seen[key] = true
-        for _, fn in ipairs(pc.hooks[BACKPACK .. ":AddPropsToBackPack"] or {}) do
-            fn(self, { get = function() return count end }, { get = function() return name(key) end }, { get = function() return push end })
+    end
+    -- The player's Space on a card up: down, and the game goes on, to the next card waiting or the lines.
+    function pc.closeCard()
+        if not pc.cardUp then
+            return
+        end
+        pc.cardUp = false
+        if #pc.cardsHeld > 0 then
+            pc.cards[#pc.cards + 1] = table.remove(pc.cardsHeld, 1)
+            pc.cardUp = true
+        else
+            showLines()
         end
     end
     put(bag, "PushGetPropInfos", { ForEach = function(_, fn)
@@ -1566,23 +1615,34 @@ function Fake.new(id, scripts, ini, link)
             fn(i, { get = function() return { ItemName = name(e.id), Num = e.n, bIsAdd = true } end })
         end
     end })
+    put(bag, "DisplayItemData", { ForEach = function(_, fn)
+        for i, key in ipairs(pc.cardsHeld) do
+            fn(i, { get = function() return { ItemName = name(key) } end })
+        end
+    end })
+    put(bag, "PushGetBookInfos", list({}))      -- (a note's pages have a queue of their own: none here)
     defs(pc, bag, {
         RemovePropsFromBackPack = function(self, count, id)
             local items, key = rawget(self, "__fields").items, id:ToString()
             items[key] = math.max(0, (items[key] or 0) - count)
         end,
-        CanPushPickupUI = function() return not pc.noPickupUI end,
-        IsDisplayPickupUI = function() return pc.cardUp == true end,
+        CanPushPickupUI = function() return not pc.noPickupUI and not pc.cardReady and not pc.cardUp end,
+        IsDisplayPickupUI = function() return pc.cardUp == true or pc.cardReady ~= nil or #pc.cardsHeld > 0 end,
         TryToPushPickupUI = function()
-            for _, e in ipairs(queue) do
-                if e.card then
-                    pc.cards[#pc.cards + 1] = e.id
-                    pc.cardUp = true
-                else
-                    pc.tips[#pc.tips + 1] = e.id .. " + " .. e.n
-                end
+            if pc.noPickupUI or pc.cardUp then
+                return
             end
-            queue = {}
+            if #pc.cardsHeld > 0 then
+                pc.cardReady = pc.cardReady or table.remove(pc.cardsHeld, 1)
+            elseif not pc.cardReady then
+                showLines()
+            end
+        end,
+        ReadyToPlayConfirmUI = function()
+            if pc.cardReady and not pc.cardUp then
+                pc.cards[#pc.cards + 1] = pc.cardReady
+                pc.cardReady, pc.cardUp = nil, true
+            end
         end,
     })
     local function gotWeapon(self, id, normal, push, loading)
@@ -1721,6 +1781,12 @@ function Fake.new(id, scripts, ini, link)
                 rawset(actor, "__given", given)
             end)
             if rawget(actor, "__class") == "BP_Renewal_Hun_C" then
+                -- The game's count of enemies in combat with the player (CharacterState.InCombat): pc.inCombat, a test's hand.
+                put(asc, "GetGameplayTagCount", function(_, tag)
+                    local t = tag and tag.TagName
+                    local n = t and t.ToString and t:ToString()
+                    return (n == "CharacterState.InCombat" and actor == pc.pawn) and (pc.inCombat or 0) or 0
+                end)
                 -- A player's or a figure's: effects on it counted (a shield), each with a handle to take it off by.
                 put(asc, "BP_ApplyGameplayEffectToSelf", function()
                     put(actor, "effects", (rawget(actor, "__fields").effects or 0) + 1)

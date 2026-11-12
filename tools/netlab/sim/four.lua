@@ -392,7 +392,7 @@ local function sharing()
     Session.gainItem(b, "Item_Herb", 1)
     s:run(3.5)
     -- (11-09: both with the game's notice on the right, the line; a thing new to them held a moment first, quietly, so
-    -- it's the line and not the full-screen card. Here the key's card waits for the game's own moment, the lines with it.)
+    -- it's the line and not the full-screen card. The key's card goes up with them at a calm moment: pickupsShown.)
     check(count(h.pushes, "^Item_Herb true$") == 2 and count(h.pushes, "^Item_Herb false$") == 1,
         "what the partner finds comes with the game's notice, a thing new to them too, held a moment first for its line")
     -- Issue #15: one whose item can't be read (the Snake Tongue, a token half) went out as loot, and the others' copy vanished
@@ -1496,7 +1496,13 @@ local function sits()
     check(count(b.sent, "^E SIT$") == 1, "a guest sits, and says so once")
     check(count(h.sent, "^E SIT") == 0 and count(a.sent, "^E SIT") == 0 and count(c.sent, "^E SIT") == 0, "and nobody says it again")
     check(Fake.health(h.pawn) == 1000 and Fake.health(a.pawn) == 1000, "everyone who's up is healed")
-    check(field(a.gourd, "CurrentTime") == 2, "with a full gourd")
+    -- (The gourd as a real sit fills it, its extra drinks counted in: 2 and a skill node's 1. Filled to its base size by
+    -- hand, a partner's sit took the extra drinks away, and the next drink seemed to cost several: a player report on 1.7.1,
+    -- "5 uses to 1 use".)
+    check(field(a.gourd, "CurrentTime") == 3, "with a full gourd, its extra drink too: " .. field(a.gourd, "CurrentTime"))
+    Session.sit(c)
+    s:run(2)
+    check(field(a.gourd, "CurrentTime") == 3, "and a full one isn't cut back to its base size: " .. field(a.gourd, "CurrentTime"))
     check(refreshes() == before, "and no world refreshes: the dead stay dead")
     Session.moveTo(c, 40000, 0)
     s:run(1)
@@ -2096,16 +2102,55 @@ local function pickupsShown()
     s:run(3)
     check(rawget(other, "__alive") ~= false, "another save's pickup of the same name isn't taken for one the partner took")
     h.env.PBZ.game.saveSlot = keep
-    -- A note's card isn't put up mid-play by us: the game's own next pickup shows it, the lines with it.
+    -- A partner's note: its card waits in the game's display list for the game's own pickup, and the bag says a card is up
+    -- with nothing on screen, so the line of their next find waited too, till this player picked something up (a player
+    -- report on 1.7.1, three players; the bench, 11-12). Not put up in a fight: there it waits, the line with it. Out of
+    -- the fight (the game counts the host out of it) it goes up the game's way, and the line once it's closed.
     local pushes, cards = count(h.trace, "TryToPushPickupUI"), #h.cards
+    h.inCombat = 1
     Session.gainItem(g, "R_77", 1)
     Session.gainItem(g, "Weapon_Material_01", 1)
-    s:run(5)
+    s:run(6)
     check(#h.cards == cards and count(h.trace, "TryToPushPickupUI") == pushes and Session.items(h, "R_77") == 1,
-        string.format("a note's card waits for the game's own moment, the line after it with it: %d cards, %d shown, %d notes",
+        string.format("in a fight a note's card waits, the line after it with it: %d cards, %d shown, %d notes",
             #h.cards - cards, count(h.trace, "TryToPushPickupUI") - pushes, Session.items(h, "R_77")))
-    Session.gainItem(h, "Weapon_Material_01", 1)     -- (the host's own next find: the game shows them all)
-    check(#h.cards == cards + 1 and h.tips[#h.tips] == "Weapon_Material_01 + 1", "and the host's own next find shows them")
+    h.inCombat = 0
+    s:run(4)
+    local up = #h.cards == cards + 1 and h.cards[#h.cards] == "R_77" and h.cardUp == true
+    h.closeCard()                   -- (Space)
+    s:run(1)
+    check(up and h.tips[#h.tips] == "Weapon_Material_01 + 1",
+        string.format("out of the fight the note's card goes up, with no find of the host's own, and the line once it's "
+            .. "closed: %d cards, last line %s", #h.cards - cards, tostring(h.tips[#h.tips])))
+    -- A scene holds a card the same way, and its line: shown a moment after it ends.
+    cards, tips = #h.cards, #h.tips
+    Session.scene(h, true)
+    Session.gainItem(g, "I_KEY_9", 1)
+    Session.gainItem(g, "Weapon_Material_01", 2)
+    s:run(5)
+    local inScene = #h.cards - cards + #h.tips - tips
+    Session.scene(h, false)
+    s:run(4)
+    local upAfter = #h.cards == cards + 1 and h.cardUp == true
+    h.closeCard()
+    s:run(1)
+    check(inScene == 0 and upAfter and #h.tips == tips + 1,
+        string.format("a quest item's card waits out a scene with its line, then both show: %d in it, %d cards and %d lines after",
+            inScene, #h.cards - cards, #h.tips - tips))
+    -- On a guest the game counts no fight with the host's copies, whose minds the host runs: a live enemy of the host's near
+    -- holds a card the same way, till the guest is away from it.
+    local gcards = #g.cards
+    Session.moveTo(g, 1500, 450)            -- (beside the host's thug)
+    s:run(3)
+    Session.gainItem(h, "I_RELIC_2", 1)
+    s:run(8)
+    local nearEnemy = #g.cards - gcards
+    Session.moveTo(g, -6000, 0)
+    s:run(5)
+    check(nearEnemy == 0 and #g.cards == gcards + 1 and g.cardUp == true,
+        string.format("a guest beside the host's enemy: the host's find's card waits, then goes up away from it: %d near, %d after",
+            nearEnemy, #g.cards - gcards))
+    g.closeCard()
     allErrors(s)
 
     -- A party of three: two guests take the same pickup in a moment. The host, who took nothing, gets one: the second word
@@ -2431,6 +2476,104 @@ local function pickupsRaced()
         string.format("other shares piled up, then a find and a pickup of one thing: 2 each, the host's copy gone: %d and %d",
             Session.items(h, M) - h0, Session.items(g, M) - g0))
     allErrors(s)
+end
+
+-- A story item is one of a kind (the game's NarrativeItem: a key, the Twin Flesh Lily): everyone gets it once, whoever takes
+-- it and however it comes. A player's report on 1.7.1, three players: "story items still duplicate (twin flesh lilies for
+-- example, I have 2)". A copy in a world the taker's word doesn't find (made there under another name, or made again in
+-- another session) was there to take: its taker had two, and their share gave everyone a second.
+local function storyOnce()
+    part("a story item, once each")
+    local FLOWER, RELIC = "I_KEY_9", "I_RELIC_1"
+    local function pickupOn(pc, id)
+        for i = #pc.pickups, 1, -1 do
+            if rawget(pc.pickups[i], "__name") == id then
+                return pc.pickups[i]
+            end
+        end
+    end
+    local p3 = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest" }, 3, ENEMIES)
+    p3:run(4)
+    local h, a, b = p3.pcs[1], p3.pcs[2], p3.pcs[3]
+    Session.moveTo(h, 250, 0)
+    Session.moveTo(a, 250, 150)
+    Session.moveTo(b, 250, -150)
+    p3:run(3)
+    Fake.pickup(h, "flowerT", FLOWER, 600.0, 0.0, 100.0)
+    Fake.pickup(a, "flowerT", FLOWER, 600.0, 0.0, 100.0)
+    Fake.pickup(b, "flowerT_2147466001", FLOWER, 600.0, 0.0, 100.0)     -- (B's world made its own under another name)
+    p3:run(3)
+    pickupOn(a, "flowerT"):K2_DestroyActor()
+    Session.gainItem(a, FLOWER, 1)
+    p3:run(25)
+    local first = string.format("%d %d %d", Session.items(h, FLOWER), Session.items(a, FLOWER), Session.items(b, FLOWER))
+    -- The host hands theirs in (Yuer takes the flower). Then B's own copy, still there, taken: their game gives B a second of
+    -- the same thing.
+    h.bag:RemovePropsFromBackPack(1, h.env.FName(FLOWER))
+    pickupOn(b, "flowerT_2147466001"):K2_DestroyActor()
+    Session.gainItem(b, FLOWER, 1)
+    p3:run(40)
+    check(first == "1 1 1" and Session.items(h, FLOWER) == 0 and Session.items(a, FLOWER) == 1 and Session.items(b, FLOWER) == 1,
+        string.format("a story item A took, then B's own copy B's world kept: one each, the host's handed in stays so; after A's "
+            .. "%s, after B's %d %d %d", first, Session.items(h, FLOWER), Session.items(a, FLOWER), Session.items(b, FLOWER)))
+    check(count(b.sent, "^E T " .. FLOWER) == 0 and count(b.logs, "story item this player had already") == 1,
+        "and B's second wasn't sent: everyone had theirs")
+    allErrors(p3)
+
+    -- Two players: the guest's own copy of a story item the host's share gave them, taken later: one each.
+    local s, hh, g = pair()
+    Session.moveTo(hh, 250, 150)
+    Session.moveTo(g, 250, -150)
+    Fake.pickup(hh, "relicT", RELIC, 250.0, 0.0, 100.0)
+    Fake.pickup(g, "relicT_2147466002", RELIC, 250.0, 0.0, 100.0)
+    s:run(3)
+    pickupOn(hh, "relicT"):K2_DestroyActor()
+    Session.gainItem(hh, RELIC, 1)
+    s:run(25)
+    pickupOn(g, "relicT_2147466002"):K2_DestroyActor()
+    Session.gainItem(g, RELIC, 1)
+    s:run(40)
+    check(Session.items(hh, RELIC) == 1 and Session.items(g, RELIC) == 1,
+        string.format("two players: the guest's own copy of a story item the host's share gave them: one each, %d and %d",
+            Session.items(hh, RELIC), Session.items(g, RELIC)))
+    -- One made of several (the dragon token, IntegrationItemNum 2): not one of a kind, held as many times as found.
+    local PIECE = "K_TOKEN_9"
+    for _, pc in ipairs({ hh, g }) do
+        Fake.pickup(pc, "stringA", PIECE, 400.0, 0.0, 100.0)
+        Fake.pickup(pc, "stringB", PIECE, 400.0, 100.0, 100.0)
+    end
+    s:run(3)
+    pickupOn(hh, "stringA"):K2_DestroyActor()
+    Session.gainItem(hh, PIECE, 1)
+    s:run(25)
+    pickupOn(g, "stringB"):K2_DestroyActor()
+    Session.gainItem(g, PIECE, 1)
+    s:run(25)
+    check(Session.items(hh, PIECE) == 2 and Session.items(g, PIECE) == 2,
+        string.format("a story item made of several: two found, two each, %d and %d", Session.items(hh, PIECE),
+            Session.items(g, PIECE)))
+    -- The guest, who has a story item already, takes their world's copy (kept to one, nothing sent), and their word takes the
+    -- host's copy: the host, who had none, gets it from that copy. (Dropped, they had none for the session.)
+    g.bag:AddPropsToBackPack(1, g.env.FName("I_RELIC_2"), false)        -- (the guest's, from before)
+    for _, pc in ipairs({ hh, g }) do
+        Fake.pickup(pc, "relicU", "I_RELIC_2", 330.0, 60.0, 100.0)
+    end
+    s:run(3)
+    pickupOn(g, "relicU"):K2_DestroyActor()
+    Session.gainItem(g, "I_RELIC_2", 1)
+    s:run(25)
+    check(Session.items(hh, "I_RELIC_2") == 1 and Session.items(g, "I_RELIC_2") == 1 and count(g.sent, "^E T I_RELIC_2") == 0,
+        string.format("one who had a story item takes their copy again, the word takes the host's: the host gets it from it, "
+            .. "%d and %d", Session.items(hh, "I_RELIC_2"), Session.items(g, "I_RELIC_2")))
+    allErrors(s)
+
+    -- The host holds two of one already (from an older version): a guest joining gets one from the host's bag, not two.
+    local j = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES)
+    j.pcs[1].bag:AddPropsToBackPack(2, j.pcs[1].env.FName(RELIC), false)
+    j:run(12)
+    check(Session.items(j.pcs[2], RELIC) == 1,
+        "a story item the host holds twice: a guest joining gets one from the host's bag: " .. Session.items(j.pcs[2], RELIC))
+    allErrors(j)
 end
 
 local function bossReactions()
@@ -9061,6 +9204,7 @@ return function(print_, scripts)
     pickupsFresh()
     pickupsShown()
     pickupsRaced()
+    storyOnce()
     rests()
     sits()
     sitsForTwo()
