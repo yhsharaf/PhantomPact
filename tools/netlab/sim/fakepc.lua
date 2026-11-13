@@ -2421,4 +2421,9 @@ end
 
 Fake.put = put
 Fake.list = list
+-- (The made-up notes the card checks use, R_77 to R_99, are pages to the game, as its own R_ notes are: BookPage, kept
+-- once a save, so a partner's goes through game.giveOnce, as in the real game. A merge step of the Memory Flowers work.)
+for i = 77, 99 do
+    table.insert(Fake.ITEMS, { "R_" .. i, "None", type = "BookPage" })
+end
 return Fake
