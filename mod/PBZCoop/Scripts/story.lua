@@ -893,6 +893,19 @@ return function(api)
     local nextScene = 0
     local hostSkipped = {}              -- sequence name -> when the host skipped it
     local ended = nil                   -- our scene already ended for the host's
+    -- A bell's own scene (the crane bell's first ring: OnFirstTouchBell, then Seqs003-Seqs008-Seq038 5 s on, on the bench,
+    -- 11-12) is each player's own: it plays for whoever rings that bell. It plays 18 s of a 213 s sequence, so the host's,
+    -- watched to its end, read as skipped and was told: the guest's own scene of that bell, a moment behind, was cut
+    -- (point 3 of a report on 1.7.1). A scene that begins within BELL_SCENE_S of this player's own first touch of a bell
+    -- (game.firstTouchAt, before or after it) is that bell's, for as long as it plays: its skip isn't told, and a host's
+    -- skip of it isn't taken. (Not a sit's: a boss's scene in the arena beside a bell came within seconds of one.)
+    local BELL_SCENE_S = 10
+    local touchHookAt = 0
+    local function bellScene(startedAt)
+        local at = game.firstTouchAt
+        return at ~= nil and startedAt ~= nil and math.abs(startedAt - at) <= BELL_SCENE_S
+    end
+    local theirs, theirsAt = nil, 0     -- guest: the scene playing here and when it began
 
     coop.handlers.SCENE = function(rest, from)
         if from ~= nil or coop.isHost() or type(rest) ~= "string" or #rest > 200 then
@@ -910,18 +923,32 @@ return function(api)
             return
         end
         nextScene = now + SCENE_S
+        if now >= touchHookAt and game.hookFirstTouch then
+            touchHookAt = now + 5
+            if game.hookFirstTouch() then
+                touchHookAt = math.huge         -- (hooked: once a game run)
+            end
+        end
         local name = game.sceneName()
         if coop.isHost() then
             if name ~= mine then
                 if mine and mineLength and now - mineAt < mineLength - SKIPPED_S and not (game.inDialogue and game.inDialogue()) then
-                    coop.sendEvent("SCENE", "skip", mine)
-                    log(string.format("Scene %s skipped after %.1f of %.1f s: the guest's too.", mine, now - mineAt, mineLength))
+                    if bellScene(mineAt) then
+                        log("Scene " .. mine .. " came with this player's own first ring of a bell: its end isn't told as a skip.")
+                    else
+                        coop.sendEvent("SCENE", "skip", mine)
+                        log(string.format("Scene %s skipped after %.1f of %.1f s: the guest's too.", mine, now - mineAt,
+                            mineLength))
+                    end
                 end
                 mine, mineAt, mineLength = name, now, name and game.sceneLength()
             elseif mine and not mineLength then
                 mineLength = game.sceneLength()       -- (its player can come a moment after the scene does)
             end
             return
+        end
+        if name ~= theirs then
+            theirs, theirsAt = name, now
         end
         if not name then
             ended = nil
@@ -930,7 +957,8 @@ return function(api)
         local t = coop.net.target
         -- (Not while a QTE runs here: the host passing its own QTE ended its scene early, and the guest's same scene was sent
         -- to its end in the middle of theirs, leaving them stuck in it: 沐小葵's third phase, a Nexus report on 1.6.6.)
-        if name ~= ended and hostSkipped[name] and now - hostSkipped[name] <= LATE_S and t and t.Map == coop.net.localMap
+        if name ~= ended and not bellScene(theirsAt) and hostSkipped[name] and now - hostSkipped[name] <= LATE_S and t
+            and t.Map == coop.net.localMap
             and not (game.inDialogue and game.inDialogue()) and not (api.qte and api.qte.active) and game.skipScene() then
             ended = name                        -- (until it takes: the scene's player can be found a moment after it starts)
             log("The host skipped " .. name .. ": skipped here too.")

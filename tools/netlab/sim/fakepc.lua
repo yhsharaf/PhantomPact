@@ -755,6 +755,13 @@ function Fake.story(pc)
                 end
                 return
             end
+            if t == bellTable then
+                -- (As the real table: most rows aren't named as their BellID, row NLES_003 holding Bell_NLES_003.)
+                for i, r in ipairs(Fake.BELLS) do
+                    out[i] = name((r[1]:gsub("^Bell_", "")))
+                end
+                return
+            end
             for i, r in ipairs(rows) do
                 out[i] = name(r[1])
             end
@@ -1875,6 +1882,8 @@ function Fake.new(id, scripts, ini, link)
         ["/Game/PBZContent/Blueprint/BP_GameMode_Build.BP_GameMode_Build_C:Refresh Monster"] = object(pc, "Function"),
         ["/Game/RenewalContent/Prototypes/Character/BP_RenewalPlayer.BP_RenewalPlayer_C:Respawn Refresh Monster"] = object(pc, "Function"),
         [BELL_HEAL] = object(pc, "Function"),
+        -- (A bell's first ring, its first touch: a crane bell's scene follows it. Session.firstTouch runs its hooks.)
+        ["/Game/PBZContent/Blueprint/Item/BP_MelodiousBell.BP_MelodiousBell_C:OnFirstTouchBell"] = object(pc, "Function"),
         [BACKPACK] = object(pc, "BackpackClass"),
         ["/Game/PBZContent/Blueprint/Item/Device/BP_Rubbish.BP_Rubbish_C:OnInteract"] = object(pc, "Function"),
     }

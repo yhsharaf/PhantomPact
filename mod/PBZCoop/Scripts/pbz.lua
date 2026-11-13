@@ -4075,6 +4075,23 @@ return function(api)
         return sitHooked
     end
 
+    -- A bell's first ring, its first touch: a crane bell's scene follows it about 5 s on (bench, 11-12), story.lua's to
+    -- know as this player's own. Hooked once the bell's blueprint is loaded (it comes with the level's bells): true then.
+    -- (Fields, not locals: this function is at the 200 locals Lua allows.)
+    game.firstTouch = { FN = "/Game/PBZContent/Blueprint/Item/BP_MelodiousBell.BP_MelodiousBell_C:OnFirstTouchBell" }
+    function game.hookFirstTouch()
+        local ft = game.firstTouch
+        if ft.hooked or not valid(StaticFindObject(ft.FN)) then
+            return ft.hooked == true
+        end
+        ft.hooked = pcall(function()
+            RegisterHook(ft.FN, function()
+                game.firstTouchAt = os.clock()
+            end)
+        end)
+        return ft.hooked
+    end
+
     -- Rest this player as a sit would. Health through the bell's own step: written by hand it leaves the low health look on
     -- the screen. The gourd by hand: the bell's "Restore BackPack Data" also saves, with that bell as the place to respawn.
     function game.restHere(pawn)

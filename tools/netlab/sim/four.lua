@@ -2164,6 +2164,409 @@ local function doorsOpenedBefore()
     check(field(hostDoor, "CurSwitchState") == true, "(the host's stays open)")
     allErrors(s)
 end
+
+-- Point 6 of a report on 1.7.1 (three players): "unless we're near each other (like within 75m), bells and certain things
+-- don't sync". The game loads a level's things only around the player: a chain or a lever another player opened far off
+-- wasn't there to open at the word. The chain was let go at once, the lever two minutes on, and a guest on another map at
+-- the word never heard of either.
+local function farThings()
+    part("chains and levers another player opened far off")
+    local s = party(nil, nil, { "Host", "Guest", "Guest" })
+    local h, a, b = s.pcs[1], s.pcs[2], s.pcs[3]
+    Session.moveTo(h, 0, 0)
+    Session.moveTo(a, 60000, 0)
+    Session.moveTo(b, 0, 500)
+    b.map = "Map_Other"
+    s:run(3)
+    local CHAIN, LEVER = "BP_GameplayBlocker_Chain_C_UAID_7", "ABP_Switch_C_UAID_7"
+    local function chainOn(pc, x)
+        return Fake.blocker(pc, CHAIN, x, 0.0, 100.0)
+    end
+    local function leverOn(pc, x)
+        local lv = Fake.switch(pc, "ABP_Switch_C", x, 0.0, 100.0)
+        rawset(lv, "__name", LEVER)
+        Fake.put(lv, "SwitchWithoutPlaySequence", function(self) Fake.put(self, "CurSwitchState", true) end)
+        return lv
+    end
+    -- Guest a breaks a chain and pulls a lever out where only its world has them loaded.
+    local chain, lever = chainOn(a, 60200.0), leverOn(a, 60300.0)
+    s:run(2)
+    Fake.put(chain, "bBroken", true)
+    Fake.put(lever, "CurSwitchState", true)
+    s:run(3)
+    check(count(a.sent, "^E BLK " .. CHAIN .. "$") == 1 and count(a.sent, "^E SWO " .. LEVER .. "$") == 1, "(guest a tells both)")
+    -- Three minutes on, the host gets there: its world loads them, the chain still whole, the lever shut.
+    s:run(180)
+    local hChain, hLever = chainOn(h, 60200.0), leverOn(h, 60300.0)
+    Session.moveTo(h, 59000, 0)
+    s:run(4)
+    check(field(hChain, "bBroken") == true, "a chain another player broke far off is broken as the host's world loads it")
+    check(field(hLever, "CurSwitchState") == true, "and a lever they pulled, opened as it loads, three minutes on too")
+    check(count(h.logs, "Broke " .. CHAIN .. ": broken for the others") == 0 and count(h.logs, "Opened " .. LEVER) == 0,
+        "neither told back as the host's own doing")
+    -- Guest b was on another map at the word. Back on this one, its world loads them too: the host names them again.
+    b.map = "Map_Xigu"
+    s:run(3)
+    local bChain, bLever = chainOn(b, 60200.0), leverOn(b, 60300.0)
+    Session.moveTo(b, 59500, 0)
+    s:run(25)
+    check(field(bChain, "bBroken") == true and field(bLever, "CurSwitchState") == true,
+        "a guest who was on another map at the word has them too, once back and loaded: the host names them again")
+    check(count(b.sent, "^E BLK") == 0 and count(b.sent, "^E SWO") == 0, "and tells nobody of them")
+    -- What the host names again costs no search where it's known: a world that has them, or waits for them, looks for nothing.
+    local searched = 0
+    local real = b.env.FindAllOf
+    b.env.FindAllOf = function(class)
+        if class == "BP_GameplayBlocker_Base_C" or class == "PBZSwitchBase" then
+            searched = searched + 1
+        end
+        return real(class)
+    end
+    b.env.PBZ.coop.handlers.BLK(CHAIN)
+    b.env.PBZ.coop.handlers.SWO(LEVER)
+    b.env.FindAllOf = real
+    check(searched == 0, "naming again what a world has already costs it no search")
+    allErrors(s)
+end
+
+-- The review of the first version of farThings' fix: what waits was forgotten at a trip away and back, wasn't applied with
+-- nobody else on the map, outlived the session, and was searched for in the quiet after a load.
+local function farThingsKept()
+    part("chains and levers waited for: kept by map, for the session")
+    local s = party(nil, nil, { "Host", "Guest", "Guest" })
+    local h, a, b = s.pcs[1], s.pcs[2], s.pcs[3]
+    Session.moveTo(h, 0, 0)
+    Session.moveTo(a, 60000, 0)
+    Session.moveTo(b, 0, 500)
+    s:run(3)
+    local CHAIN, LEVER = "BP_GameplayBlocker_Chain_C_UAID_8", "ABP_Switch_C_UAID_8"
+    local function leverOn(pc, x)
+        local lv = Fake.switch(pc, "ABP_Switch_C", x, 0.0, 100.0)
+        rawset(lv, "__name", LEVER)
+        Fake.put(lv, "SwitchWithoutPlaySequence", function(self) Fake.put(self, "CurSwitchState", true) end)
+        return lv
+    end
+    local chain, lever = Fake.blocker(a, CHAIN, 60200.0, 0.0, 100.0), leverOn(a, 60300.0)
+    s:run(2)
+    Fake.put(chain, "bBroken", true)
+    Fake.put(lever, "CurSwitchState", true)
+    s:run(3)
+    -- Everyone to another map and back: what the host waits for there is still that map's.
+    for _, pc in ipairs({ h, a, b }) do
+        pc.map = "Map_Other"
+    end
+    s:run(8)
+    for _, pc in ipairs({ h, a, b }) do
+        pc.map = "Map_Xigu"
+    end
+    s:run(4)
+    -- Guest a goes off for good (another map); the host walks there alone and its world loads them.
+    a.map = "Map_Other"
+    b.map = "Map_Other"
+    s:run(4)
+    local hChain, hLever = Fake.blocker(h, CHAIN, 60200.0, 0.0, 100.0), leverOn(h, 60300.0)
+    Session.moveTo(h, 59000, 0)
+    s:run(4)
+    check(field(hChain, "bBroken") == true and field(hLever, "CurSwitchState") == true,
+        "kept over a trip away and back, and done with nobody else on the map")
+    allErrors(s)
+    -- Sync off and on: a new session, what the last one waited for is gone.
+    local p, ph, pg = pair()
+    Session.moveTo(pg, 60000, 0)
+    p:run(3)
+    local pChain = Fake.blocker(pg, "BP_GameplayBlocker_Chain_C_UAID_9", 60200.0, 0.0, 100.0)
+    p:run(2)
+    Fake.put(pChain, "bBroken", true)
+    p:run(3)
+    Session.command(ph, "netoff")
+    p:run(3)
+    Session.command(ph, "neton host")
+    p:run(6)
+    local late = Fake.blocker(ph, "BP_GameplayBlocker_Chain_C_UAID_9", 60200.0, 0.0, 100.0)
+    Session.moveTo(ph, 59000, 0)
+    p:run(4)
+    check(field(late, "bBroken") == false, "sync off: what was waited for went with that session")
+    allErrors(p)
+    -- The quiet after a load: a batch named then costs no search, and lands at the first look after it.
+    local q, qh, qg = pair()
+    q:run(3)
+    local qChain = Fake.blocker(qg, "BP_GameplayBlocker_Chain_C_UAID_10", 320.0, 0.0, 100.0)
+    q:run(2)
+    net(qg).quietUntil = qg.now + 5
+    local searched = 0
+    local real = qg.env.FindAllOf
+    qg.env.FindAllOf = function(class)
+        if class == "BP_GameplayBlocker_Base_C" then
+            searched = searched + 1
+        end
+        return real(class)
+    end
+    qg.env.PBZ.coop.handlers.BLK("BP_GameplayBlocker_Chain_C_UAID_10 BP_GameplayBlocker_Chain_C_UAID_11")
+    qg.env.FindAllOf = real
+    check(searched == 0, "named in the quiet after a load: no search then")
+    net(qg).quietUntil = 0
+    q:run(3)
+    check(field(qChain, "bBroken") == true, "and broken at the first look after it")
+    allErrors(q)
+end
+
+-- The same report: a bell a guest woke was never told to anyone. Only the host's went out (FLOW b), so the host and the
+-- other guest had it only by ringing it themselves.
+local function guestBells()
+    part("bells a guest wakes")
+    local s = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest" }, true, ENEMIES)
+    local h, a, b = s.pcs[1], s.pcs[2], s.pcs[3]
+    table.insert(a.bellIds, "Bell_YXZR_009")        -- (guest a's own, from before the link)
+    s:run(4)
+    Session.moveTo(h, 0, 0)
+    Session.moveTo(a, 500, 0)
+    Session.moveTo(b, 0, 500)
+    s:run(8)
+    -- Guest a rings a bell of its own, far from the others.
+    table.insert(a.bellIds, "Bell_YXZR_005")
+    s:run(8)
+    check(count(a.sent, "^E FLOW b Bell_YXZR_005$") == 1, "a guest's bell, woken while linked, is told to the others")
+    check(count(a.sent, "Bell_YXZR_009") == 0, "not one it had before the link")
+    check(not b.storyMarks["Bell_YXZR_005"], "far from it, it waits")
+    Session.moveTo(b, 30000 - 1200, 600)
+    s:run(3)
+    Session.moveTo(b, 0, 500)
+    s:run(3)
+    check(b.storyMarks["Bell_YXZR_005"] == true, "the other guest has it lit once it has been by it and gone on (the relay passes it on)")
+    -- The host's world holds the story: a bell lit there by word, not rung, would never have had its first ring's flags.
+    Session.moveTo(h, 30000 - 1500, 0)
+    s:run(3)
+    Session.moveTo(h, 0, 0)
+    s:run(3)
+    check(not h.storyMarks["Bell_YXZR_005"], "the host's world takes none: its bells are the ones it rang")
+    check(count(h.logs, "bell woken here, told") == 0 and count(b.logs, "bell woken here, told") == 0,
+        "neither tells it again as its own")
+    -- A world whose woken list holds a bell by its row's name (YXZR_009, the row of Bell_YXZR_009): it's still that bell.
+    -- (Looked up by BellID alone, it was let go as not in the game's table.)
+    table.insert(a.bellIds, "YXZR_009")
+    s:run(8)
+    Session.moveTo(b, 20000 - 900, 0)
+    s:run(3)
+    Session.moveTo(b, 0, 500)
+    s:run(3)
+    check(b.storyMarks["YXZR_009"] == true, "a bell named by its row in the woken list is found in the table all the same")
+    -- A load brings a world's whole list at once: that's no bells rung, nothing is told.
+    local before = count(a.sent, "^E FLOW b")
+    for i = 1, 8 do
+        table.insert(a.bellIds, "Bell_LOAD_" .. i)
+    end
+    s:run(8)
+    check(count(a.sent, "^E FLOW b") == before, "a world's whole list at once (a load) isn't told")
+    allErrors(s)
+    -- Two players: there's no other guest, so nothing is told.
+    local p, ph, pg = pair()
+    p:run(8)
+    table.insert(pg.bellIds, "Bell_YXZR_005")
+    p:run(8)
+    check(count(pg.sent, "FLOW b") == 0, "two players: a guest's bell has nobody to go to")
+    allErrors(p)
+end
+
+-- Point 3 on the bench (11-12, 1.7.2, the crane bell NLES_006 rung first by the host): 3 s into the host's scene the
+-- guest's PC hid the host's figure, its collision off with it, and the bell's prompt shut for the guest at that instant
+-- (the figure had stood in the bell's trigger), back only with the figure; the host's scene, 18 s of a 213 s sequence,
+-- ended as "skipped" and was told; and the map subsystem said "None" for the map, so no host bell was ever lit then.
+local function craneBellScenes()
+    part("a crane bell's scene, on the bench's three causes")
+    local s, h, g = pair()
+    s:run(3)
+    local function collisionOff(pc)
+        return count(pc.trace, "SetActorEnableCollision false")
+    end
+    local before = collisionOff(h)
+    Session.scene(g, true, "Seqs003-Seqs008-Seq038")
+    s:run(6)
+    check(net(h).ghostHidden == true and collisionOff(h) == before,
+        "a partner in a scene: their figure is hidden, its collision kept (the bell's prompt stays here)")
+    Session.scene(g, false)
+    s:run(3)
+    check(net(h).ghostHidden ~= true, "(shown again after it)")
+    g.map = "Map_Other"
+    s:run(8)
+    check(net(h).ghostHidden == true and collisionOff(h) > before, "on another map it's hidden with no collision, as ever")
+    g.map = "Map_Xigu"
+    s:run(4)
+    allErrors(s)
+    -- The host rings a crane bell: its first touch, then its own scene. Watched to its end it isn't told as a skip.
+    local q, qh, qg = pair()
+    q:run(6)
+    Session.firstTouch(qh)
+    q:run(2)
+    Session.scene(qh, true, "Seqs003-Seqs008-Seq038")
+    q:run(4)
+    Session.scene(qh, false)
+    q:run(1)
+    check(count(qh.sent, "^E SCENE skip") == 0, "the end of the host's own bell scene isn't told as a skip")
+    -- The guest rings it too, its own scene: an older host's skip of that scene doesn't cut it.
+    Session.firstTouch(qg)
+    q:run(2)
+    Session.scene(qg, true, "Seqs003-Seqs008-Seq038")
+    q:run(1)
+    qg.env.PBZ.coop.handlers.SCENE("skip Seqs003-Seqs008-Seq038")
+    q:run(2)
+    check((field(qg.scene, "skipped") or 0) == 0 and field(qg.scene, "playing") == true,
+        "the guest's own bell scene isn't cut by a host's skip of it")
+    Session.scene(qg, false)
+    q:run(2)
+    -- A scene that came with no sit is the story's, shared: the host's skip still skips it.
+    q:run(25)
+    Session.scene(qh, true, "Seq023")
+    q:run(1)
+    Session.scene(qg, true, "Seq023")
+    q:run(0.5)
+    Session.scene(qh, false)
+    q:run(1)
+    check(count(qh.sent, "^E SCENE skip Seq023$") == 1 and field(qg.scene, "skipped") == 1,
+        "a story scene the host skips is still skipped on the guest")
+    -- A sit (no first touch: a bell rung before, or the rest of a respawn) just before a boss's scene: that's the story's.
+    Session.sit(qh)
+    q:run(1)
+    Session.scene(qh, true, "Seq030")
+    q:run(1)
+    Session.scene(qh, false)
+    q:run(1)
+    check(count(qh.sent, "^E SCENE skip Seq030$") == 1, "a scene right after a plain sit is the story's: its skip is told")
+    -- The bell's scene, shown again long after its first touch, is told as any other.
+    q:run(15)
+    Session.scene(qh, true, "Seqs003-Seqs008-Seq038")
+    q:run(1)
+    Session.scene(qh, false)
+    q:run(1)
+    check(count(qh.sent, "^E SCENE skip Seqs003%-Seqs008%-Seq038$") == 1, "only while the first touch's own scene plays")
+    allErrors(q)
+    -- The map subsystem saying "None": the bell is found by its level, or by place alone.
+    local m, mh, mg = pair()
+    m:run(4)
+    local ms = mg.env.FindFirstOf("MapSubsystem")
+    Fake.put(ms, "GetCurrentMapID", function() return Fake.name("None") end)
+    table.insert(mh.bellIds, "Bell_YXZR_009")
+    m:run(8)
+    Session.moveTo(mg, 20000 - 900, 0)
+    m:run(3)
+    Session.moveTo(mg, 500, 0)
+    m:run(3)
+    check(mg.storyMarks["Bell_YXZR_009"] == true, "with the map said as \"None\", the host's bell is still lit once been to")
+    allErrors(m)
+end
+
+-- Point 3 of the same report: "crane bell cutscenes aren't sync'd and only appear to the one who hit the bell first, even
+-- if all 3 of us time it correctly". A bell's first ring is each player's own: the host's ring of it (its bell, the flags
+-- its flow raises, the flow steps it marks done) taken first by a guest standing by it made their own ring a plain sit.
+local function ownRing()
+    part("a bell's first ring is each player's own")
+    local BELL, FLAG, STEP = "Bell_YXZR_009", "bell.crane.camp", "CRANE0123456789ABCDEF0123456789AB"
+    local s = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest" }, true, ENEMIES)
+    local h, a, b = s.pcs[1], s.pcs[2], s.pcs[3]
+    s:run(4)
+    h.env.PBZ.game.storyFlags = nil
+    Session.moveTo(h, 20000 - 600, 0)
+    Session.moveTo(a, 20000 - 800, 300)
+    Session.moveTo(b, 20000 - 700, -300)
+    s:run(8)
+    -- The host rings it first: its world wakes the bell, raises the flag and marks the step.
+    table.insert(h.bellIds, BELL)
+    table.insert(h.globalTags, FLAG)
+    h.eventPipeline.ExecuteNodeGuid:Add(STEP)
+    s:run(20)
+    check(not a.storyMarks[BELL] and not b.storyMarks[BELL], "the host's ring isn't lit under the guests standing by it")
+    check(not a.storyMarks[FLAG] and not a.storyGuids[STEP] and not b.storyMarks[FLAG] and not b.storyGuids[STEP],
+        "nor are its flag and flow step taken there: each guest's own ring is still theirs")
+    check(count(a.logs, "the host's flow waits for your own ring") == 1, "(said once)")
+    -- Guest a rings it: its own world wakes it and raises the same itself. Nothing of the host's is taken twice.
+    table.insert(a.bellIds, BELL)
+    table.insert(a.globalTags, FLAG)
+    a.eventPipeline.ExecuteNodeGuid:Add(STEP)
+    s:run(4)
+    check(count(a.trace, "ActivateBellByID") == 0 and count(a.trace, "AddTagsByString.*" .. FLAG) == 0,
+        "rung by the guest: nothing of the host's ring is done over it")
+    -- Guest b goes on without ringing it: then it's lit there, and the flow it held back is taken.
+    Session.moveTo(b, 0, 500)
+    s:run(4)
+    check(b.storyMarks[BELL] == true and b.storyMarks[FLAG] == true and b.storyGuids[STEP] == true,
+        "a guest who walks on without ringing it has it lit then, and the host's flag and step with it")
+    check(count(b.sent, "FLOW b " .. BELL) == 0, "and doesn't tell it back as its own")
+    allErrors(s)
+    -- The host's flags of its ring can come minutes on (on the bench the crane bell's came four minutes after, the scene
+    -- first): they wait as long as the guest stands by it, ten minutes at most, and are taken once the guest goes on.
+    local p, ph, pg = pair()
+    p:run(4)
+    ph.env.PBZ.game.storyFlags = nil
+    Session.moveTo(ph, 20000 - 600, 0)
+    Session.moveTo(pg, 20000 - 800, 300)
+    p:run(8)
+    table.insert(ph.bellIds, BELL)
+    p:run(150)
+    table.insert(ph.globalTags, FLAG)
+    p:run(20)
+    check(not pg.storyMarks[FLAG], "two players: the guest still by it, the host's flag from minutes on waits too")
+    Session.moveTo(pg, 0, 500)
+    p:run(4)
+    check(pg.storyMarks[FLAG] == true and pg.storyMarks[BELL] == true, "the guest goes on: the flag is taken and the bell lit")
+    -- A bell nobody else rang holds nothing back: standing by an unrung bell of one's own is no reason to wait.
+    Session.moveTo(pg, 30000 - 800, 0)
+    p:run(4)
+    table.insert(ph.globalTags, "zddy.other.flag")
+    p:run(16)
+    check(pg.storyMarks["zddy.other.flag"] == true, "by a bell no other player rang, the host's flow comes as ever")
+    allErrors(p)
+    -- The guest's own first ring wakes the bell at the touch, and its scene starts some 5 s on: the host's flag that waited
+    -- doesn't come in between (taken then, it could still stop that scene), nor during the scene.
+    local t, th, tg = pair()
+    t:run(4)
+    th.env.PBZ.game.storyFlags = nil
+    Session.moveTo(th, 20000 - 600, 0)
+    Session.moveTo(tg, 20000 - 800, 300)
+    t:run(8)
+    table.insert(th.bellIds, BELL)
+    t:run(8)
+    table.insert(th.globalTags, FLAG)
+    t:run(14)
+    check(not tg.storyMarks[FLAG], "(the guest by the host's bell: its flag waits)")
+    Session.firstTouch(tg)
+    table.insert(tg.bellIds, BELL)
+    t:run(4)
+    check(not tg.storyMarks[FLAG], "the guest rings it: in the seconds before its scene the host's flag still waits")
+    Session.scene(tg, true, "Seqs003-Seqs008-Seq038")
+    t:run(6)
+    check(not tg.storyMarks[FLAG], "and while the scene plays")
+    Session.scene(tg, false)
+    t:run(18)
+    check(tg.storyMarks[FLAG] == true, "then it comes")
+    allErrors(t)
+    -- A load: the bells this player stood by were that world's. (Kept, one stood by in another save was lit in this one.)
+    local v, vh, vg = pair()
+    v:run(4)
+    table.insert(vh.bellIds, BELL)
+    v:run(8)
+    Session.moveTo(vg, 20000 - 800, 300)
+    v:run(3)
+    Session.loadMap(vg)
+    Session.moveTo(vg, 500, 19500)
+    v:run(10)
+    check(not vg.storyMarks[BELL], "a load forgets the bells stood by: another save's player never went near it")
+    allErrors(v)
+    -- In a party: a bell only another guest rang brings none of the host's flags, so it holds none back.
+    local r = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest" }, true, ENEMIES)
+    local rh, ra, rb = r.pcs[1], r.pcs[2], r.pcs[3]
+    r:run(4)
+    rh.env.PBZ.game.storyFlags = nil
+    Session.moveTo(rh, 0, 0)
+    Session.moveTo(ra, 20000 - 800, 0)
+    Session.moveTo(rb, 20000 - 700, 300)
+    r:run(8)
+    table.insert(ra.bellIds, BELL)
+    r:run(8)
+    table.insert(rh.globalTags, "zddy.party.flag")
+    r:run(16)
+    check(rb.storyMarks["zddy.party.flag"] == true and not rb.storyMarks[BELL],
+        "a party: by a bell only another guest rang, the host's flag comes as ever (the bell stays theirs to ring)")
+    allErrors(r)
+end
 -- A player report (11-09): three players, an hour, the host at 1.5m dust, the guests at 600k. A wallet's rise across a death
 -- (or a new body) went out whole as a gain and was paid to everyone.
 local function dustOnlyEarned()
@@ -3614,8 +4017,9 @@ local function flowRetries()
         "one that always fails is tried 5 times in all, then let go (" .. calls.bad .. ")")
     Session.moveTo(g, 30000, 2000)
     s:run(4)
-    check(g.storyMarks["Bell_YXZR_005"], "a bell whose lighting failed once is lit a second on")
     Session.moveTo(g, 500, 0)
+    s:run(4)
+    check(g.storyMarks["Bell_YXZR_005"], "a bell whose lighting failed once is lit a second on")
     -- One waiting to be tried again when the guest stops following the host's story: let go.
     fails.late = 3
     table.insert(h.globalTags, "zddy.retry.late")
@@ -5358,7 +5762,8 @@ local function playerReports()
     do
         -- The bug hunt (report 8): a guest who linked after the host's scene woke a bell never had that bell. And the
         -- Nexus report on 1.6.6: "When we reached Pangzhen, we found that all the bells were already unlocked": every bell
-        -- the host had was lit at the link, wherever the guest was. Now a host's bell is lit when the guest comes to it.
+        -- the host had was lit at the link, wherever the guest was. Now a host's bell is lit when the guest has been to it
+        -- (and gone on without ringing it: by it, it's theirs to ring, point 3 of a report on 1.7.1).
         local s, h, g = pair(nil, function(h)
             table.insert(h.bellIds, "Bell_YXZR_009")
         end)
@@ -5366,7 +5771,9 @@ local function playerReports()
         check(not g.storyMarks["Bell_YXZR_009"], "a bell the host woke before the guest linked isn't lit far from the guest")
         Session.moveTo(g, 20000 - 1200, 900)
         s:run(3)
-        check(g.storyMarks["Bell_YXZR_009"], "it's lit when the guest comes to it")
+        Session.moveTo(g, 500, 0)
+        s:run(3)
+        check(g.storyMarks["Bell_YXZR_009"], "it's lit when the guest has been to it")
         check(count(g.logs, "lit here, as you came to it") == 1, "once")
         Session.moveTo(g, 500, 0)
         local reads = g.bellReads
@@ -5441,8 +5848,9 @@ local function playerReports()
         check(not g.storyMarks["Bell_YXZR_005"], "and its new bell waits for the guest to come to it")
         Session.moveTo(g, 30000, 2000)
         s:run(3)
-        check(g.storyMarks["Bell_YXZR_005"], "then it's lit there")
         Session.moveTo(g, 500, 0)
+        s:run(3)
+        check(g.storyMarks["Bell_YXZR_005"], "then it's lit, once they've been there")
         check(not g.storyMarks["GameMode.NewGamePlus"], "but never the game's mode")
         check(not h.storyMarks["zddy.chain.broken"], "and nothing goes the other way")
         check(not g.storyMarks["Combat.InFight"], "nor the state of a moment (a fight's)")
@@ -9576,6 +9984,11 @@ return function(print_, scripts)
     hostDiesFirst()
     hostDownAtBossDeath()
     doorsOpenedBefore()
+    farThings()
+    farThingsKept()
+    guestBells()
+    ownRing()
+    craneBellScenes()
     dustOnlyEarned()
     coopDifficulty()
     partyDifficulty()
