@@ -1814,8 +1814,10 @@ end
 local function hostDownAtBossDeath()
     part("the host down when the boss dies: its win, its pay, its dust for the others")
     local BELL, OLD_BELL, ITEM, WEAPON = "Bell_ARENA_001", "Bell_ARENA_002", "Weapon_Material_07", "IronBlade"
+    local CRANE = "Bell_CRANE_023"
     table.insert(Fake.BELLS, { BELL, "YXZR", 3300.0, 3200.0, 100.0 })        -- (the arena's, by the boss)
     table.insert(Fake.BELLS, { OLD_BELL, "YXZR", 2500.0, 2500.0, 100.0 })    -- (one near it, woken long before)
+    table.insert(Fake.BELLS, { CRANE, "YXZR", 3400.0, 3000.0, 100.0 })       -- (a crane bell 5 m off, shown once it's beaten)
     local WIN = { tags = { "boss.win" }, nodes = { "N_WIN", "N_BELL" }, bells = { BELL }, reward = WEAPON }
     -- (A guard of the fight, a boss the codex doesn't call one, as the gold-masked man of the first map, and one 65 m off.)
     local enemies = { { "guard", THUG, 3100.0, 2900.0, 100.0, 600, 100 },
@@ -1902,8 +1904,8 @@ local function hostDownAtBossDeath()
         check(has(g1.storyGuids, "N_WIN") and has(g2.storyGuids, "N_WIN"), model .. ": the guests' worlds ran its win")
         upAgain(s, h)
         check(hasWin(h), model .. ": the host up again has the win's flag and flow steps, the bell's among them")
-        check(has(h.bellIds, BELL) and not has(h.bellIds, OLD_BELL), model .. ": and the bell it woke, not one near it the "
-            .. "guests had before")
+        check(not has(h.bellIds, BELL) and not has(h.bellIds, OLD_BELL), model .. ": but no bell lit by word, not even the "
+            .. "one the win woke in the guests' worlds: its first ring is the host's own")
         check(rawget(h.bag, "__fields").weapons[WEAPON] == true, model .. ": and its reward, the guests' find")
         check(Session.items(h, ITEM) == 3 and Session.dust(h) == 700, string.format("%s: its loot and dust, once (%d of 3, "
             .. "dust %d of 700)", model, Session.items(h, ITEM), Session.dust(h)))
@@ -1919,8 +1921,7 @@ local function hostDownAtBossDeath()
     swing(g2, Session.enemyOn(g2, "masked"), 1)
     s:run(14)
     upAgain(s, h)
-    check(hasWin(h) and has(h.bellIds, BELL), "a boss the codex doesn't call one, its bar gone with the host: its win "
-        .. "reaches the host all the same")
+    check(hasWin(h), "a boss the codex doesn't call one, its bar gone with the host: its win reaches the host all the same")
     check(Session.dust(h) == 700 and Session.dust(g1) - gave[1] == 700, string.format("and its dust, kept by the host (%d),"
         .. " goes to the guests (%d)", Session.dust(h), Session.dust(g1) - gave[1]))
     allErrors(s)
@@ -1950,7 +1951,8 @@ local function hostDownAtBossDeath()
 
     -- What else a guest's world adds about then isn't the win's (the review of the draft): guest 1's death of the boss
     -- refused (a phase of its world's own: the quiet kill, no win), and its own flag 2 s on; a scene's tag in guest 2's
-    -- world for 4 s; guest 2's own flag 25 s after the boss's death there, its look over.
+    -- world for 4 s; its own ring of the arena's crane bell 5 s on (shown once the boss is beaten, rung right after);
+    -- guest 2's own flag 25 s after the boss's death there, its look over.
     s, h, g1, g2 = downFight("boss", {})
     Fake.put(Session.enemyOn(g1, "boss"), "locked", true)
     swing(g2, Session.enemyOn(g2, "boss"), 1)
@@ -1958,7 +1960,9 @@ local function hostDownAtBossDeath()
     g1.globalTags[#g1.globalTags + 1] = "Quest.G1Only.Step2"
     g2.globalTags[#g2.globalTags + 1] = "Level.Arena.SceneBusy"
     g2.globalTags[#g2.globalTags + 1] = "relic.one"         -- (a relic of guest 2's own find: the flag it has while held)
-    s:run(4)
+    s:run(3)
+    g2.bellIds[#g2.bellIds + 1] = CRANE
+    s:run(1)
     tagOff(g2, "Level.Arena.SceneBusy")
     s:run(19)
     g2.globalTags[#g2.globalTags + 1] = "Quest.G2Only.Later"
@@ -1968,6 +1972,8 @@ local function hostDownAtBossDeath()
     check(not has(h.globalTags, "Quest.G1Only.Step2"), "not guest 1's own flag: its death of the boss never ran there")
     check(not has(h.globalTags, "Level.Arena.SceneBusy"), "nor a scene's tag on for a moment in guest 2's world")
     check(not has(h.globalTags, "relic.one"), "nor the flag of a thing guest 2 found and holds")
+    check(not has(h.bellIds, CRANE), "nor the crane bell guest 2 rang itself: the host's first ring, and its scene, its own "
+        .. "(the merge review of the bells work)")
     check(not has(h.globalTags, "Quest.G2Only.Later"), "nor guest 2's own flag, raised after the win's look was over")
     s:run(15)
     check(not has(g2.globalTags, "Quest.G1Only.Step2"), "nor guest 2 guest 1's flag, by the host's flow")
@@ -2132,6 +2138,7 @@ local function hostDownAtBossDeath()
     check(not has(h.storyGuids, "N_STRAY") and not has(h.bellIds, "Bell_YXZR_005"),
         "a guest's word of a boss that didn't fall with the host down: nothing taken")
     allErrors(s)
+    table.remove(Fake.BELLS)
     table.remove(Fake.BELLS)
     table.remove(Fake.BELLS)
 end

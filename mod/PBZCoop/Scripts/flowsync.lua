@@ -336,11 +336,13 @@ return function(api)
     -- bench (11-12, the Gold-Masked One and his two guards at Xigu) the game runs a boss's death with its player down another
     -- way: its "killed" flag and a step of its own, but none of its win's steps (the reward, a step on the arena's bell, two
     -- more), and the respawn never brings them. A guest's world ran the same death with its player up (coop's K,
-    -- killForReal): its win's steps. What that death added here (flags, flow steps, bells it woke by the boss; not what was
-    -- here before it) is told to the host over the next seconds (DB <boss> <t|n|b> <items>), and the host takes what its
-    -- world lacks once it's up and settled, as a guest takes the host's flow. Only for a boss it owes (game.owedNames):
-    -- nothing else of a guest's world goes the host's way. (The reward itself reaches the host as any of the guest's
-    -- finds, T.)
+    -- killForReal): its win's steps. What that death added here (flags and flow steps; not what was here before it) is told
+    -- to the host over the next seconds (DB <boss> <t|n> <items>), and the host takes what its world lacks once it's up and
+    -- settled, as a guest takes the host's flow. Only for a boss it owes (game.owedNames): nothing else of a guest's world
+    -- goes the host's way. (The reward itself reaches the host as any of the guest's finds, T.) Never a bell: the win's
+    -- bell comes as a flow step on the bell's own actor (the bench), and one woken here was this player's own ring, a crane
+    -- bell's right after its boss say; lit in the host's world by word, the host lost its own first ring and its scene (a
+    -- bell lit by word plays none: the bells work, 343e7b0). Each player's first ring is their own.
     -- (Only once the death ran here: from the K on, a flag of this player's own play went to the host, and from there to
     -- every guest. A flag is told only if it was there the look before too, as the host's own are: one on for a moment, a
     -- scene's, isn't the win's. The review of the draft. The bench, 11-12: the gold-masked man's win came 10 to 15 s after
@@ -348,23 +350,20 @@ return function(api)
     -- here stops the clock: a win after a fight's scene comes when it's over. A load ends it: what comes then is the trip's.)
     local DOWN_AT = { 4, 8, 12, 16, 20 }        -- seconds after the death ran here it's looked at, scenes not counted
     local DOWN_SCENE_MAX_S = 120                -- scenes it waits out, in all
-    local DOWN_BELL_CM = 8000                   -- a woken bell this near the boss's place is its arena's
     local DOWN_OWED_S = 180                     -- host: a boss owed this long ago still takes its steps
     local DOWN_MAX = 1000                       -- more new at once than this, or waiting on the host, isn't a win's
-    flow.downFlow = {}                          -- guest: { name, x, y, since, step, told, before, seen, last, waited }
+    flow.downFlow = {}                          -- guest: { name, since, step, told, before, seen, last, waited }
     flow.owedFlow = {}                          -- host: "kind item" -> the boss's name
 
-    -- Guest: this world's flags, flow steps and bells, read just before a death runs here (coop's net.killWatched).
+    -- Guest: this world's flags and flow steps (and bells), read just before a death runs here (coop's net.killWatched).
     function flow.readFlow()
         return read()
     end
 
     -- Guest: that death ran here (killForReal) with the host down: what it adds is told to the host. before: readFlow's.
-    function flow.watchDownFlow(name, at, before)
-        if type(name) == "string" and type(at) == "table" and tonumber(at.X) and tonumber(at.Y) and type(before) == "table"
-            and #flow.downFlow < 8 then
-            table.insert(flow.downFlow, { name = name, x = at.X, y = at.Y, since = os.clock(), step = 1, told = {},
-                before = before })
+    function flow.watchDownFlow(name, before)
+        if type(name) == "string" and type(before) == "table" and #flow.downFlow < 8 then
+            table.insert(flow.downFlow, { name = name, since = os.clock(), step = 1, told = {}, before = before })
         end
     end
 
@@ -387,17 +386,14 @@ return function(api)
             if now - d.since >= DOWN_AT[d.step] then
                 d.step = d.step + 1
                 cur = cur or read()         -- (once a second for all of them)
-                local places = cur and next(cur.b) and bellPlaces() or {}
                 local said, seen = 0, {}
-                for _, kind in ipairs({ "t", "n", "b" }) do
+                for _, kind in ipairs({ "t", "n" }) do
                     local out = {}
                     for item in pairs(cur and cur[kind] or {}) do
                         -- (What was here before first: thousands of flags and steps, a key made for each was a hitch.)
                         if not d.before[kind][item] and #item <= 200 then
-                            local key, p = kind .. " " .. item, kind == "b" and places[item]
-                            if not d.told[key]
-                                and (kind ~= "b" or (p and (p.x - d.x) ^ 2 + (p.y - d.y) ^ 2 <= DOWN_BELL_CM * DOWN_BELL_CM))
-                                and not (kind == "t" and game.isHeldFlag and game.isHeldFlag(item)) then
+                            local key = kind .. " " .. item
+                            if not d.told[key] and not (kind == "t" and game.isHeldFlag and game.isHeldFlag(item)) then
                                 seen[key] = true
                                 if kind ~= "t" or (d.seen and d.seen[key]) then
                                     d.told[key] = true
@@ -451,7 +447,7 @@ return function(api)
         if not coop.isHost() or type(rest) ~= "string" or #rest > CHUNK + 220 then
             return
         end
-        local name, kind, items = rest:match("^(%S+) ([tnb]) (.+)$")
+        local name, kind, items = rest:match("^(%S+) ([tn]) (.+)$")     -- (never a bell: see above)
         -- (owedNames outlives the pay, for this: a guest's word comes over the 20 s after its own death of the boss, and
         -- its look waits out a scene there. pbz.lua's oweBoss.)
         local owed = name and game.owedNames and game.owedNames[name]
@@ -497,10 +493,8 @@ return function(api)
                 local ok = pcall(function()
                     if kind == "t" then
                         ep:AddTagsByString(item)
-                    elseif kind == "n" then
-                        ep.ExecuteNodeGuid:Add(item, true)
                     else
-                        bm:ActivateBellByID(FName(item))
+                        ep.ExecuteNodeGuid:Add(item, true)
                     end
                 end)
                 if ok or not tryAgain(key) then

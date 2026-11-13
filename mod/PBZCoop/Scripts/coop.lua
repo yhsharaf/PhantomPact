@@ -2331,10 +2331,10 @@ return function(api)
             return { X = l.X, Y = l.Y }
         end)))
         local ran = game.killForReal(actor)
-        if ran and before and type(where) == "table" then
-            flow.watchDownFlow(down.name, where, before)
-            if not down.at then
-                net.downBossFell = { name = down.name, at = os.clock(), where = where }
+        if ran and before then
+            flow.watchDownFlow(down.name, before)
+            if not down.at and type(where) == "table" then
+                net.downBossFell = { name = down.name, at = os.clock(), where = where }     -- (a guard of its fight: downWatch)
             end
         end
         return ran
@@ -4437,7 +4437,7 @@ return function(api)
             if game.owed then
                 game.owed.ids = {}
             end
-            -- (So was a boss's pay owed to this player for a death there, and its bell: pbz.lua's payOwed, flowsync's DB.)
+            -- (So was a boss's pay owed to this player for a death there, and its win's steps: pbz.lua's payOwed, flowsync's DB.)
             game.owedBosses, game.downAt, game.owedNames = nil, nil, nil
             if api.flowsync then
                 api.flowsync.owedFlow, api.flowsync.downFlow = {}, {}
