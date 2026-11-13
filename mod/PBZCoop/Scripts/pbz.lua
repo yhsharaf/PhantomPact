@@ -5476,7 +5476,7 @@ return function(api)
     -- petal and left them none, for good: only the first to pick a flower had it (a player report on 1.7.1/1.7.2: "The blue
     -- Memory Flower cannot be synced; only the first person to pick it up gets it"). Their own copy stayed, and picking it
     -- gave nothing either. (The flow step a pick runs, which the host's flowsync sends on, doesn't hide a copy at a load.)
-    -- So now, another player's pick: their petal comes by T as any find does and goes in once (game.givePetal), and their
+    -- So now, another player's pick: their petal comes by T as any find does and goes in once (game.giveOnce), and their
     -- word MF names the flower, its petal and its flags (coop.lua): our copy goes the game's way once that petal is in our
     -- bag, now or as it loads (game.flowerTaken). Not a quest's flower: viewing one opens or moves a quest, a story's (the
     -- story table: "后街-慈母记忆之花", CiMuXin_1) or a collection's (FlowerQuest XianYin_C, "Resonant Strings", on each of
@@ -5562,8 +5562,9 @@ return function(api)
     end
 
     -- A thing kept once a save (a petal, a whole flower, a book or its page) another player's find brought (grantLoot): in
-    -- once, as it came, with its card unless quiet (a note's way: the card waits for the game's own moment). Never one this
-    -- player has had: the game would refuse it all the same, and still put its card up, for nothing (the bench).
+    -- once, as it came, with its card unless quiet (a note's way: game.showPickupTips puts it up when it may, or leaves it
+    -- for the game's own moment). Never one this player has had: the game would refuse it all the same, and still put its
+    -- card up, for nothing (the bench).
     function game.giveOnce(bp, itemId, quiet)
         if game.hadItem(bp, itemId) then
             log("Shared loot: " .. itemId .. " is kept once a save, and this player has had it: not again.")
@@ -5573,6 +5574,7 @@ return function(api)
         local after = game.itemCount(bp, itemId)
         if not quiet and after > 0 then
             game.cardIds[itemId] = true
+            game.tipsWanted = true      -- (looked at by game.showPickupTips, as a note's card is)
         end
         log(string.format("Shared loot: %s, kept once a save (0 -> %d)%s", itemId, after, quiet and "" or ", its card"))
         game.isNarrative(itemId)
@@ -5684,8 +5686,10 @@ return function(api)
     -- this run; never two in a frame.)
     function game.watchFlowers(pawn)
         local fl = game.flowers
-        if next(fl.owed) == nil or not maySearch() then
+        if next(fl.owed) == nil then
             return
+        elseif not maySearch() then
+            return false          -- the caller comes back in a tenth of a second, its turn kept (as watchPickups)
         end
         searched()
         local bp = valid(pawn) and worldSubsystem(pawn, BACKPACK) or nil

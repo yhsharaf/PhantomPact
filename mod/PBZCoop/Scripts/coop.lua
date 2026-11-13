@@ -2848,6 +2848,7 @@ return function(api)
         end
         log("The other player picked the Memory Flower " .. name .. " (" .. petal .. ").")
         game.flowerTaken(name, petal ~= "-" and petal or nil)
+        net.flowersSoon = true      -- (looked at the next slow tick, not after an old word's 30 s: as net.chestsSoon)
         local list = {}
         for flag in flags:gmatch("%S+") do
             if #flag <= 200 and #list < 8 then
@@ -4008,10 +4009,12 @@ return function(api)
                     sendEvent("KS", name, string.format("%.1f %.1f %.1f %.2f %.2f %.2f", at.X, at.Y, at.Z, rot.Pitch, rot.Yaw, rot.Roll))
                 end)
             end
-        elseif game.watchFlowers and next(game.flowers.owed) ~= nil and now >= (slow.flowersAt or 0) then
+        elseif game.watchFlowers and next(game.flowers.owed) ~= nil and (now >= (slow.flowersAt or 0) or net.flowersSoon) then
             -- (A Memory Flower another player picked: our copy gone once its petal is here, or as it loads. pbz.lua.)
-            game.watchFlowers(pawn)
-            slow.flowersAt = now + (game.flowers.nextS or game.flowers.LOOK_S)
+            if game.watchFlowers(pawn) ~= false then
+                net.flowersSoon = nil
+                slow.flowersAt = now + (game.flowers.nextS or game.flowers.LOOK_S)
+            end
         end
         if (#giftsWaiting > 0 or dustWaiting > 0) and not game.isDead(pawn) and not net.arena then
             takeGifts(pawn)
