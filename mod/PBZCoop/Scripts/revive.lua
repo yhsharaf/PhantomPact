@@ -432,14 +432,11 @@ return function(api)
         if kind == "gone" then
             partnerBack()
         end
+        -- (A sit of this player's own clears the count, and so does a partner's that rests them in a boss fight (coop.lua says
+        -- "sit" then); any other partner's sit ("partnersit") does nothing here, and one who's down stays down: their
+        -- partner's strikes bring them back, or the timer runs out (the user's pick, 11-12). It had got them up.)
         if kind == "bell" or kind == "sit" then
             downs = 0
-        end
-        if kind == "sit" and down then      -- (the one who sat can't be down: this is their partner hearing of it)
-            local pc, pawn = api.getPlayer1()
-            if valid(pc) and valid(pawn) then
-                getUp(pc, pawn)
-            end
         end
     end
 
@@ -462,6 +459,11 @@ return function(api)
 
     function revive.set(on)
         revive.on = on
+    end
+
+    -- This player is down, waiting for a partner's strike (coop.lua: a partner's sit rests nobody down).
+    function revive.isDown()
+        return down == true
     end
 
     -- revive [on|off|trace]

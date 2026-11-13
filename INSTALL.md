@@ -1,7 +1,7 @@
 # Phantom Pact 1.7.2: online co-op for Phantom Blade Zero
 
 Play the campaign with a friend: you see each other as a second Soul, fight the same enemies and bosses, and
-share loot, dust and bell rests. The host's world decides enemies, bosses and deaths; the guest's world follows.
+share loot and dust, and regroup at bells. The host's world decides enemies, bosses and deaths; the guest's world follows.
 
 Fan-made, unofficial. Each player needs their own copy of the game on Steam. No game files are modified or shared.
 

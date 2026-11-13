@@ -392,7 +392,7 @@ local function sharing()
     Session.gainItem(b, "Item_Herb", 1)
     s:run(3.5)
     -- (11-09: both with the game's notice on the right, the line; a thing new to them held a moment first, quietly, so
-    -- it's the line and not the full-screen card. Here the key's card waits for the game's own moment, the lines with it.)
+    -- it's the line and not the full-screen card. The key's card goes up with them at a calm moment: pickupsShown.)
     check(count(h.pushes, "^Item_Herb true$") == 2 and count(h.pushes, "^Item_Herb false$") == 1,
         "what the partner finds comes with the game's notice, a thing new to them too, held a moment first for its line")
     -- Issue #15: one whose item can't be read (the Snake Tongue, a token half) went out as loot, and the others' copy vanished
@@ -869,15 +869,19 @@ local function rests()
     w:run(2)
     check(wh.env.PBZ.game.bossFightActive() and refreshes(wh) == before,
         "two players: the guest's bell rest leaves the host's own boss fight be, bar and enemies")
-    -- The guest sits at a bell during it: the host is rested, and so is the boss (the user's rule).
+    -- The guest sits at a bell during it: the fight starts over, the host rested (the gourd to its whole size, its extra
+    -- drink counted in) and the boss back to full health (the user, 11-12: "you heal back and the boss goes full"). Told.
     local wboss = Session.enemyOn(wh, "boss")
     local _, bossMax = Fake.health(wboss)
     Fake.setHealth(wboss, bossMax * 0.3)
     Fake.setHealth(wh.pawn, 100)
+    Fake.put(wh.gourd, "CurrentTime", 1)
     Session.sit(wg)
     w:run(2)
-    check(Fake.health(wh.pawn) == 1000 and Fake.health(wboss) == bossMax,
-        "the guest sits during the host's boss fight: the host is rested, and the boss is back to full")
+    check(Fake.health(wboss) == bossMax and Fake.health(wh.pawn) == 1000 and field(wh.gourd, "CurrentTime") == 3
+        and count(wh.logs, "Status: your partner rested at a bell: you're rested, and so is the boss%.") == 1,
+        string.format("the guest sits during the host's boss fight: the boss back to full, the host rested (%d, gourd %d of 2 and "
+            .. "an extra), and told", Fake.health(wh.pawn), field(wh.gourd, "CurrentTime")))
     allErrors(w)
 
     local t = party()
@@ -1495,8 +1499,16 @@ local function sits()
     s:run(2)
     check(count(b.sent, "^E SIT$") == 1, "a guest sits, and says so once")
     check(count(h.sent, "^E SIT") == 0 and count(a.sent, "^E SIT") == 0 and count(c.sent, "^E SIT") == 0, "and nobody says it again")
-    check(Fake.health(h.pawn) == 1000 and Fake.health(a.pawn) == 1000, "everyone who's up is healed")
-    check(field(a.gourd, "CurrentTime") == 2, "with a full gourd")
+    -- (Out of a boss fight of their own a partner's sit rests nobody: each player rests at their own sit, as in the game, the
+    -- user's rule of 11-12. It had healed everyone who was up and filled their gourds: a gourd held more drinks than it has,
+    -- or fewer with extra drinks, the 1.7.1 report's "5 uses to 1 use".)
+    check(Fake.health(h.pawn) == 100 and Fake.health(a.pawn) == 100 and field(a.gourd, "CurrentTime") == 0,
+        string.format("a partner's sit rests nobody else: health and gourds as they were (%d, %d, gourd %d)", Fake.health(h.pawn),
+            Fake.health(a.pawn), field(a.gourd, "CurrentTime")))
+    Session.sit(c)
+    s:run(2)
+    check(Fake.health(a.pawn) == 100 and field(a.gourd, "CurrentTime") == 0 and count(a.logs, "Status: .* rested at a bell") == 0,
+        "nor a second one, and with no boss fight nothing's said")
     check(refreshes() == before, "and no world refreshes: the dead stay dead")
     Session.moveTo(c, 40000, 0)
     s:run(1)
@@ -1521,6 +1533,290 @@ local function sits()
     t:run(7)
     check(field(t.pcs[2].deathWidget, "NotTick") == true, "with others still fighting, one sit doesn't end the wait")
     allErrors(t)
+end
+
+-- Any sit puts the bosses of fights back to full health, in the world that runs them (the user, 11-12: "a sit should make boss
+-- health go full i am scared people will abuse it"), and a player in a boss fight, their own or one they joined or struck, is
+-- rested with it ("you heal back and the boss goes full"). A review found the boss half missing for a guest's own fight on a boss near the host: the
+-- host's world runs it, the guest's copy follows its health only ever down, and the copy put back to full alone was taken
+-- down again by the next line, the guest rested and told it was full.
+local function sitBosses()
+    part("a sit and the bosses of fights still on")
+    local TIP = "Status: .* rested at a bell: you're rested, and so is the boss%."
+    local function hp(a)
+        return math.floor((Fake.health(a)) + 0.5)
+    end
+    local function two()            -- (as pair(), which comes later in this file)
+        local s = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES)
+        s:run(4)
+        Session.moveTo(s.pcs[1], 0, 0)
+        Session.moveTo(s.pcs[2], 500, 0)
+        s:run(2)
+        return s, s.pcs[1], s.pcs[2]
+    end
+    -- The guest's own fight on a boss near the host, the host's world running it; the host sits nearby.
+    do
+        local s, h, g = two()
+        Session.moveTo(g, 2700, 2700)
+        s:run(3)
+        g.hudLayout:RegisterBossHPBar(Session.enemyOn(g, "boss"))
+        s:run(3)
+        local hb, gb = Session.enemyOn(h, "boss"), Session.enemyOn(g, "boss")
+        local _, hmax = Fake.health(hb)
+        local _, gmax = Fake.health(gb)
+        Fake.setHealth(hb, hmax * 0.3)          -- (the guest's blows, as the host's world has them)
+        Fake.setHealth(g.pawn, 100)
+        s:run(2)
+        local before = hp(gb)
+        Session.sit(h)
+        s:run(3.3)
+        check(before < gmax and hp(hb) >= hmax - 1 and hp(gb) >= gmax - 1 and Fake.health(g.pawn) == 1000 and count(g.logs, TIP) == 1,
+            string.format("the guest's own fight on a boss the host's world runs: the host sits, and it's full in both worlds, the "
+                .. "guest rested and told (host %d of %d, guest %d of %d, from %d; guest %d)", hp(hb), hmax, hp(gb), gmax, before,
+                Fake.health(g.pawn)))
+        allErrors(s)
+    end
+    -- The same fight, the guest the one who sits (out of it, then back in): the host's boss full too, before the fight ends.
+    do
+        local s, h, g = two()
+        Session.moveTo(g, 2700, 2700)
+        s:run(3)
+        g.hudLayout:RegisterBossHPBar(Session.enemyOn(g, "boss"))
+        s:run(3)
+        local hb = Session.enemyOn(h, "boss")
+        local _, hmax = Fake.health(hb)
+        Fake.setHealth(hb, hmax * 0.3)
+        s:run(2)
+        Session.sit(g)
+        s:run(3)
+        check(hp(hb) >= hmax - 1, "and the guest the one who sits: the host's boss of their fight full as it ends: " .. hp(hb))
+        allErrors(s)
+    end
+    -- The host far off, the guest's own world running the boss: its copy is the boss.
+    do
+        local s, h, g = two()
+        Session.moveTo(h, -30000, 0)
+        Session.moveTo(g, 2700, 2700)
+        s:run(3)
+        g.hudLayout:RegisterBossHPBar(Session.enemyOn(g, "boss"))
+        s:run(3)
+        local gb = Session.enemyOn(g, "boss")
+        local _, gmax = Fake.health(gb)
+        g.env.PBZ.game.noteLocalMove()
+        Fake.setHealth(gb, gmax * 0.3)
+        s:run(2)
+        Session.sit(h)
+        s:run(3)
+        check(hp(gb) >= gmax - 1 and count(g.logs, TIP) == 1,
+            string.format("the host far off, the guest's world running the boss: full, the guest told (%d of %d)", hp(gb), gmax))
+        allErrors(s)
+    end
+    -- A party: the host's fight with guests 2 and 3 in it (each has struck the boss), guest 4 sits elsewhere.
+    do
+        local s = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest", "Guest" }, true, ENEMIES)
+        s:run(4)
+        local h, a, b, c = s.pcs[1], s.pcs[2], s.pcs[3], s.pcs[4]
+        Session.moveTo(h, 2600, 2600)
+        Session.moveTo(a, 2700, 2600)
+        Session.moveTo(b, 2600, 2700)
+        Session.moveTo(c, -500, 0)
+        s:run(3)
+        h.hudLayout:RegisterBossHPBar(Session.enemyOn(h, "boss"))
+        s:run(3)
+        for _, pc in ipairs({ a, b }) do
+            pc.env.PBZ.game.noteLocalMove()
+            local e = Session.enemyOn(pc, "boss")
+            Fake.setHealth(e, (Fake.health(e)) - 10)
+        end
+        s:run(2)
+        local hb = Session.enemyOn(h, "boss")
+        local _, hmax = Fake.health(hb)
+        Fake.setHealth(hb, hmax * 0.3)
+        for _, pc in ipairs({ a, b }) do
+            Fake.setHealth(pc.pawn, 100)
+            Fake.put(pc.gourd, "CurrentTime", 0)
+        end
+        s:run(3)
+        Session.sit(c)
+        s:run(3)
+        -- (A helper in a fight is rested as its owner is: "you heal back and the boss goes full". A review, 11-12: they had
+        -- the boss full and nothing else.)
+        local function rested(pc)
+            return Fake.health(pc.pawn) == 1000 and field(pc.gourd, "CurrentTime") == 3 and count(pc.logs, TIP) == 1
+        end
+        check(hp(hb) >= hmax - 1 and count(h.logs, TIP) == 1 and rested(a) and rested(b),
+            string.format("a party: the host's fight with two guests in it, a third guest sits: the boss full (%d of %d), the host and "
+                .. "both guests helping in it rested and told (%d, gourd %d; %d, gourd %d)", hp(hb), hmax, Fake.health(a.pawn),
+                field(a.gourd, "CurrentTime"), Fake.health(b.pawn), field(b.gourd, "CurrentTime")))
+        allErrors(s)
+    end
+    -- A party: guest 2's own fight on a boss the host's world runs; guest 3 sits.
+    do
+        local s = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest", "Guest" }, true, ENEMIES)
+        s:run(4)
+        local h, a, b, c = s.pcs[1], s.pcs[2], s.pcs[3], s.pcs[4]
+        Session.moveTo(h, 0, 0)
+        Session.moveTo(a, 2700, 2700)
+        Session.moveTo(b, -500, 0)
+        Session.moveTo(c, 0, -500)
+        s:run(3)
+        a.hudLayout:RegisterBossHPBar(Session.enemyOn(a, "boss"))
+        s:run(3)
+        local hb, ab = Session.enemyOn(h, "boss"), Session.enemyOn(a, "boss")
+        local _, hmax = Fake.health(hb)
+        local _, amax = Fake.health(ab)
+        Fake.setHealth(hb, hmax * 0.3)
+        s:run(2)
+        Session.sit(b)
+        s:run(3)
+        check(hp(hb) >= hmax - 1 and hp(ab) >= amax - 1 and count(a.logs, TIP) == 1,
+            string.format("a party: guest 2's own fight run by the host's world, guest 3 sits: full in both worlds (%d, %d), guest 2 told",
+                hp(hb), hp(ab)))
+        allErrors(s)
+    end
+    -- A party's host down and waiting in its own fight (its bar went with its death), guests 2 and 3 fighting on: a sit, by
+    -- guest 4 or by guest 3 out of it, still puts the boss back to full in the host's world (a review, 11-12).
+    for _, sitter in ipairs({ 4, 3 }) do
+        local s = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest", "Guest" }, true, ENEMIES)
+        s:run(4)
+        local h, a, b, c = s.pcs[1], s.pcs[2], s.pcs[3], s.pcs[4]
+        Session.moveTo(h, 2600, 2600)
+        Session.moveTo(a, 2700, 2600)
+        Session.moveTo(b, 2600, 2700)
+        Session.moveTo(c, -500, 0)
+        s:run(3)
+        h.hudLayout:RegisterBossHPBar(Session.enemyOn(h, "boss"))
+        s:run(3)
+        for _, pc in ipairs({ a, b }) do
+            pc.env.PBZ.game.noteLocalMove()
+            local e = Session.enemyOn(pc, "boss")
+            Fake.setHealth(e, (Fake.health(e)) - 10)
+        end
+        s:run(2)
+        local hb = Session.enemyOn(h, "boss")
+        local _, hmax = Fake.health(hb)
+        Fake.setHealth(hb, hmax * 0.3)
+        s:run(3)
+        Session.die(h)
+        h.hudLayout:UnRegisterBossHPBar(hb)        -- (the game takes the bar down as its player dies)
+        s:run(6)
+        local held = field(h.deathWidget, "NotTick") == true
+        Fake.setHealth(a.pawn, 120)
+        Fake.put(a.gourd, "CurrentTime", 0)
+        Session.sit(s.pcs[sitter])
+        s:run(3.4)
+        local ab = Session.enemyOn(a, "boss")
+        local _, amax = Fake.health(ab)
+        check(held and hp(hb) >= hmax - 1 and hp(ab) >= amax - 1 and Fake.health(a.pawn) == 1000
+            and field(a.gourd, "CurrentTime") == 3 and count(a.logs, TIP) == 1,
+            string.format("a party's host down and waiting in its own fight, guest %d sits: the boss full in the host's world (%d of %d) "
+                .. "and on guest 2 (%d), guest 2, helping in it, rested and told (%d, gourd %d)", sitter, hp(hb), hmax, hp(ab),
+                Fake.health(a.pawn), field(a.gourd, "CurrentTime")))
+        allErrors(s)
+    end
+    -- Two players: the host sits during its own fight, which the guest struck: the guest's copy full, the guest rested and told.
+    do
+        local s = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES)
+        s:run(4)
+        local h, g = s.pcs[1], s.pcs[2]
+        Session.moveTo(h, 2600, 2600)
+        Session.moveTo(g, 2700, 2600)
+        s:run(3)
+        h.hudLayout:RegisterBossHPBar(Session.enemyOn(h, "boss"))
+        s:run(3)
+        g.env.PBZ.game.noteLocalMove()
+        local gb = Session.enemyOn(g, "boss")
+        Fake.setHealth(gb, (Fake.health(gb)) - 10)
+        s:run(2)
+        local hb = Session.enemyOn(h, "boss")
+        local _, hmax = Fake.health(hb)
+        Fake.setHealth(hb, hmax * 0.3)
+        s:run(3)
+        local before = hp(gb)
+        Fake.setHealth(g.pawn, 100)
+        Fake.put(g.gourd, "CurrentTime", 0)
+        Session.sit(h)
+        s:run(3)
+        local _, gmax = Fake.health(gb)
+        check(before < gmax - 1 and hp(gb) >= gmax - 1 and hp(hb) >= hmax - 1 and Fake.health(g.pawn) == 1000
+            and field(g.gourd, "CurrentTime") == 3 and count(g.logs, TIP) == 1,
+            string.format("the host sits in its own fight the guest struck: full in both worlds (%d, %d), the guest helping in it rested "
+                .. "and told (%d, gourd %d)", hp(hb), hp(gb), Fake.health(g.pawn), field(g.gourd, "CurrentTime")))
+        allErrors(s)
+    end
+    -- A party, the boss far from the host (each guest's copy is the boss in its world): guest 2's fight, guest 3 struck it;
+    -- guest 3 sits: its own copy full too.
+    do
+        local s = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest", "Guest" }, true, ENEMIES)
+        s:run(4)
+        local h, a, b, c = s.pcs[1], s.pcs[2], s.pcs[3], s.pcs[4]
+        Session.moveTo(h, -30000, 0)
+        Session.moveTo(a, 2700, 2700)
+        Session.moveTo(b, 2700, 2600)
+        Session.moveTo(c, -30000, 500)
+        s:run(3)
+        a.hudLayout:RegisterBossHPBar(Session.enemyOn(a, "boss"))
+        s:run(3)
+        local ab, bb = Session.enemyOn(a, "boss"), Session.enemyOn(b, "boss")
+        local _, amax = Fake.health(ab)
+        local _, bmax = Fake.health(bb)
+        a.env.PBZ.game.noteLocalMove()
+        Fake.setHealth(ab, amax * 0.3)
+        b.env.PBZ.game.noteLocalMove()
+        Fake.setHealth(bb, bmax * 0.3)
+        s:run(3)
+        Session.sit(b)
+        s:run(3)
+        check(hp(bb) >= bmax - 1 and hp(ab) >= amax - 1,
+            string.format("the boss far from the host, guest 3 in guest 2's fight sits: its own copy full (%d), and guest 2's (%d)",
+                hp(bb), hp(ab)))
+        allErrors(s)
+    end
+    -- The guest's own fight on a boss the host's world runs, over with the boss alive (the guest walked out: its bar down,
+    -- its F 0); the guest sits, then would go back in: the host's boss full all the same (a review, 11-12).
+    do
+        local s, h, g = two()
+        Session.moveTo(g, 2700, 2700)
+        s:run(3)
+        local gb = Session.enemyOn(g, "boss")
+        g.hudLayout:RegisterBossHPBar(gb)
+        s:run(3)
+        local hb = Session.enemyOn(h, "boss")
+        local _, hmax = Fake.health(hb)
+        Fake.setHealth(hb, hmax * 0.3)
+        s:run(2)
+        g.hudLayout:UnRegisterBossHPBar(gb)
+        s:run(8)                            -- (F 0 goes 3 s after a bar drops, through a phase change)
+        local over = next(h.env.PBZ.net.partnerBosses) == nil
+        Session.sit(g)
+        s:run(3)
+        check(over and hp(hb) >= hmax - 1,
+            string.format("the guest's fight on a boss the host's world runs, over with the boss alive (%s), the guest sits: the host's "
+                .. "boss full (%d of %d)", tostring(over), hp(hb), hmax))
+        allErrors(s)
+    end
+    -- With PvP on (no match), the host in a boss fight of its own: a partner's sit changes nothing there, as before.
+    do
+        local s = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES, "PvP = On\n")
+        s:run(4)
+        local h, g = s.pcs[1], s.pcs[2]
+        Session.moveTo(h, 0, 0)
+        Session.moveTo(g, 30000, 0)
+        s:run(3)
+        h.hudLayout:RegisterBossHPBar(Session.enemyOn(h, "boss"))
+        s:run(3)
+        local hb = Session.enemyOn(h, "boss")
+        local _, hmax = Fake.health(hb)
+        Fake.setHealth(hb, hmax * 0.3)
+        Fake.setHealth(h.pawn, 100)
+        s:run(2)
+        Session.sit(g)
+        s:run(3)
+        check(h.env.PBZ.net.pvp == true and hp(hb) < hmax - 1 and Fake.health(h.pawn) == 100 and count(h.logs, "Status: .* rested at a bell") == 0,
+            string.format("PvP on, the host in its own boss fight, the guest sits: nothing changes there, as before (boss %d of %d, "
+                .. "host %d)", hp(hb), hmax, Fake.health(h.pawn)))
+        allErrors(s)
+    end
 end
 
 local function sitsForTwo()
@@ -1553,11 +1849,36 @@ local function sitsForTwo()
     Fake.setHealth(rg.pawn, 1)
     r:run(2)
     check(net(rh).partnerDowned == true, "a guest goes down, with revive on")
+    local downHp = Fake.health(rg.pawn)
     Session.sit(rh)
     r:run(2)
-    check(net(rh).partnerDowned == false, "the host sits, and they're back on their feet")
-    check(Fake.health(rg.pawn) == 1000, "and rested")
+    -- (A partner's sit does nothing for one who's down: their partner's strikes or the timer decide. The user's pick, 11-12:
+    -- "you only heal when you yourself sit on the bell or die". It had got them up, rested.)
+    check(net(rh).partnerDowned == true and Fake.health(rg.pawn) == downHp,
+        string.format("the host sits: a guest who's down stays down (%d health, as before the sit)", Fake.health(rg.pawn)))
     allErrors(r)
+    -- Down in a boss fight of their own: still down (their pick), not rested, the boss back to full all the same.
+    local r2 = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES, "Revive = On\n")
+    r2:run(4)
+    local r2h, r2g = r2.pcs[1], r2.pcs[2]
+    Session.moveTo(r2h, 0, 0)
+    Session.moveTo(r2g, 2700, 2700)
+    r2:run(3)
+    r2g.hudLayout:RegisterBossHPBar(Session.enemyOn(r2g, "boss"))
+    r2:run(3)
+    local rboss = Session.enemyOn(r2h, "boss")
+    local _, rmax = Fake.health(rboss)
+    Fake.setHealth(rboss, rmax * 0.3)
+    Fake.setHealth(r2g.pawn, 1)
+    r2:run(2)
+    local downHp2 = Fake.health(r2g.pawn)
+    Session.sit(r2h)
+    r2:run(3)
+    check(net(r2h).partnerDowned == true and Fake.health(r2g.pawn) == downHp2 and Fake.health(rboss) >= rmax - 1
+        and count(r2g.logs, "Status: .* rested at a bell") == 0,
+        string.format("down in a boss fight of their own, the host sits: the guest stays down (%d), the boss full (%d of %d)",
+            Fake.health(r2g.pawn), Fake.health(rboss), rmax))
+    allErrors(r2)
 
     local w = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, true, ENEMIES)
     w.pcs[2].joinAt = w.pcs[1].now + 8
@@ -2972,16 +3293,128 @@ local function pickupsShown()
     s:run(3)
     check(rawget(other, "__alive") ~= false, "another save's pickup of the same name isn't taken for one the partner took")
     h.env.PBZ.game.saveSlot = keep
-    -- A note's card isn't put up mid-play by us: the game's own next pickup shows it, the lines with it.
+    -- A partner's note: its card waits in the game's display list for the game's own pickup, and the bag says a card is up
+    -- with nothing on screen, so the line of their next find waited too, till this player picked something up (a player
+    -- report on 1.7.1, three players; the bench, 11-12). Not put up in a fight: there it waits, the line with it. Out of
+    -- the fight (the game counts the host out of it) it goes up the game's way, and the line once it's closed.
     local pushes, cards = count(h.trace, "TryToPushPickupUI"), #h.cards
+    h.inCombat = 1
     Session.gainItem(g, "R_77", 1)
     Session.gainItem(g, "Weapon_Material_01", 1)
-    s:run(5)
+    s:run(6)
     check(#h.cards == cards and count(h.trace, "TryToPushPickupUI") == pushes and Session.items(h, "R_77") == 1,
-        string.format("a note's card waits for the game's own moment, the line after it with it: %d cards, %d shown, %d notes",
+        string.format("in a fight a note's card waits, the line after it with it: %d cards, %d shown, %d notes",
             #h.cards - cards, count(h.trace, "TryToPushPickupUI") - pushes, Session.items(h, "R_77")))
-    Session.gainItem(h, "Weapon_Material_01", 1)     -- (the host's own next find: the game shows them all)
-    check(#h.cards == cards + 1 and h.tips[#h.tips] == "Weapon_Material_01 + 1", "and the host's own next find shows them")
+    h.inCombat = 0
+    s:run(4)
+    local up = #h.cards == cards + 1 and h.cards[#h.cards] == "R_77" and h.cardUp == true
+    h.closeCard()                   -- (Space)
+    s:run(1)
+    check(up and h.tips[#h.tips] == "Weapon_Material_01 + 1",
+        string.format("out of the fight the note's card goes up, with no find of the host's own, and the line once it's "
+            .. "closed: %d cards, last line %s", #h.cards - cards, tostring(h.tips[#h.tips])))
+    -- A scene holds a card the same way, and its line: shown a moment after it ends. (Longer than the 12 s a share waits out
+    -- a scene, coop.lua's takeGifts: the card is in the bag by then, and only game.calmForCard holds it. In a scene of 5 s
+    -- the share itself waited, and the scene's own test was never asked: a review of 18d340e.)
+    cards, tips = #h.cards, #h.tips
+    Session.scene(h, true)
+    Session.gainItem(g, "I_KEY_9", 1)
+    Session.gainItem(g, "Weapon_Material_01", 2)
+    s:run(20)
+    local inScene, inBag = #h.cards - cards + #h.tips - tips, Session.items(h, "I_KEY_9")
+    Session.scene(h, false)
+    s:run(4)
+    local upAfter = #h.cards == cards + 1 and h.cardUp == true
+    h.closeCard()
+    s:run(1)
+    check(inBag == 1 and inScene == 0 and upAfter and #h.tips == tips + 1,
+        string.format("a quest item's card waits out a scene with its line, then both show: %d in the bag, %d in it, %d cards "
+            .. "and %d lines after", inBag, inScene, #h.cards - cards, #h.tips - tips))
+    -- One a fight held when a scene began, the fight over in it: it waits out the scene all the same.
+    cards = #h.cards
+    h.inCombat = 1
+    Session.gainItem(g, "R_78", 1)
+    s:run(5)
+    Session.scene(h, true)
+    h.inCombat = 0
+    s:run(8)
+    local inIt = #h.cards - cards
+    Session.scene(h, false)
+    s:run(4)
+    check(inIt == 0 and #h.cards == cards + 1 and h.cardUp == true,
+        string.format("a card a fight held, a scene begun and the fight over in it: it waits out the scene, %d in it, %d after",
+            inIt, #h.cards - cards))
+    h.closeCard()
+    s:run(1)
+    -- Two cards of a partner's: the first goes up, and while it's open (read a while) nothing is put up over it; the game
+    -- puts the next up itself once it's closed, then the line. (A review of 18d340e: both calls ran again every few seconds
+    -- over the first, still open, what the game does then unknown.)
+    cards, tips = #h.cards, #h.tips
+    local over = h.overCard
+    Session.gainItem(g, "R_79", 1)
+    Session.gainItem(g, "I_RELIC_5", 1)
+    Session.gainItem(g, "Weapon_Material_01", 1)
+    s:run(8)
+    local firstUp = #h.cards == cards + 1 and h.cardUp == true
+    s:run(15)
+    local stillOne = #h.cards == cards + 1
+    h.closeCard()
+    s:run(1)
+    local secondUp = #h.cards == cards + 2 and h.cardUp == true
+    h.closeCard()
+    s:run(2)
+    check(firstUp and stillOne and secondUp and h.overCard == over and #h.tips == tips + 1,
+        string.format("two cards of a partner's: the first up, nothing over it while it's open (%d calls), the second after it, "
+            .. "then the line: %d cards, %d lines", h.overCard - over, #h.cards - cards, #h.tips - tips))
+    -- Being hit, a montage of the host's own (a swing, a pickup's) or a game screen up: a card waits, then goes up.
+    local function heldBy(what, on, off, secs)
+        local before = #h.cards
+        Session.gainItem(g, "R_" .. (80 + #h.cards), 1)
+        on()
+        s:run(secs or 8)
+        local held = #h.cards - before
+        off()
+        s:run(5)
+        check(held == 0 and #h.cards == before + 1 and h.cardUp == true,
+            string.format("%s, a card waits, then goes up: %d while, %d after", what, held, #h.cards - before))
+        h.closeCard()
+        s:run(1)
+    end
+    local hp = select(1, Fake.health(h.pawn))
+    heldBy("while the host is being hit", function()
+        for i = 1, 8 do
+            Fake.setHealth(h.pawn, hp - 5 * i)
+            s:run(1)
+        end
+    end, function() end, 0.1)
+    heldBy("while a montage of the host's own plays", function()
+        Session.startMove(h, "/PBZCombatAsset/ActorData/Move/A1.A1")
+    end, function() Session.endMove(h) end)
+    local page
+    heldBy("while a game screen is up", function()
+        page = Fake.screen(h, "W_SystemMenu_C")
+    end, function()
+        for i = #h.screens, 1, -1 do
+            if h.screens[i] == page then
+                table.remove(h.screens, i)
+            end
+        end
+    end)
+    -- (Not a pause: linked, coop.lua's noPause lets none last. Nor a boss fight or a talk: nothing here makes either.)
+    -- On a guest the game counts no fight with the host's copies, whose minds the host runs: a live enemy of the host's near
+    -- holds a card the same way, till the guest is away from it.
+    local gcards = #g.cards
+    Session.moveTo(g, 1500, 450)            -- (beside the host's thug)
+    s:run(3)
+    Session.gainItem(h, "I_RELIC_2", 1)
+    s:run(8)
+    local nearEnemy = #g.cards - gcards
+    Session.moveTo(g, -6000, 0)
+    s:run(5)
+    check(nearEnemy == 0 and #g.cards == gcards + 1 and g.cardUp == true,
+        string.format("a guest beside the host's enemy: the host's find's card waits, then goes up away from it: %d near, %d after",
+            nearEnemy, #g.cards - gcards))
+    g.closeCard()
     allErrors(s)
 
     -- A party of three: two guests take the same pickup in a moment. The host, who took nothing, gets one: the second word
@@ -3307,6 +3740,230 @@ local function pickupsRaced()
         string.format("other shares piled up, then a find and a pickup of one thing: 2 each, the host's copy gone: %d and %d",
             Session.items(h, M) - h0, Session.items(g, M) - g0))
     allErrors(s)
+end
+
+-- A story item is one of a kind (the game's NarrativeItem: a key, the Twin Flesh Lily): everyone gets it once, whoever takes
+-- it and however it comes. A player's report on 1.7.1, three players: "story items still duplicate (twin flesh lilies for
+-- example, I have 2)". A copy in a world the taker's word doesn't find (made there under another name, or made again in
+-- another session) was there to take: its taker had two, and their share gave everyone a second.
+local function storyOnce()
+    part("a story item, once each")
+    local FLOWER, RELIC = "I_KEY_9", "I_RELIC_1"
+    local function pickupOn(pc, id)
+        for i = #pc.pickups, 1, -1 do
+            if rawget(pc.pickups[i], "__name") == id then
+                return pc.pickups[i]
+            end
+        end
+    end
+    local p3 = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest" }, 3, ENEMIES)
+    p3:run(4)
+    local h, a, b = p3.pcs[1], p3.pcs[2], p3.pcs[3]
+    Session.moveTo(h, 250, 0)
+    Session.moveTo(a, 250, 150)
+    Session.moveTo(b, 250, -150)
+    p3:run(3)
+    Fake.pickup(h, "flowerT", FLOWER, 600.0, 0.0, 100.0)
+    Fake.pickup(a, "flowerT", FLOWER, 600.0, 0.0, 100.0)
+    Fake.pickup(b, "flowerT_2147466001", FLOWER, 600.0, 0.0, 100.0)     -- (B's world made its own under another name)
+    p3:run(3)
+    pickupOn(a, "flowerT"):K2_DestroyActor()
+    Session.gainItem(a, FLOWER, 1)
+    p3:run(25)
+    local first = string.format("%d %d %d", Session.items(h, FLOWER), Session.items(a, FLOWER), Session.items(b, FLOWER))
+    -- The host hands theirs in (Yuer takes the flower). Then B's own copy, still there, taken: their game gives B a second of
+    -- the same thing.
+    h.bag:RemovePropsFromBackPack(1, h.env.FName(FLOWER))
+    pickupOn(b, "flowerT_2147466001"):K2_DestroyActor()
+    Session.gainItem(b, FLOWER, 1)
+    p3:run(40)
+    check(first == "1 1 1" and Session.items(h, FLOWER) == 0 and Session.items(a, FLOWER) == 1 and Session.items(b, FLOWER) == 1,
+        string.format("a story item A took, then B's own copy B's world kept: one each, the host's handed in stays so; after A's "
+            .. "%s, after B's %d %d %d", first, Session.items(h, FLOWER), Session.items(a, FLOWER), Session.items(b, FLOWER)))
+    check(count(b.sent, "^E T " .. FLOWER) == 0 and count(b.logs, "story item this player had already") == 1,
+        "and B's second wasn't sent: everyone had theirs")
+    allErrors(p3)
+
+    -- Two players: the guest's own copy of a story item the host's share gave them, taken later: one each.
+    local s, hh, g = pair()
+    Session.moveTo(hh, 250, 150)
+    Session.moveTo(g, 250, -150)
+    Fake.pickup(hh, "relicT", RELIC, 250.0, 0.0, 100.0)
+    Fake.pickup(g, "relicT_2147466002", RELIC, 250.0, 0.0, 100.0)
+    s:run(3)
+    pickupOn(hh, "relicT"):K2_DestroyActor()
+    Session.gainItem(hh, RELIC, 1)
+    s:run(25)
+    pickupOn(g, "relicT_2147466002"):K2_DestroyActor()
+    Session.gainItem(g, RELIC, 1)
+    s:run(40)
+    check(Session.items(hh, RELIC) == 1 and Session.items(g, RELIC) == 1,
+        string.format("two players: the guest's own copy of a story item the host's share gave them: one each, %d and %d",
+            Session.items(hh, RELIC), Session.items(g, RELIC)))
+    -- One made of several (the dragon token, IntegrationItemNum 2): not one of a kind, held as many times as found.
+    local PIECE = "K_TOKEN_9"
+    for _, pc in ipairs({ hh, g }) do
+        Fake.pickup(pc, "stringA", PIECE, 400.0, 0.0, 100.0)
+        Fake.pickup(pc, "stringB", PIECE, 400.0, 100.0, 100.0)
+    end
+    s:run(3)
+    pickupOn(hh, "stringA"):K2_DestroyActor()
+    Session.gainItem(hh, PIECE, 1)
+    s:run(25)
+    pickupOn(g, "stringB"):K2_DestroyActor()
+    Session.gainItem(g, PIECE, 1)
+    s:run(25)
+    check(Session.items(hh, PIECE) == 2 and Session.items(g, PIECE) == 2,
+        string.format("a story item made of several: two found, two each, %d and %d", Session.items(hh, PIECE),
+            Session.items(g, PIECE)))
+    -- The guest, who has a story item already, takes their world's copy (kept to one, nothing sent), and their word takes the
+    -- host's copy: the host, who had none, gets it from that copy. (Dropped, they had none for the session.)
+    g.bag:AddPropsToBackPack(1, g.env.FName("I_RELIC_2"), false)        -- (the guest's, from before)
+    for _, pc in ipairs({ hh, g }) do
+        Fake.pickup(pc, "relicU", "I_RELIC_2", 330.0, 60.0, 100.0)
+    end
+    s:run(3)
+    pickupOn(g, "relicU"):K2_DestroyActor()
+    Session.gainItem(g, "I_RELIC_2", 1)
+    s:run(25)
+    check(Session.items(hh, "I_RELIC_2") == 1 and Session.items(g, "I_RELIC_2") == 1 and count(g.sent, "^E T I_RELIC_2") == 0,
+        string.format("one who had a story item takes their copy again, the word takes the host's: the host gets it from it, "
+            .. "%d and %d", Session.items(hh, "I_RELIC_2"), Session.items(g, "I_RELIC_2")))
+    allErrors(s)
+
+    -- The same with the host's copy not loaded at the word (a review of 18d340e: the host had none for the session, their
+    -- copy gone as it loaded; the bag on joining goes host to guest only, so a guest can hold what the host lacks): given
+    -- as it goes, loaded 25 s on, or in the wait, once the wait is out.
+    do
+        local s2, h2, g2 = pair()
+        local X, Y = "I_RELIC_3", "I_RELIC_4"
+        g2.bag:AddPropsToBackPack(1, g2.env.FName(X), false)        -- (the guest's, another host's share once)
+        Fake.pickup(g2, "relicW", X, 560.0, 60.0, 100.0)
+        s2:run(3)
+        pickupOn(g2, "relicW"):K2_DestroyActor()
+        Session.gainItem(g2, X, 1)
+        s2:run(25)
+        local before = Session.items(h2, X)
+        local late = Fake.pickup(h2, "relicW", X, 60.0, 60.0, 100.0)
+        s2:run(4)
+        check(before == 0 and Session.items(h2, X) == 1 and Session.items(g2, X) == 1 and rawget(late, "__alive") == false
+            and count(g2.sent, "^E T " .. X) == 0,
+            string.format("the guest, who has a story item, takes their copy; the host's, loaded 25 s on, gives it to the host as "
+                .. "it goes: %d then %d, the guest %d", before, Session.items(h2, X), Session.items(g2, X)))
+        g2.bag:AddPropsToBackPack(1, g2.env.FName(Y), false)
+        Fake.pickup(g2, "relicY", Y, 560.0, -60.0, 100.0)
+        s2:run(3)
+        pickupOn(g2, "relicY"):K2_DestroyActor()
+        Session.gainItem(g2, Y, 1)
+        s2:run(8)
+        local mid = Fake.pickup(h2, "relicY", Y, 60.0, -60.0, 100.0)
+        s2:run(20)
+        check(Session.items(h2, Y) == 1 and rawget(mid, "__alive") == false,
+            "and the host's copy loaded in the wait: gone, and given from once the wait is out: " .. Session.items(h2, Y))
+        allErrors(s2)
+    end
+
+    -- A pile (Yuer's herbs lie in piles): the guest, who has its thing, searches theirs. The host's goes with the word and gives
+    -- it once the wait is out; one not loaded then, as it loads.
+    do
+        local s3, h3, g3 = pair()
+        local function pileOf(pc, name, item, x)
+            local p = Fake.pile(pc, name, x, 0.0, 100.0, {})
+            Fake.put(p, "Item ID", Fake.name("XiGu." .. item))
+            return p
+        end
+        g3.bag:AddPropsToBackPack(1, g3.env.FName("I_RELIC_1"), false)
+        local hp = pileOf(h3, "BP_Rubbish_C_UAID_herbs1", "I_RELIC_1", 300.0)
+        local gp = pileOf(g3, "BP_Rubbish_C_UAID_herbs1", "I_RELIC_1", 600.0)
+        s3:run(3)
+        Fake.search(g3, gp)
+        Session.gainItem(g3, "I_RELIC_1", 1)
+        s3:run(25)
+        check(Session.items(h3, "I_RELIC_1") == 1 and Session.items(g3, "I_RELIC_1") == 1 and rawget(hp, "__alive") == false
+            and count(g3.sent, "^E T I_RELIC_1") == 0,
+            string.format("a pile of a story item the guest has, searched: the host's goes and gives it, %d and %d",
+                Session.items(h3, "I_RELIC_1"), Session.items(g3, "I_RELIC_1")))
+        g3.bag:AddPropsToBackPack(1, g3.env.FName("I_RELIC_2"), false)
+        local gp2 = pileOf(g3, "BP_Rubbish_C_UAID_herbs2", "I_RELIC_2", 620.0)
+        s3:run(3)
+        Fake.search(g3, gp2)
+        Session.gainItem(g3, "I_RELIC_2", 1)
+        s3:run(20)
+        local before = Session.items(h3, "I_RELIC_2")
+        local hp2 = pileOf(h3, "BP_Rubbish_C_UAID_herbs2", "I_RELIC_2", 320.0)
+        s3:run(22)
+        check(before == 0 and Session.items(h3, "I_RELIC_2") == 1 and rawget(hp2, "__alive") == false,
+            string.format("and one not loaded on the host at the search: it goes as it loads and gives it, %d then %d", before,
+                Session.items(h3, "I_RELIC_2")))
+        allErrors(s3)
+    end
+
+    -- One the host had and handed in stays handed in. Their first came by the guest's share, their copy not loaded then:
+    -- gone as it loads, nothing again. A later copy of the guest's, taken with the thing held (kept to one, nothing sent), its
+    -- word taking the host's loaded copy: nothing, the host has had it. And a share to one who has the thing: not a second.
+    do
+        local s4, h4, g4 = pair()
+        local Z = "I_RELIC_1"
+        Fake.pickup(g4, "relicZ", Z, 560.0, 60.0, 100.0)
+        s4:run(3)
+        pickupOn(g4, "relicZ"):K2_DestroyActor()
+        Session.gainItem(g4, Z, 1)
+        s4:run(25)
+        local first = Session.items(h4, Z)
+        h4.bag:RemovePropsFromBackPack(1, h4.env.FName(Z))          -- (handed in)
+        local late = Fake.pickup(h4, "relicZ", Z, 60.0, 60.0, 100.0)
+        s4:run(4)
+        Fake.pickup(g4, "relicZ2", Z, 560.0, -60.0, 100.0)
+        local loaded = Fake.pickup(h4, "relicZ2", Z, 60.0, -60.0, 100.0)
+        s4:run(3)
+        pickupOn(g4, "relicZ2"):K2_DestroyActor()
+        Session.gainItem(g4, Z, 1)
+        s4:run(25)
+        check(first == 1 and Session.items(h4, Z) == 0 and Session.items(g4, Z) == 1 and rawget(late, "__alive") == false
+            and rawget(loaded, "__alive") == false,
+            string.format("a story item the host had and handed in stays so: its copy loaded later gone, and the guest's take of "
+                .. "another copy, theirs held, gives nothing from the host's: %d then %d", first, Session.items(h4, Z)))
+        h4.bag:AddPropsToBackPack(1, h4.env.FName("I_RELIC_2"), false)
+        Fake.pickup(g4, "relicH", "I_RELIC_2", 560.0, 30.0, 100.0)
+        s4:run(3)
+        pickupOn(g4, "relicH"):K2_DestroyActor()
+        Session.gainItem(g4, "I_RELIC_2", 1)
+        s4:run(20)
+        check(Session.items(h4, "I_RELIC_2") == 1 and Session.items(g4, "I_RELIC_2") == 1
+            and count(g4.sent, "^E T I_RELIC_2") == 1 and count(h4.logs, "I_RELIC_2 is a story item this player has already") >= 1,
+            string.format("the guest's first of a story item the host has: its share isn't a second, %d and %d",
+                Session.items(h4, "I_RELIC_2"), Session.items(g4, "I_RELIC_2")))
+        -- One held from the save (another session's share), never given this run, then handed in: not given back from a copy
+        -- either (a review of this fix: only what came this run counted).
+        h4.bag:AddPropsToBackPack(1, h4.env.FName("I_RELIC_3"), false)
+        g4.bag:AddPropsToBackPack(1, g4.env.FName("I_RELIC_3"), false)
+        s4:run(6)
+        h4.bag:RemovePropsFromBackPack(1, h4.env.FName("I_RELIC_3"))     -- (handed in)
+        Fake.pickup(g4, "relicS", "I_RELIC_3", 560.0, 90.0, 100.0)
+        local saved = Fake.pickup(h4, "relicS", "I_RELIC_3", 60.0, 90.0, 100.0)
+        s4:run(3)
+        pickupOn(g4, "relicS"):K2_DestroyActor()
+        Session.gainItem(g4, "I_RELIC_3", 1)
+        s4:run(22)
+        check(Session.items(h4, "I_RELIC_3") == 0 and Session.items(g4, "I_RELIC_3") == 1 and rawget(saved, "__alive") == false,
+            "one held from the save and handed in isn't given back from a copy either: " .. Session.items(h4, "I_RELIC_3"))
+        -- Co-op off, the bag hook still there for the game's run: the bag is the game's, a second isn't taken back.
+        net(g4).enabled = false
+        Session.gainItem(g4, "I_RELIC_2", 1)
+        s4:run(2)
+        local alone = Session.items(g4, "I_RELIC_2")
+        net(g4).enabled = true
+        check(alone == 2, "with co-op off the game's second of a story item stays: the bag is the game's: " .. alone)
+        allErrors(s4)
+    end
+
+    -- The host holds two of one already (from an older version): a guest joining gets one from the host's bag, not two.
+    local j = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES)
+    j.pcs[1].bag:AddPropsToBackPack(2, j.pcs[1].env.FName(RELIC), false)
+    j:run(12)
+    check(Session.items(j.pcs[2], RELIC) == 1,
+        "a story item the host holds twice: a guest joining gets one from the host's bag: " .. Session.items(j.pcs[2], RELIC))
+    allErrors(j)
 end
 
 local function bossReactions()
@@ -7392,9 +8049,11 @@ local function offAndBack()
 
     local lang = dofile(SIM_SCRIPTS .. "/lang.lua")()
     lang.set("Chinese")
-    check(lang.say("your partner rested at a bell: you're rested too.") == "队友在钟旁休息了:你也恢复了。", "the bell's tips in Chinese")
+    check(lang.say("your partner rested at a bell: you're rested, and so is the boss.") == "队友在钟旁休息了:你恢复了,首领也恢复了。",
+        "the bell's tips in Chinese")
     check(lang.say("your partner rested at a bell: you'll join them.") == "队友在钟旁休息了:你会前往队友身边。", "both of them")
-    check(lang.say("player 3 (gold) rested at a bell: you're rested too.") == "玩家 3(金) 在钟旁休息了:你也恢复了。", "and by name")
+    check(lang.say("player 3 (gold) rested at a bell: you're rested, and so is the boss.") == "玩家 3(金) 在钟旁休息了:你恢复了,首领也恢复了。",
+        "and by name")
     check(lang.say("Couldn't start: couldn't find the host address abc") == "无法启动:找不到房主地址 abc", "and why the relay couldn't start")
     check(lang.say("Couldn't start: Steam isn't ready: is it running and logged in?") == "无法启动:Steam 还没准备好,请确认它已运行并已登录。", "for Steam too")
 
@@ -7407,6 +8066,8 @@ local function offAndBack()
             end
         end
     end
+    th.hudLayout:RegisterBossHPBar(Session.enemyOn(th, "boss"))     -- (a partner's sit tells only a boss fight's player)
+    t:run(1)
     th.env.PBZ.coop.handlers.SIT()
     t:run(3.5)
     check((shownNow() or ""):find("rested at a bell", 1, true) ~= nil, "a tip is up")
@@ -9606,7 +10267,6 @@ local function arabic()
     -- signed, between "partner connected" and its full stop.)
     local BUILT = {
         ["your partner rested at a bell: you'll join them."] = { "your partner", " rested at a bell: you'll join them." },
-        ["your partner rested at a bell: you're rested too."] = { "your partner", " rested at a bell: you're rested too." },
         ["your partner rested at a bell: you're rested, and so is the boss."] =
             { "your partner", " rested at a bell: you're rested, and so is the boss." },
         ["your partner turned co-op sync off."] = { "your partner", " turned co-op sync off." },
@@ -9773,7 +10433,7 @@ local function arabic()
     for slot = 1, 6 do
         local p = name("term.player" .. slot)
         for _, id in ipairs({ "tip.party.down", "tip.party.back", "tip.party.cutscene", "tip.party.other_map",
-            "tip.party.rest_join", "tip.party.rest_too", "tip.party.rest_boss", "tip.party.sync_off" }) do
+            "tip.party.rest_join", "tip.party.rest_boss", "tip.party.sync_off" }) do
             try(id, made(id, p[1]), fill(id, p[2]))
         end
         try("tip.party.far", made("tip.party.far", p[1], 212), fill("tip.party.far", p[2], 212))
@@ -9897,8 +10557,8 @@ local function arabic()
         end
     end
     verdict(string.format("Chinese says the same with the Arabic loaded: %d lines", #english))
-    check(zh.say("Not connected.") == "未连接。" and zh.say("player 3 (gold) rested at a bell: you're rested too.")
-        == "玩家 3(金) 在钟旁休息了:你也恢复了。" and zh.say("Couldn't start: couldn't find the host address abc")
+    check(zh.say("Not connected.") == "未连接。" and zh.say("player 3 (gold) rested at a bell: you're rested, and so is the boss.")
+        == "玩家 3(金) 在钟旁休息了:你恢复了,首领也恢复了。" and zh.say("Couldn't start: couldn't find the host address abc")
         == "无法启动:找不到房主地址 abc", "(and still its own Chinese)")
 
     -- Latin an Arabic line keeps: the names of things, then (KEPT) the ini's own words, file names, a command and what it
@@ -10327,9 +10987,11 @@ return function(print_, scripts)
     pickupsFresh()
     pickupsShown()
     pickupsRaced()
+    storyOnce()
     rests()
     sits()
     sitsForTwo()
+    sitBosses()
     twoSaves()
     otherMaps()
     fightsAndWhoIsLeft()

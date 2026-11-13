@@ -18,7 +18,7 @@ Nexus's dark page, against 3.6:1, and 2.5:1 for the old headings' `#cc0000`). He
 [center][size=6][b]PHANTOM PACT ⚔️[/b][/size]
 [size=4][i]Online Co-op For Phantom Blade Zero - 2 Players, 4 In Beta[/i][/size][/center]
 
-Phantom Pact adds online co-op to Phantom Blade Zero. Each player runs their own game and keeps their own save, and Phantom Pact links the worlds: you see each other, fight the same enemies, take on bosses as a team, share loot and dust, and rest at bells together. The host’s world leads, and your partner joins in.
+Phantom Pact adds online co-op to Phantom Blade Zero. Each player runs their own game and keeps their own save, and Phantom Pact links the worlds: you see each other, fight the same enemies, take on bosses as a team, share loot and dust, and regroup at bells. The host’s world leads, and your partner joins in.
 
 Open contribution, built by the community for the community. Let’s push it forward and fix bugs together: [url=https://github.com/yhsharaf/PhantomPact][color=#ff2222]yhsharaf/PhantomPact[/color][/url]
 
@@ -103,7 +103,7 @@ Press [b]Esc[/b], [b]F5[/b] or the [b]X[/b] to close the panel.
 [*]Boss fights wait for everyone: die and you watch your partner until it’s over. Join during one and you watch, then go to them
 [*]Enemies stay on one of you for about 15 seconds, then turn on the other if they’ve been hitting it
 [*]Everything’s shared: what one of you gets from a chest, a pile or the ground, the other gets too. What you buy or make stays yours
-[*]Shared dust and bell rests
+[*]Shared dust, and bells that bring you together
 [*]The game doesn’t pause while you’re linked, in the F5 panel or the game’s own menu: enemies keep coming
 [*]Partner compass, your partner on the map, and tips when they connect, go down or wander off
 [*]Elden Ring–style co-op difficulty: enemies and bosses get 50% more health and 30% more posture with a partner, bosses twice their guard bar, and super armour so two players can't stun-lock them
@@ -195,7 +195,7 @@ Online co-op needs none of these pad steps. If your pads stop working in other g
 
 [color=#ff2222][size=5][b]简体中文[/b][/size][/color]
 
-幻影契约(Phantom Pact)为《影之刃零》加入线上联机。每位玩家各自运行自己的游戏、保留自己的存档,模组把世界连接起来:你们能看到彼此,一起对付同样的敌人和首领,共享战利品和尘,并一同在钟旁休息。
+幻影契约(Phantom Pact)为《影之刃零》加入线上联机。每位玩家各自运行自己的游戏、保留自己的存档,模组把世界连接起来:你们能看到彼此,一起对付同样的敌人和首领,共享战利品和尘,并在钟旁会合。
 
 [b]安装[/b]
 

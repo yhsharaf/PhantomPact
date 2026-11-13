@@ -8,7 +8,7 @@ English | [简体中文](README.zh-CN.md)
 
 Phantom Pact adds online co-op to **Phantom Blade Zero**. Two players each run their own game and keep their own
 save, and Phantom Pact links the two worlds: you see each other, fight the same enemies, take on bosses as a team,
-share loot and dust, and rest at bells together. The host's world leads, and your partner joins in.
+share loot and dust, and regroup at bells. The host's world leads, and your partner joins in.
 
 **Download:** [latest release](https://github.com/yhsharaf/PhantomPact/releases/latest) · **Install and play:**
 [INSTALL.md](INSTALL.md) · **Found a bug?** [Open an issue](https://github.com/yhsharaf/PhantomPact/issues/new/choose)
@@ -22,7 +22,7 @@ share loot and dust, and rest at bells together. The host's world leads, and you
 - Shared boss fights: the boss health bar and arena fog walls for both players
 - Boss fights wait for everyone: die and you watch your partner until it's over; join during one and you watch, then go to them
 - Shared loot and dust: what either player picks up or earns goes to both
-- Shared resting: sit at a bell and your partner is rested too, and comes to you if they're dead, down or watching a fight
+- Bells bring you together: sit at one and a partner who's dead or watching a fight comes to you. Each player rests at their own sit, as in the game; a partner fighting a boss when you sit starts the fight over, rested, with the boss back to full health
 - Elden Ring–style co-op difficulty: enemies and bosses get more health and posture while you play together
 - PvP matches (F6, new in 1.7.0): duels (best of three) and death matches, one on one or two teams of up to six, in four
   of the game's own boss arenas or where the host stands. Fair for everyone: the same body and level-30 weapons of your own

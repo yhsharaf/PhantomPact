@@ -106,9 +106,17 @@ end
 
 function Session.gainItem(pc, id, count)
     pc.bag:AddPropsToBackPack(count or 1, pc.env.FName(id), true)
-    -- (The game's own pickup shows its notice at once, and whatever waited in the queue with it; its card, closed.)
+    -- (The game's own pickup shows its notice at once, and whatever waited with it: both calls, its animation through, then
+    -- every card closed with Space, the lines after them.)
     pc.bag:TryToPushPickupUI()
-    pc.cardUp = false
+    pc.bag:ReadyToPlayConfirmUI()
+    for _ = 1, 20 do
+        if not pc.cardUp then
+            break
+        end
+        pc.closeCard()
+    end
+    pc.bag:TryToPushPickupUI()
 end
 
 function Session.items(pc, id)

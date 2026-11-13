@@ -27,7 +27,7 @@ LINES = [
                    "f5.words.ini_no_address", "f5.words.ini_bad_char", "tip.conn.build", "tip.conn.no_dll"]),
     ("PvP (F6)", ["f6.words.restoring", "tip.pvp.too_late", "tip.pvp.talismans"]),
     ("the partner", ["tip.partner.down", "tip.partner.back", "tip.partner.cutscene", "tip.partner.rest_join",
-                     "tip.partner.rest_too", "tip.partner.rest_boss", "f5more.tip.pvpve_partner", "f5more.tip.pvpve_all",
+                     "tip.partner.rest_boss", "f5more.tip.pvpve_partner", "f5more.tip.pvpve_all",
                      "tip.conn.disconnected", "tip.partner.sync_off", "f5more.tip.pvpve_party", "f5more.tip.local_next",
                      "f5more.tip.players_host", "f5more.tip.host_setting", "f5more.tip.players_next",
                      "local.tip.multiplayer_next", "tip.f3.tp_off", "tip.f3.too_late", "tip.f3.no_partner", "tip.f3.not_now",
@@ -168,7 +168,6 @@ NAMED = [
     ("tip.party.other_map", " is on another map%.$"),
     ("tip.party.far", " is (%d+) m away%.$"),
     ("tip.party.rest_join", " rested at a bell: you'll join them%.$"),
-    ("tip.party.rest_too", " rested at a bell: you're rested too%.$"),
     ("tip.party.rest_boss", " rested at a bell: you're rested, and so is the boss%.$"),
     ("tip.party.sync_off", " turned co%-op sync off%.$"),
 ]

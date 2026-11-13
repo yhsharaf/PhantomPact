@@ -144,7 +144,6 @@ tip.partner.other_map	your partner is on another map.	شريكك في خريطة
 tip.partner.far	your partner is %d m away.	شريكك على بُعد %1 متر.	%1 = metres (over 150); متر stays singular after digits, as a unit (glossary); tip.partner.f3_there may follow
 tip.partner.f3_there	 F3 takes you there.	 اضغط F3 للانتقال إلى هناك.	keeps the leading space; follows the two rows above
 tip.partner.rest_join	your partner rested at a bell: you'll join them.	استراح شريكك عند جرس: ستنتقل إليه.	you're dead or waiting out a boss fight, so you're brought to them
-tip.partner.rest_too	your partner rested at a bell: you're rested too.	استراح شريكك عند جرس، واستعدت عافيتك أنت أيضًا.	
 tip.partner.rest_boss	your partner rested at a bell: you're rested, and so is the boss.	استراح شريكك عند جرس، واستعدت عافيتك، وكذلك الزعيم.	the boss of your own fight is back to full health too
 tip.partner.sync_off	your partner turned co-op sync off.	أوقف شريكك مزامنة اللعب التعاوني.	
 tip.partner.bag	your bag now has what your partner's has (%d new).	صارت حقيبتك تحوي ما في حقيبة شريكك (جديد: %1).	%1 = things added; the count after a label needs no agreement (glossary)
@@ -156,7 +155,6 @@ tip.party.cutscene	%s is watching a cutscene.	يشاهد %1 مشهدًا سين�
 tip.party.other_map	%s is on another map.	%1 في خريطة أخرى.	%1 = the player's name; no verb in this sentence, so the name comes first (an Arabic name, so the line still starts right to left)
 tip.party.far	%s is %d m away.	%1 على بُعد %2 متر.	%1 = the player's name, %2 = metres
 tip.party.rest_join	%s rested at a bell: you'll join them.	استراح %1 عند جرس: ستنتقل إليه.	%1 = the player's name
-tip.party.rest_too	%s rested at a bell: you're rested too.	استراح %1 عند جرس، واستعدت عافيتك أنت أيضًا.	%1 = the player's name
 tip.party.rest_boss	%s rested at a bell: you're rested, and so is the boss.	استراح %1 عند جرس، واستعدت عافيتك، وكذلك الزعيم.	%1 = the player's name
 tip.party.sync_off	%s turned co-op sync off.	أوقف %1 مزامنة اللعب التعاوني.	%1 = the player's name
 tip.boss.f3_join	your partner is in a boss fight: F3 takes you there, if you want to join.	شريكك في معركة زعيم: إن أردت الانضمام، اضغط F3 للانتقال إلى هناك.	
