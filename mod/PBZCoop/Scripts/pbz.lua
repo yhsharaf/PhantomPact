@@ -1672,6 +1672,11 @@ return function(api)
             return
         end
         game.granting = true        -- (what the mod adds isn't sent back: see "what the game gives")
+        if game.keptOnce(itemId) then
+            game.giveOnce(bp, itemId, quiet)        -- (a petal, a book or its page goes in once or never: see there)
+            game.granting = false
+            return
+        end
         if kind == "weapon" or kind == "weapon2" then
             -- (No "equip it now?": that's a full screen, and with a partner linked the game doesn't pause for it.)
             pcall(function() bp:AddWeaponItem(FName(itemId), kind == "weapon", false, false, false) end)
@@ -5923,6 +5928,271 @@ return function(api)
             end
         end
         return came
+    end
+
+    ------------------------------------------------------------------ Memory Flowers
+
+    -- A Memory Flower (BP_FlowInteract_MemoryFlower_C, one of the game's flow actors) gives a petal: six of Inanis' make her
+    -- Memory Flower, and a whole one raises max health (+10% for hers). Picked, it plays its memory (a minute and a half),
+    -- then the game vanishes it (FlowerDissapear, kept in the flower's own save data: at the next load it's destroyed as it
+    -- loads), adds its petal with its card (AddPropsByMap, notice on), and as the card closes raises the flower's quest flags
+    -- (FlowerQuestTags, "quest.弦音.记忆之花6": a quest counting the flowers). Each world has its own copy of every flower,
+    -- named alike. (The bench, 11-12.)
+    -- The game keeps a petal once a save: once in the bag, even for a moment and taken back, it never takes that petal again,
+    -- quietly or with its card, and gives nothing for it, before or after a load. grantLoot's way with a thing new to a
+    -- player (held a moment quietly, then given with its notice, then GiveItem if the count hadn't moved) spent a partner's
+    -- petal and left them none, for good: only the first to pick a flower had it (a player report on 1.7.1/1.7.2: "The blue
+    -- Memory Flower cannot be synced; only the first person to pick it up gets it"). Their own copy stayed, and picking it
+    -- gave nothing either. (The flow step a pick runs, which the host's flowsync sends on, doesn't hide a copy at a load.)
+    -- So now, another player's pick: their petal comes by T as any find does and goes in once (game.giveOnce), and their
+    -- word MF names the flower, its petal and its flags (coop.lua): our copy goes the game's way once that petal is in our
+    -- bag, now or as it loads (game.flowerTaken). Not a quest's flower: viewing one opens or moves a quest, a story's (the
+    -- story table: "后街-慈母记忆之花", CiMuXin_1) or a collection's (FlowerQuest XianYin_C, "Resonant Strings", on each of
+    -- Inanis' flowers: begun only by the flower's own flow as it ends, never by its flags, the bench), each world's own. It
+    -- stays for each player to see: their own view later runs it, the petal refused as had (its card shows once more).
+    -- (Fields, not locals: this file is at its 200.)
+    game.flowers = { CLASS = "BP_FlowInteract_MemoryFlower_C", LOOK_S = 5, LATE_S = 30, OLD_S = 120, nextS = 5,
+        GONE = "/Game/PBZContent/VFX/SceneFX/Common/BP_FlowInteract_MemoryFlower.BP_FlowInteract_MemoryFlower_C:FlowerDissapear",
+        BAG = BACKPACK .. ":AddPropsByMap", hooked = false, bagHooked = false, ours = false, told = {}, owed = {},
+        petals = nil, pending = nil, report = nil }
+
+    -- What the game keeps once a save, by the item table's ItemType: a petal, a whole Memory Flower, a book and a book's
+    -- page. Once in the bag, even taken out at once, each is never taken again (the bench, 11-12: add, take, add gave
+    -- 1/0/0 for Page_XC_01, FA_0201, Book_XC_01 and FS_12001; 1/0/1 for K_, TU_, T_ and R_ items). (The 192 pages named R_
+    -- dodged grantLoot's hold; the 26 named Page_, the 22 books and the whole flowers didn't.)
+    game.ONCE_TYPES = { MemoryFlowerPetal = true, MemoryFlower = true, Book = true, BookPage = true }
+    function game.keptOnce(id)
+        game.isPetal(id)        -- (the table read once: game.flowers.once with it)
+        local once = game.flowers.once
+        return once ~= nil and once[id] == true
+    end
+
+    -- A Memory Flower's petal, by the game's item table (ItemType MemoryFlowerPetal), read once (game.flowers.once too).
+    function game.isPetal(id)
+        local fl = game.flowers
+        if type(id) ~= "string" or id == "?" or id == "None" then
+            return false
+        end
+        if fl.petals == nil then
+            pcall(function()
+                local path = "/Game/PBZContent/DataTable/Item/DT_InventoryData.DT_InventoryData"
+                local t = StaticFindObject(path)
+                if not valid(t) and type(LoadAsset) == "function" then
+                    LoadAsset(path)
+                    t = StaticFindObject(path)
+                end
+                local lib = StaticFindObject("/Script/Engine.Default__DataTableFunctionLibrary")
+                if not (valid(t) and valid(lib)) then
+                    return
+                end
+                local function text(v)
+                    pcall(function() v = v:get() end)
+                    pcall(function() v = v:ToString() end)
+                    return tostring(v)
+                end
+                local ids = lib:GetDataTableColumnAsString(t, FName("ItemId"))
+                if #ids == 0 then
+                    return
+                end
+                -- (Read once, even with no such column: an item that isn't a petal goes grantLoot's own way.)
+                local set, once, n, m = {}, {}, 0, 0
+                fl.petals, fl.once = set, once
+                local kinds = lib:GetDataTableColumnAsString(t, FName("ItemType"))
+                for i = 1, #ids do
+                    local kind = text(kinds[i])
+                    if kind == "MemoryFlowerPetal" then
+                        set[text(ids[i])], n = true, n + 1
+                    end
+                    if game.ONCE_TYPES[kind] then
+                        once[text(ids[i])], m = true, m + 1
+                    end
+                end
+                log("Memory Flower petals in the game's table: " .. n .. "; things it keeps once a save: " .. m .. ".")
+            end)
+            if fl.petals == nil then
+                return false        -- (asked again next time: the table may not be loaded yet)
+            end
+        end
+        return fl.petals[id] == true
+    end
+
+    -- Whether this bag has ever held id: its entry stays, at 0, once it's taken out.
+    function game.hadItem(bp, id)
+        local had = false
+        pcall(function()
+            bp.Inventories:ForEach(function(k)
+                if not had and k:get():ToString() == id then
+                    had = true
+                end
+            end)
+        end)
+        return had
+    end
+
+    -- A thing kept once a save (a petal, a whole flower, a book or its page) another player's find brought (grantLoot): in
+    -- once, as it came, with its card unless quiet (a note's way: game.showPickupTips puts it up when it may, or leaves it
+    -- for the game's own moment). Never one this player has had: the game would refuse it all the same, and still put its
+    -- card up, for nothing (the bench).
+    function game.giveOnce(bp, itemId, quiet)
+        if game.hadItem(bp, itemId) then
+            log("Shared loot: " .. itemId .. " is kept once a save, and this player has had it: not again.")
+            return
+        end
+        pcall(function() bp:AddPropsToBackPack(1, FName(itemId), not quiet) end)
+        local after = game.itemCount(bp, itemId)
+        if not quiet and after > 0 then
+            game.cardIds[itemId] = true
+            game.tipsWanted = true      -- (looked at by game.showPickupTips, as a note's card is)
+        end
+        log(string.format("Shared loot: %s, kept once a save (0 -> %d)%s", itemId, after, quiet and "" or ", its card"))
+        game.isNarrative(itemId)
+        local flag = game.heldFlags and game.heldFlags[itemId]
+        if flag and after > 0 and api.flowsync and api.flowsync.raise then
+            api.flowsync.raise({ flag }, itemId)        -- (its own flag while held, as grantLoot raises one)
+        end
+    end
+
+    -- A flower's key in told and owed: this save's.
+    function game.flowerKey(name)
+        return (game.saveSlot or game.readSaveSlot() or "") .. "|" .. name
+    end
+
+    -- This player's own pick: the game vanishing a flower here that the mod didn't (fl.ours), and in that same frame adding
+    -- its petal (the bench: every pick, the petal's add right after the vanish). Only that is told (game.flowerPetal): a
+    -- vanish with no petal (a story's own doing, say) gives the others nothing to lose their copy for. With the flower's
+    -- quest flags, read now: the game raises them here as the card closes. Only while linked, not in a PvP match. Hooked
+    -- once the flower's blueprint is loaded (it comes with the level's flowers), as the piles' is, and again whenever its
+    -- function is another object (the bench: after a trip to another map, and after a reload): a hook is the loaded
+    -- function's. The bag's add, once.
+    function game.hookFlowers(report)
+        local fl = game.flowers
+        fl.report = report
+        if not fl.bagHooked and valid(StaticFindObject(BACKPACK)) then
+            fl.bagHooked = true
+            pcall(function()
+                RegisterHook(fl.BAG, function(_, map, push)
+                    pcall(game.flowerPetal, map, push)
+                end)
+            end)
+        end
+        local fn = StaticFindObject(fl.GONE)
+        if not valid(fn) or fn:GetAddress() == fl.hooked then
+            return
+        end
+        fl.hooked = fn:GetAddress()
+        pcall(function()
+            RegisterHook(fl.GONE, function(self)
+                local net = api.coop and api.coop.net
+                if fl.ours or not (net and net.enabled) or (api.arena and api.arena.match) then
+                    return
+                end
+                local ok, f = pcall(function() return self:get() end)
+                if not (ok and valid(f)) then
+                    return
+                end
+                local flags = {}
+                pcall(function()
+                    f.FlowerQuestTags.GameplayTags:ForEach(function(_, t)
+                        local s = t:get().TagName:ToString()
+                        if s ~= "" and s ~= "None" then
+                            flags[#flags + 1] = s
+                        end
+                    end)
+                end)
+                fl.pending = { name = f:GetFName():ToString(), flags = flags, at = os.clock() }
+            end)
+        end)
+    end
+
+    -- The game adding a find by map (AddPropsByMap) right after a flower here went: if it's a petal, that was this player's
+    -- pick, told once a save with the petal (fl.report: coop.lua's MF).
+    function game.flowerPetal(map, push)
+        local fl = game.flowers
+        local p = fl.pending
+        if not p or game.granting then
+            return
+        end
+        fl.pending = nil
+        if os.clock() - p.at > 1 or not push:get() then
+            return
+        end
+        local petal = nil
+        map:get():ForEach(function(id)
+            local s = id:get():ToString()
+            if petal == nil and game.isPetal(s) then
+                petal = s
+            end
+        end)
+        local key = game.flowerKey(p.name)
+        if not petal or fl.told[key] then
+            return
+        end
+        fl.told[key], fl.owed[key] = true, nil      -- (gone here by this pick: a word for it from a partner is old news)
+        if fl.report then
+            fl.report(p.name, petal, p.flags)
+        end
+    end
+
+    -- Another player picked this flower and got its petal (coop.lua's MF): our copy goes the game's way once that petal is
+    -- in our bag (its share, T, comes a few seconds after the word, later in a scene or while down), now or as it loads this
+    -- session: game.watchFlowers, from coop.lua's slow tick, which waits out the quiet after a load. (One gone here already,
+    -- our own pick or an earlier word: nothing to do, and nothing looked for.)
+    function game.flowerTaken(name, petal)
+        local fl = game.flowers
+        local key = game.flowerKey(name)
+        if not fl.told[key] then
+            fl.owed[key] = { name = name, petal = petal, at = os.clock() }
+        end
+    end
+
+    -- The flowers owed here that are loaded now, gone the game's way: FlowerDissapear, which pays nothing (the bench) and is
+    -- kept with the flower. Only once its petal is in this bag: a copy whose petal never came stays, for this player to pick
+    -- themselves. Not one they're picking right now (its collision is off while they use it): their own memory plays out, and
+    -- the game vanishes it at its end. Not a quest's flower: one that names no petal of its own (a quest's flow gives it)
+    -- or names a quest (FlowerQuest) stays for this player to see; its petal came, and the game won't give it twice. (A
+    -- search: every LOOK_S while a word is new, every LATE_S once all are older than OLD_S, as a copy far off may never load
+    -- this run; never two in a frame.)
+    function game.watchFlowers(pawn)
+        local fl = game.flowers
+        if next(fl.owed) == nil then
+            return
+        elseif not maySearch() then
+            return false          -- the caller comes back in a tenth of a second, its turn kept (as watchPickups)
+        end
+        searched()
+        local bp = valid(pawn) and worldSubsystem(pawn, BACKPACK) or nil
+        local now, slot = os.clock(), game.saveSlot or ""
+        for _, f in ipairs(FindAllOf(fl.CLASS) or {}) do
+            local name = valid(f) and f:GetFName():ToString() or nil
+            local key = name and (slot .. "|" .. name)
+            local o = key and fl.owed[key]
+            if o then
+                local gone, used, item, quest = false, false, "", false
+                pcall(function() gone = f.HasDestory == true end)
+                pcall(function() used = f:GetActorEnableCollision() == false end)
+                pcall(function() item = f.FlowerItem:ToString() end)
+                pcall(function() quest = valid(f.FlowerQuest) end)
+                if gone then
+                    fl.owed[key], fl.told[key] = nil, true
+                elseif item == "" or quest then
+                    fl.owed[key] = nil
+                    log("A Memory Flower another player picked belongs to a quest: it stays here, for this player to see (" .. name .. ").")
+                elseif not used and bp and (o.petal == nil or game.hadItem(bp, o.petal)) then
+                    fl.ours = true
+                    local ok = pcall(function() f:FlowerDissapear() end)
+                    fl.ours = false
+                    fl.owed[key], fl.told[key] = nil, true
+                    log(ok and ("A Memory Flower another player picked went here too: " .. name .. ".")
+                        or ("A Memory Flower another player picked couldn't be taken here: " .. name .. "."))
+                end
+            end
+        end
+        fl.nextS = fl.LATE_S
+        for _, o in pairs(fl.owed) do
+            if now - o.at < fl.OLD_S then
+                fl.nextS = fl.LOOK_S
+            end
+        end
     end
 
     -- Each world has its own copy of every chest and rubbish pile, named alike. Its items reach the partner as above, so

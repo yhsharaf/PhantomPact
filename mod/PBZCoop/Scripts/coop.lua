@@ -2931,6 +2931,38 @@ return function(api)
         end
     end
 
+    -- This player picked a Memory Flower (pbz.lua's game.hookFlowers): named to the others with its petal and quest flags,
+    -- for their copy to go once they have the petal and their quest to count it. The petal itself goes by T, as any find
+    -- does. MF <flower> <petal> [<flag> ...]
+    function net.reportFlower(name, petal, flags)
+        log("Picked the Memory Flower " .. name .. " (" .. petal .. "): telling the other players.")
+        sendEvent("MF", name, petal, table.concat(flags, " "))
+    end
+
+    -- Another player picked a Memory Flower: our copy goes too, the game's way, once its petal is in our bag
+    -- (game.flowerTaken: looked for in the slow tick, after the quiet of a load), and the flags the game raises for it as its
+    -- card closes are raised here when it's calm (flowsync.lua), as a pick here would: a quest counting the flowers
+    -- ("Resonant Strings: Collect Memory Flowers of Inanis and the Chord") counts theirs. Either way, the host's pick or a
+    -- guest's: the host takes no story flags from guests, and the host's own reach guests by FLOW as well.
+    handlers.MF = function(rest)
+        local name, petal, flags = (rest or ""):match("^(%S+) (%S+)%s*(.*)$")
+        if not (name and #name <= MAX_CHEST_NAME and #petal <= MAX_ITEM_NAME and #flags <= 1600 and game.flowerTaken) then
+            return
+        end
+        log("The other player picked the Memory Flower " .. name .. " (" .. petal .. ").")
+        game.flowerTaken(name, petal ~= "-" and petal or nil)
+        net.flowersSoon = true      -- (looked at the next slow tick, not after an old word's 30 s: as net.chestsSoon)
+        local list = {}
+        for flag in flags:gmatch("%S+") do
+            if #flag <= 200 and #list < 8 then
+                list[#list + 1] = flag
+            end
+        end
+        if #list > 0 and api.flowsync and api.flowsync.raise then
+            api.flowsync.raise(list, name)
+        end
+    end
+
     -- Host: a guest started a drink from the gourd. Its enemies near them look their way for a while (game.steerTarget). (A
     -- guest hearing another guest's, passed on, does nothing: only the host's enemies choose.)
     handlers.HEAL = function(_, from)
@@ -4126,12 +4158,21 @@ return function(api)
             game.guardFormations()
             game.hookGifts(sendGift)
             game.hookPiles(reportChest)
+            if game.hookFlowers then
+                game.hookFlowers(net.reportFlower)
+            end
             game.watchChests(pawn, reportChest, isHost() and offerChest or nil)
             if game.watchStones then
                 game.watchStones(pawn, function(name, at, rot)
                     log("Kicked " .. name .. " away: telling the other player where it lies.")
                     sendEvent("KS", name, string.format("%.1f %.1f %.1f %.2f %.2f %.2f", at.X, at.Y, at.Z, rot.Pitch, rot.Yaw, rot.Roll))
                 end)
+            end
+        elseif game.watchFlowers and next(game.flowers.owed) ~= nil and (now >= (slow.flowersAt or 0) or net.flowersSoon) then
+            -- (A Memory Flower another player picked: our copy gone once its petal is here, or as it loads. pbz.lua.)
+            if game.watchFlowers(pawn) ~= false then
+                net.flowersSoon = nil
+                slow.flowersAt = now + (game.flowers.nextS or game.flowers.LOOK_S)
             end
         end
         if (#giftsWaiting > 0 or dustWaiting > 0) and not game.isDead(pawn) and not net.arena then

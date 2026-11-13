@@ -306,6 +306,12 @@ Fake.object = object      -- (for a test that needs an object of its own, a clas
 -- items are "NarrativeItem"; some raise a flag of their own while held (one of the Bagua boy's relics: "ljc.小雪.收集物1");
 -- one is made of several (the dragon token, IntegrationItemNum 2: the bench, 11-12), not one of a kind.
 Fake.ITEMS = {
+    { "F_02055", "None", type = "MemoryFlowerPetal" },
+    { "F_02056", "None", type = "MemoryFlowerPetal" },
+    { "F_02011", "None", type = "MemoryFlowerPetal" },
+    { "F_02012", "None", "jl.弄蛇.记忆之花2", type = "MemoryFlowerPetal" },
+    { "Page_XC_01", "None", type = "BookPage" },
+    { "FA_0201", "None", type = "MemoryFlower" },
     { "R_500", "Material" },
     { "I_KEY_9", "NarrativeItem" },
     { "Weapon_Material_01", "Material" },
@@ -773,6 +779,13 @@ function Fake.story(pc)
         end,
         GetDataTableColumnAsString = function(_, t, column)
             local c, out = column:ToString(), {}
+            if t == itemTable and c == "ItemType" then
+                -- (A Memory Flower's petal is ItemType MemoryFlowerPetal: a row's own type, by name. The rest: None.)
+                for i, r in ipairs(Fake.ITEMS) do
+                    out[i] = { get = function() return name(r.type or "None") end }
+                end
+                return out
+            end
             if t == itemTable then
                 for i, r in ipairs(Fake.ITEMS) do
                     local held = '(TagName="' .. (r[3] or "") .. '")'     -- (as the game's table has it)
@@ -1005,6 +1018,118 @@ function Fake.search(pc, pile)
     for _, fn in ipairs(pc.hooks["/Game/PBZContent/Blueprint/Item/Device/BP_Rubbish.BP_Rubbish_C:OnInteract"] or {}) do
         fn({ get = function() return pile end })
     end
+end
+
+-- A Memory Flower as the game places one (BP_FlowInteract_MemoryFlower_C), as the bench found it on 11-12: the petal its
+-- pick gives (a quest's flower names none on the actor: its flow gives one all the same), its quest flags (FlowerQuestTags),
+-- its collision off while it's being picked, and its vanish (FlowerDissapear) kept in its own save data: a vanished flower
+-- is destroyed as it loads again (pc.flowerSaves). Each world has its own copy, named alike.
+Fake.FLOWER_GONE = "/Game/PBZContent/VFX/SceneFX/Common/BP_FlowInteract_MemoryFlower.BP_FlowInteract_MemoryFlower_C:FlowerDissapear"
+
+-- Whether an item of the table is a Memory Flower's petal (its row's type: ItemType MemoryFlowerPetal, its detail type
+-- None; the bench, 11-12: F_02055, F_02056 of Inanis' flower; F_02011 of Bai Chilian's, from a quest's flower; F_02012 of
+-- hers raises a flag while held).
+function Fake.isPetal(id)
+    for _, r in ipairs(Fake.ITEMS) do
+        if r[1] == id then
+            return r.type == "MemoryFlowerPetal"
+        end
+    end
+    return false
+end
+
+-- Whether the game keeps it once a save (a petal, a whole flower, a book, a book's page: the bench, 11-12).
+Fake.ONCE = { MemoryFlowerPetal = true, MemoryFlower = true, Book = true, BookPage = true }
+function Fake.keptOnce(id)
+    for _, r in ipairs(Fake.ITEMS) do
+        if r[1] == id then
+            return Fake.ONCE[r.type or ""] == true
+        end
+    end
+    return false
+end
+
+-- The flowers loaded in this world now.
+function Fake.loadedFlowers(pc)
+    local loaded = {}
+    for _, f in ipairs(pc.memoryFlowers or {}) do
+        if rawget(f, "__alive") then
+            loaded[#loaded + 1] = f
+        end
+    end
+    pc.flowerSearches = (pc.flowerSearches or 0) + 1
+    return loaded
+end
+
+-- quest: a quest's flower. "story": it names no petal of its own (FlowerItem empty: its quest's flow gives one);
+-- "collect": it names its petal and a quest class (FlowerQuest: XianYin_C on each of Inanis' flowers, the bench).
+function Fake.memoryFlower(pc, id, x, y, z, petal, flags, quest)
+    local f = object(pc, "BP_FlowInteract_MemoryFlower_C")
+    rawset(f, "__name", id)
+    put(f, "loc", { X = x, Y = y, Z = z })
+    put(f, "HasDestory", false)
+    put(f, "collision", true)
+    put(f, "petal", petal)
+    put(f, "FlowerItem", name(quest == "story" and "" or petal or ""))
+    put(f, "FlowerQuest", { IsValid = function() return quest == "collect" end })
+    put(f, "flags", flags or {})
+    local tags = {}
+    for _, t in ipairs(flags or {}) do
+        tags[#tags + 1] = { TagName = name(t) }
+    end
+    put(f, "FlowerQuestTags", { GameplayTags = list(tags) })
+    put(f, "K2_GetActorLocation", function(self) return rawget(self, "__fields").loc end)
+    defs(pc, f, {
+        FlowerDissapear = function(self)
+            put(self, "HasDestory", true)
+            pc.flowerSaves = pc.flowerSaves or {}
+            pc.flowerSaves[id] = true
+            pc.flowersGone = (pc.flowersGone or 0) + 1
+            for _, fn in ipairs(pc.hooks[Fake.FLOWER_GONE] or {}) do
+                fn({ get = function() return self end })
+            end
+        end,
+        GetActorEnableCollision = function(self) return rawget(self, "__fields").collision end,
+    })
+    pc.memoryFlowers = pc.memoryFlowers or {}
+    pc.memoryFlowers[#pc.memoryFlowers + 1] = f
+    return f
+end
+
+-- This player picks a flower, as the game runs it: its collision goes off as they use it (start); after its memory (done)
+-- the game vanishes it, gives its petal with its card, marks its flow step done, and as the card closes raises its flags.
+function Fake.pickFlower(pc, f, stage)
+    if stage ~= "done" then
+        put(f, "collision", false)
+    end
+    if stage == "start" then
+        return
+    end
+    f:FlowerDissapear()
+    local petal = rawget(f, "__fields").petal
+    if petal then
+        pc.bag:AddPropsByMap({ [petal] = 1 }, true)
+    end
+    pc.eventPipeline.ExecuteNodeGuid:Add("Map-" .. rawget(f, "__name") .. "_FF85727D")
+    for _, tag in ipairs(rawget(f, "__fields").flags) do
+        pc.eventPipeline:AddTagsByString(tag)
+    end
+end
+
+-- A flower's area streamed out, or back in: one vanished in this world comes back destroyed, as the game loads it.
+function Fake.unloadFlower(f)
+    rawset(f, "__alive", false)
+end
+function Fake.loadFlower(pc, f)
+    rawset(f, "__alive", not (pc.flowerSaves and pc.flowerSaves[rawget(f, "__name")]))
+end
+
+-- What a flower is in this world now: "gone" (vanished: kept so), "here", or "unloaded" (not vanished, out of reach).
+function Fake.flowerState(pc, f)
+    if (pc.flowerSaves and pc.flowerSaves[rawget(f, "__name")]) or rawget(f, "__fields").HasDestory then
+        return "gone"
+    end
+    return rawget(f, "__alive") and "here" or "unloaded"
 end
 
 -- The game's limits on how far a camera tilts, on the first controller's, and the engine's on any other.
@@ -1676,6 +1801,45 @@ function Fake.new(id, scripts, ini, link)
         end
     end
     defs(pc, bag, { AddPropsToBackPack = given, PushMedicineToInventory = false, PushAccessoryToInventory = false, AddWeaponItem = gotWeapon })
+    -- A Memory Flower's petal is kept once a save (the bench, 11-12): once in the bag, even taken out again, the game never
+    -- takes it again, quietly or not, and gives nothing for it. Its count stays as it was; pc.petalsRefused counts those.
+    -- And the game's own add of a find by map (a petal at the end of its flower's memory, notice on): its hook first, as
+    -- the game's, then each thing in.
+    pc.petalsRefused = {}
+    local plainAdd = rawget(bag, "__fields").AddPropsToBackPack
+    put(bag, "AddPropsToBackPack", function(self, count, id, push)
+        local key = id.ToString and id:ToString() or id
+        local items = rawget(self, "__fields").items
+        local had = items[key]
+        plainAdd(self, count, id, push)
+        if had ~= nil and Fake.keptOnce(key) then
+            items[key] = had
+            pc.petalsRefused[#pc.petalsRefused + 1] = key
+        end
+    end)
+    def(pc, bag, "AddPropsByMap", function(self, map, push)
+        local ids = {}
+        for id in pairs(map) do
+            ids[#ids + 1] = id
+        end
+        table.sort(ids)
+        local wrapped = { ForEach = function(_, fn)
+            for _, id in ipairs(ids) do
+                fn({ get = function() return name(id) end }, { get = function() return map[id] end })
+            end
+        end }
+        for _, fn in ipairs(pc.hooks[BACKPACK .. ":AddPropsByMap"] or {}) do
+            fn(self, { get = function() return wrapped end }, { get = function() return push end })
+        end
+        local items = rawget(self, "__fields").items
+        for _, id in ipairs(ids) do
+            if items[id] ~= nil and Fake.keptOnce(id) then
+                pc.petalsRefused[#pc.petalsRefused + 1] = id
+            else
+                items[id] = (items[id] or 0) + map[id]
+            end
+        end
+    end)
     local subsystems = object(pc, "SubsystemLibrary")
     pc.liveBullets, pc.fired, pc.bulletData = {}, {}, {}
     local bulletSystem = object(pc, "BulletSubsystem", { Bullets = list(pc.liveBullets) })
@@ -1959,6 +2123,7 @@ function Fake.new(id, scripts, ini, link)
         ["/Game/PBZContent/Blueprint/Item/BP_MelodiousBell.BP_MelodiousBell_C:OnFirstTouchBell"] = object(pc, "Function"),
         [BACKPACK] = object(pc, "BackpackClass"),
         ["/Game/PBZContent/Blueprint/Item/Device/BP_Rubbish.BP_Rubbish_C:OnInteract"] = object(pc, "Function"),
+        [Fake.FLOWER_GONE] = object(pc, "Function"),
     }
     rawset(found[BACKPACK], "__path", BACKPACK)
     for path, o in pairs(Fake.story(pc)) do
@@ -2136,6 +2301,9 @@ function Fake.new(id, scripts, ini, link)
         return nil
     end
     env.FindAllOf = function(class)
+        if class == "BP_FlowInteract_MemoryFlower_C" then
+            return Fake.loadedFlowers(pc)
+        end
         if class == "PBZCharacter_NPC" then
             return pc.enemies
         elseif class == "AISpawner" then
