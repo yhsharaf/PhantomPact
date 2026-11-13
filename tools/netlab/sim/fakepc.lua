@@ -612,7 +612,15 @@ function Fake.enemy(pc, id, class, x, y, z, hp, posture, boss)
             Fake.setHealth(self, 0)
             put(self, "killedBy", reason)
         end,
-        GetCombatLootDataBySelf = function(self, _, data) data.LootDust = f.dustLoot end,
+        GetCombatLootDataBySelf = function(self, _, data)
+            data.LootDust = f.dustLoot
+            if f.lootItems then
+                data.LootItems = {}
+                for _, it in ipairs(f.lootItems) do
+                    data.LootItems[it[1]] = it[2]
+                end
+            end
+        end,
     })
     -- (As the game's blueprint spawner: a boss's never brings it back, and Save writes ShouldSpawn into the world's list.)
     local spawner = object(pc, "AISpawner", { SpawnerID = name(id), SpawnedAI = e, ShouldSpawn = true, SetShouldNotSpawnAfterDead = boss == true })
@@ -1493,7 +1501,8 @@ function Fake.new(id, scripts, ini, link)
         SetMaxTime = function(self, n) put(self, "MaxTime", n) end })
     pc.gourd = gourd
     local gourds = { ForEach = function(_, fn) fn({ get = function() return name("Hulu") end }, { get = function() return gourd end }) end }
-    local bag = object(pc, "Backpack", { MedicineInfos = gourds, BottomMedicineID = name("Hulu"), Accessories = list({}), items = {} })
+    local bag = object(pc, "Backpack", { MedicineInfos = gourds, BottomMedicineID = name("Hulu"), Accessories = list({}), items = {},
+        weapons = {} })
     put(bag, "Inventories", { ForEach = function(_, fn)        -- (what's been added, as the game counts it)
         for id, n in pairs(rawget(bag, "__fields").items) do
             fn({ get = function() return name(id) end }, { get = function() return { CurrentAmount = n } end })
@@ -1586,6 +1595,7 @@ function Fake.new(id, scripts, ini, link)
         end,
     })
     local function gotWeapon(self, id, normal, push, loading)
+        rawget(self, "__fields").weapons[id.ToString and id:ToString() or id] = true     -- (a test reads what came)
         for _, fn in ipairs(pc.hooks[BACKPACK .. ":AddWeaponItem"] or {}) do
             fn(self, { get = function() return id end }, { get = function() return normal end }, { get = function() return push end },
                 { get = function() return loading end })
@@ -1746,8 +1756,52 @@ function Fake.new(id, scripts, ini, link)
                     local set = rawget(actor, "__fields").AttributeSetBase
                     local level = rawget(rawget(set, "__fields").Level, "__fields").CurrentValue
                     local dust = rawget(actor, "__fields").dustLoot or 0
+                    -- (A player down as it dies: paid or not, as pc.deathPaysDown says. A boss's win (winSteps: its flags,
+                    -- flow steps, bells and reward) only with them up: the bench, 11-12, the game's own death took another
+                    -- way with its player down, and the respawn never brought the win. It comes winDelay s after the death,
+                    -- if set: the gold-masked man's came 10 to 15 s on.)
+                    local down = pc.pawn and rawget(pc.pawn, "__fields").dead
+                    local win = rawget(actor, "__fields").winSteps
+                    local function runWin()
+                        for _, tag in ipairs(win.tags or {}) do
+                            pc.storyMarks[tag] = true
+                            pc.globalTags[#pc.globalTags + 1] = tag
+                        end
+                        for _, node in ipairs(win.nodes or {}) do
+                            if not pc.storyGuids[node] then
+                                pc.storyGuids[node] = true
+                                pc.storyGuids[#pc.storyGuids + 1] = node
+                            end
+                        end
+                        for _, bell in ipairs(win.bells or {}) do
+                            pc.bellIds[#pc.bellIds + 1] = bell
+                        end
+                        if win.reward then
+                            pc.bag:AddWeaponItem(name(win.reward), true, true, false)
+                        end
+                    end
+                    if win and not down then
+                        local delay = rawget(actor, "__fields").winDelay
+                        if delay then
+                            pc.loops[#pc.loops + 1] = { every = 1e9, at = pc.now + delay, fn = runWin }
+                        else
+                            runWin()
+                        end
+                    end
+                    if down and pc.deathPaysDown == false then
+                        return
+                    end
                     if dust > 0 and level > 0 and pc.pawn then
                         pc.pawn:ChangeDustNumInternal(dust)
+                    end
+                    -- Its items (lootItems: { { id, count } }, with the card) and the bell its death brings (bellOnDeath).
+                    for _, it in ipairs(level > 0 and rawget(actor, "__fields").lootItems or {}) do
+                        pc.bag:AddPropsToBackPack(it[2], name(it[1]), true)
+                    end
+                    local bell = rawget(actor, "__fields").bellOnDeath
+                    if bell then
+                        pc.storyMarks[bell] = true
+                        pc.bellIds[#pc.bellIds + 1] = bell
                     end
                 end)
             end

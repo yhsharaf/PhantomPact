@@ -35,7 +35,8 @@ return function(api)
     local NAMES = { [0] = "Handicapped", "Wayfarer", "Pathbreaker", "Hellwalker", "66 Days" }
     local HELLWALKER, DAYS = 3, 4
     local LOOK_S = 1.0              -- how often it looks
-    local GRACE_S = 20              -- alone this long before the player's own pick comes back
+    local GRACE_S = 20              -- alone this long, in the world, before the player's own pick comes back
+    local LOAD_MAX_S = 90           -- a partner quiet this long, their link up all the same, is gone: no load is that long
     local FILE = "difficulty_own.txt"
     local CONFIG = "/PBZCombatAsset/Config/GlobalConfig_Combat_%s.GlobalConfig_Combat_%s"
     local WINDOW = "Deflect Perfect Window Frames"
@@ -45,6 +46,7 @@ return function(api)
     local held = nil                -- the mode it set and holds the game at (Hellwalker in a match, else the co-op pick)
     local keptWindow = nil          -- 66 Days' own perfect deflect window, while a match holds it at Hellwalker's
     local lastTogether = os.clock()
+    local lastLook = nil            -- when it last looked with the player in the world
     local nextLook = 0
     local started = false
 
@@ -92,6 +94,31 @@ return function(api)
         pcall(os.remove, api.modDir() .. FILE)
     end
 
+    -- Someone gone quiet without leaving, while the link says someone is there: their relay answers through a load (main.dll's
+    -- keepalive) while their game, standing still, sends nothing, and after 12 s of that they count as gone. A report on 1.7.1,
+    -- three players: "boss damage ... swaps over to wayfarer damage". After a wipe everyone respawns, and the first one back
+    -- from a load of 15 s or more saw nobody (the others still loading) with its own load counted as time alone: its own mode
+    -- came back at once, Hellwalker again as the next one came. Not one who turned sync off (BYE: the netoff command alone
+    -- leaves their relay linked), nor one whose relay started over since their game last spoke (S: a crash and a restart,
+    -- their game not back yet), nor one quiet for LOAD_MAX_S. (A party host's line says connected while any guest's relay is.)
+    local function loading()
+        if not (net.enabled and api.link and api.link.status and api.coop.partners) then
+            return false
+        end
+        local now, recent = os.clock(), false
+        for _, p in ipairs(api.coop.partners()) do
+            if p.lastRemoteAt and not p.byeAt and now - p.lastRemoteAt < LOAD_MAX_S
+                and not (p.syncAt and p.syncAt > p.lastRemoteAt) then
+                recent = true
+            end
+        end
+        if not recent then
+            return false
+        end
+        local ok, line = pcall(api.link.status)
+        return ok and type(line) == "string" and line:find(" connected=yes", 1, true) ~= nil
+    end
+
     local function together()
         if api.state and valid(api.state.p2Pawn) then
             return true
@@ -102,7 +129,7 @@ return function(api)
                 return true
             end
         end
-        return false
+        return loading()
     end
     difficulty.together = together
 
@@ -180,6 +207,12 @@ return function(api)
             own, held = remembered()
             lastTogether = now
         end
+        -- (Time this player wasn't in the world to look, a load or the quiet after it, isn't time alone: a link that
+        -- dropped for a moment just as they came back put their own mode back at once.)
+        if lastLook and now - lastLook > LOOK_S * 3 then
+            lastTogether = lastTogether + (now - lastLook)
+        end
+        lastLook = now
         matchWindow(net.arena == true and cur == DAYS)
         local want = least()
         if want then
