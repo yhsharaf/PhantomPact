@@ -22,7 +22,7 @@ share loot and dust, and regroup at bells. The host's world leads, and your part
 - Shared boss fights: the boss health bar and arena fog walls for both players
 - Boss fights wait for everyone: die and you watch your partner until it's over; join during one and you watch, then go to them
 - Shared loot and dust: what either player picks up or earns goes to both
-- Bells bring you together: sit at one and a partner who's dead or watching a fight comes to you. Each player rests at their own sit, as in the game; a partner fighting their own boss when you sit starts the fight over, rested, with the boss back to full health
+- Bells bring you together: sit at one and a partner who's dead or watching a fight comes to you. Each player rests at their own sit, as in the game; a partner fighting a boss when you sit starts the fight over, rested, with the boss back to full health
 - Elden Ring–style co-op difficulty: enemies and bosses get more health and posture while you play together
 - PvP matches (F6, new in 1.7.0): duels (best of three) and death matches, one on one or two teams of up to six, in four
   of the game's own boss arenas or where the host stands. Fair for everyone: the same body and level-30 weapons of your own

@@ -432,9 +432,9 @@ return function(api)
         if kind == "gone" then
             partnerBack()
         end
-        -- (A sit of this player's own clears the count; a partner's ("partnersit") does nothing here, and one who's down stays
-        -- down: their partner's strikes bring them back, or the timer runs out. The user, 11-12: "you only heal when you
-        -- yourself sit on the bell or die". It had got them up.)
+        -- (A sit of this player's own clears the count, and so does a partner's that rests them in a boss fight (coop.lua says
+        -- "sit" then); any other partner's sit ("partnersit") does nothing here, and one who's down stays down: their
+        -- partner's strikes bring them back, or the timer runs out (the user's pick, 11-12). It had got them up.)
         if kind == "bell" or kind == "sit" then
             downs = 0
         end

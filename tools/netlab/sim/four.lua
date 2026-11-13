@@ -1536,8 +1536,8 @@ local function sits()
 end
 
 -- Any sit puts the bosses of fights back to full health, in the world that runs them (the user, 11-12: "a sit should make boss
--- health go full i am scared people will abuse it"), and a player in a boss fight of their own is rested with it ("you heal
--- back and the boss goes full"). A review found the boss half missing for a guest's own fight on a boss near the host: the
+-- health go full i am scared people will abuse it"), and a player in a boss fight, their own or one they joined or struck, is
+-- rested with it ("you heal back and the boss goes full"). A review found the boss half missing for a guest's own fight on a boss near the host: the
 -- host's world runs it, the guest's copy follows its health only ever down, and the copy put back to full alone was taken
 -- down again by the next line, the guest rested and told it was full.
 local function sitBosses()
@@ -1632,13 +1632,22 @@ local function sitBosses()
         local hb = Session.enemyOn(h, "boss")
         local _, hmax = Fake.health(hb)
         Fake.setHealth(hb, hmax * 0.3)
+        for _, pc in ipairs({ a, b }) do
+            Fake.setHealth(pc.pawn, 100)
+            Fake.put(pc.gourd, "CurrentTime", 0)
+        end
         s:run(3)
         Session.sit(c)
         s:run(3)
-        check(hp(hb) >= hmax - 1 and count(h.logs, TIP) == 1 and count(a.logs, TIP) == 0 and count(b.logs, TIP) == 0,
-            string.format("a party: the host's fight with two guests in it, a third guest sits: the boss full (%d of %d), the host "
-                .. "rested and told, the guests helping in it neither (%d %d %d)", hp(hb), hmax, count(h.logs, TIP), count(a.logs, TIP),
-                count(b.logs, TIP)))
+        -- (A helper in a fight is rested as its owner is: "you heal back and the boss goes full". A review, 11-12: they had
+        -- the boss full and nothing else.)
+        local function rested(pc)
+            return Fake.health(pc.pawn) == 1000 and field(pc.gourd, "CurrentTime") == 3 and count(pc.logs, TIP) == 1
+        end
+        check(hp(hb) >= hmax - 1 and count(h.logs, TIP) == 1 and rested(a) and rested(b),
+            string.format("a party: the host's fight with two guests in it, a third guest sits: the boss full (%d of %d), the host and "
+                .. "both guests helping in it rested and told (%d, gourd %d; %d, gourd %d)", hp(hb), hmax, Fake.health(a.pawn),
+                field(a.gourd, "CurrentTime"), Fake.health(b.pawn), field(b.gourd, "CurrentTime")))
         allErrors(s)
     end
     -- A party: guest 2's own fight on a boss the host's world runs; guest 3 sits.
@@ -1692,16 +1701,20 @@ local function sitBosses()
         h.hudLayout:UnRegisterBossHPBar(hb)        -- (the game takes the bar down as its player dies)
         s:run(6)
         local held = field(h.deathWidget, "NotTick") == true
+        Fake.setHealth(a.pawn, 120)
+        Fake.put(a.gourd, "CurrentTime", 0)
         Session.sit(s.pcs[sitter])
         s:run(3.4)
         local ab = Session.enemyOn(a, "boss")
         local _, amax = Fake.health(ab)
-        check(held and hp(hb) >= hmax - 1 and hp(ab) >= amax - 1,
+        check(held and hp(hb) >= hmax - 1 and hp(ab) >= amax - 1 and Fake.health(a.pawn) == 1000
+            and field(a.gourd, "CurrentTime") == 3 and count(a.logs, TIP) == 1,
             string.format("a party's host down and waiting in its own fight, guest %d sits: the boss full in the host's world (%d of %d) "
-                .. "and on guest 2 (%d)", sitter, hp(hb), hmax, hp(ab)))
+                .. "and on guest 2 (%d), guest 2, helping in it, rested and told (%d, gourd %d)", sitter, hp(hb), hmax, hp(ab),
+                Fake.health(a.pawn), field(a.gourd, "CurrentTime")))
         allErrors(s)
     end
-    -- Two players: the host sits during its own fight, which the guest struck: the guest's copy full, and the guest told.
+    -- Two players: the host sits during its own fight, which the guest struck: the guest's copy full, the guest rested and told.
     do
         local s = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES)
         s:run(4)
@@ -1720,12 +1733,15 @@ local function sitBosses()
         Fake.setHealth(hb, hmax * 0.3)
         s:run(3)
         local before = hp(gb)
+        Fake.setHealth(g.pawn, 100)
+        Fake.put(g.gourd, "CurrentTime", 0)
         Session.sit(h)
         s:run(3)
         local _, gmax = Fake.health(gb)
-        check(before < gmax - 1 and hp(gb) >= gmax - 1 and hp(hb) >= hmax - 1 and count(g.logs, TIP) == 0,
-            string.format("the host sits in its own fight the guest struck: full in both worlds (%d, %d), the guest helping in it not "
-                .. "rested", hp(hb), hp(gb)))
+        check(before < gmax - 1 and hp(gb) >= gmax - 1 and hp(hb) >= hmax - 1 and Fake.health(g.pawn) == 1000
+            and field(g.gourd, "CurrentTime") == 3 and count(g.logs, TIP) == 1,
+            string.format("the host sits in its own fight the guest struck: full in both worlds (%d, %d), the guest helping in it rested "
+                .. "and told (%d, gourd %d)", hp(hb), hp(gb), Fake.health(g.pawn), field(g.gourd, "CurrentTime")))
         allErrors(s)
     end
     -- A party, the boss far from the host (each guest's copy is the boss in its world): guest 2's fight, guest 3 struck it;

@@ -2950,7 +2950,7 @@ return function(api)
     --     the client's copies of what the host already killed are killed again, and a boss fight the host is
     --     still in is shown again (bar and fog walls).
     local restListeners = {}   -- name -> function(kind): a rest, here or the partner's (revive.lua): bell, death, sit (this
-                                -- player's own), partnersit (a partner's), gone
+                                -- player's own, or a partner's that rests them in a boss fight), partnersit (any partner's), gone
 
     local function restEvent(kind)
         for _, fn in pairs(restListeners) do
@@ -3271,11 +3271,9 @@ return function(api)
         p.fights = false
         countFights()
         restEvent("partnersit")         -- (not "sit": no rest here but a boss fight's, revive.lua's down count included)
-        -- (Before the sitter's fights end here: theirs is reset too, a sit then back in finding it full. Not with PvP on, nor
-        -- in a match: a partner's sit did nothing there, as before.)
-        if not (net.pvp or net.arena) then
-            net.sitBossesToFull()
-        end
+        -- (Before the sitter's fights end here: theirs is reset too, a sit then back in finding it full, and this player's
+        -- part in it is still known. Not with PvP on, nor in a match: a partner's sit did nothing there, as before.)
+        local inFight = not (net.pvp or net.arena) and net.sitBossesToFull()
         endFights(net.party and p.number or nil)
         local _, pawn = getPlayer1()
         if net.pvp or not valid(pawn) then
@@ -3287,8 +3285,9 @@ return function(api)
                 api.partner.comeTo(p)
                 api.status.notify("rest", who .. " rested at a bell: you'll join them.")
             end
-        elseif #net.ownBosses() > 0 and not (api.revive and api.revive.isDown and api.revive.isDown()) then
-            -- In a boss fight of one's own the fight starts over: rested (health, the gourd to its whole size) as the boss
+        elseif inFight and not (api.revive and api.revive.isDown and api.revive.isDown()) then
+            -- In a boss fight the fight starts over: their own, or a partner's they joined or struck (a helper in the host's
+            -- fight has no boss of their own here: a review, 11-12). Rested (health, the gourd to its whole size) as the boss
             -- went back to full above (the user, 11-12: "you heal back and the boss goes full"). Out of one, nothing: a
             -- partner's sit refilled every gourd, so a gourd held more drinks than it has (or, with extra drinks, fewer), the
             -- 1.7.1 report's "5 uses to 1 use".
