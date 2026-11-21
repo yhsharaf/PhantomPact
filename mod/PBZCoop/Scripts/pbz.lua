@@ -438,8 +438,12 @@ return function(api)
         return valid(fc) and fc or nil
     end
     -- "put" if it was put there now, true if it stood there already, false for one that isn't a figure (or can't be read).
-    function game.enemySide(actor)
-        if not valid(actor) or game.isDead(actor) or game.aiState(actor) ~= "None" then
+    function game.enemySide(actor, allowIdleMirror)
+        if not valid(actor) or game.isDead(actor) then
+            return false
+        end
+        local state = game.aiState(actor)
+        if state ~= "None" and not (allowIdleMirror and state == "AI.State.Idle") then
             return false
         end
         local ok, how = pcall(function()
@@ -448,14 +452,31 @@ return function(api)
                 return false
             end
             local now = fc:GetCurrnetFaction().TagName:ToString()
-            if now == game.ENEMY_SIDE then
+            if now == game.ENEMY_SIDE and not allowIdleMirror then
                 return true
             end
             local controller = actor:GetController()
+            if not valid(controller) then
+                return false
+            end
             local team = controller.Team.TeamID
-            fc:SetFaction({ TagName = FName(game.ENEMY_SIDE) })
-            controller:BlueprintSetGenericTeamId({ TeamID = game.ENEMY_TEAM })
-            game.sided[actor:GetAddress()] = { fname = actor:GetFName():ToString(), faction = now, team = team }
+            if type(team) ~= "number" then
+                return false
+            end
+            if now == game.ENEMY_SIDE and team == game.ENEMY_TEAM then
+                return true
+            end
+            local addr, fname = actor:GetAddress(), actor:GetFName():ToString()
+            local was = game.sided[addr]
+            if not was or was.fname ~= fname then
+                game.sided[addr] = { fname = fname, faction = now, team = team, allowIdleMirror = allowIdleMirror }
+            end
+            if not allowIdleMirror or now ~= game.ENEMY_SIDE then
+                fc:SetFaction({ TagName = FName(game.ENEMY_SIDE) })
+            end
+            if not allowIdleMirror or team ~= game.ENEMY_TEAM then
+                controller:BlueprintSetGenericTeamId({ TeamID = game.ENEMY_TEAM })
+            end
             return "put"
         end)
         return ok and how or false
@@ -469,8 +490,11 @@ return function(api)
         local was = game.sided[addr]
         game.sided[addr] = nil
         -- (Its name first: the copy a bar went on is kept from before, and its address can be another object's now.)
-        if not was or select(2, pcall(function() return actor:GetFName():ToString() end)) ~= was.fname
-            or game.isDead(actor) or game.aiState(actor) ~= "None" then
+        if not was or select(2, pcall(function() return actor:GetFName():ToString() end)) ~= was.fname or game.isDead(actor) then
+            return false
+        end
+        local state = game.aiState(actor)
+        if state ~= "None" and not (was.allowIdleMirror and state == "AI.State.Idle") then
             return false
         end
         local ok, done = pcall(function()
@@ -1445,30 +1469,81 @@ return function(api)
         end)
     end
 
-    -- A loot card the game put up and never finished: no button to focus, so no key confirms it, and the player is stuck
-    -- behind it. Seen when a boss of the partner's world was ended here the moment its fight began: its reward's card came up
-    -- in the middle of that. The backpack holds no card by then and the item is in it already; the card's own confirm closes
-    -- it. A card the backpack still holds, or one with its button, is left alone. Returns how many were closed.
-    function game.closeStuckCards(pawn)
-        local bp = valid(pawn) and game.backpackOf(pawn)
-        local showing = true
-        pcall(function() showing = bp.bShowPickItemWidget == true end)
-        if not bp or showing then
-            return 0
-        end
-        local n = 0
+    game.pickupCard = { nextLook = 0 }
+
+    function game.pickupCard.onScreen()
+        local card
         for _, w in ipairs(FindAllOf("W_pickupgear_C") or {}) do
-            pcall(function()
-                if valid(w) and w:IsVisible() and not valid(w.CurrentFocusButton) then
-                    w:ClickBackKey()
-                    n = n + 1
+            local ok, visible = pcall(function()
+                if not (valid(w) and w:IsVisible()) then
+                    return false
                 end
+                if w:IsActivated() or w:IsInViewport() then
+                    return true
+                end
+                local parent = w:GetParent()
+                return valid(parent) and parent:IsVisible()
             end)
+            if ok and visible then
+                if card then
+                    return true, nil       -- More than one card is visible. Let the game's own stack settle.
+                end
+                card = w
+            end
         end
-        if n > 0 then
-            log(n .. " item card(s) the game left without buttons, closed: the item is in the backpack.")
+        return card ~= nil, card
+    end
+
+    -- A pickup or a boss reward can leave a visible card with no confirm button. Let the pickup animation and
+    -- any scene finish, then give a card still owned by the backpack a chance to enable its normal confirmation.
+    -- If the button stays missing, ask the card to close through the game's own handler.
+    function game.watchPickupCard(pawn)
+        local state, now = game.pickupCard, os.clock()
+        if not valid(pawn) then
+            state.visible, state.address, state.nextLook = false, nil, 0
+            return
         end
-        return n
+        if now < state.nextLook then
+            return
+        end
+        if now - state.nextLook > 2 then
+            state.address = nil
+        end
+        local visible, w = state.onScreen()
+        state.visible, state.nextLook = visible, now + (visible and 1 or 2)
+        local ok, address = pcall(function()
+            if w and not valid(w.CurrentFocusButton) and not game.localMoveRecent(2) then
+                return w:GetAddress()
+            end
+        end)
+        if not ok or not address then
+            state.address = nil
+            return
+        end
+        local bp = game.backpackOf(pawn)
+        local read, showing = pcall(function() return bp.bShowPickItemWidget end)
+        if not read or type(showing) ~= "boolean" then
+            state.address = nil
+            return
+        end
+        if address ~= state.address or showing ~= state.showing then
+            state.address, state.showing, state.since = address, showing, now
+            state.rearmedAt, state.confirmed = nil, false
+            return
+        end
+        if state.confirmed or now - state.since < 3
+            or (api.localcoop and (api.localcoop.screenUp() or api.localcoop.bellMenuUp())) then
+            return
+        end
+        if showing and not state.rearmedAt then
+            state.rearmedAt = now
+            local ready = pcall(function() bp:ReadyToPlayConfirmUI() end)
+            log("Pickup card had no confirm button; asked the backpack to enable it: " .. tostring(ready))
+        elseif not showing or now - state.rearmedAt >= 3 then
+            state.confirmed = true
+            local closed = pcall(function() w:ClickBackKey() end)
+            log("Pickup card still had no confirm button; called its own close handler: " .. tostring(closed))
+        end
     end
 
     function game.killPlayer(pawn)
@@ -1961,7 +2036,9 @@ return function(api)
             -- player report, 11-06: the other player saw nothing of what their partner found). game.granting keeps the
             -- notice's own report from going back.
             local line = not quiet and counted and not game.isNarrative(itemId)
-            local card = not quiet and not line and (before == 0 or game.isNarrative(itemId))
+            -- The broken pipa is also handed out by this world's scene after the partner's share can arrive.
+            -- Let that scene own its card. The shared item and its held flag are still granted here.
+            local card = not quiet and not line and itemId ~= "I_02001" and (before == 0 or game.isNarrative(itemId))
             local held = 0
             if line and before == 0 then
                 -- (A thing new to this player gets the card, not the line, and the card takes the screen in a game that isn't
@@ -2015,6 +2092,9 @@ return function(api)
     game.tipsWanted, game.cardIds, game.CARD_AGAIN_S, game.cardAt = false, {}, 5, -1e9
     game.CARD_TRIES, game.cardTries = 6, 0
     function game.showPickupTips(pawn)
+        if game.pickupCard.visible then
+            return
+        end
         local bp = valid(pawn) and worldSubsystem(pawn, "/Script/ProjectPBZ.PBZBackPackSubsystem")
         if not bp then
             return
@@ -2052,9 +2132,13 @@ return function(api)
             -- (Both calls, as the game's own pickup makes them. Never over a card that's up: from the first call till the
             -- last card waiting is closed the bag can't push (CanPushPickupUI), the game putting each next one up by itself
             -- after Space (the bench, 11-12). What a second pair does over an open card is unknown, maybe a card with no
-            -- button (game.closeStuckCards): with two partner cards it ran every few seconds over the first, still open (a
+            -- button: with two partner cards it ran every few seconds over the first, still open (a
             -- review of 18d340e). Again a while on only if none came up. The lines go once the last is closed.)
-            game.cardAt, game.cardTries = os.clock(), game.cardTries + 1
+            game.cardAt = os.clock()
+            if game.pickupCard.onScreen() then
+                return
+            end
+            game.cardTries = game.cardTries + 1
             pcall(function() bp:TryToPushPickupUI() end)
             pcall(function() bp:ReadyToPlayConfirmUI() end)
             local again = game.cardTries > 1 and (" (again: " .. game.cardTries .. ")") or ""
@@ -2166,6 +2250,10 @@ return function(api)
                 -- started first had the host's own fight taken for a mirror, ended with the guest's: walls open, bar gone,
                 -- the boss alive, its kill the host's alone.)
                 mirroredAt[boss:GetAddress()] = nil
+                local side = game.sided[boss:GetAddress()]
+                if side and side.allowIdleMirror then
+                    game.sided[boss:GetAddress()] = nil
+                end
                 if api.coop and api.coop.ownFightOn then
                     api.coop.ownFightOn(boss)
                 end

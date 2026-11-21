@@ -913,21 +913,23 @@ return function(api)
         return dust, items
     end
 
-    -- The host, an enemy's aggro turn: every ghost here goes on its hatred list, and who it goes for is steered among the
+    -- On the PC running the enemy, every ghost here goes on its hatred list, and who it goes for is steered among the
     -- players near it (game.steerTarget). Their ghosts' places are what the relay last said: no calls into the game for each
     -- of them. With two players the partner is net, in slot 2. In PvP the partner is the one to fight: hated, never steered.
     local function aggroParty(actor, addr, x, y, z, hp, name)
         local here = {}
+        local localSlot = net.slot or (isClient() and 2 or 1)
         for _, p in ipairs(partners()) do
             -- (Same map only: in the 3 s before a ghost hides, a partner's spot on another map turned enemies to nothing.)
             if valid(p.ghost) and not p.ghostHidden and not p.silent and p.target and sameMap(p.target) then
                 game.hateGhost(actor, p.ghost, addr, x, y, z, p.number, p.target)
-                here[#here + 1] = { body = p.ghost, addr = p.ghostAddr, at = p.target, slot = p.number or 2 }
+                here[#here + 1] = { body = p.ghost, addr = p.ghostAddr, at = p.target,
+                    slot = p.number or (localSlot == 1 and 2 or 1) }
             end
         end
         local _, pawn = getPlayer1()
         if valid(pawn) and not game.isDead(pawn) and net.localLoc then
-            here[#here + 1] = { body = pawn, addr = pawn:GetAddress(), at = net.localLoc, slot = net.slot or 1, mine = true }
+            here[#here + 1] = { body = pawn, addr = pawn:GetAddress(), at = net.localLoc, slot = localSlot, mine = true }
         end
         -- (Also with one player near, or none: an enemy steered till now gets its own picker back.)
         if #here > 0 and not net.pvp and game.steerTarget then
@@ -1876,6 +1878,10 @@ return function(api)
         return math.sqrt((x - o.X) ^ 2 + (y - o.Y) ^ 2 + (z - o.Z) ^ 2)
     end
 
+    function handover.dragonPillarFight(name)
+        return name == "sp:MoTianOld_Seq018-Mask"
+    end
+
     -- Host: a boss the guest is fighting (its B) and this player isn't is the guest's game's to run, wherever the two stand.
     -- This game wakes a boss for its own player alone, once they're in its arena, and past some 45 m of them slows it to a
     -- stop or puts it away with its camp. So a guest who went in first, the host on its way, outside the wall or back at a
@@ -1895,7 +1901,10 @@ return function(api)
     -- Host: this player is in that boss's fight: walked into the guest's (E at the wall, F3), the game's own bar up on it
     -- here (its fight began in this game too), or a blow of theirs landed from near it. dh: how far it is from them.
     function handover.hostIn(name, addr, dh)
-        if net.joinedBoss == name or (net.struck[name] and dh <= handover.FIGHT_CM) then
+        -- This Dragon Pillar arena can be entered before the host's own sequence starts its boss. Until its own bar
+        -- arrives, joining or hitting the mirrored body doesn't give the host a running encounter to take over.
+        if (net.party or not handover.dragonPillarFight(name))
+            and (net.joinedBoss == name or (net.struck[name] and dh <= handover.FIGHT_CM)) then
             return true
         end
         -- (No bar marked at this address, a table's look: nothing to walk. A party's guest asks this of each copy asleep
@@ -2362,6 +2371,11 @@ return function(api)
         if api.puppets then
             api.puppets.watchHost(name, actor, addr)
         end
+        if handover.dragonPillarFight(name) and game.hateGhost and x and os.clock() >= (handover.dragonAggroAt or 0)
+            and not game.isDead(actor) and not game.inCutscene() then
+            handover.dragonAggroAt = os.clock() + AGGRO_S
+            aggroParty(actor, addr, x, y, z, hp, name)
+        end
     end
 
     -- Everything handed over goes back: sync off or on again, the partner gone or started anew, a rest, another map.
@@ -2381,6 +2395,7 @@ return function(api)
         net.guestRuns, net.guestLines, net.mine = {}, {}, {}
         handover.seen, handover.since, handover.retryAt, handover.on, handover.woken = {}, {}, {}, false, {}
         handover.asleep, handover.live, handover.calm = {}, {}, {}
+        handover.dragonAggroAt = nil
     end
 
     local function startHostRound(now)
@@ -2571,21 +2586,10 @@ return function(api)
                 if boss then
                     -- (Its fight may have begun here: bar down and walls open, or the guest stood walled in.)
                     endBossFight(name, own)
-                    bring.cardsLater()
                 end
                 if game.markBeaten then
                     game.markBeaten(name)
                 end
-            end
-        end
-    end
-
-    -- Client: a boss ended here for a death in the host's world, maybe as its fight began: its reward's card can come up
-    -- without its buttons (game.closeStuckCards). Looked at twice, a while after.
-    function bring.cardsLater()
-        if game.closeStuckCards then
-            for _, s in ipairs({ 3, 6 }) do
-                game.after(s, function() pcall(game.closeStuckCards, select(2, getPlayer1())) end)
             end
         end
     end
@@ -2808,6 +2812,10 @@ return function(api)
             -- to send it, and the enemy lived on on the host.)
             if net.mine[name] then
                 net.hitHere[name] = true
+                local actor = handover.dragonPillarFight(name) and enemyByName[name]
+                if valid(actor) then
+                    game.unfocus(actor:GetAddress(), actor)
+                end
             end
             net.mine[name] = nil            -- (the host's lines take it from here, and pair it up again)
             return
@@ -3044,7 +3052,6 @@ return function(api)
                         -- (Refused here (a phase or floor of this world's own): the host's word stands, the quiet death.)
                         game.kill(actor)
                         log("Host says " .. name .. " died; its death was refused here, killed it quietly.")
-                        bring.cardsLater()
                     end
                 elseif not wasBoss and not quiet and game.killForReal then
                     -- The game's own death, at level 0 so it pays nothing here: the quiet kill skipped what listens for
@@ -3071,9 +3078,6 @@ return function(api)
                 elseif game.kill then
                     game.kill(actor)
                     log("Host says " .. name .. " died; killed it here.")
-                    if wasBoss then
-                        bring.cardsLater()
-                    end
                 end
             else
                 -- Not loaded (or not matched) here right now: kill it when it shows up (applyRemoteEnemies).
@@ -3199,10 +3203,14 @@ return function(api)
             -- whole death here, paying this player, and that dust reaches the host as any of this player's does.
             local actor = enemyByName[name]
             if valid(actor) and game.applyDamage and net.target and gap3d(actor:K2_GetActorLocation(), net.target) <= OWN_HIT_CM then
+                local before = handover.dragonPillarFight(name) and game.getHealth(actor)
                 game.applyDamage(actor, amount, posture, true)
                 react(actor)
                 local left = { hp = game.getHealth(actor), posture = game.getPosture and game.getPosture(actor),
                     addr = actor:GetAddress() }
+                if before and left.hp then
+                    game.partnerHit(left.addr, 1, before - left.hp)
+                end
                 seen[name] = left           -- (a reported hit: its turn mustn't weigh it again, nor undo it)
                 if round.seen and round.seen[name] then
                     round.seen[name] = left
@@ -4992,6 +5000,7 @@ return function(api)
     local function watchSlowly(now)
         local pawn = localPawn()
         if pawn == nil then
+            game.watchPickupCard(nil)
             return
         end
         if game.getHealth and slow.hpAt ~= net.frameNow then       -- (only when this frame's read had none: sendPlayer)
@@ -5058,16 +5067,19 @@ return function(api)
                     end
                     game.keepBossBar(boss)
                     -- (One the game hasn't started in this world, a figure on the player's own side: no blow landed
-                    -- on it, none of its own on this player. pbz.lua's game.enemySide. A guest's copy only: the
-                    -- host's is its own game's to start and to run. And only one that follows the host's
+                    -- on it, none of its own on this player. pbz.lua's game.enemySide. Normally this is a guest's copy.
+                    -- The guest-driven Dragon Pillar fight also needs this on the host's mirror while it follows.
+                    -- On a guest, only one that follows the host's
                     -- fight: a party guest's own copy of another guest's fight follows no moves, and on the
                     -- enemy's side it was a figure that never fought back, whose death was the boss's everywhere.
                     -- And only while that fight is told as on there, as stillFought has it: a bar that only
                     -- blinked there tells none, and blows here till 344's end went to a figure in no fight there.)
-                    if isClient() and game.enemySide and net.hostBosses[name] and api.puppets
-                        and api.puppets.follows(boss:GetAddress())
+                    local fromHost = isClient() and net.hostBosses[name]
+                    local dragonMirror = handover.dragonPillarFight(name) and game.isMirrorBar and game.isMirrorBar(boss)
+                    local fromGuest = not net.party and isHost() and dragonMirror and net.guestRuns[name]
+                    if (fromHost or fromGuest) and game.enemySide and api.puppets and api.puppets.follows(boss:GetAddress())
                         and (net.party and peerOf(net.fightOf[name] or 1).fights or (not net.party and net.partnerFighting))
-                        and game.enemySide(boss) == "put" then
+                        and game.enemySide(boss, dragonMirror) == "put" then
                         log(name .. " isn't started in this world: on the enemy's side while the other player's fight with it lasts.")
                     end
                 end
@@ -5110,7 +5122,8 @@ return function(api)
         if game.pickupShares and #game.pickupShares > 0 and not game.isDead(pawn) and not net.arena then
             game.pickupSharesDue(pawn)
         end
-        if game.tipsWanted and not game.isDead(pawn) and not net.arena then
+        game.watchPickupCard(not quiet and cine == 0 and slow.hp > 0 and not net.arena and pawn or nil)
+        if game.tipsWanted and not quiet and cine == 0 and not game.isDead(pawn) and not net.arena then
             game.showPickupTips(pawn)       -- (a card waiting from before isn't put up in a PvP match)
         end
         if game.watchGear and now >= (slow.gearAt or 0) and not net.arena then
@@ -5539,6 +5552,7 @@ return function(api)
         end
         pcall(sendEvent, "BYE")
         net.enabled = false
+        game.watchPickupCard(nil)
         net.partnerFighting, net.toldFighting = false, nil
         game.holdRespawn(nil, false)
         net.holdLooking, net.holdWanted, net.respawnHeld, net.deadSince, net.struck = false, false, false, nil, {}

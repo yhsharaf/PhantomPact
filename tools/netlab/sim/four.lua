@@ -3433,6 +3433,86 @@ local function pair(extraIni, before)
     return s, s.pcs[1], s.pcs[2]
 end
 
+local function dragonPillarBoss()
+    part("joining the Gold-Masked One's Dragon Pillar fight")
+    local id = "MoTianOld_Seq018-Mask"
+    local name = "sp:" .. id
+    local list = { { id, "BP_Monster_MoTian_LongZhu_01_C", 700, 0, 100, 72840, 900, true } }
+
+    local function setSide(boss, faction, team, state)
+        local controller = field(boss, "Controller")
+        Fake.put(field(boss, "faction"), "faction", faction)
+        field(controller, "Team").TeamID = team
+        field(controller, "SGameAIComponent").CurrentStateTag = { TagName = { ToString = function() return state end } }
+    end
+
+    local function start(starter, mirrorFaction)
+        local s = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, list)
+        local h, g = s.pcs[1], s.pcs[2]
+        h.perceive, g.perceive = true, true
+        Session.moveTo(h, -1100, 0)
+        Session.moveTo(g, 1100, 0)
+        local onH, onG = Session.enemyOn(h, id), Session.enemyOn(g, id)
+        if starter == "Guest" then
+            setSide(onH, mirrorFaction, 1, "AI.State.Idle")
+            setSide(onG, "Faction.Enemy", 0, "AI.State.Combat")
+        else
+            setSide(onH, "Faction.Enemy", 0, "AI.State.Combat")
+            setSide(onG, mirrorFaction, 1, "AI.State.Idle")
+        end
+        s:run(7)
+        if starter == "Guest" then
+            g.hudLayout:RegisterBossHPBar(onG)
+        else
+            h.hudLayout:RegisterBossHPBar(onH)
+        end
+        s:run(4)
+        return s, h, g, onH, onG
+    end
+
+    local s, h, g, onH, onG = start("Guest", "Faction.Player")
+    check(net(h).guestRuns[name] and net(g).mine[name], "the guest drives the encounter it started")
+    check(h.env.PBZ.coop.joinFarFight(), "the host can join the guest's encounter through the normal F3 path")
+    s:run(6)
+    check(net(h).guestRuns[name] and net(g).mine[name], "F3 alone doesn't transfer the fight to the host's idle copy")
+    check(Fake.lands(onH), "the host can hit the guest-driven mirror before starting its own encounter")
+    local hatred = field(field(onG, "BP_PBZHatredManagerComponent"), "HatredList").items
+    local hostHated = false
+    for _, body in ipairs(hatred) do
+        hostHated = hostHated or body == net(g).ghost
+    end
+    check(hostHated, "the guest-driven boss adds the host to its hatred list")
+    local before = select(1, Fake.health(onG))
+    swing(h, onH, select(1, Fake.health(onH)) - 320)
+    s:run(2)
+    check(select(1, Fake.health(onG)) < before, "the host's hit reduces the guest-driven boss's authoritative health")
+    Session.moveTo(h, 710, 0)
+    Session.moveTo(g, 1500, 0)
+    s:run(12)
+    check(hostHated and field(onG, "target") == net(g).ghost, "the guest-driven boss can select the host as its target")
+
+    setSide(onH, "Faction.Enemy", 0, "AI.State.Combat")
+    h.hudLayout:RegisterBossHPBar(onH)
+    s:run(4)
+    check(not net(h).guestRuns[name] and not net(g).mine[name], "the host takes over when its own boss encounter starts")
+    check(g.env.PBZ.game.aim.steered[onG:GetAddress()] == nil, "the guest releases its target picker on handover")
+    allErrors(s)
+
+    s, h, g, onH, onG = start("Host", "Faction.Enemy")
+    check(g.env.PBZ.coop.joinFarFight(), "the guest can join the host's encounter through F3")
+    s:run(5)
+    before = select(1, Fake.health(onH))
+    local landed = swing(g, onG, select(1, Fake.health(onG)) - 320)
+    s:run(2)
+    check(landed and select(1, Fake.health(onH)) < before,
+        "the idle guest mirror gets the hostile team and its hit reaches the host")
+    h.hudLayout:UnRegisterBossHPBar(onH)
+    s:run(7)
+    check(field(field(onG, "Controller"), "Team").TeamID == 1,
+        "the temporary team change is put back when the mirrored encounter ends")
+    allErrors(s)
+end
+
 -- Two players, as the report "After my teammate died, he instantly respawned, and the boss's HP was restored to full" (1.6.6)
 -- had it. The game takes a player's bar down as they die (Session.die doesn't: it's done here), and the F 0 that followed
 -- ended the partner's copy of the fight, whose own F 0 then let the held respawn go.
@@ -7235,6 +7315,85 @@ local function pickupsRaced()
     check(Session.items(h, M) - h0 == 2 and Session.items(g, M) - g0 == 2 and rawget(pickupOn(h, "matG"), "__alive") == false,
         string.format("other shares piled up, then a find and a pickup of one thing: 2 each, the host's copy gone: %d and %d",
             Session.items(h, M) - h0, Session.items(g, M) - g0))
+    allErrors(s)
+end
+
+local function pickupCardRecovery()
+    part("online pickup card recovery")
+    local s, h, g = pair()
+    local pipa, flag = "I_02001", "jl.弄蛇.破损琵琶"
+    Session.gainItem(g, pipa, 1)
+    s:run(9)
+    check(Session.items(h, pipa) == 1 and #h.cards == 0 and #h.cardsHeld == 0
+        and table.concat(h.globalTags, "\n"):find(flag, 1, true),
+        "sharing the broken pipa gives its item and flag without queuing a card")
+    Session.gainItem(h, pipa, 1)
+    s:run(2)
+    check(Session.items(h, pipa) == 1 and #h.cards == 1 and h.cards[1] == pipa,
+        "the host's own pickup still shows the pipa card and the item stays at one")
+
+    local function show(pc, showing, focused, recoverFocus)
+        local result = { visible = true, attached = true, rearmed = 0, closed = 0 }
+        local button = Fake.object(pc, "ConfirmButton")
+        local parent = Fake.object(pc, "PickupLayer", { IsVisible = function() return result.attached end })
+        local w = Fake.object(pc, "W_pickupgear_C", {
+            CurrentFocusButton = focused and button or false,
+            IsVisible = function() return result.visible end,
+            IsActivated = function() return focused == true end,
+            IsInViewport = function() return false end,
+            GetParent = function() return parent end,
+            ClickBackKey = function()
+                result.closed = result.closed + 1
+                result.visible = false
+            end,
+        })
+        Fake.put(pc.bag, "bShowPickItemWidget", showing)
+        Fake.put(pc.bag, "ReadyToPlayConfirmUI", function()
+            result.rearmed = result.rearmed + 1
+            if recoverFocus then
+                Fake.put(w, "CurrentFocusButton", button)
+            end
+        end)
+        local find = pc.env.FindAllOf
+        pc.env.FindAllOf = function(class)
+            if class == "W_pickupgear_C" then
+                return { w }
+            end
+            return find(class)
+        end
+        return result
+    end
+
+    local normal = show(h, true, true)
+    local restored = show(g, true, false, true)
+    s:run(9)
+    check(normal.closed == 0 and normal.rearmed == 0, "a card with a confirm button stays open")
+    check(restored.rearmed == 1 and restored.closed == 0, "the guest's restored button keeps the card open")
+
+    local stuck = show(h, true, false)
+    local orphan = show(g, false, false)
+    Session.scene(h, true, "PickupScene")
+    s:run(8)
+    check(stuck.closed == 0 and stuck.rearmed == 0, "no card recovery during a scene")
+    check(orphan.closed == 1 and orphan.rearmed == 0, "the guest's orphaned card uses its own close handler")
+    Session.scene(h, false)
+    s:run(2)
+    check(stuck.closed == 0 and stuck.rearmed == 0, "the host's missing button gets time to appear after the scene")
+    s:run(9)
+    check(stuck.rearmed == 1 and stuck.closed == 1, "the host's card closes if its button is still missing after the retry")
+
+    local inactive = show(g, false, false)
+    inactive.attached = false
+    local open = show(h, false, true)
+    Session.gainItem(g, "R_77", 1)
+    s:run(9)
+    check(h.cardsHeld[1] == "R_77" and open.rearmed == 0, "a shared note waits behind a visible card even if the bag is free")
+    check(inactive.closed == 0, "an inactive card in a hidden container is left alone")
+
+    local offline = show(h, false, false)
+    Session.command(h, "netoff")
+    s:run(6)
+    check(offline.closed == 0, "recovery stops when online synchronization is off")
     allErrors(s)
 end
 
@@ -17808,6 +17967,7 @@ return function(print_, scripts)
     pickupsFresh()
     pickupsShown()
     pickupsRaced()
+    pickupCardRecovery()
     storyOnce()
     rests()
     sits()
@@ -17864,6 +18024,7 @@ return function(print_, scripts)
     aiming()
     holding()
     holdingForTwo()
+    dragonPillarBoss()
     hostDiesFirst()
     finisherWithTheHostDown()
     bossItemsOnce()

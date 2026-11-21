@@ -324,6 +324,7 @@ Fake.ITEMS = {
     { "FA_0201", "None", type = "MemoryFlower" },
     { "R_500", "Material" },
     { "I_KEY_9", "NarrativeItem" },
+    { "I_02001", "NarrativeItem", "jl.弄蛇.破损琵琶" },
     { "Weapon_Material_01", "Material" },
     { "Weapon_Material_02", "Material" },
     { "I_RELIC_1", "NarrativeItem", "relic.one" },
