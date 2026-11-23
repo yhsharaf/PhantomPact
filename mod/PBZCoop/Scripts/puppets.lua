@@ -15,18 +15,22 @@ return function(api)
     local coop = api.coop
     local net = coop.net
 
-    local SNAP_CM = 1000          -- further than this the copy jumps there
-    local NUDGE_CM = 120          -- further than this it's also moved directly, in case walking can't keep up
-    local NUDGE_SHARE = 0.08      -- of the gap, per frame
-    local LOCKED_CM = 250         -- a move's own motion plays out unless the copy is this far off
-    local BUSY_CM = 40            -- during one, further than this it's pulled gently
-    local BUSY_PULL = 0.08        -- share of the gap, per frame
-    local PULL = 4.0              -- per second: speed added per cm off the host's position
-    local STILL = 30              -- cm/s; asked to move slower than this, it stands
-    local MAX_SPEED = 1400        -- cm/s
-    local AHEAD_S = 0.2           -- the host's position is carried forward at its speed, but not further than this
-    local TURN_SHARE = 0.25       -- of the angle, per turn
-    local TURN_EVERY_S = 0.05
+    -- (Looser values let a boss's copy end a dash attack -- the "red flash" lunges -- up to 5.5 m
+    -- from where the host's boss was and glide there slowly after, its prediction cut to 35 ms. Back near the
+    -- original's, made frame-rate independent: at 110 fps the original pulled about 9 per second, at 60 about 5.)
+    local SNAP_CM = 1000          -- further than this (1200 for bosses) the copy snaps there
+    local NUDGE_CM = 200          -- further than this, gently blend position without fighting locomotion
+    local NUDGE_SHARE = 7.0       -- exponential blend rate per second (dt-scaled)
+    local LOCKED_CM = 250         -- a move's own root motion plays out (350 for bosses)
+    local BUSY_CM = 40            -- during an attack (60 for bosses), leave root motion natural
+    local BUSY_PULL = 7.0         -- exponential blend rate per second during attacks
+    local BUSY_TURN = 8.0         -- during an attack, rate the copy turns to where the host's boss faces
+    local PULL = 3.8              -- per second: speed added per cm off the host's position
+    local STILL = 25              -- cm/s; asked to move slower than this, it stands
+    local MAX_SPEED = 1450        -- cm/s
+    local AHEAD_S = 0.15          -- the host's position carried forward at its speed, at most this (the original's 0.2)
+    local TURN_SHARE = 12.0       -- smooth per-frame yaw convergence
+    local TURN_EVERY_S = 0.0
     local BUSY_S = 0.8            -- after an attack starts, leave the copy's facing to the move
     local BUSY_MAX_S = 4.0        -- ... for as long as the move lasts, up to this
     local MOVE_LOOK_S = 0.1
@@ -60,6 +64,80 @@ return function(api)
         p.mount = nil
     end
 
+    local function anyAnimOf(actor)
+        local found = nil
+        pcall(function()
+            local list = actor:K2_GetComponentsByClass(StaticFindObject("/Script/Engine.SkeletalMeshComponent"))
+            for i = 1, #list do
+                local comp = list[i]:get()
+                if valid(comp) then
+                    local ai = comp:GetAnimInstance()
+                    if valid(ai) then
+                        found = ai
+                        return
+                    end
+                end
+            end
+        end)
+        return found
+    end
+
+    local function bossAttached(p, now)
+        if not p.boss then
+            return false
+        end
+        if now >= (p.attachAt or 0) then
+            p.attachAt = now + 0.25
+            local ok, par = pcall(function() return p.actor:GetAttachParentActor() end)
+            p.attached = ok and valid(par)
+        end
+        return p.attached == true
+    end
+
+    local function localPlayerGrabbedBy(p, now)
+        if not p.boss then
+            return false
+        end
+        if now < (p.grabAt or 0) then
+            return p.grabbed == true
+        end
+        p.grabAt = now + 0.10
+        p.grabbed = false
+        local _, pawn = api.getPlayer1()
+        if not (valid(pawn) and valid(p.actor)) then
+            return false
+        end
+        local grabbed = false
+        local pst = game.hitStateOf and game.hitStateOf(pawn)
+        if pst and pst ~= "None" then
+            local pl = pst:lower()
+            if pl:find("grab", 1, true) or pl:find("catch", 1, true) or pl:find("caught", 1, true)
+                or pl:find("execut", 1, true) or pl:find("throw", 1, true) or pl:find("control", 1, true)
+                or pl:find("bex", 1, true) or pl:find("behit_special", 1, true) then
+                grabbed = true
+            end
+        end
+        if not grabbed and api.moves then
+            local ai = api.moves.animOf(pawn)
+            local m = ai and ai:GetCurrentActiveMontage()
+            if valid(m) then
+                local mn = (m:GetFName():ToString() or ""):lower()
+                if mn:find("grab", 1, true) or mn:find("catch", 1, true) or mn:find("caught", 1, true)
+                    or mn:find("beexec", 1, true) or mn:find("throw", 1, true) or mn:find("_ged_", 1, true)
+                    or mn:find("_exe_", 1, true) or mn:find("_bex_", 1, true) then
+                    grabbed = true
+                end
+            end
+        end
+        if grabbed then
+            local okD, d = pcall(function()
+                return api.distance(pawn:K2_GetActorLocation(), p.actor:K2_GetActorLocation())
+            end)
+            p.grabbed = okD and d ~= nil and d <= 600
+        end
+        return p.grabbed
+    end
+
     local function passive(name)
         for _, word in ipairs(PASSIVE) do
             if name:find(word, 1, true) then
@@ -74,6 +152,9 @@ return function(api)
         -- (An armoured boss's flinch is let go here first, so it never goes out as a move, and the move it cut is taken up
         -- again: scaling.lua's CoopBossArmor, resumeHost below.)
         local body = addr
+        if net.partnerExec and net.partnerExec[name] then
+            return
+        end
         if api.scaling and api.scaling.letGo and api.scaling.letGo(actor, addr) then
             return
         end
@@ -167,8 +248,10 @@ return function(api)
         if p == nil then
             p = { actor = actor, name = name, fname = fname, busyUntil = 0, aiAt = 0, since = os.clock() }
             pcall(function() p.walkSpeed = actor.CharacterMovement.MaxWalkSpeed end)
-            p.boss = game.isBoss and game.isBoss(actor, addr) or false
+            p.boss = (game.isBoss and game.isBoss(actor, addr)) or (game.bossTwin and game.bossTwin(actor, addr)) or false
             byAddr[addr] = p
+        elseif not p.boss then
+            p.boss = (game.isBoss and game.isBoss(actor, addr)) or (game.bossTwin and game.bossTwin(actor, addr)) or false
         end
         p.target = target
     end
@@ -194,6 +277,12 @@ return function(api)
     -- (scaling.lua leaves the ones followed here to poiseFor.)
     function puppets.follows(addr)
         return byAddr[addr] ~= nil
+    end
+
+    function puppets.abilityRecent(name, sec)
+        local actor = coop.enemyActor and coop.enemyActor(name)
+        local p = valid(actor) and byAddr[actor:GetAddress()]
+        return p ~= nil and p.abilityAt ~= nil and (os.clock() - p.abilityAt) <= (sec or 2.0)
     end
 
     -- A hit of this player's on a copy here, which the game answered with a reaction (a flinch, a break, a knockdown, the far end
@@ -314,7 +403,9 @@ return function(api)
 
     -- Seconds the kill waits at most for what this copy shows of its death, which ("execution", "death"), and the
     -- montage that is its show; 0 for nothing.
-    function puppets.deathShow(name, actor)
+    -- moveOn: a finishing move is flagged on it (coop.lua's net.ownExec, net.partnerExec: pull request 20). With the
+    -- game's own hold on the copy gone by now, nothing more is shown: no fall of its kind after the move.
+    function puppets.deathShow(name, actor, moveOn)
         local ai = api.moves.animOf(actor)
         if not ai then
             return 0
@@ -332,6 +423,9 @@ return function(api)
             if left > 0.2 then
                 return left, "execution", path
             end
+            return 0
+        end
+        if moveOn then
             return 0
         end
         local last = puppets.flinched[name]
@@ -474,7 +568,13 @@ return function(api)
         if state ~= p.reactState then
             p.reactState, p.reactSince = state, os.clock()
         end
-        if state and state ~= "None" and os.clock() - p.reactSince < REACT_S then
+        if p.boss and localPlayerGrabbedBy(p, os.clock()) then
+            return
+        end
+        local executing = (state and state:find("Executing", 1, true) ~= nil)
+            or (net.ownExec and net.ownExec[name] ~= nil)
+            or (net.partnerExec and net.partnerExec[name] ~= nil)
+        if (state and state ~= "None" and os.clock() - p.reactSince < REACT_S) or executing then
             -- A boss's moves are the host's to say: when it flinches is decided there now (coop.lua's bossMayReact), so its
             -- copy's own flinch, a guess, gives way. (Dropped for 2.5 s after every flinch of the copy, the host's attacks never
             -- came here while both players hit it, and the guest was never hit back: Nexus reports on 1.6.6.)
@@ -487,7 +587,7 @@ return function(api)
             p.reactState, p.reactSince = nil, 0
         end
         local target = p.target
-        if target and not p.rides then      -- (a rider faces as its mount does: steer)
+        if target and not p.rides and not bossAttached(p, os.clock()) then     -- (a rider faces as its mount does: steer)
             pcall(function() actor:K2_SetActorRotation({ Pitch = 0.0, Yaw = target.Yaw, Roll = 0.0 }, false) end)
         end
         if after ~= "-" then
@@ -521,11 +621,15 @@ return function(api)
         -- (Kept for a boss copy to take the move up again after a flinch of its own at this player's hit: resumeMove.)
         p.move = m and { ability = ability, path = path, start = p.busySince - pos - net.moveAge() } or nil
         local ai = m and api.moves.animOf(actor)
+        if m and not ai then
+            ai = anyAnimOf(actor)
+        end
+        p.abilityAt = nil
         if ability ~= "-" and game.playAbility(actor, ability) then
             puppets.played = puppets.played + 1
-            -- A move of several steps starts from its first, and the host's may be further on: what's seen is the host's.
+            p.abilityAt = os.clock()
             local shown = ai and ai:GetCurrentActiveMontage()
-            if not ai or (valid(shown) and shown:GetAddress() == m:GetAddress()) then
+            if not ai or not valid(shown) or shown:GetAddress() == m:GetAddress() or p.boss then
                 return
             end
         end
@@ -634,11 +738,35 @@ return function(api)
     -- plus a pull onto it, so a walking enemy glides without waiting for the next update.
     local function steer(p, now, addr)
         local actor, t = p.actor, p.target
+        if net.ownExec and net.ownExec[p.name] then
+            return
+        end
+        if net.partnerExec and net.partnerExec[p.name] then
+            local x, y, z = game.where(actor, addr)
+            if x ~= nil then
+                local clock = os.clock()
+                local dt = math.min(0.05, math.max(0.001, clock - (p.steerAt or (clock - 0.016))))
+                p.steerAt = clock
+                local a = 1 - math.exp(-12.0 * dt)
+                pcall(function()
+                    actor:K2_SetActorLocationAndRotation(
+                        { X = x + (t.X - x) * a, Y = y + (t.Y - y) * a, Z = z + (t.Z - z) * a },
+                        { Pitch = 0.0, Yaw = t.Yaw, Roll = 0.0 }, false, {}, false)
+                end)
+            end
+            return
+        end
+        local clock = os.clock()
+        local dt = math.min(0.05, math.max(0.001, clock - (p.steerAt or (clock - 0.016))))
+        p.steerAt = clock
+        if p.boss and localPlayerGrabbedBy(p, clock) then
+            return
+        end
+        local attached = bossAttached(p, clock)
         local x, y, z = game.where(actor, addr)
         if x == nil then
             return
         end
-        local clock = os.clock()
         -- A rider: where it stands and how it faces is its mount's to say, a copy the host's line of the mount steers.
         -- (Jing Ye is attached to his horse. Set to the host's line of him by itself, his copy slid off the saddle,
         -- 0.3 to 2 m beside its horse at any look, and went back onto it with a jump of 3 to 6 m as each move began:
@@ -664,7 +792,8 @@ return function(api)
         local ahead = math.min(now - t.at, AHEAD_S)
         local dx, dy, dz = t.X + t.VX * ahead - cur.X, t.Y + t.VY * ahead - cur.Y, t.Z - cur.Z
         local dist = math.sqrt(dx * dx + dy * dy)
-        if not p.rides and (dist > SNAP_CM or math.abs(dz) > SNAP_CM) then
+        local snapCm = p.boss and 1200 or SNAP_CM
+        if not p.rides and not attached and (dist > snapCm or math.abs(dz) > snapCm) then
             actor:K2_SetActorLocationAndRotation({ X = t.X, Y = t.Y, Z = t.Z },
                 { Pitch = 0.0, Yaw = t.Yaw, Roll = 0.0 }, false, {}, true)
             return
@@ -687,7 +816,7 @@ return function(api)
             p.armourLookAt = clock + RESUME_LOOK_S / 2
             armourCopy(p, actor, addr, clock, busy)
         end
-        if p.rides then
+        if p.rides or attached then
             return
         end
         -- A jump of the host's enemy, a teleport or a dash no walk follows (coop.lua's readEnemies, 411): its copy is
@@ -714,18 +843,31 @@ return function(api)
                 end
             end
         end
-        if busy and dist < LOCKED_CM then
-            if dist > BUSY_CM then
-                actor:K2_SetActorLocation({ X = cur.X + dx * BUSY_PULL, Y = cur.Y + dy * BUSY_PULL, Z = cur.Z }, false, {}, true)
+        local lockedCm = p.boss and 350 or LOCKED_CM
+        local busyCm = p.boss and 60 or BUSY_CM
+        if busy then
+            -- (The host's boss turns to its target through an attack's wind-up; its copy kept the way it
+            -- faced when the move began, and lunged off the wrong way on this screen.)
+            local yaw = actor:K2_GetActorRotation().Yaw
+            local turn = (t.Yaw - yaw + 180) % 360 - 180
+            if math.abs(turn) > 5.0 then
+                local ta = 1 - math.exp(-BUSY_TURN * dt)
+                actor:K2_SetActorRotation({ Pitch = 0.0, Yaw = yaw + turn * ta, Roll = 0.0 }, false)
+            end
+        end
+        if busy and dist < lockedCm then
+            if dist > busyCm then
+                local a = 1 - math.exp(-BUSY_PULL * dt)
+                actor:K2_SetActorLocation({ X = cur.X + dx * a, Y = cur.Y + dy * a, Z = cur.Z }, false, {}, true)
             end
             return
         end
-        if not busy and now >= (p.turnAt or 0) then
-            p.turnAt = now + TURN_EVERY_S
+        if not busy then
             local yaw = actor:K2_GetActorRotation().Yaw
             local turn = (t.Yaw - yaw + 180) % 360 - 180
-            if math.abs(turn) > 2 then
-                actor:K2_SetActorRotation({ Pitch = 0.0, Yaw = yaw + turn * TURN_SHARE, Roll = 0.0 }, false)
+            if math.abs(turn) > 1.0 then
+                local ta = 1 - math.exp(-TURN_SHARE * dt)
+                actor:K2_SetActorRotation({ Pitch = 0.0, Yaw = yaw + turn * ta, Roll = 0.0 }, false)
             end
         end
         local vx, vy = t.VX + dx * PULL, t.VY + dy * PULL
@@ -741,8 +883,9 @@ return function(api)
             end
             actor:AddMovementInput({ X = vx / speed, Y = vy / speed, Z = 0.0 }, 1.0, false)
             if dist > NUDGE_CM then
-                actor:K2_SetActorLocation({ X = cur.X + dx * NUDGE_SHARE, Y = cur.Y + dy * NUDGE_SHARE,
-                    Z = cur.Z + dz * NUDGE_SHARE }, false, {}, true)
+                local na = 1 - math.exp(-NUDGE_SHARE * dt)
+                actor:K2_SetActorLocation({ X = cur.X + dx * na, Y = cur.Y + dy * na,
+                    Z = cur.Z + dz * na }, false, {}, true)
             end
         end
     end
@@ -750,7 +893,7 @@ return function(api)
     coop.frameTicks.puppets = function()
         local now = api.link.now()
         for addr, p in pairs(byAddr) do
-            if not valid(p.actor) then
+            if not valid(p.actor) or game.isDead(p.actor) then
                 unseat(p)
                 byAddr[addr] = nil
                 game.freeCopy(addr, true)

@@ -600,10 +600,56 @@ return function(api)
         line(string.format("SNAP enemies within %.0f m: %s%s", play.NEAR_CM / 100, #out > 0 and table.concat(out, "; ") or "none",
             #list > #out and string.format(" (and %d more)", #list - #out) or ""))
     end
+    -- (What the nearest living enemy is made of right now -- its class, its montage and the gameplay effects on it
+    -- -- so a boss's shield or armor that a partner's world shows differently can be found by name from a mark.)
+    local function nearestEnemyProbe()
+        local coop, game = api.coop, api.game
+        local _, pawn = getPlayer1()
+        if not (coop and game and coop.net.enabled and valid(pawn)) then
+            return
+        end
+        local me, best, bestD, bestName = pawn:K2_GetActorLocation(), nil, math.huge, nil
+        for name, e in pairs(coop.enemies()) do
+            if valid(e) and not game.isDead(e) then
+                local d = api.distance(e:K2_GetActorLocation(), me)
+                if d < bestD and d <= play.NEAR_CM then
+                    best, bestD, bestName = e, d, name
+                end
+            end
+        end
+        if not best then
+            return
+        end
+        local parts = { "class " .. tostring(best:GetClass():GetFName():ToString()) }
+        pcall(function()
+            local ai = best.Mesh and best.Mesh:GetAnimInstance()
+            local m = valid(ai) and ai:GetCurrentActiveMontage()
+            parts[#parts + 1] = "montage " .. (valid(m) and m:GetFName():ToString() or "none")
+        end)
+        pcall(function()
+            local bl = StaticFindObject("/Script/GameplayAbilities.Default__AbilitySystemBlueprintLibrary")
+            local asc = valid(bl) and bl:GetAbilitySystemComponent(best)
+            if valid(asc) then
+                local names, seen = {}, {}
+                asc.ActiveGameplayEffects.GameplayEffects_Internal:ForEach(function(_, effect)
+                    pcall(function()
+                        local n = effect:get().Spec.Def:GetClass():GetFName():ToString()
+                        if n and not seen[n] and #names < 25 then
+                            seen[n] = true
+                            names[#names + 1] = n
+                        end
+                    end)
+                end)
+                parts[#parts + 1] = "effects " .. (#names > 0 and table.concat(names, " ") or "none")
+            end
+        end)
+        line(string.format("SNAP nearest enemy %s at %.0f m: %s", tostring(bestName), bestD / 100, table.concat(parts, ", ")))
+    end
     local function snapshot()
         try("the screens", screensUp)
         try("the player's body", bodyNow)
         try("the enemies near", enemiesNear)
+        try("the nearest enemy", nearestEnemyProbe)
     end
 
     -- The story's point, by story.lua's own read of the game's quests (its point(): the mod's own turn at reading is put

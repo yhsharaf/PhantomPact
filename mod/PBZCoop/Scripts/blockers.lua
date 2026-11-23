@@ -189,7 +189,7 @@ return function(api)
     -- did, every 20 s from the host. One that went out of reach and came back shut is the load's, and still opened by
     -- word, as is one last seen open before a load or time alone on the map. Doors only: a lever is as it was. The main
     -- session's second review, 11-16. shutHere: name -> true; openAt: name -> when a look last saw it open.
-    local shutHere, openAt = {}, {}
+    local shutHere, openAt, syncedDoors = {}, {}, {}
     -- lookedAt: the last look at them all, a partner on the map. A guest's press counts from there: one made while nobody
     -- else was on the map, or in a quiet, is seen at the first look after, more than PRESS_S on. (The fourth review.)
     -- A guest tells only an opening of its own player's doing: one within PRESS_S of their walk up to a switch (the end
@@ -290,7 +290,7 @@ return function(api)
     local function onSwitchMap()
         if net.localMap ~= switchMap then
             switchSeen, switchMap = {}, net.localMap
-            shutHere, openAt = {}, {}
+            shutHere, openAt, syncedDoors = {}, {}, {}
             local st = mapState(switchMap)
             openNow, pending = st.open, st.pending
         end
@@ -313,7 +313,49 @@ return function(api)
             shutHere[name] = true       -- (passed over at the host's next words, as one this world's game shut is)
             return false
         end
+        -- (Read before the word's call, not after. That call flips DoorOpen without moving the door, so
+        -- read after it a door still shut read as open, and the shut door was left standing, solid, in this world:
+        -- "when he opens a door it stays closed for me", 11-23.)
+        local okD, doorOpen = pcall(function() return s.DoorOpen end)
+        local okS, curState = pcall(function() return s.CurSwitchState end)
         pcall(function() s:SwitchWithoutPlaySequence() end)
+        pcall(function()
+            local hasDoorProp = okD and type(doorOpen) == "boolean"
+            local hasStateProp = okS and type(curState) == "boolean"
+            local okC, cn = pcall(function() return s:GetClass():GetFName():ToString() end)
+            local isDoorClass = okC and type(cn) == "string"
+                and (cn:find("^BP_Block") ~= nil or cn:find("Door", 1, true) ~= nil or cn:find("Gate", 1, true) ~= nil)
+            if hasDoorProp or isDoorClass then
+                local stillShut = (hasDoorProp and doorOpen == false) or (not hasDoorProp and hasStateProp and curState == false)
+                if hasDoorProp then
+                    pcall(function() s.DoorOpen = true end)
+                elseif hasStateProp then
+                    pcall(function() s.CurSwitchState = true end)
+                end
+                if stillShut then
+                    local saved = { actor = s, comps = {} }
+                    local primCls = StaticFindObject("/Script/Engine.PrimitiveComponent")
+                    if valid(primCls) then
+                        local comps = s:K2_GetComponentsByClass(primCls)
+                        for i = 1, #comps do
+                            local c = comps[i]:get()
+                            if valid(c) then
+                                local okCol, col = pcall(function() return c:GetCollisionEnabled() end)
+                                if okCol and type(col) == "number" and col >= 2 then
+                                    local okVis, vis = pcall(function() return c:IsVisible() end)
+                                    saved.comps[#saved.comps + 1] = { c = c, col = col, vis = okVis and vis or nil }
+                                    pcall(function() c:SetCollisionEnabled(0) end)
+                                    pcall(function() c:SetVisibility(false, true) end)
+                                end
+                            end
+                        end
+                    end
+                    if #saved.comps > 0 then
+                        syncedDoors[name] = saved
+                    end
+                end
+            end
+        end)
         if flags then
             api.flowsync.raise(tags, name)
         end
@@ -374,6 +416,18 @@ return function(api)
                         shutHere[name], openAt[name] = nil, now
                     elseif door and now - (openAt[name] or -1e9) <= LOOK_S * 2 then
                         shutHere[name] = true
+                        local saved = syncedDoors[name]
+                        if saved then
+                            syncedDoors[name] = nil
+                            for _, rec in ipairs(saved.comps) do
+                                if valid(rec.c) then
+                                    pcall(function() rec.c:SetCollisionEnabled(rec.col) end)
+                                    if rec.vis ~= nil then
+                                        pcall(function() rec.c:SetVisibility(rec.vis, true) end)
+                                    end
+                                end
+                            end
+                        end
                     end
                     if pending[name] then
                         pending[name] = nil

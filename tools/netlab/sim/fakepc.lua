@@ -244,7 +244,9 @@ function Fake.character(pc, class, x, y, z, hp, posture)
         SetSlotWeapon = function(self, slot, _, cfg) put(self, edge(slot) and "edgeConfig" or "config", cfg) end,
         SetArmed = function(self, slot, on) put(self, edge(slot) and "edgeArmed" or "armed", on) end,
         SetWeaponAndScabbardForceHide = function(self, _, _, hide) put(self, "hidden", hide) end,
-        SetWeaponForceHide = function(self, _, _, hide) put(self, "edgeHidden", hide) end,
+        -- (Four arguments, as the game's own takes them: slot, index, a third the mod passes 0 for, hide. Called with
+        -- three, hide is nothing and nothing is hidden: 1.5.2 to 1.7.5 did, pull request 20 put it right.)
+        SetWeaponForceHide = function(self, _, _, _, hide) put(self, "edgeHidden", hide == true) end,
     })
     put(a, "Character Weapons Component", weapons)
     defs(pc, a, {

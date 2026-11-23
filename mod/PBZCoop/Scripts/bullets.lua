@@ -20,8 +20,9 @@ return function(api)
 
     local WATCH_S = 0.1             -- how often the list of live bullets is read
     local ROOT = "^/PBZCombatAsset/ActorData/Players/"
+    local MOB_ROOT = "^/PBZCombatAsset/ActorData/Mobs/"    -- (an enemy's: sent by the host as BSHOT, pull request 20)
     local MAX_PER_S = 40
-    local MAX_COORD = 1e7
+    local MAX_COORD = 1e8
 
     local COPY_MAX_S = 30           -- a ghost's bullet still there this long after it was fired ends (if its end never came)
 
@@ -33,7 +34,7 @@ return function(api)
     local shots, shotsAt = 0, 0
     -- A bullet's end goes out too. Some only end when the ability that fired them says so (a lion head's fire loop), and a ghost
     -- runs none: its copies looped on, one more each time, where the sender's own had long gone.
-    local sentIds, nextId = {}, 0   -- this player's: bullet address -> the id it went out with
+    local sentIds, ownShotIds, nextId = {}, {}, 0   -- bullet address -> wire id (ownShotIds = player-only)
     local copies = {}               -- the ghost's: "<player>:<id>" -> { at, made = what game.fireBullet made }
     local copiesAt = 0
     -- Ends go by the sure lane, the shots by the quick one: with a shot's first copies lost, its end could come before its last
@@ -42,6 +43,20 @@ return function(api)
     local EARLY_END_S = 2
     local endedFirst = {}           -- "<player>:<id>" -> when its end came with nothing here to end
     local ENDS_PER_EVENT = 40       -- a look's ends go out together, as one SHOTEND with up to this many ids
+
+    local function sendBossShot(b, owner)
+        local path = api.moves.pathOf(b.BulletData)
+        if not ((path:match(MOB_ROOT) or path:match(ROOT)) and api.moves.allowedPath(path)) then
+            return
+        end
+        local eid = game.enemyId and game.enemyId(owner, owner:GetAddress()) or owner:GetFName():ToString()
+        local at, r = b:K2_GetActorLocation(), b:K2_GetActorRotation()
+        nextId = nextId % 1000000 + 1
+        coop.sendEvent("BSHOT", eid, path, string.format("%.0f %.0f %.0f %.1f %.1f %.1f %d",
+            at.X, at.Y, at.Z, r.Pitch, r.Yaw, r.Roll, nextId))
+        sentIds[b:GetAddress()] = nextId
+        bullets.sent = bullets.sent + 1
+    end
 
     local function send(b)
         local path = api.moves.pathOf(b.BulletData)
@@ -52,7 +67,9 @@ return function(api)
         nextId = nextId % 1000000 + 1
         coop.sendEvent("SHOT", path, string.format("%.0f %.0f %.0f %.1f %.1f %.1f %d", at.X, at.Y, at.Z, r.Pitch, r.Yaw, r.Roll,
             nextId))
-        sentIds[b:GetAddress()] = nextId
+        local baddr = b:GetAddress()
+        sentIds[baddr] = nextId
+        ownShotIds[baddr] = true
         bullets.sent = bullets.sent + 1
     end
 
@@ -63,6 +80,7 @@ return function(api)
         for addr, id in pairs(sentIds) do
             if not seen[addr] then
                 sentIds[addr] = nil
+                ownShotIds[addr] = nil
                 ids[#ids + 1] = id
             end
         end
@@ -97,19 +115,27 @@ return function(api)
             return
         end
         local mine, seen = pawn:GetAddress(), {}
+        local host = coop.isHost and coop.isHost()
         system.Bullets:ForEach(function(_, v)
             local b = v:get()
             local addr = b:GetAddress()
             seen[addr] = true
-            if not known[addr] and game.isShot(b, mine) then
-                send(b)
+            if not known[addr] then
+                if game.isShot(b, mine) then
+                    send(b)
+                elseif host and game.enemyShotOwner then
+                    local eown = game.enemyShotOwner(b, mine)
+                    if valid(eown) then
+                        sendBossShot(b, eown)
+                    end
+                end
             end
         end)
         known = seen
         sendEnds(seen)
         -- (This player's own shots still live, a Scarlet Wraithblade's flowers or a fire's: what they take off an enemy copy
         -- is this player's hit, as a blow in their own move is (moves.lua). Undone as nobody's, it never reached the host.)
-        if next(sentIds) ~= nil and game.noteLocalMove then
+        if next(ownShotIds) ~= nil and game.noteLocalMove then
             game.noteLocalMove()
         end
     end
@@ -188,6 +214,78 @@ return function(api)
         end
     end
 
+    -- Host boss/enemy projectile on guest: spawns from the matching local boss/enemy copy so it looks and hits for real!
+    coop.handlers.BSHOT = function(rest, from)
+        if net.pvp or (coop.isHost and coop.isHost()) then
+            return
+        end
+        local eid, path, x, y, z, pitch, yaw, roll, id =
+            (rest or ""):match("^(%S+) (%S+) (%S+) (%S+) (%S+) (%S+) (%S+) (%S+)%s*(%d*)$")
+        x, y, z, pitch, yaw, roll = tonumber(x), tonumber(y), tonumber(z), tonumber(pitch), tonumber(yaw), tonumber(roll)
+        if not (eid and path and (path:match(MOB_ROOT) or path:match(ROOT)) and api.moves.allowedPath(path)
+            and x and y and z and pitch and yaw and roll
+            and math.abs(x) < MAX_COORD and math.abs(y) < MAX_COORD and math.abs(z) < MAX_COORD
+            and math.abs(pitch) <= 720 and math.abs(yaw) <= 720 and math.abs(roll) <= 720) then
+            bullets.refused = bullets.refused + 1
+            return
+        end
+        local key = id ~= "" and (from or 1) .. ":" .. id or nil
+        if key and endedFirst[key] then
+            endedFirst[key] = nil
+            return
+        end
+        local now = os.clock()
+        if now - shotsAt >= 1 then
+            shots, shotsAt = 0, now
+        end
+        if shots >= MAX_PER_S then
+            return
+        end
+        shots = shots + 1
+        if net.localLoc then
+            local dx, dy, dz = x - net.localLoc.X, y - net.localLoc.Y, z - net.localLoc.Z
+            if dx * dx + dy * dy + dz * dz > 12000 * 12000 then
+                return
+            end
+        end
+        local owner = coop.enemyActor and coop.enemyActor(eid)
+        if valid(owner) and api.puppets and api.puppets.abilityRecent and api.puppets.abilityRecent(eid, 2.0) then
+            return  -- local boss/enemy copy already activated the real ability (which fires its own bullets)
+        end
+        if not valid(owner) and game.bossActors then
+            for _, ba in ipairs(game.bossActors() or {}) do
+                if valid(ba) then
+                    local okL, l = pcall(function() return ba:K2_GetActorLocation() end)
+                    if okL and l and (l.X - x) ^ 2 + (l.Y - y) ^ 2 + (l.Z - z) ^ 2 <= 6000 * 6000 then
+                        owner = ba
+                        break
+                    end
+                end
+            end
+        end
+        if not valid(owner) then
+            local p = coop.peerOf(from)
+            owner = p and p.ghost
+        end
+        if not valid(owner) then
+            return
+        end
+        local d = bulletData(path)
+        if not d then
+            return
+        end
+        local ok, made = game.fireBullet(owner, d, x, y, z, pitch, yaw, roll)
+        if ok then
+            bullets.shown = bullets.shown + 1
+            if key and made and #made > 0 then
+                if copies[key] then
+                    endCopy(key)
+                end
+                copies[key] = { at = os.clock(), made = made }
+            end
+        end
+    end
+
     -- "SHOTEND <id> [<id>...]": a look's worth of ends at once (an older version sends one each).
     coop.handlers.SHOTEND = function(rest, from)
         local now, n = os.clock(), 0
@@ -252,7 +350,7 @@ return function(api)
         for key in pairs(copies) do
             endCopy(key)
         end
-        sentIds = {}
+        sentIds, ownShotIds = {}, {}
     end
 
     -- bullets: counters

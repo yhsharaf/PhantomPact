@@ -24,7 +24,7 @@ return function(api)
         "^/HuaShira/SceneProp/", "^/Game/RenewalContent/Actors/", "^/Game/PBZContent/Blueprint/Item/",
         "^/Game/PBZContent/Characters/", "^/Game/RenewalContent/Prototypes/", "^/AdvancedSpecialMove/Montage/" }
     local refusedRoots = {}         -- a folder refused, said once (a real one missing here shows in the log)
-    local MAX_NEW_LOADS_PER_MIN = 30
+    local MAX_NEW_LOADS_PER_MIN = 120
     local RESTART_S = 0.05          -- the same montage at an earlier position = played again
     local STOP_BLEND_S = 0.25       -- the ghost leaves a montage the partner has left over this long
 
@@ -55,7 +55,8 @@ return function(api)
         local folder = path:match("^(/[^/]+/[^/]+/[^/]+/)") or path:match("^(/[^/]+/[^/]+/)") or "?"
         if not refusedRoots[folder] and (refusedRoots.n or 0) < 20 then
             refusedRoots[folder], refusedRoots.n = true, (refusedRoots.n or 0) + 1
-            log("Moves: a path outside the move folders refused: " .. folder)
+            log("Moves: a path outside the move folders refused: " .. folder
+                .. (folder == "?" and (" (" .. tostring(path):sub(1, 140) .. ")") or ""))
         end
         return false
     end
@@ -162,8 +163,14 @@ return function(api)
             if game.noteLocalMove then
                 game.noteLocalMove()
             end
+            local mname = m:GetFName():ToString()
             if api.revive then
-                api.revive.onLocalMontage(m:GetFName():ToString())
+                api.revive.onLocalMontage(mname)
+            end
+            if net.onLocalExecStart and mname then
+                if net.isExecName and net.isExecName(mname) then
+                    net.onLocalExecStart()
+                end
             end
             -- (In a match only the guard's moves: the game starts its answer to a blow itself, and a figure can't start the
             -- stance's ability, so no M brings either. Without them the other side never saw a guard raised, and saw its
@@ -216,6 +223,13 @@ return function(api)
             end
             pcall(LoadAsset, path)
             m = StaticFindObject(path)
+            if not valid(m) then
+                local pkg = path:match("^([^%.]+)")
+                if pkg and pkg ~= path then
+                    pcall(LoadAsset, pkg)
+                    m = StaticFindObject(path)
+                end
+            end
         end
         if valid(m) and (cache[path] == m:GetAddress() or isMontage(m)) then
             cache[path] = m:GetAddress()
@@ -333,12 +347,53 @@ return function(api)
         if ok then
             moves.played = moves.played + 1
             p.ghostMontage, p.ghostPath, p.stanceHeld, p.ghostMoveAt = m, path, nil, os.clock()
+            if not net.pvp and net.isExecName and net.isExecName((path or ""):match("[^/%.]+$") or "")
+                and game.after and valid(p.ghost) then
+                local ghost = p.ghost
+                local gaddr = ghost:GetAddress()
+                local function stripGhostExecVfx()
+                    if not (valid(ghost) and ghost:GetAddress() == gaddr) then
+                        return
+                    end
+                    pcall(function()
+                        local ncls = StaticFindObject("/Script/Niagara.NiagaraComponent")
+                        if valid(ncls) then
+                            local list = ghost:K2_GetComponentsByClass(ncls)
+                            for i = 1, #list do
+                                local c = list[i]:get()
+                                if valid(c) then
+                                    pcall(function() c:DeactivateImmediate() end)
+                                    pcall(function() c:SetVisibility(false, true) end)
+                                end
+                            end
+                        end
+                    end)
+                    pcall(function()
+                        local pcls = StaticFindObject("/Script/Engine.PostProcessComponent")
+                        if valid(pcls) then
+                            local list = ghost:K2_GetComponentsByClass(pcls)
+                            for i = 1, #list do
+                                local c = list[i]:get()
+                                if valid(c) then
+                                    pcall(function() c.bEnabled = false end)
+                                end
+                            end
+                        end
+                    end)
+                end
+                game.after(0.05, stripGhostExecVfx)
+                game.after(0.25, stripGhostExecVfx)
+                game.after(0.60, stripGhostExecVfx)
+            end
             if path:find("StanceEnter", 1, true) then
                 p.stancePath = path
                 moves.holdStance(p, m, start)
             elseif game.isGuardReaction and game.isGuardReaction(path) then
                 p.guardPlays = (p.guardPlays or 0) + 1
                 moves.backToGuard(p, m, start)      -- (whether their guard's bit is here yet or not: it comes with their place)
+            end
+            if moves.showEdgeForMove then
+                moves.showEdgeForMove(p, m, path, start)
             end
             if game.noteGhostMove then
                 game.noteGhostMove(p.ghost)
@@ -578,9 +633,31 @@ return function(api)
             coop.sendEvent("W", gear.path, armed and 1 or 0)
         end
         armed = cwc:IsArmed(edgeSlot()) == true
-        if now >= gear.edgePathAt then
+        if now >= gear.edgePathAt or (armed and not gear.sentEdgeArmed) then
             gear.edgePathAt = now + GEAR_PATH_S
             gear.edgePath = heldConfig(cwc, edgeSlot())
+        end
+        local ai = gear.edgeAnim
+        if gear.edgePath and (not valid(ai) or gear.edgeAnimOf ~= gear.edgePath)
+            and (gear.edgeAnimOf ~= gear.edgePath or armed or now >= (gear.edgeAnimAt or 0)) then
+            gear.edgeAnimAt = now + 1.0
+            ai = edgeAnim(pawn)
+            gear.edgeAnim, gear.edgeAnimOf = ai, gear.edgePath
+        elseif not gear.edgePath then
+            ai, gear.edgeAnim, gear.edgeAnimOf = nil, nil, nil
+        end
+        local em = nil
+        if valid(ai) then
+            local okM, m = pcall(function() return ai:GetCurrentActiveMontage() end)
+            if okM and valid(m) then
+                em = m
+            end
+        end
+        if valid(em) then
+            if not armed then
+                gear.edgePath = heldConfig(cwc, edgeSlot()) or gear.edgePath
+            end
+            armed = true
         end
         -- ("-": none. Never said, a partner with none showed this player's own on their figure, from this PC's backpack, and one
         -- who took theirs off kept it hanging there.)
@@ -589,17 +666,13 @@ return function(api)
             gear.sentEdgeArmed, gear.sentEdgePath = armed, edge
             coop.sendEvent("E", edge, armed and 1 or 0)
         end
-        if armed then
-            local ai = gear.edgeAnim
-            if not (valid(ai) and gear.edgeAnimOf == gear.edgePath) then
-                ai = edgeAnim(pawn)
-                gear.edgeAnim, gear.edgeAnimOf = ai, gear.edgePath
-            end
-            local m = ai and ai:GetCurrentActiveMontage()
-            if valid(m) then
-                local addr, pos = m:GetAddress(), ai:Montage_GetPosition(m) or 0
-                if (addr ~= gear.edgeMontage or pos < gear.edgePos - RESTART_S) and not net.arena then
-                    coop.sendEvent("Z", pathOf(m), string.format("%.2f", pos))
+        if valid(em) and valid(ai) then
+            local okP, addr, pos, mp = pcall(function()
+                return em:GetAddress(), ai:Montage_GetPosition(em) or 0, pathOf(em)
+            end)
+            if okP and addr and mp then
+                if (addr ~= gear.edgeMontage or pos < (gear.edgePos or 0) - RESTART_S) and not net.arena then
+                    coop.sendEvent("Z", mp, string.format("%.2f", pos))
                 end
                 gear.edgeMontage, gear.edgePos = addr, pos
             end
@@ -649,6 +722,10 @@ return function(api)
         local p = coop.peerOf(from)
         if net.pvp or not valid(p.ghost) or p.ghostHidden or not moves.settled(p) then
             return
+        end
+        local ea = edgeActor(p.ghost)
+        if valid(ea) then
+            pcall(function() ea:SetActorHiddenInGame(false) end)
         end
         local m, ai = montage(path), edgeAnim(p.ghost)
         if m and ai then
@@ -744,16 +821,22 @@ return function(api)
         if theirs.edgePath == "-" then
             if theirs.edgeHiddenOn ~= ghost:GetAddress() then      -- (each new figure starts with it shown)
                 theirs.edgeHiddenOn = ghost:GetAddress()
-                pcall(function() cwc:SetWeaponForceHide(edgeSlot(), 0, true) end)
+                local eidx = math.max(cwc:GetCurrentWeaponIndex(edgeSlot(), false) or 0, 0)
+                pcall(function() cwc:SetWeaponForceHide(edgeSlot(), 0, 0, true) end)
+                if eidx ~= 0 then
+                    pcall(function() cwc:SetWeaponForceHide(edgeSlot(), eidx, 0, true) end)
+                end
             end
         elseif theirs.edgePath then
             slot = edgeSlot()
-            -- (Shown again once it holds theirs: one this PC had to load waits GEAR_LOADED_S, and the slot hidden for
-            -- none showed this player's own meanwhile, or the one they'd put down. A dress after it's set, not in that
-            -- tick. The seventh review.)
+            local eidx = math.max(cwc:GetCurrentWeaponIndex(slot, false) or 0, 0)
+            local swapped = false
             if theirs.edgeHiddenOn and heldConfig(cwc, slot) == theirs.edgePath then
                 theirs.edgeHiddenOn = nil
-                pcall(function() cwc:SetWeaponForceHide(slot, 0, false) end)
+                pcall(function() cwc:SetWeaponForceHide(slot, 0, 0, false) end)
+                if eidx ~= 0 then
+                    pcall(function() cwc:SetWeaponForceHide(slot, eidx, 0, false) end)
+                end
             end
             if now >= (theirs.edgeSwapAt or 0) and not (net.pvp and cwc:IsArmed(slot) == true)
                 and heldConfig(cwc, slot) ~= theirs.edgePath then
@@ -765,16 +848,94 @@ return function(api)
                     if new then
                         log("The ghost takes " .. theirs.edgePath:match("([^.]+)$") .. ", new to this PC.")
                     end
-                    -- (At its current place in the slot, as the weapon above: the one in hand isn't always the first. With
-                    -- a match's loadout on, the bench's players held their second, TigerCannon.)
-                    cwc:SetSlotWeapon(slot, math.max(cwc:GetCurrentWeaponIndex(slot, false) or 0, 0), cfg)
+                    cwc:SetSlotWeapon(slot, eidx, cfg)
+                    swapped = true
+                    theirs.edgeHiddenOn = nil
+                    pcall(function() cwc:SetWeaponForceHide(slot, 0, 0, false) end)
+                    if eidx ~= 0 then
+                        pcall(function() cwc:SetWeaponForceHide(slot, eidx, 0, false) end)
+                    end
                     log("The ghost's Phantom Edge is now " .. theirs.edgePath:match("([^.]+)$") .. ".")
                 end
             end
-            if not net.pvp and (cwc:IsArmed(slot) == true) ~= theirs.edgeArmed then
-                cwc:SetArmed(slot, theirs.edgeArmed)
+            -- (True or false, never nothing: with no swing going this was nil, the game's SetArmed was handed nothing
+            -- each time the figure was dressed, and a Phantom Edge put away stayed as it was.)
+            local wantArmed = theirs.edgeArmed == true or (theirs.edgeSwingUntil ~= nil and now < theirs.edgeSwingUntil)
+            if not net.pvp and (swapped or (cwc:IsArmed(slot) == true) ~= wantArmed) then
+                pcall(function() cwc:SetArmed(slot, wantArmed) end)
+                if wantArmed then
+                    pcall(function() cwc:SetWeaponAndScabbardForceHide(slot, eidx, false) end)
+                    local ea = edgeActor(ghost)
+                    if valid(ea) then
+                        pcall(function() ea:SetActorHiddenInGame(false) end)
+                        pcall(function() cwc:RefreshWeaponVisibility(ea) end)
+                    end
+                    if swapped and game.after then
+                        local g = ghost
+                        game.after(0.05, function()
+                            if valid(g) and not p.ghostHidden and (theirs.edgeArmed or (theirs.edgeSwingUntil and os.clock() < theirs.edgeSwingUntil)) then
+                                pcall(function()
+                                    local cw = g["Character Weapons Component"]
+                                    local ix = math.max(cw:GetCurrentWeaponIndex(edgeSlot(), false) or 0, 0)
+                                    cw:SetWeaponForceHide(edgeSlot(), ix, 0, false)
+                                    cw:SetArmed(edgeSlot(), true)
+                                end)
+                                local ea2 = edgeActor(g)
+                                if valid(ea2) then
+                                    pcall(function() ea2:SetActorHiddenInGame(false) end)
+                                end
+                            end
+                        end)
+                    end
+                end
             end
         end
+    end
+
+    -- When the ghost replays a Phantom Edge swing montage (e.g. Weapon_BrutalAxe), ensure the edge weapon is drawn & visible in hand!
+    function moves.showEdgeForMove(p, m, path, start)
+        if net.pvp or not (p and valid(p.ghost) and not p.ghostHidden and moves.settled(p) and type(path) == "string") then
+            return
+        end
+        local theirs = gearOf(p)
+        if not theirs.edgePath or theirs.edgePath == "-" then
+            return
+        end
+        local edgeName = theirs.edgePath:match("Weapon_([^.]+)$") or theirs.edgePath:match("([^./]+)$")
+        local pl = path:lower()
+        local isEdgeMove = (edgeName and #edgeName >= 4 and pl:find(edgeName:lower(), 1, true) ~= nil)
+            or pl:find("shachi", 1, true) ~= nil
+        if not isEdgeMove then
+            return
+        end
+        local len = 1.6
+        pcall(function()
+            local l = m:GetPlayLength()
+            if type(l) == "number" and l > 0.2 and l < 10 then
+                len = math.max(0.4, l - (start or 0))
+            end
+        end)
+        theirs.edgeSwingUntil = os.clock() + len + 0.15
+        theirs.dressAt = 0
+        pcall(function()
+            local cwc = p.ghost["Character Weapons Component"]
+            local slot = edgeSlot()
+            if heldConfig(cwc, slot) ~= theirs.edgePath then
+                return -- wait until dressGhost has actually equipped the partner's weapon (never draw local player's own)
+            end
+            local eidx = math.max(cwc:GetCurrentWeaponIndex(slot, false) or 0, 0)
+            cwc:SetWeaponForceHide(slot, 0, 0, false)
+            if eidx ~= 0 then
+                cwc:SetWeaponForceHide(slot, eidx, 0, false)
+            end
+            pcall(function() cwc:SetWeaponAndScabbardForceHide(slot, eidx, false) end)
+            cwc:SetArmed(slot, true)
+            local ea = edgeActor(p.ghost)
+            if valid(ea) then
+                ea:SetActorHiddenInGame(false)
+                pcall(function() cwc:RefreshWeaponVisibility(ea) end)
+            end
+        end)
     end
 
     function moves.hideGear(ghost, hide)
@@ -800,7 +961,11 @@ return function(api)
                 end
             end
         end
-        cwc:SetWeaponForceHide(edgeSlot(), 0, hide or kept)
+        local eidx = math.max(cwc:GetCurrentWeaponIndex(edgeSlot(), false) or 0, 0)
+        pcall(function() cwc:SetWeaponForceHide(edgeSlot(), 0, 0, hide or kept) end)
+        if eidx ~= 0 then
+            pcall(function() cwc:SetWeaponForceHide(edgeSlot(), eidx, 0, hide or kept) end)
+        end
     end
 
     -- The partner has just (re)started sync: it knows nothing yet. (Gait and stance go with every place: nothing to tell

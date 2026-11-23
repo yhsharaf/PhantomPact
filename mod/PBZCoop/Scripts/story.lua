@@ -1045,7 +1045,7 @@ return function(api)
         -- (With the teller's point of the story, a number, or - where it has none read.)
         local on, x, y, z, map, point = rest:match("^on (%S+) (%S+) (%S+) (%S+) (%S+)%s*(%S*)$")
         x, y, z = tonumber(x), tonumber(y), tonumber(z)
-        if on and x and y and z and math.abs(x) < 1e7 and math.abs(y) < 1e7 and math.abs(z) < 1e7 then
+        if on and x and y and z and math.abs(x) < 1e8 and math.abs(y) < 1e8 and math.abs(z) < 1e8 then
             tog.on = { name = on, x = x, y = y, z = z, map = map, point = tonumber(point), at = os.clock() }
             tog.heard[on] = os.clock()
             return
@@ -1137,8 +1137,10 @@ return function(api)
             return false, "you were in a fight"
         end
         if (game.inDialogue and game.inDialogue()) or (api.qte and api.qte.active)
-            or (game.inPrologue and game.inPrologue()) then
-            return false, "you were in a talk or a scene's own step"
+            or (game.inPrologue and game.inPrologue())
+            or (game.cardOpen and game.cardOpen())
+            or (game.flowerPickedAt and os.clock() - game.flowerPickedAt < 8.0) then
+            return false, "you were in a talk, item card, or flower scene"
         end
         -- (Using something just now, a chest, a lever, a bell by their own E: not moved out of it. game.bellAt asks
         -- the same before it rings, but by then joinBell had set the player down by the ringer.)
@@ -1147,9 +1149,13 @@ return function(api)
         end
         local busy = true
         pcall(function()
+            local menuUp = false
+            if api.localcoop ~= nil then
+                menuUp = api.localcoop.bellMenuUp() or api.localcoop.screenUp()
+            end
             busy = pawn.CharacterMovement.MovementMode ~= 1         -- (walking: on their feet)
                 or api.gs():IsGamePaused(controller) == true
-                or (api.localcoop ~= nil and (api.localcoop.bellMenuUp() or api.localcoop.screenUp()))
+                or menuUp
         end)
         if busy then
             return false, "you weren't on your feet, or a menu was up"
@@ -1218,6 +1224,30 @@ return function(api)
             return
         end
         local spot, boxes = game.storyBox(s.x, s.y, s.z, tog.BOX_CM)
+        -- (A partner's flyover -- a level's own camera sweep, LD_..., no story box of its own -- is played
+        -- here too, as a picture only: the same sequence's actor in this world, started on its own player. Story
+        -- scenes still go only through their boxes: one played by hand would skip what its box does to the save.)
+        if not spot and story.shareFlyovers ~= false and tostring(s.name):find("^LD_") then
+            local played = false
+            for _, a in ipairs(FindAllOf("LevelSequenceActor") or {}) do
+                if not played and valid(a) then
+                    pcall(function()
+                        local sp = a.SequencePlayer
+                        local seq = valid(sp) and sp:GetSequence()
+                        if valid(seq) and seq:GetFName():ToString() == s.name and not sp:IsPlaying() then
+                            sp:Play()
+                            played = true
+                        end
+                    end)
+                end
+            end
+            log("Your partner's flyover " .. s.name .. (played and ": played here too."
+                or ": no copy of it in this world, nothing done."))
+            if played then
+                tog.joined[s.name] = true
+            end
+            return
+        end
         if not spot then
             log("Your partner's scene " .. s.name .. " began beside you: " .. ((boxes or 0) > 1
                 and (boxes .. " of the story's boxes are by that spot in this world, none taken on a guess.")
@@ -1339,7 +1369,7 @@ return function(api)
         local bx, by, bz, x, y, z, map = rest:match("^ring (%S+) (%S+) (%S+) (%S+) (%S+) (%S+) (%S+)$")
         bx, by, bz, x, y, z = tonumber(bx), tonumber(by), tonumber(bz), tonumber(x), tonumber(y), tonumber(z)
         if bx and by and bz and x and y and z and math.max(math.abs(bx), math.abs(by), math.abs(bz), math.abs(x),
-            math.abs(y), math.abs(z)) < 1e7 then
+            math.abs(y), math.abs(z)) < 1e8 then
             tog.bell = { bx = bx, by = by, bz = bz, x = x, y = y, z = z, map = map, at = os.clock() }
             tog.rang[from or 0] = { x = bx, y = by, z = bz, map = map, at = os.clock() }
         end

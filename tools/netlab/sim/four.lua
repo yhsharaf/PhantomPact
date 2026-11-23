@@ -8638,6 +8638,10 @@ local function bossArmour()
     s:run(2)
     -- A guest whose own CoopBossArmor is off: their copy keeps its flinch and tells the host, which doesn't play it.
     Session.command(g, "bossarmor off")
+    -- (Once the command is read: the file is looked at a few times a second, and a blow in the frames before that
+    -- met the copy still armoured, its flinch let go before the blow was told, one run in two with the copies'
+    -- steering of pull request 20, never before it: the look fell a frame earlier.)
+    s:run(0.5)
     local played = field(field(theirs, "anim"), "played") or 0
     setState(copy, FLINCH)
     Session.enemyMove(g, "boss", HIT)
@@ -11522,7 +11526,9 @@ local function playerReports()
         w:run(3)
         local cmc = field(late.pawn, "CharacterMovement")
         check(went == true and net(late).watchingFight ~= true and not late.env.PBZ.game.isSpectating()
-            and field(cmc, "MovementMode") ~= 0, "F3 while watching: in, free to move, the camera their own")
+            and field(cmc, "MovementMode") ~= 0, "F3 while watching: in, free to move, the camera their own (went "
+            .. tostring(went) .. ", watching " .. tostring(net(late).watchingFight) .. ", spectating "
+            .. tostring(late.env.PBZ.game.isSpectating()) .. ", mode " .. tostring(field(cmc, "MovementMode")) .. ")")
         w:run(5)
         check(net(late).watchingFight ~= true and field(cmc, "MovementMode") ~= 0, "and not held again by the watch")
         allErrors(w)
@@ -12330,6 +12336,9 @@ local function phantomEdge()
     check(field(field(ghost, "edgeAnim"), "played") == 1, "and its mesh plays what the partner's plays: a cannon opens by a montage")
     Session.holdEdge(h, cannon, false)
     s:run(0.5)
+    check(field(weapons, "edgeArmed") == true, "still drawn while its skill's montage plays (pull request 20)")
+    Fake.put(rawget(h.pawn, "__fields").edgeAnim, "montage", nil)      -- (the skill's montage is over)
+    s:run(0.5)
     check(field(weapons, "edgeArmed") == false, "and it's put away again")
     Session.holdEdge(g, cannon, true)
     s:run(0.5)
@@ -12369,11 +12378,20 @@ local function shots()
     check(#g.fired == 2, "each once, for as long as it lasts")
     check(#h.fired == 0, "and they don't come back")
     Session.bullet(g, net(g).ghost, flower, 0.0, 0.0, 100.0)
-    Session.bullet(h, Session.enemyOn(h, "thug1"), flower, 500.0, 0.0, 100.0)
     Session.bullet(h, h.pawn, flower, 0.0, 0.0, 100.0, false)
     Session.bullet(h, h.pawn, flower, 0.0, 0.0, 100.0, true, true)
     s:run(0.5)
-    check(#g.fired == 2 and #h.fired == 0, "not a ghost's, an enemy's, a swing's sweep, or one another bullet started")
+    check(#g.fired == 2 and #h.fired == 0, "not a ghost's, a swing's sweep, or one another bullet started")
+    -- (Pull request 20: an enemy's bullet in the host's world comes up in the guest's too, fired there from the guest's
+    -- copy of that enemy. Before, a host's archer loosed nothing on the guest's screen unless its copy ran the ability.)
+    Session.bullet(h, Session.enemyOn(h, "thug1"), flower, 500.0, 0.0, 100.0)
+    s:run(0.5)
+    check(#g.fired == 3 and (g.fired[3] or {}).owner == Session.enemyOn(g, "thug1") and #h.fired == 0,
+        "an enemy's of the host's world comes up on the guest's too, from the guest's copy of that enemy")
+    Session.bullet(g, Session.enemyOn(g, "thug1"), flower, 500.0, 0.0, 100.0)
+    s:run(0.5)
+    check(#h.fired == 0 and #g.fired == 3, "a guest's copy's own goes nowhere: the host's enemies are the host's to tell")
+    table.remove(g.fired, 3)        -- (the counts below are the players' own shots)
     h.liveBullets[1] = nil
     for i = #h.liveBullets, 1, -1 do
         h.liveBullets[i] = nil
