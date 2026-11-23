@@ -99,6 +99,10 @@ plug in two pads (`Role = Local` in the ini does the same): see [docs/LOCAL_COOP
 - **[YCCCode](https://github.com/YCCCode)**, for the fixes and tests of PR #19: a pickup card left on screen with no
   confirm prompt (the Broken Illusion Pipa), and the Gold-Masked One's Dragon Pillar fight for the player who arrives
   second
+- **[XxaymanXx](https://github.com/XxaymanXx)**, for the co-op sync fixes of PR #20: finishing moves shared between
+  the players, enemies' projectiles and boss summons on the guest's screen, shield breaks and parries in step, doors
+  opened for both, a partner's summoned allies and Phantom Edge shown, smoother partner and enemy movement, and boss
+  bars that no longer stay behind
 - **Vercadi**, for UE4SS for Phantom Blade Zero, which made modding this game possible
 - **The UE4SS team** ([RE-UE4SS](https://github.com/UE4SS-RE/RE-UE4SS))
 - **S-GAME and the game's developers** for Phantom Blade Zero

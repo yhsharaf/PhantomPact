@@ -50,6 +50,7 @@
 - **[appdoze](https://github.com/appdoze)**:联机中继的安全审查和代码
 - **[EXACG](https://github.com/EXACG)**:4 人模式的设计和代码(PR #11):由房主转发玩家数据,每位队友各有幽灵、指南针标记、地图标记和提示,敌人生命随玩家人数增加,`units` 实机检查,以及事件处理函数检查
 - **[YCCCode](https://github.com/YCCCode)**:PR #19 的修复和测试:拾取卡片没有确认提示而卡住的问题(破损琵琶),以及龙柱战斗中后到的玩家无法伤害首领、也不会被首领攻击的问题
+- **[XxaymanXx](https://github.com/XxaymanXx)**:PR #20 的联机同步修复:双方共享终结技,敌人的飞行道具和首领召唤物会出现在客机画面上,破盾和弹反保持同步,任意一方开门后双方都能通过,显示队友的召唤物和 Phantom Edge 武器,队友和敌人的移动更平滑,首领血条不再残留
 - **Vercadi**:制作了 UE4SS for Phantom Blade Zero,让这款游戏的模组制作成为可能
 - **UE4SS 团队**([RE-UE4SS](https://github.com/UE4SS-RE/RE-UE4SS))
 - **S-GAME 及游戏开发者**:《影之刃零》

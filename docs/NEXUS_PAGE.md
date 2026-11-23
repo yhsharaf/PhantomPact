@@ -191,6 +191,7 @@ Online co-op needs none of these pad steps. If your pads stop working in other g
 [*][b]EXACG[/b], for the 4-player work ([url=https://github.com/EXACG][color=#ff2222]EXACG on GitHub[/color][/url])
 [*][b]appdoze[/b], for the security review and code ([url=https://github.com/appdoze][color=#ff2222]appdoze on GitHub[/color][/url])
 [*][b]YCCCode[/b], for the stuck pickup card and Dragon Pillar boss fixes ([url=https://github.com/YCCCode][color=#ff2222]YCCCode on GitHub[/color][/url])
+[*][b]XxaymanXx[/b], for the co-op sync fixes of 1.7.6 ([url=https://github.com/XxaymanXx][color=#ff2222]XxaymanXx on GitHub[/color][/url])
 [*][b]The UE4SS team[/b] ([url=https://github.com/UE4SS-RE/RE-UE4SS][color=#ff2222]RE-UE4SS on GitHub[/color][/url])
 [*][b]S-GAME and the game’s developers[/b] for Phantom Blade Zero
 [/list]
