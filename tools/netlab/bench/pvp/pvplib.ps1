@@ -59,7 +59,11 @@ namespace AggroShot { public static class Win {
     [DllImport("user32.dll")] static extern bool PrintWindow(IntPtr h, IntPtr dc, uint flags);
     [StructLayout(LayoutKind.Sequential)] struct R { public int L, T, Rt, B; }
     [DllImport("user32.dll")] static extern bool GetClientRect(IntPtr h, out R r);
+    [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
     public static string Save(IntPtr h, string path) {
+        // (The window's real size. Asked from a shell that Windows scales, at 150% a 960x540 window measured 640x360
+        // and the picture was its top-left two thirds: no HUD, no tip line. Run277, 11-24.)
+        SetProcessDPIAware();
         R r; GetClientRect(h, out r);
         if (r.Rt - r.L <= 0) return "no window";
         using (Bitmap b = new Bitmap(r.Rt - r.L, r.B - r.T)) {
