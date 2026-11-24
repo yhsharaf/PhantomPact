@@ -88,6 +88,48 @@ function Relay:linkFor(pc)
     function link.stop()
         relay:leave(pc)
     end
+    -- A folder's list, as main.dll's pp_files gives it ("F <bytes> <name>" or "D 0 <name>" a line; nothing for no such
+    -- folder), for the mods check (mods.lua). The fake PC's game: its own paks, UE4SS's own mods and this one, and what a
+    -- test gives the PC before its scripts start: pc.mods = { paks = { { "zzz_Outfit_P.pak", 1000 }... } (in Paks/~mods),
+    -- rootPaks = the same in Paks itself, scripts = { { "RandomWeapon", 5000 }... } (UE4SS mods: main.lua that size, and
+    -- an enabled.txt unless a third value says "listed", for one mods.txt names) }. (pc.noFiles: no such call, as an
+    -- older main.dll has none: fakepc.lua's loadlib.)
+    function link.files(dir)
+        dir = dir:gsub("\\", "/"):gsub("/+$", "")
+        local m, out = pc.mods or {}, nil
+        local modsDir = pc.scripts:gsub("\\", "/"):gsub("/+$", ""):match("^(.*)/[^/]+/[^/]+$")
+        local function add(list)
+            for _, f in ipairs(list or {}) do
+                out[#out + 1] = "F " .. f[2] .. " " .. f[1]
+            end
+        end
+        if dir:find("/ProjectPBZ/Content/Paks$") then
+            out = { "F 223726270 ProjectPBZ-Windows.pak", "F 2137390704 ProjectPBZ-Windows.ucas", "F 47487278 ProjectPBZ-Windows.utoc",
+                "F 2147483360 ProjectPBZ-Windows_s1.ucas", "F 1858239042 pakchunkMovies-Windows.pak", "F 64 pakchunkMovies-Windows.ucas",
+                "F 4479008 global.ucas", "F 410 global.utoc", "D 0 ~mods" }
+            add(m.rootPaks)
+        elseif dir:find("/ProjectPBZ/Content/Paks/~mods$") then
+            out = {}
+            add(m.paks)
+        elseif dir == modsDir then
+            out = { "D 0 BPModLoaderMod", "D 0 Keybinds", "D 0 PBZCoop", "D 0 shared", "F 233 mods.txt" }
+            for _, s in ipairs(m.scripts or {}) do
+                out[#out + 1] = "D 0 " .. s[1]
+            end
+        else
+            for _, s in ipairs(m.scripts or {}) do
+                if dir == modsDir .. "/" .. s[1] then
+                    out = { "D 0 Scripts", s[3] ~= "listed" and "F 0 enabled.txt" or nil }
+                elseif dir == modsDir .. "/" .. s[1] .. "/Scripts" then
+                    out = { "F " .. s[2] .. " main.lua", "F 300 config.lua" }
+                end
+            end
+        end
+        if out == nil then
+            return nil
+        end
+        return table.concat(out, "\n") .. "\n"
+    end
     if relay.party ~= nil then
         function link.party()
             local players, slot = relay:partyOf(pc)

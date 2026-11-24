@@ -266,6 +266,9 @@ return function(api)
                 if api.hitfx and s.partnerhitsounds and s.partnerhitsounds ~= "" then
                     api.hitfx.command(s.partnerhitsounds)
                 end
+                if api.mods and s.modscheck and s.modscheck ~= "" then
+                    api.mods.command(s.modscheck)
+                end
                 coopNumbers(s, false)
                 if api.difficulty and s.coopdifficulty and s.coopdifficulty ~= "" then
                     api.difficulty.command(s.coopdifficulty)

@@ -36,6 +36,9 @@
 --       BSHOT <enemy> <bullet data> <x y z pitch yaw roll id>   host -> guest: an enemy's projectile (bullets.lua)
 --       PSUM <id> <class> <x y z yaw>, PSUMP <id> <x y z yaw> [montage pos], PSUMEND <id>   a player's summoned ally
 --                            (Ctrl powers), shown on the partner's PC: made, where it is now, gone
+--     since 1.8.0 (mods.lua). A version before it has no handler and leaves it:
+--       MODS <id> <part> <parts> <count> <mark>...   the other mods on the sender's PC, a mark each (two hashes: its
+--                            name, and its name with its size), for the mods check: no name and no file goes across
 --
 -- Roles: the host's world is the truth for enemies (positions, health, deaths); the client mirrors it and
 -- reports its own hits. Each side shows the other's player as a "ghost" Hun steered by movement input.

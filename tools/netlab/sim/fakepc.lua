@@ -2798,6 +2798,9 @@ function Fake.new(id, scripts, ini, link)
         if entry == "pp_protocol" and pc.dllProtocol == false then
             return nil                      -- (1.7.3's main.dll and older: no such call)
         end
+        if entry == "pp_files" and pc.noFiles then
+            return nil                      -- (1.7.6's main.dll and older: no folder's list, so no mods check)
+        end
         return link[entry:gsub("^pp_", "")]
     end }
     env.dofile = function(path)

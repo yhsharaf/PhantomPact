@@ -70,6 +70,53 @@ inline uint32_t name_hash(std::string_view name) {
     return h;
 }
 
+// What lies in one folder (its path in UTF-8, either slash), a line each: "F <bytes> <name>" or "D 0 <name>", none of
+// what lies below it and 500 at most. False if there is no such folder. Only names and sizes are read, nothing of a
+// file's contents; a link's size is the file's it points to (a mod manager's way of putting a mod in). (pp_files.)
+inline bool list_folder(const std::string& dir, std::string& out) {
+    out.clear();
+    if (dir.empty()) return false;
+    const int n = MultiByteToWideChar(CP_UTF8, 0, dir.data(), static_cast<int>(dir.size()), nullptr, 0);
+    if (n <= 0) return false;
+    std::wstring wide(static_cast<size_t>(n), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, dir.data(), static_cast<int>(dir.size()), wide.data(), n);
+    for (auto& c : wide) {
+        if (c == L'/') c = L'\\';
+    }
+    if (wide.back() != L'\\') wide += L'\\';
+    const std::wstring folder = wide;
+    wide += L'*';
+    WIN32_FIND_DATAW found;
+    HANDLE h = FindFirstFileExW(wide.c_str(), FindExInfoBasic, &found, FindExSearchNameMatch, nullptr, 0);
+    if (h == INVALID_HANDLE_VALUE) return false;
+    int count = 0;
+    do {
+        if (wcscmp(found.cFileName, L".") == 0 || wcscmp(found.cFileName, L"..") == 0) continue;
+        char name[1024];
+        if (WideCharToMultiByte(CP_UTF8, 0, found.cFileName, -1, name, sizeof(name), nullptr, nullptr) <= 1) continue;
+        const bool is_dir = (found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        unsigned long long size = is_dir ? 0 : (static_cast<unsigned long long>(found.nFileSizeHigh) << 32) | found.nFileSizeLow;
+        if (!is_dir && (found.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
+            // (A link: the find's own size of one is 0. Asked with no access at all, which follows it to its file.)
+            HANDLE file = CreateFileW((folder + found.cFileName).c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                      nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (file != INVALID_HANDLE_VALUE) {
+                LARGE_INTEGER real;
+                if (GetFileSizeEx(file, &real)) size = static_cast<unsigned long long>(real.QuadPart);
+                CloseHandle(file);
+            }
+        }
+        out += is_dir ? "D " : "F ";
+        out += std::to_string(size);
+        out += ' ';
+        out += name;
+        out += '\n';
+        ++count;
+    } while (count < 500 && FindNextFileW(h, &found));
+    FindClose(h);
+    return true;
+}
+
 }  // namespace lua_link
 
 // Seconds on the clock packets are stamped with: finer than os.clock(), which moves in whole milliseconds.
@@ -259,6 +306,22 @@ extern "C" __declspec(dllexport) int pp_paste(void* lua) {
         CloseClipboard();
     }
     return push_text(a, State{lua}, text);
+}
+
+// pp_files(dir): what lies in one folder, a line each, "F <bytes> <name>" or "D 0 <name>", none of what lies below it
+// and 500 at most. Nothing if there is no such folder; a line break alone for an empty one. For the mods check
+// (mods.lua): Lua can't list a folder itself. Only names and sizes are read, nothing of a file's contents; a link's
+// size is the file's it points to (a mod manager's way of putting a mod in).
+extern "C" __declspec(dllexport) int pp_files(void* lua) {
+    using namespace lua_link;
+    const Api* a = api();
+    if (!a) return 0;
+    const State s{lua};
+    std::string dir, out;
+    if (!text_arg(a, s, dir) || !list_folder(dir, out)) return 0;
+    if (out.empty()) out = "\n";
+    a->set_string(&s, out.data(), out.size());
+    return 1;
 }
 
 // pp_map(name): the area the local player is in. Returns its number, for pp_state.

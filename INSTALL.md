@@ -286,6 +286,11 @@ Phantom Pact changes no game files: it's a UE4SS Lua mod with a small DLL of its
 - **UE4SS.** Use UE4SS for Phantom Blade Zero 1.0.3 or newer. Phantom Pact puts two files in `ue4ss\UE4SS_Signatures`; a
   UE4SS package, or a mod that brings its own, replaces them. After installing or updating one of those, extract Phantom
   Pact again.
+- **What your partner sees of your mods.** A mod changes files on one PC, so what it changes (an outfit, a weapon's
+  look) can show on your partner's screen only if they have the same mod installed too: Phantom Pact never sends a
+  mod's files. When you connect, each game tells the other which other mods it has, as marks only (no file and no mod
+  name goes across), and you're told once, by name, which of your mods your partner doesn't have. The UE4SS log has
+  the comparison every time ("Mods check with your partner"). `ModsCheck = Off` in `PhantomPact.ini` turns it off.
 - **Looks and camera** (gore, blood, effects, FOV, camera distance): only your own screen, fine together. While you're
   down, and in a PvP finishing move, the camera is Phantom Pact's, so a camera mod doesn't show there.
 - **Your own fighting** (parry or deflect windows, animation cancels, damage, hit-stop): your own game judges the hits on

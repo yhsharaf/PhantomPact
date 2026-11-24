@@ -484,7 +484,7 @@ local function openLink()
         link[name] = fn
     end
     for _, name in ipairs({ "layout", "read", "pointer", "paste", "party", "player", "send_to", "pad_grab", "read_stats",
-        "read_look" }) do      -- only ever faster: without them, reads go through UE4SS (pad_grab: pad 2's Options, localcoop.lua)
+        "read_look", "files" }) do     -- only ever faster: without them, reads go through UE4SS (pad_grab: pad 2's Options, localcoop.lua; files: a folder's list for the mods check, mods.lua, which says nothing without it)
         link[name] = package.loadlib(dll, "pp_" .. name)
     end
     if not link.now() then
@@ -624,6 +624,7 @@ api.rules = dofile(SCRIPT_DIR .. "rules.lua")(api)
 api.prologue = dofile(SCRIPT_DIR .. "prologue.lua")(api)
 api.qte = dofile(SCRIPT_DIR .. "qte.lua")(api)
 api.lesson = dofile(SCRIPT_DIR .. "lesson.lua")(api)
+api.mods = dofile(SCRIPT_DIR .. "mods.lua")(api)
 local net = coop.net
 
 -- Helpers for the "eval" command, so test snippets can reuse the mod's functions.
@@ -665,6 +666,7 @@ PBZ = {
     playlog = api.playlog,
     localcoop = api.localcoop,
     puppets = api.puppets,
+    mods = api.mods,
 }
 
 -- Command file: lets a developer drive tests from outside the game. Write one command per line
@@ -716,6 +718,7 @@ COMMANDS.localcoop = api.localcoop.command
 COMMANDS.panel = api.panel.command
 COMMANDS.onlinepanel = api.onlinepanel.command
 COMMANDS.pvppanel = api.pvppanel.command
+COMMANDS.mods = api.mods.command
 
 local function readCommandFile()
     local path = modDir() .. "cmd.txt"

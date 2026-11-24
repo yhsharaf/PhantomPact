@@ -10,6 +10,8 @@
 #include "latency.hpp"
 #include "lua_link.hpp"
 
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <queue>
 #include <random>
@@ -2303,7 +2305,65 @@ void test_fast_reads() {
     VirtualFree(mem, 0, MEM_RELEASE);
 }
 
+// main.dll's folder list (pp_files, for the mods check, mods.lua): a made-up folder in the temp folder, read back.
+void test_files() {
+    namespace fs = std::filesystem;
+    using lua_link::list_folder;
+    std::puts("main.dll's folder list:");
+    const auto utf8 = [](const fs::path& p) {
+        const std::wstring w = p.wstring();
+        std::string s(static_cast<size_t>(WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr)), '\0');
+        WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()), s.data(), static_cast<int>(s.size()), nullptr, nullptr);
+        return s;
+    };
+    const auto write = [](const fs::path& p, size_t bytes) { std::ofstream(p, std::ios::binary) << std::string(bytes, 'x'); };
+    const auto lines = [](const std::string& text) { return static_cast<int>(std::count(text.begin(), text.end(), '\n')); };
+    std::error_code ec;
+    const fs::path root = fs::temp_directory_path(ec) / (L"pp_files_test_" + std::to_wstring(GetCurrentProcessId()));
+    fs::remove_all(root, ec);
+    fs::create_directories(root / L"~mods", ec);
+    fs::create_directories(root / L"empty", ec);
+    fs::create_directories(root / L"many", ec);
+    write(root / L"zzz_Outfit_P.pak", 347);
+    write(root / L"zzz_Outfit_P.ucas", 70000);
+    write(root / L"enabled.txt", 0);
+    write(root / L"~mods" / L"below.pak", 5);
+    write(root / L"模组 mod.utoc", 12);         // a name not in Latin letters
+    for (int i = 0; i < 520; i++) write(root / L"many" / (L"f" + std::to_wstring(i) + L".txt"), 0);
+
+    const std::string dir = utf8(root);
+    std::string out;
+    const bool ok = list_folder(dir, out);
+    const auto has = [&](const std::string& line) { return ("\n" + out).find("\n" + line + "\n") != std::string::npos; };
+    check(ok && has("F 347 zzz_Outfit_P.pak") && has("F 70000 zzz_Outfit_P.ucas") && has("F 0 enabled.txt"),
+          "a folder's files, each with its size");
+    check(has("D 0 ~mods") && has("D 0 empty") && has("D 0 many") && out.find("below.pak") == std::string::npos && lines(out) == 7,
+          "its folders too, and nothing of what lies below them");
+    check(has("F 12 \xE6\xA8\xA1\xE7\xBB\x84 mod.utoc"), "a name in another script comes as UTF-8");
+    std::string slashed = dir, again;
+    std::replace(slashed.begin(), slashed.end(), '\\', '/');
+    check(list_folder(slashed + "/", again) && again == out, "the same with forward slashes, and one at the end");
+    std::string none = "x";
+    check(list_folder(dir + "\\empty", none) && none.empty(), "an empty folder is there, with nothing in it");
+    check(!list_folder(dir + "\\nosuch", none) && !list_folder(dir + "\\enabled.txt", none) && !list_folder("", none),
+          "no such folder, a file's own path, no path at all: no list");
+    std::string many;
+    check(list_folder(dir + "\\many", many) && lines(many) == 500, "a folder of 520 files: 500 of them, no more");
+    // A link to a file, as a mod manager may put a mod in: the size of the file it points to. (Making one needs a right
+    // not every account has: checked where it can be made.)
+    if (CreateSymbolicLinkW((root / L"link.pak").c_str(), (root / L"zzz_Outfit_P.ucas").c_str(), 0x2)) {
+        std::string with;
+        list_folder(dir, with);
+        check(("\n" + with).find("\nF 70000 link.pak\n") != std::string::npos, "a link to a file: the size of the file it points to");
+    } else {
+        std::puts("  (no link could be made on this account: a link's size is not checked)");
+    }
+    fs::remove_all(root, ec);
+    check(!fs::exists(root), "the test's folder is gone again");
+}
+
 int run_tests(int argc, wchar_t** argv) {
+    test_files();
     test_timeline();
     test_timeline_odd();
     test_timeline_speed();
@@ -2802,7 +2862,14 @@ int wmain(int argc, wchar_t** argv) {
     if (mode == L"bot" && argc > 2) return run_bot(argc, argv);
     if (mode == L"netem" && argc > 3) return run_netem(argc, argv);
     if (mode == L"latency") return run_latency(argc, argv);
-    std::fputs("usage: relay_cli test [--sockets 0] [--port n] | bot host|client [--port n] [--peer ip] [--seconds s] [--fps n] [--enemies n]"
+    if (mode == L"files" && argc > 2) {
+        // A folder as main.dll lists it for the mods check (pp_files): its lines, or exit code 1 for no such folder.
+        std::string out;
+        if (!lua_link::list_folder(relay::narrow(argv[2]), out)) return 1;
+        std::fwrite(out.data(), 1, out.size(), stdout);
+        return 0;
+    }
+    std::fputs("usage: relay_cli test [--sockets 0] [--port n] | files <folder> | bot host|client [--port n] [--peer ip] [--seconds s] [--fps n] [--enemies n]"
                " [--hitch-every s --hitch-ms ms] [--cx x --cy y --cz z] [--dir folder] [--ini file]"
                " [--event-every s] [--event-bytes n] [--events-for s] [--burst n]"
                " | netem <listen port> <target port>"

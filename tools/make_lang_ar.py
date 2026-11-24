@@ -44,6 +44,7 @@ LINES = [
                   "tip.pvp.loadout_next"]),
     ("the connection", ["tip.conn.nobody_joined", "tip.conn.secret", "tip.conn.steam_relay"]),
     ("the play log (playlog.lua)", ["tip.playlog.marked"]),
+    ("other mods (mods.lua)", ["tip.mods.party"]),
     ("no Chinese: the tip's head (status.lua says it on its own), the partner, local co-op (F4)",
      ["tip.prefix", "tip.conn.connected_signed", "tip.conn.connected", "tip.partner.quest_step", "local.tip.close_menu",
       "local.tip.wall", "local.tip.p2_joined", "local.tip.gourd_empty", "local.tip.mon_lr", "local.tip.mon_tb",
@@ -90,6 +91,13 @@ PARTS = [
         ("tip.conn.no_answer", "^no answer from the host %((.+)%)%. Check HostAddress and Port, that they're in the game "
                                "on Role = Host, and the same Secret and Phantom Pact version on both PCs%.$"),
         ("tip.conn.no_friend", "^no friend hosting found%..*$"),
+    ]),
+    ("other mods (mods.lua): whole lines, the player's own mod names or a number in them", [
+        ("tip.mods.partner_lacks", "^your partner doesn't have these mods of yours: (.+)%. What a mod changes shows only "
+                                   "on a PC that has it%.$"),
+        ("tip.mods.partner_extra", "^your partner has mods you don't have %((%d+)%)%. What a mod changes shows only on a "
+                                   "PC that has it%.$"),
+        ("tip.mods.other_version", "^these mods are another version on your partner's PC: (.+)%.$"),
     ]),
     ("the relay's own errors, after the panel's head or a tip's (the two rows above that end in (.*)$)", "errors"),
     ("", [
@@ -204,7 +212,8 @@ T = read(TSV)
 
 
 # A row the mod's author hasn't checked yet: its notes begin UNCHECKED. A whole line of that kind is left out of
-# lang_ar.lua (the game says it in English till then); a piece of a line can't be left out by itself.
+# lang_ar.lua (the game says it in English till then), and so is a pattern that is a whole line (^...$, a name or a
+# number in it); a piece of a line can't be left out by itself.
 left_out = []
 
 
@@ -356,6 +365,8 @@ def parts():
                         rows.append((esc(team_ar) + item[1], rep(team_ar) + fill(TO, ["%1"]), TO))
                 elif item[0] == CHECKLIST:
                     rows += checklist(item[1])
+                elif unchecked(item[0]) and item[1].startswith("^") and item[1].endswith("$"):
+                    left_out.append(item[0])
                 else:
                     rows.append(part(*item))
         groups.append((title, rows))

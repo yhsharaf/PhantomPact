@@ -85,6 +85,7 @@ return {
         ["packets refused: both PCs need the same Secret in PhantomPact.ini (or both none), and their clocks within two minutes of each other."] = "رُفض الاتصال: يجب أن تتطابق كلمة المرور (Secret) في PhantomPact.ini على الجهازين (أو تُترك فارغة على كليهما)، وأن يقل الفرق بين ساعتيهما عن دقيقتين.",  -- tip.conn.secret
         ["Steam is relaying this connection, which adds delay. A direct one needs SteamDirect = On on both PCs and routers that allow it."] = "يمر هذا الاتصال عبر وسيط من Steam، مما يزيد التأخير. الاتصال المباشر يحتاج إلى SteamDirect = On على الجهازين، وإلى راوترات تسمح به.",  -- tip.conn.steam_relay
         -- the play log (playlog.lua)
+        -- other mods (mods.lua)
         -- no Chinese: the tip's head (status.lua says it on its own), the partner, local co-op (F4)
         ["Phantom Pact: "] = "Phantom Pact: ",  -- tip.prefix
         ["partner connected, signed."] = "اتصل شريكك، والاتصال محمي بكلمة المرور.",  -- tip.conn.connected_signed
@@ -135,6 +136,7 @@ return {
         { " On Tailscale, run \"tailscale ping\": via DERP means relayed%.$", " على Tailscale، شغّل «tailscale ping»: إن ظهر via DERP فالاتصال يمر عبر وسيط." },  -- tip.conn.tailscale_ping
         { "^no answer from the host %((.+)%)%. Check HostAddress and Port, that they're in the game on Role = Host, and the same Secret and Phantom Pact version on both PCs%.$", "لا رد من المضيف (%1). تحقق من HostAddress و Port، ومن أن المضيف في اللعبة على Role = Host، ومن تطابق كلمة المرور (Secret) وإصدار Phantom Pact على الجهازين." },  -- tip.conn.no_answer
         { "^no friend hosting found%..*$", "لم يُعثر على صديق يستضيف. يجب أن تكونا صديقين على Steam، وأن يضبط شريكك Role = Host و Connect = Steam دون أن يكون «غير مرئي» على Steam (أو ضع SteamID64 الخاص به في HostAddress)، وأن تتطابق كلمة المرور (Secret) وإصدار Phantom Pact على الجهازين." },  -- tip.conn.no_friend
+        -- other mods (mods.lua): whole lines, the player's own mod names or a number in them
         -- the relay's own errors, after the panel's head or a tip's (the two rows above that end in (.*)$)
         { "^تعذّر البدء: no system random numbers for the Secret$", "تعذّر البدء: لم يوفّر النظام أرقامًا عشوائية لكلمة المرور (Secret)" },  -- tip.relayerr.random
         { "^تعذّر البدء: Winsock didn't start$", "تعذّر البدء: فشل تشغيل Winsock" },  -- tip.relayerr.winsock

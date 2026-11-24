@@ -108,6 +108,9 @@ return function(scriptDir)
             "连接被拒绝:双方的密码必须相同(或都不设),两台电脑的时间相差也不能超过两分钟。",
         ["Steam is relaying this connection, which adds delay. A direct one needs SteamDirect = On on both PCs and routers that allow it."] =
             "这次连接经过 Steam 中继,延迟会更高。要直连,双方都要开启 Steam 直连,路由器也要允许。",
+        -- other mods (mods.lua)
+        ["the players here don't all have the same mods. What a mod changes shows only on a PC that has it."] =
+            "这里的玩家安装的模组不完全相同。模组带来的变化只会显示在装了它的电脑上。",
         -- the play log (playlog.lua)
         ["marked in the play log."] = "已在游玩日志中做了标记。",
     }
@@ -144,6 +147,12 @@ return function(scriptDir)
             "队友的 Phantom Pact(%1)无法连接到 %2:双方必须使用相同的版本。" },
         { "^your partner is on Phantom Pact (.+) and you're on (.+): use the same version, or enemies won't stay in step%.$",
             "队友使用 Phantom Pact %1,你使用 %2:请使用相同的版本,否则敌人会不同步。" },
+        -- Other mods (mods.lua): the names are this player's own mods' file names, as they are.
+        { "^your partner doesn't have these mods of yours: (.+)%. What a mod changes shows only on a PC that has it%.$",
+            "队友没有你的这些模组:%1。模组带来的变化只会显示在装了它的电脑上。" },
+        { "^your partner has mods you don't have %((%d+)%)%. What a mod changes shows only on a PC that has it%.$",
+            "队友有 %1 个你没有的模组。模组带来的变化只会显示在装了它的电脑上。" },
+        { "^these mods are another version on your partner's PC: (.+)%.$", "这些模组在队友的电脑上是另一个版本:%1。" },
         { "^high ping %((%d+) ms%)%.", "延迟过高(%1 毫秒)。" },
         { " On Tailscale, run \"tailscale ping\": via DERP means relayed%.$",
             " 使用 Tailscale 时可运行 “tailscale ping”:显示 via DERP 表示经过了中继。" },

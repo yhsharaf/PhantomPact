@@ -19020,6 +19020,199 @@ local function anEnemysJump()
     allErrors(s)
 end
 
+-- Other mods (mods.lua): each PC lists its own (pak mods under Paks, UE4SS mods switched on), sends a mark for each, and
+-- is told once what differs: by its own mods' names alone, never the partner's. (Players on 1.7.6: "from his
+-- perspective, my mod is not displaying".)
+local function otherMods()
+    part("other mods")
+    local function tips(pc, pattern)
+        return count(pc.logs, "Status: " .. pattern)
+    end
+    local ONLY_WHERE = " What a mod changes shows only on a PC that has it%.$"
+
+    -- Nothing but the game and Phantom Pact on either PC.
+    local a = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES)
+    a:run(16)
+    local h, g = a.pcs[1], a.pcs[2]
+    check(count(h.logs, "Mods here beside Phantom Pact: 0 %(0 pak, 0 UE4SS%)%.$") == 1
+        and count(g.logs, "Mods here beside Phantom Pact: 0 %(0 pak, 0 UE4SS%)%.$") == 1,
+        "no other mod: the game's own paks, UE4SS's own mods and Phantom Pact aren't counted")
+    check(count(h.sent, "^E MODS %d+ 1 1 0$") >= 1 and count(g.sent, "^E MODS %d+ 1 1 0$") >= 1, "each PC tells the other it has none")
+    check(count(h.logs, "Mods check with your partner: 0 the same; 0 of this PC's 0 aren't on theirs; 0 of theirs aren't here; "
+        .. "0 another version there%.$") == 1, "the comparison is in the log, once though the marks came twice")
+    check(tips(h, ".*mods") == 0 and tips(g, ".*mods") == 0 and h.files["mods_told.txt"] == nil, "nothing differs: no tip")
+    check(Session.shippedIni():match("\nModsCheck = ([^\r\n]+)") == "On", "the ini as it ships has ModsCheck = On")
+    allErrors(a)
+
+    -- Mods that differ. The host: an outfit (three files, one mod), a sword, a hair mod and one named as the game's own files
+    -- are (ProjectPBZ-..._997_P, as real ones are) in Paks itself, a UE4SS mod with its enabled.txt. The guest: the outfit in another size, the same hair, a UE4SS mod mods.txt turns on and one it turns off.
+    local function differing(pc, i)
+        if i == 1 then
+            pc.mods = { paks = { { "zzz_Outfit_P.pak", 1000 }, { "zzz_Outfit_P.utoc", 200 }, { "zzz_Outfit_P.ucas", 64 },
+                { "pakchunk99-Naginata_P.pak", 5000 }, { "readme.txt", 300 } }, rootPaks = { { "Hair_P.pak", 700 },
+                { "ProjectPBZ-MoyuanExecution_997_P.pak", 347 }, { "ProjectPBZ-MoyuanExecution_997_P.ucas", 1600000 } },
+                scripts = { { "RandomWeapon", 5000 } } }
+        else
+            pc.mods = { paks = { { "zzz_Outfit_P.pak", 1200 }, { "zzz_Outfit_P.utoc", 200 }, { "zzz_Outfit_P.ucas", 64 } },
+                rootPaks = { { "Hair_P.pak", 700 } }, scripts = { { "MapMarkers", 900, "listed" }, { "Unused", 100, "listed" } } }
+            pc.files["mods.txt"] = "MapMarkers : 1\nUnused : 0\nPBZCoop : 1\n\n; Built-in keybinds, do not move up!\nKeybinds : 0\n"
+        end
+    end
+    local b = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES, nil, nil, differing)
+    b:run(30)
+    h, g = b.pcs[1], b.pcs[2]
+    check(count(h.logs, "Mods here beside Phantom Pact: 5 %(4 pak, 1 UE4SS%): Hair, Naginata, MoyuanExecution, Outfit, RandomWeapon%.$") == 1,
+        "the host's own: a mod's files are one mod, named without what only orders the load; one named ProjectPBZ-... is a mod")
+    check(count(g.logs, "Mods here beside Phantom Pact: 3 %(2 pak, 1 UE4SS%): Hair, Outfit, MapMarkers%.$") == 1,
+        "the guest's: a UE4SS mod mods.txt turns on counts, one it turns off doesn't")
+    check(count(h.logs, "Mods check with your partner: 1 the same; 3 of this PC's 5 aren't on theirs %(Naginata, MoyuanExecution, RandomWeapon%); "
+        .. "1 of theirs aren't here; 1 another version there %(Outfit%)%.$") == 1, "the host's comparison")
+    check(count(g.logs, "Mods check with your partner: 1 the same; 1 of this PC's 3 aren't on theirs %(MapMarkers%); "
+        .. "3 of theirs aren't here; 1 another version there %(Outfit%)%.$") == 1, "the guest's")
+    check(tips(h, "your partner doesn't have these mods of yours: Naginata, MoyuanExecution, RandomWeapon%." .. ONLY_WHERE) == 1
+        and tips(g, "your partner doesn't have these mods of yours: MapMarkers%." .. ONLY_WHERE) == 1,
+        "each is told which of their own mods the partner doesn't have")
+    check(tips(h, "your partner has mods you don't have %(1%)%." .. ONLY_WHERE) == 1
+        and tips(g, "your partner has mods you don't have %(3%)%." .. ONLY_WHERE) == 1,
+        "and how many the partner has that they don't")
+    check(tips(h, "these mods are another version on your partner's PC: Outfit%.$") == 1
+        and tips(g, "these mods are another version on your partner's PC: Outfit%.$") == 1,
+        "and which mod is another version there")
+    check(count(h.logs, "MapMarkers") == 0 and count(g.logs, "Naginata") == 0 and count(g.logs, "RandomWeapon") == 0
+        and count(g.logs, "MoyuanExecution") == 0,
+        "a partner's mod names are never said or logged here")
+    check((h.files["mods_told.txt"] or ""):find("^%x%x%x%x%x%x%x%x\n$") ~= nil, "what was told is kept")
+    -- The link drops and comes back: the marks go again and are compared again; nothing is said a second time.
+    local heardBefore = h.env.PBZ.mods.heard
+    g.cut = true
+    b:run(10)
+    check(h.env.PBZ.mods.result[0] == nil, "the link gone: what was known of the partner's mods is forgotten")
+    g.cut = false
+    b:run(30)
+    check(h.env.PBZ.mods.heard > heardBefore and h.env.PBZ.mods.result[0] ~= nil
+        and count(h.logs, "Mods check with your partner: 1 the same; 3 of this PC's 5") == 1
+        and tips(h, "your partner doesn't have these mods of yours") == 1 and tips(h, "your partner has mods you don't have") == 1
+        and tips(h, "these mods are another version") == 1, "the link back: compared again, and the same comparison neither logged nor told a second time")
+    Session.command(h, "mods")
+    b:run(1)
+    check(count(h.logs, "Mods check: on; 5 mods here; sent %d+, heard %d+; partner: 1 the same, 3 missing there, 1 missing here, "
+        .. "1 another version$") == 1, "the mods command says how it stands")
+    allErrors(b)
+
+    -- The next session, the same mods on both: nothing is said a second time. A new difference is.
+    local told = h.files["mods_told.txt"]
+    local n = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES, nil, nil, function(pc, i)
+        differing(pc, i)
+        if i == 1 then
+            pc.files["mods_told.txt"] = told
+        end
+    end)
+    n:run(30)
+    h, g = n.pcs[1], n.pcs[2]
+    check(count(h.logs, "Mods check with your partner: 1 the same; 3 of this PC's 5") == 1 and tips(h, ".*mods") == 0,
+        "the next session: the comparison is in the log, the difference told before isn't told again")
+    check(tips(g, "your partner doesn't have these mods of yours: MapMarkers%.") == 1, "a PC that wasn't told yet is")
+    Session.command(g, "mods fake p Bench 123")
+    n:run(30)
+    check(tips(h, "your partner has mods you don't have %(2%)%.") == 1 and tips(h, "your partner doesn't have these mods") == 1
+        and tips(g, "your partner doesn't have these mods of yours: Bench, MapMarkers%.") == 1,
+        "a new difference (a mod added on the guest's side) is told on both")
+    allErrors(n)
+
+    -- ModsCheck = Off on one PC: it lists, sends and compares nothing, and its partner says nothing of it. (A partner on an
+    -- older version is the same to this one: no marks come.)
+    local c = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES, nil, nil, function(pc, i)
+        differing(pc, i)
+        if i == 2 then
+            pc.files["PhantomPact.ini"] = pc.files["PhantomPact.ini"] .. "ModsCheck = Off\n"
+        end
+    end)
+    c:run(30)
+    h, g = c.pcs[1], c.pcs[2]
+    check(count(g.sent, "^E MODS") == 0 and count(g.logs, "Mods here beside") == 0 and count(g.logs, "Mods check with") == 0
+        and tips(g, ".*mods") == 0, "ModsCheck = Off: that PC lists, sends and compares nothing")
+    check(count(h.sent, "^E MODS") >= 1 and count(h.logs, "Mods check with") == 0 and tips(h, ".*mods") == 0,
+        "its partner hears no marks and says nothing, as of a partner on an older version")
+    allErrors(c)
+
+    -- An older main.dll under these scripts (no folder's list): nothing sent, nothing compared, and it says why once.
+    local d = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES, nil, nil, function(pc, i)
+        differing(pc, i)
+        pc.noFiles = i == 1
+    end)
+    d:run(30)
+    h, g = d.pcs[1], d.pcs[2]
+    check(count(h.logs, "Mods check: this main%.dll can't list a folder") == 1 and count(h.sent, "^E MODS") == 0
+        and count(h.logs, "Mods check with") == 0 and tips(h, ".*mods") == 0,
+        "no way to list a folder: no marks sent, nothing compared, no tip about mods it can't see")
+    check(count(g.logs, "Mods check with") == 0 and tips(g, ".*mods") == 0, "and its partner, hearing none, says nothing")
+    allErrors(d)
+
+    -- Many mods: forty marks an event. Five of the host's forty-five aren't on the guest's PC.
+    local f = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES, nil, nil, function(pc, i)
+        pc.mods = { paks = {} }
+        for k = 1, 45 do
+            if i == 1 or k < 17 or k > 21 then
+                pc.mods.paks[#pc.mods.paks + 1] = { string.format("Mod%02d_P.pak", k), 100 + k }
+            end
+        end
+    end)
+    f:run(30)
+    h, g = f.pcs[1], f.pcs[2]
+    check(count(h.sent, "^E MODS %d+ 1 2 45 p%x+") >= 1 and count(h.sent, "^E MODS %d+ 2 2 45 p%x+") >= 1
+        and count(g.sent, "^E MODS %d+ 1 1 40 p%x+") >= 1, "45 mods go as two events, 40 as one")
+    check(count(h.logs, "Mods check with your partner: 40 the same; 5 of this PC's 45 aren't on theirs "
+        .. "%(Mod17, Mod18, Mod19, Mod20, Mod21%); 0 of theirs aren't here; 0 another version there%.$") == 1
+        and count(g.logs, "Mods check with your partner: 40 the same; 0 of this PC's 40 aren't on theirs; 5 of theirs aren't here") == 1,
+        "the two events are put together and compared")
+    check(tips(h, "your partner doesn't have these mods of yours: Mod17, Mod18, Mod19 %(%+2%)%." .. ONLY_WHERE) == 1,
+        "a long list: three names, and how many more")
+    check(tips(g, "your partner has mods you don't have %(5%)%.") == 1, "the guest is told the number alone")
+    -- A flood of new lists from one player (eight in eight seconds, each with one more mod): six a minute are taken.
+    for k = 1, 8 do
+        Session.command(g, "mods fake p Extra" .. k .. " 1")
+        f:run(1)
+    end
+    f:run(2)
+    check(h.env.PBZ.mods.result[0].extra == 5 and #g.env.PBZ.mods.list() == 48,
+        "eight new lists in eight seconds: the host takes six that minute, the first one counted (" .. h.env.PBZ.mods.result[0].extra .. " of 8)")
+    allErrors(f)
+
+    -- More than two players: one line for them all, once each; who has what is in the log, by the player's number.
+    local p = Session.new(SIM_SCRIPTS, { "Host", "Guest", "Guest", "Guest" }, true, ENEMIES, nil, nil, function(pc, i)
+        if i == 3 then
+            pc.mods = { paks = { { "zzz_Outfit_P.pak", 1000 } } }
+        end
+    end)
+    p:run(40)
+    check(everyone(p, function(pc) return tips(pc, "the players here don't all have the same mods%." .. ONLY_WHERE) == 1 end),
+        "a party: everyone is told once that the mods differ, in one line")
+    check(everyone(p, function(pc) return tips(pc, "your partner") == 0 end), "nobody is told of 'your partner' there")
+    check(count(p.pcs[3].logs, "Mods check with the host %(purple%): 0 the same; 1 of this PC's 1 aren't on theirs %(Outfit%)") == 1
+        and count(p.pcs[3].logs, "Mods check with player 2 %(green%): 0 the same; 1 of this PC's 1") == 1
+        and count(p.pcs[3].logs, "Mods check with player 4 %(blue%): 0 the same; 1 of this PC's 1") == 1,
+        "the one with the mod: its log has each of the others, by their number")
+    check(count(p.pcs[1].logs, "Mods check with player 3 %(gold%): 0 the same; 0 of this PC's 0 aren't on theirs; 1 of theirs aren't here") == 1
+        and count(p.pcs[2].logs, "Mods check with player 3 %(gold%): 0 the same; 0 of this PC's 0 aren't on theirs; 1 of theirs aren't here") == 1,
+        "the others: the host's log and another guest's say player 3 has one more")
+    check(count(p.pcs[1].logs, "Outfit") == 0 and count(p.pcs[2].logs, "Outfit") == 0 and count(p.pcs[4].logs, "Outfit") == 0,
+        "and the mod's name is in nobody else's log")
+    allErrors(p)
+
+    -- A party's settings with two players in it: told as two players are.
+    local q = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, true, ENEMIES, nil, nil, function(pc, i)
+        if i == 2 then
+            pc.mods = { paks = { { "zzz_Outfit_P.pak", 1000 } } }
+        end
+    end)
+    q:run(30)
+    check(tips(q.pcs[2], "your partner doesn't have these mods of yours: Outfit%." .. ONLY_WHERE) == 1
+        and tips(q.pcs[1], "your partner has mods you don't have %(1%)%." .. ONLY_WHERE) == 1
+        and tips(q.pcs[1], "the players here") == 0 and tips(q.pcs[2], "the players here") == 0,
+        "a party of two: each is told as two players are")
+    allErrors(q)
+end
+
 return function(print_, scripts)
     out = print_
     SIM_SCRIPTS = scripts
@@ -19167,5 +19360,6 @@ return function(print_, scripts)
     twoRidersAndTheirMounts()
     anEnemysJump()
     aCopysDeath()
+    otherMods()
     return failed == 0
 end
