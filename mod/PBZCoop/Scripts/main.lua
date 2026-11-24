@@ -6,7 +6,7 @@
 -- F8  spawn player 2: a second local player + a copy of player 1's character (F8-F11 need PBZCOOP_DEBUG=1)
 -- F9  remove player 2
 
-local VERSION = "1.7.7"
+local VERSION = "1.7.8"
 -- The relay these scripts are written for: native/relay.hpp's PROTOCOL, the two bumped together (openLink asks main.dll's).
 local PROTOCOL = 5
 local TAG = "[PBZCoop] "
