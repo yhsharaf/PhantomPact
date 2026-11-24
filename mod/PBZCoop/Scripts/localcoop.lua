@@ -1003,7 +1003,7 @@ return function(api)
         if distance(here, p1:K2_GetActorLocation()) < AWAY_CM then
             return
         end
-        local count = 0
+        local count, names, left = 0, {}, {}
         for _, s in ipairs(FindAllOf("AISpawner") or {}) do
             pcall(function()
                 local name = s:GetFName():ToString()
@@ -1017,15 +1017,24 @@ return function(api)
                     pcall(function() sid = s.SpawnerID:ToString() end)
                     if sid and (sid:find("_Seq", 1, true) or (game.isLaterPhase and game.isLaterPhase(sid))) then
                         V.storyLeft = (V.storyLeft or 0) + 1
+                        left[#left + 1] = sid
                     elseif s:IsShouldToSpawn() and not valid(s.SpawnedAI) then
                         s:ClaimSeqSpawn(false, true, false)
                         count = count + 1
+                        names[#names + 1] = (sid and sid ~= "" and sid ~= "None") and sid or name
                     end
                 end
             end)
         end
+        -- (By name: that report's log said "Woke 1 enemies" a moment before the stray one stood in the arena, and not which.)
+        local function listed(t)
+            return table.concat(t, ", ", 1, math.min(#t, 8)) .. (#t > 8 and (" and " .. (#t - 8) .. " more") or "")
+        end
         if count > 0 then
-            log("Woke " .. count .. " enemies around player 2.")
+            log("Woke " .. count .. " enemies around player 2: " .. listed(names) .. ".")
+        end
+        if #left > 0 then
+            log("Left to the game around player 2, the story's own to bring: " .. listed(left) .. ".")
         end
     end
 

@@ -13617,6 +13617,14 @@ local function localStorySpawners()
     check(claimed(first) == 0 and claimed(second) == 0 and claimed(later) == 0,
         "a boss's phases and a scene's enemies, named for their sequence or their later phase, are left for the game to bring ("
         .. claimed(first) .. ", " .. claimed(second) .. ", " .. claimed(later) .. ")")
+    -- (That report's log said "Woke 1 enemies" a moment before the stray enemy stood in the arena, and not which one.)
+    check(count(pc.logs, "Woke 1 enemies around player 2: camp9%.$") == 1, "the log names what was woken")
+    local leftLine = nil
+    for _, l in ipairs(pc.logs) do
+        leftLine = l:find("Left to the game around player 2, the story's own to bring: ", 1, true) and l or leftLine
+    end
+    check(leftLine ~= nil and leftLine:find("MuXiaoKui_Seq045", 1, true) ~= nil and leftLine:find("MuXiaoKuiP2_Seq046new", 1, true) ~= nil
+        and leftLine:find("LeiDangP2", 1, true) ~= nil, "and what was left to the game, by name")
     allErrors(s)
 end
 
@@ -19020,6 +19028,103 @@ local function anEnemysJump()
     allErrors(s)
 end
 
+-- Free travel gives back what a trip took, into the save the trip began in. Another save loaded from the game's menu comes
+-- as a map's load too, with its own bag: nothing is "given back" into it. (A play log of 1.7.4, 11-20, local co-op: a
+-- player left the save they were stuck in for another that held eight talismans fewer, and the mod put eight into it.)
+local function freeTravelAndSaves()
+    part("free travel and another save")
+    local T = "Item_Traversing"
+    local s = Session.new(SIM_SCRIPTS, { "Host" }, false, ENEMIES)
+    local pc = s.pcs[1]
+    local slot = "Slot1"
+    local find = pc.env.FindFirstOf
+    local saves = { GetContinueSlotName = function() return { ToString = function() return slot end } end,
+        IsValid = function() return true end }
+    pc.env.FindFirstOf = function(class)
+        if class == "PBZSaveLoadSubsystem" then
+            return saves
+        end
+        return find(class)
+    end
+    local function have()
+        return Session.items(pc, T)
+    end
+    local function set(n)
+        rawget(pc.bag, "__fields").items[T] = n
+    end
+    local function said(what)
+        return count(pc.logs, what)
+    end
+    local function storyText()
+        local row, done = pc.env.PBZ.story.point()
+        return tostring(row) .. "/" .. tostring(done)
+    end
+    -- The story a step on: whether its point (story.lua's) is another one after it.
+    local function storyMoves(quest, id)
+        local before = storyText()
+        pc.storyStep(quest, id, 1)
+        return storyText() ~= before
+    end
+    local function travelCall()
+        for _, fn in ipairs(pc.hooks["/Script/ProjectPBZ.PBZSaveLoadSubsystem:TeleportTo"] or {}) do
+            fn()
+        end
+    end
+    s:run(4)
+    check(have() == 1 and said("Free travel: 1 Traversal Talisman put in the bag") == 1, "one talisman is kept in the bag, as before")
+    set(9)
+    s:run(8)
+
+    -- A trip by the map: the game's travel call, three talismans gone, the map's load.
+    travelCall()
+    set(6)
+    Session.loadMap(pc)
+    s:run(1.5)
+    check(have() == 6, "a trip: nothing is given in the first seconds back, while the save is asked which one it is")
+    s:run(5)
+    check(have() == 9 and said("Free travel: 3 Traversal Talismans given back after the trip%.") == 1,
+        "a trip by the game's own travel call: what it took is given back (" .. have() .. ")")
+    -- The same with the story moved on just before it (a boss beaten, then straight to the map): still a trip.
+    s:run(35)
+    local moved = storyMoves("Main-Valley", "1")
+    travelCall()
+    set(8)
+    Session.loadMap(pc)
+    s:run(6)
+    check(moved and have() == 9 and said("given back after the trip") == 2,
+        "a trip right after a step of the story (now " .. storyText() .. "): given back all the same")
+
+    -- Another save loaded from the game's menu: a map's load with no travel call, another slot, eight talismans fewer.
+    s:run(35)
+    slot = "Slot2"
+    set(1)
+    Session.loadMap(pc)
+    s:run(8)
+    check(have() == 1 and said("given back after the trip") == 2
+        and said("Free travel: this map came with another save %(another save slot%): the 8 Traversal Talismans it has fewer aren't given%.") == 1,
+        "another save loaded (another slot): its bag is left as it is (" .. have() .. ")")
+    -- The same slot's name, the story elsewhere (an older save of the same game): left as it is too.
+    set(7)
+    s:run(35)
+    moved = storyMoves("Main-Forest", "1")
+    set(2)
+    Session.loadMap(pc)
+    s:run(8)
+    check(moved and have() == 2 and said("this map came with another save %(its story stands elsewhere%): the 5 Traversal Talismans") == 1,
+        "the same slot with the story somewhere else: left as it is (" .. have() .. ")")
+    -- A map's load in the same save, the story where it was (a death's reload, a trip the travel calls didn't show): given.
+    set(6)
+    s:run(35)
+    set(5)
+    Session.loadMap(pc)
+    s:run(8)
+    -- (The second of that line: the trip after the story's step gave one back too.)
+    check(have() == 6 and said("Free travel: 1 Traversal Talisman given back after the trip%.") == 2,
+        "a map's load in the same save: what it took is given back (" .. have() .. ")")
+    check(pc.env.PBZ.freetravel.refused == 2, "two refused in all (" .. tostring(pc.env.PBZ.freetravel.refused) .. ")")
+    allErrors(s)
+end
+
 -- Other mods (mods.lua): each PC lists its own (pak mods under Paks, UE4SS mods switched on), sends a mark for each, and
 -- is told once what differs: by its own mods' names alone, never the partner's. (Players on 1.7.6: "from his
 -- perspective, my mod is not displaying".)
@@ -19397,5 +19502,6 @@ return function(print_, scripts)
     anEnemysJump()
     aCopysDeath()
     otherMods()
+    freeTravelAndSaves()
     return failed == 0
 end
