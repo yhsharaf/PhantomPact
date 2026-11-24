@@ -13429,8 +13429,9 @@ local function localVoid()
     s:run(1.0, gravity)
     local hp = select(1, Fake.health(p1))
 
-    -- The report's: nothing under the place the game took player 1 to, nor for 500 m around, for good.
-    local A = { X = -333450.0, Y = 249935.0, Z = 5000.0 }
+    -- Nothing under the place the game took player 1 to, nor for 500 m around, for good. (Not the report's own place:
+    -- that one is known since 437 and has its own way, localNowhere.)
+    local A = { X = -933450.0, Y = 249935.0, Z = 5000.0 }
     pc.noFloor = function(l) return gap(l, A) < 50000 end
     taken(A)
     s:run(0.8, gravity)
@@ -13586,6 +13587,123 @@ local function localVoid()
     s:run(1.5, gravity)
     check(mode(p1) == 3 and said("Player 1 falls after a far move") == holds,
         "a far move onto ground they stood on for a second, then a pit: nobody is held")
+    pc.noFloor = nil
+    allErrors(s)
+end
+
+-- The game's own place for a death in a boss's fight (437). The bench, runs 279 to 281 (1.7.7, boss LuanShi): 1.4 to 2.9 s
+-- after the boss's killing blow the game has player 1 up again, whole, at one far spot where nothing is (the report's,
+-- the same on every map), and never takes them from it. Held by 414 they hung there 20 s, player 2 with them. From that
+-- place they are back where they last stood 1.5 s on, and player 2 stays where the fight is.
+local function localNowhere()
+    part("player 1 at the game's place for a death in a boss's fight")
+    local s, pc, state = localGame()
+    s:run(1.5)
+    Fake.traces(pc)
+    local p1, p2 = pc.pawn, state.p2Pawn
+    local function mode(body)
+        return field(field(body, "CharacterMovement"), "MovementMode")
+    end
+    local function setMode(body, m)
+        Fake.put(field(body, "CharacterMovement"), "MovementMode", m)
+    end
+    local function place(body)
+        local l = at(body)
+        return { X = l.X, Y = l.Y, Z = l.Z }
+    end
+    -- (As localVoid's: no gravity in the sim, a falling body drops 18 m a second and lands where there is floor.)
+    local function gravity()
+        for _, body in ipairs({ p1, p2 }) do
+            local l = at(body)
+            local floor = not (pc.noFloor and pc.noFloor({ X = l.X, Y = l.Y, Z = 10 }))
+            if mode(body) == 1 and not floor then
+                setMode(body, 3)
+            end
+            if mode(body) == 3 then
+                if floor and l.Z > 100 and l.Z - 30 <= 100 then
+                    Fake.put(body, "loc", { X = l.X, Y = l.Y, Z = 100.0 })
+                    setMode(body, 1)
+                elseif not floor or l.Z > 100 then
+                    Fake.put(body, "loc", { X = l.X, Y = l.Y, Z = l.Z - 30 })
+                else
+                    setMode(body, 1)
+                end
+            end
+        end
+    end
+    local function said(words)
+        return count(pc.logs, words)
+    end
+    local NOWHERE = { X = -333450.0, Y = 249935.0, Z = -13070.0 }
+    local ON = { X = -351785.0, Y = 244672.0, Z = -12830.0 }       -- (the report's other spot, 191 m on)
+    pc.noFloor = function(l) return gap(l, NOWHERE) < 100000 end
+    s:run(1.0, gravity)
+    local home, home2 = place(p1), place(p2)
+
+    -- The boss's blow, and the game's own hand 1.6 s on: up again, whole, at that place, and falling.
+    Session.die(pc)
+    s:run(1.6, gravity)
+    Session.revive(pc)
+    local whole = select(1, Fake.health(p1))
+    Fake.put(p1, "loc", { X = NOWHERE.X, Y = NOWHERE.Y, Z = NOWHERE.Z })
+    setMode(p1, 3)
+    s:run(1.2, gravity)
+    check(mode(p1) == 0 and gap(at(p1), NOWHERE) < 1 and NOWHERE.Z - at(p1).Z < 400 and said("Player 1 falls after a far move: held") == 1,
+        string.format("killed in a boss's fight and up again at the game's far place: held there, not let fall (%.0f cm down)", NOWHERE.Z - at(p1).Z))
+    check(gap(at(p2), home2) < 1 and mode(p2) == 1 and said("to the game's place for a death in a boss's fight: player 2 stays") == 1
+        and said("player 2 goes along") == 0, "player 2 isn't taken there: they stay where the fight is")
+    s:run(0.6, gravity)
+    check(said("where nothing is: back to where they last stood") == 1 and gap(at(p1), home) < 1,
+        string.format("a second and a half on: back over where they last stood (%.0f cm from it)", gap(at(p1), home)))
+    s:run(1.6, gravity)
+    check(mode(p1) == 1 and math.abs(at(p1).Z - 105) < 1 and said("The ground is there under player 1") == 1
+        and said("No ground under player 1 for 20 s") == 0 and select(1, Fake.health(p1)) == whole,
+        string.format("and set down on its floor, whole, with no 20 s of waiting (height %.0f)", at(p1).Z))
+    check(gap(at(p2), home2) < 1 and mode(p2) == 1 and said("Player 2 is down") == 0 and said("Both players are down") == 0
+        and said("Player 1 is back") == 0 and said("player 2 goes along") == 0,
+        "player 2 where they were all the while; nobody down, nobody respawned by the mod")
+
+    -- Stood up there by the game, not falling (the report's log once: 21 s at the spot 191 m on): no fall for 414 to hold,
+    -- and that place is never taken for ground to go back to.
+    s:run(3, gravity)
+    local backs = said("where nothing is: back to where they last stood")
+    local helds = said("Player 1 falls after a far move: held")
+    Fake.put(p1, "loc", { X = ON.X, Y = ON.Y, Z = ON.Z })
+    setMode(p1, 1)
+    s:run(1.0)
+    check(gap(at(p1), ON) < 1 and said("where nothing is: back to where they last stood") == backs, "stood up at the spot 191 m on by the game: a second there, not yet")
+    s:run(0.8)
+    check(said("where nothing is: back to where they last stood") == backs + 1 and gap(at(p1), home) < 1
+        and said("Player 1 falls after a far move: held") == helds,
+        string.format("a second and a half: back over where they last stood on real ground, though they never fell (%.0f cm from it)", gap(at(p1), home)))
+    s:run(1.6, gravity)
+    check(mode(p1) == 1 and math.abs(at(p1).Z - 105) < 1 and gap(at(p2), home2) < 1, "set down there; player 2 never moved")
+
+    -- No place known to go back to (a map just in): beside player 2.
+    s:run(3, gravity)
+    local V = pc.env.PBZ.localcoop.bench
+    V.p1Stood = nil
+    Fake.put(p1, "loc", { X = NOWHERE.X, Y = NOWHERE.Y, Z = NOWHERE.Z })
+    setMode(p1, 3)
+    s:run(2.0, gravity)
+    check(said("where nothing is: back beside player 2") == 1 and gap(at(p1), home2) < 1,
+        string.format("with no place of their own known: back beside player 2 (%.0f cm off)", gap(at(p1), home2)))
+    s:run(1.6, gravity)
+    check(mode(p1) == 1 and math.abs(at(p1).Z - 105) < 1, "and set down there")
+
+    -- Player 2 back from down just then isn't made at that place: their comeback waits for player 1's.
+    s:run(3, gravity)
+    Fake.setHealth(p2, 1)
+    s:run(5.2, gravity)
+    Fake.put(p1, "loc", { X = NOWHERE.X, Y = NOWHERE.Y, Z = NOWHERE.Z })
+    setMode(p1, 3)
+    s:run(1.2, gravity)
+    local waits = said("Player 2 is back") == 0 and said("Player 2 is down") == 1
+    s:run(2.0, gravity)
+    p2 = state.p2Pawn
+    check(waits and said("Player 2 is back") == 1 and gap(at(p2), NOWHERE) > 100000 and gap(at(p2), at(p1)) < 400,
+        string.format("player 2's six seconds of down end while player 1 is there: back only once player 1 is, beside them (%.0f cm off)",
+            gap(at(p2), at(p1))))
     pc.noFloor = nil
     allErrors(s)
 end
@@ -19432,6 +19550,7 @@ return function(print_, scripts)
     localLetGo()
     localGround()
     localVoid()
+    localNowhere()
     localStorySpawners()
     localButtons()
     localFight()

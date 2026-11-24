@@ -433,6 +433,13 @@ return function(api)
         end
         if distance(last, q) > V.JUMP_CM and distance(q, p2:K2_GetActorLocation()) > V.JUMP_CM
             and not game.isDead(p2) and not p2DownSince then
+            -- (437. Not to the game's place for a death in a boss's fight: nothing is there, and player 1 is taken back
+            -- from it two seconds on, see overNothing. Taken along, player 2 hung in the air there with them.)
+            if V.atNowhere(q) then
+                log(string.format("Player 1 moved %.0f m at once, to the game's place for a death in a boss's fight: player 2 stays.",
+                    distance(last, q) / 100))
+                return
+            end
             log(string.format("Player 1 moved %.0f m at once: player 2 goes along.", distance(last, q) / 100))
             moveBeside(p2, p1)
         end
@@ -470,6 +477,22 @@ return function(api)
     V.VOID_TRY_S = 3.0          -- set on a floor and neither standing nor through it for this long: left to the game
     V.VOID_MAX_S = 20.0
     V.VOID_STOOD_S = 1.0        -- walking this long: the ground is there
+
+    -- 437. The game's own place for a death in a boss's fight. The report's play log had player 1 taken to one spot after
+    -- each of 64 deaths, the same on two maps and in two saves (-333450 249935 -13070), and once 191 m on from it; the
+    -- bench, runs 279 to 281 (boss LuanShi, 1.7.7), had the game take them to that same spot 1.4 to 2.9 s after the
+    -- boss's blow, alive, whole and falling. Nothing is there: no actor of the game's within 300 m, no ground, and none
+    -- comes. Left to the game (the mod's own steps kept out, local co-op off too) they died of the fall, fell on dead
+    -- for good and were gone out of the world's bottom two minutes on; held by 414 they hung there the 20 s, player 2
+    -- with them, and stood in the arena again after it, whole, the boss at full health and fighting. So from that
+    -- place player 1 is taken back V.NOWHERE_S on, falling, held or stood, and player 2 isn't taken there (followJumps).
+    V.NOWHERE = { X = -333450, Y = 249935 }
+    V.NOWHERE_NEAR_CM = 40000   -- (flat: the spot 191 m on is it too)
+    V.NOWHERE_S = 1.5
+    function V.atNowhere(q)
+        local dx, dy = q.X - V.NOWHERE.X, q.Y - V.NOWHERE.Y
+        return dx * dx + dy * dy <= V.NOWHERE_NEAR_CM * V.NOWHERE_NEAR_CM
+    end
 
     -- The floor straight under a place, down to V.VOID_DEEP_CM below it: its height; nil for none; false if the game
     -- wouldn't look.
@@ -552,6 +575,36 @@ return function(api)
         local mode = valid(move) and move.MovementMode or nil
         local p2 = state.p2Pawn
         local held = V.voidHeld
+        -- 437. At the game's place for a death in a boss's fight for V.NOWHERE_S: back to where they last stood on the
+        -- ground (beside player 2, with no such place known), held over it and set down as after the 20 s. Not at once:
+        -- the game's own hand may still be on them.
+        if V.atNowhere(q) then
+            V.nowhereSince = V.nowhereSince or now
+            if now - V.nowhereSince >= V.NOWHERE_S then
+                local back = (held and held.back) or (V.voidArmed and V.voidArmed.back) or V.p1Stood
+                local beside = false
+                if back and V.atNowhere(back) then
+                    back = nil
+                end
+                if not back and valid(p2) and not game.isDead(p2) then
+                    local l = p2:K2_GetActorLocation()
+                    if l.X and not V.atNowhere(l) then
+                        back, beside = { X = l.X, Y = l.Y, Z = l.Z }, true
+                    end
+                end
+                if back then
+                    V.nowhereSince, V.voidArmed = nil, nil
+                    held = { since = now, first = now, next = now, back = back, wentBack = true, p2 = held and held.p2 or nil }
+                    V.voidHeld = held
+                    V.voidHoldAt(p1, held, { X = back.X, Y = back.Y, Z = back.Z + V.VOID_UP_CM })
+                    log("Player 1 was taken to the game's place for a death in a boss's fight, where nothing is: back "
+                        .. (beside and "beside player 2." or "to where they last stood."))
+                    return
+                end
+            end
+        else
+            V.nowhereSince = nil
+        end
         if held then
             if held.paused then
                 held.paused, held.since = nil, now      -- (a scene is over: the 20 s from here)
@@ -613,8 +666,9 @@ return function(api)
             end
             held.next = now + V.VOID_EVERY_S
             -- (Player 2 with them: one who falls here, let go by their own hold or back from down, is held too.)
+            -- (One who is with them: player 2 left in the arena, 437, and in the air of a jump or a blow there, isn't.)
             if valid(p2) and not p2DownSince and not game.isDead(p2) and valid(p2.CharacterMovement)
-                and p2.CharacterMovement.MovementMode == MOVE_FALLING then
+                and p2.CharacterMovement.MovementMode == MOVE_FALLING and distance(p2:K2_GetActorLocation(), q) < V.JUMP_CM then
                 V.holdStill(p2, V.rightOf(p1, 0))
                 held.p2 = true
             end
@@ -672,8 +726,9 @@ return function(api)
             end
             return
         end
-        -- Where player 1 last stood on the ground, for the way back.
-        if mode == 1 then
+        -- Where player 1 last stood on the ground, for the way back. (Never the game's place for a death in a boss's
+        -- fight, 437: stood up there by the game, as the report's log once had them, it is no ground to go back to.)
+        if mode == 1 and not V.atNowhere(q) then
             local s = V.p1Stood
             if not s then
                 V.p1Stood = { X = q.X, Y = q.Y, Z = q.Z }
@@ -1892,6 +1947,10 @@ return function(api)
         local p2 = state.p2Pawn
         if game.isDead(p1) then
             downSince = downSince or os.clock()
+            -- (A bench's switch: none of the mod's own steps for a dead player 1, to see what the game does of it alone.)
+            if V.handsOff then
+                return
+            end
             if os.clock() - downSince >= RESPAWN_S then
                 downSince = nil
                 -- (Player 2 down is held at a sliver of health, never dead: going by that, both down brought player 1 back
@@ -1971,7 +2030,9 @@ return function(api)
                 pcall(function() p2.Mesh:SetSimulatePhysics(true) end)      -- no real death, so no death animation
                 V.showDeathCard(pc)
             end
-            if os.clock() - p2DownSince >= RESPAWN_S and not held then
+            -- (Nor beside a player 1 at the game's place for a death in a boss's fight, 437: two seconds on they are back.)
+            local q1 = p1:K2_GetActorLocation()
+            if os.clock() - p2DownSince >= RESPAWN_S and not held and not (q1.X and V.atNowhere(q1)) then
                 log("Player 2 is back.")
                 p2DownSince = nil
                 respawn(p1)
@@ -4370,6 +4431,8 @@ return function(api)
             return false
         end)
     end
+
+    localcoop.bench = V         -- (this file's own table, for a bench's probes and its switches: V.handsOff)
 
     -- What 414 is doing, for a look from outside (the bench): looks so far, far moves seen, and where it stands.
     function localcoop.voidState()
