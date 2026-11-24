@@ -92,18 +92,62 @@ function Relay:linkFor(pc)
     -- folder), for the mods check (mods.lua). The fake PC's game: its own paks, UE4SS's own mods and this one, and what a
     -- test gives the PC before its scripts start: pc.mods = { paks = { { "zzz_Outfit_P.pak", 1000 }... } (in Paks/~mods),
     -- rootPaks = the same in Paks itself, scripts = { { "RandomWeapon", 5000 }... } (UE4SS mods: main.lua that size, and
-    -- an enabled.txt unless a third value says "listed", for one mods.txt names) }. (pc.noFiles: no such call, as an
-    -- older main.dll has none: fakepc.lua's loadlib.)
+    -- an enabled.txt unless a third value says "listed", for one mods.txt names), menu = { { "PhantomMasterNinja", 813 }... }
+    -- (the Mods Menu's JavaScript mods, with its hid.dll beside the game's exe: main.js that size and 500 more in a folder
+    -- below), loader = { { "QuietMod", 700 }... } (PBZModLoader's: main.js of 82 and that size in a folder below),
+    -- loaderDll = true for its version.dll there, noDlls = true for the folders with neither DLL }. (pc.noFiles: no such
+    -- call, as an older main.dll has none: fakepc.lua's loadlib.)
     function link.files(dir)
         dir = dir:gsub("\\", "/"):gsub("/+$", "")
         local m, out = pc.mods or {}, nil
         local modsDir = pc.scripts:gsub("\\", "/"):gsub("/+$", ""):match("^(.*)/[^/]+/[^/]+$")
+        local exeDir = modsDir:match("^(.*)/[^/]+/[^/]+$")         -- (UE4SS's folder is the one above Mods, the exe's above that)
         local function add(list)
             for _, f in ipairs(list or {}) do
                 out[#out + 1] = "F " .. f[2] .. " " .. f[1]
             end
         end
-        if dir:find("/ProjectPBZ/Content/Paks$") then
+        local function ends(tail)
+            return dir:sub(-#tail) == tail
+        end
+        if dir == exeDir then
+            out = { "F 498913272 PBZ.exe", "F 279552 dwmapi.dll", "D 0 ue4ss" }
+            if m.menu and not m.noDlls then
+                out[#out + 1] = "F 252928 hid.dll"
+            end
+            if m.loaderDll and not m.noDlls then
+                out[#out + 1] = "F 1837568 version.dll"
+            end
+        elseif ends("/ProjectPBZ/Content/JavaScript/PBZModsMenu/Mods") then
+            if m.menu then
+                out = { "F 314 discovered.txt" }
+                for _, s in ipairs(m.menu) do
+                    out[#out + 1] = "D 0 " .. s[1]
+                end
+            end
+        elseif ends("/ProjectPBZ/PBZModLoader/mods") then
+            if m.loader then
+                out = {}
+                for _, s in ipairs(m.loader) do
+                    out[#out + 1] = "D 0 " .. s[1]
+                end
+            end
+        elseif dir:find("/PBZModsMenu/Mods/", 1, true) or dir:find("/PBZModLoader/mods/", 1, true) then
+            for _, s in ipairs(m.menu or {}) do
+                if ends("/PBZModsMenu/Mods/" .. s[1]) then
+                    out = { "F " .. s[2] .. " main.js", "F 120 settings.json", "D 0 Lib" }
+                elseif ends("/PBZModsMenu/Mods/" .. s[1] .. "/Lib") then
+                    out = { "F 500 extra.js", "F 9 notes.txt" }
+                end
+            end
+            for _, s in ipairs(m.loader or {}) do
+                if ends("/PBZModLoader/mods/" .. s[1]) then
+                    out = { "F 82 main.js", "D 0 Gameplay" }
+                elseif ends("/PBZModLoader/mods/" .. s[1] .. "/Gameplay") then
+                    out = { "F " .. s[2] .. " BossRush.js" }
+                end
+            end
+        elseif dir:find("/ProjectPBZ/Content/Paks$") then
             out = { "F 223726270 ProjectPBZ-Windows.pak", "F 2137390704 ProjectPBZ-Windows.ucas", "F 47487278 ProjectPBZ-Windows.utoc",
                 "F 2147483360 ProjectPBZ-Windows_s1.ucas", "F 1858239042 pakchunkMovies-Windows.pak", "F 64 pakchunkMovies-Windows.ucas",
                 "F 4479008 global.ucas", "F 410 global.utoc", "D 0 ~mods" }

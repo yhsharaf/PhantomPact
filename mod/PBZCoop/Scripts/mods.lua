@@ -4,14 +4,16 @@
 -- what a mod changes shows there only if that PC has the mod too ("from his perspective, my mod is not displaying",
 -- players on 1.7.6). No mod can be sent across: the files are their authors', and a game should not load what a
 -- partner hands it. What this file does is tell. Each PC lists its own mods once a session: the game's pak mods (any
--- .pak, .utoc or .ucas under Content/Paks but the game's own) and the UE4SS mods switched on beside this one. It sends
--- a mark for each, two hashes (its name; its name with its size), and compares the marks that come back.
+-- .pak, .utoc or .ucas under Content/Paks but the game's own), the UE4SS mods switched on beside this one, and the
+-- JavaScript mods of the game's two script loaders (PBZ Mods Menu and PBZModLoader). It sends a mark for each, two
+-- hashes (its name; its name with its size), and compares the marks that come back.
 --
 -- A partner's mod names are never shown or logged on this PC, only how many differ: the names said are this player's
 -- own. (A mark is no secret all the same: anyone with a list of mod names can work out which ones it stands for.)
 --
--- "MODS <id> <part> <parts> <count> <mark>...": 40 marks an event, a mark is p or u (pak, UE4SS), then the two hashes.
--- An older version has no handler for it and leaves it, and sends none: nothing is said of such a partner.
+-- "MODS <id> <part> <parts> <count> <mark>...": 40 marks an event, a mark is p, u or j (pak, UE4SS, JavaScript), then
+-- the two hashes. An older version has no handler for it and leaves it, and sends none: nothing is said of such a
+-- partner.
 --
 -- A difference is told once, not at every link: most players keep a mod or two of their own (a map, a menu), by
 -- choice. What was told is kept in mods_told.txt beside the settings; the log has the comparison every time, and the
@@ -76,11 +78,15 @@ return function(api)
     -- The game's Paks folder, from UE4SS's Mods folder: under the first folder above it that holds
     -- ProjectPBZ/Content/Paks (ue4ss lies in platform/steam, or wherever a platform's build keeps it). (A path with no
     -- more folders written in it, as one from where the game runs is: up by "..".)
+    local function up(path)
+        local above = not path:find("%.%.$") and parent(path) or nil
+        return (above and above ~= "") and above or (path .. "/..")
+    end
+
     local function paksDir(scriptMods)
         local at = scriptMods
         for _ = 1, 7 do
-            local up = not at:find("%.%.$") and parent(at) or nil
-            at = (up and up ~= "") and up or (at .. "/..")
+            at = up(at)
             local paks = at .. "/ProjectPBZ/Content/Paks"
             if entries(paks) then
                 return paks
@@ -181,6 +187,88 @@ return function(api)
         end
     end
 
+    -- The JavaScript mods of the game's two script loaders, each a folder with a main.js in it:
+    --   PBZ Mods Menu (its hid.dll beside the game's exe): Content/JavaScript/PBZModsMenu/Mods/<id>, the menu itself one;
+    --   PBZModLoader (its version.dll there): ProjectPBZ/PBZModLoader/mods/<id>, but what its mods.ini turns off
+    --   ("<id>=0" under [Mods], or Enabled=0 under [Loader]). The Mods Menu finds and loads these too.
+    -- With no loader's DLL there, the folders load nothing and count for nothing. A mod's size is its .js files, three
+    -- folders deep: its settings and logs are no other version. (Found on the bench, 11-24: its game had the Mods Menu
+    -- and Phantom Master Ninja running, and a list of paks and UE4SS mods alone had neither.)
+    local function jsSize(dir, depth)
+        local size = 0
+        for _, e in ipairs(entries(dir) or {}) do
+            if e.dir then
+                if depth < DEPTH then
+                    size = size + jsSize(dir .. "/" .. e.name, depth + 1)
+                end
+            elseif e.name:lower():find("%.js$") then
+                size = size + e.size
+            end
+        end
+        return size
+    end
+
+    local function addJsFolder(dir, off, found)
+        for _, e in ipairs(entries(dir) or {}) do
+            local key = e.name:lower()
+            if e.dir and not off[key] and not found["j:" .. key] then
+                local main = false
+                for _, f in ipairs(entries(dir .. "/" .. e.name) or {}) do
+                    main = main or (not f.dir and f.name:lower() == "main.js")
+                end
+                if main then
+                    found["j:" .. key] = { kind = "j", name = e.name, key = key, size = jsSize(dir .. "/" .. e.name, 0) }
+                end
+            end
+        end
+    end
+
+    local function addJs(paks, scriptMods, found)
+        local content = parent(paks)
+        local project = content and parent(content)
+        if not project then
+            return
+        end
+        -- (Beside the game's exe: where UE4SS's own folder lies, or its Mods folder when UE4SS lies there itself.)
+        local dll = {}
+        for _, dir in ipairs({ up(scriptMods), up(up(scriptMods)) }) do
+            for _, e in ipairs(entries(dir) or {}) do
+                if not e.dir then
+                    dll[e.name:lower()] = true
+                end
+            end
+        end
+        local menu, loader = dll["hid.dll"] == true, dll["version.dll"] == true
+        if menu then
+            addJsFolder(content .. "/JavaScript/PBZModsMenu/Mods", {}, found)
+        end
+        if menu or loader then
+            local off, on, section = {}, true, ""
+            local f = io.open(project .. "/PBZModLoader/mods.ini", "r")
+            if f then
+                for line in f:lines() do
+                    local head = line:match("^%s*%[([^%]]+)%]")
+                    local key, value = line:match("^%s*([^;#=%[%s][^=]-)%s*=%s*(%S*)")
+                    if head then
+                        section = head:lower()
+                    elseif key and value == "0" then
+                        if section == "mods" then
+                            off[key:lower()] = true
+                        elseif section == "loader" and key:lower() == "enabled" then
+                            on = false
+                        end
+                    end
+                end
+                f:close()
+            end
+            if on then
+                addJsFolder(project .. "/PBZModLoader/mods", off, found)
+            end
+        end
+    end
+
+    local KIND_ORDER = { p = 1, u = 2, j = 3 }
+
     -- This PC's mods, read once a session (the game mounts its paks as it starts): { kind, name, key, size, h, v } each.
     function mods.list()
         if mods.own then
@@ -192,6 +280,7 @@ return function(api)
             local paks = paksDir(scriptMods)
             if paks then
                 addPaks(paks, 0, found)
+                addJs(paks, scriptMods, found)
             end
             addScripts(scriptMods, found)
             mods.paksFound = paks ~= nil
@@ -208,27 +297,27 @@ return function(api)
         end
         table.sort(list, function(a, b)
             if a.kind ~= b.kind then
-                return a.kind < b.kind
+                return (KIND_ORDER[a.kind] or 9) < (KIND_ORDER[b.kind] or 9)
             end
             return a.key < b.key
         end)
         while #list > MAX do
             list[#list] = nil
         end
-        local paks, names = 0, {}
+        local count, names = { p = 0, u = 0, j = 0 }, {}
         for _, m in ipairs(list) do
             m.h = hash(m.kind .. ":" .. m.key)
             m.v = hash(m.kind .. ":" .. m.key .. ":" .. string.format("%.0f", m.size))
-            paks = paks + (m.kind == "p" and 1 or 0)
+            count[m.kind] = (count[m.kind] or 0) + 1
             names[#names + 1] = m.name
         end
         mods.own = list
         if mods.blind then
             log("Mods check: this main.dll can't list a folder (an older one): nothing is compared.")
         else
-            log(string.format("Mods here beside Phantom Pact: %d (%d pak, %d UE4SS)%s%s", #list, paks, #list - paks,
-                #names > 0 and (": " .. table.concat(names, ", ")) or "",
-                mods.paksFound and "." or ". (The game's Paks folder wasn't found from here: pak mods not counted.)"))
+            log(string.format("Mods here beside Phantom Pact: %d (%d pak, %d UE4SS, %d JavaScript)%s%s", #list, count.p,
+                count.u, count.j, #names > 0 and (": " .. table.concat(names, ", ")) or "",
+                mods.paksFound and "." or ". (The game's Paks folder wasn't found from here: only UE4SS mods counted.)"))
         end
         return list
     end
@@ -489,7 +578,7 @@ return function(api)
             return
         end
         local their = { all = all, marks = {} }
-        for kind, h, v in all:gmatch("([pu])(%x%x%x%x%x%x%x%x)(%x%x%x%x%x%x%x%x)") do
+        for kind, h, v in all:gmatch("([puj])(%x%x%x%x%x%x%x%x)(%x%x%x%x%x%x%x%x)") do
             if #their.marks < MAX then
                 their.marks[#their.marks + 1] = { kind = kind, h = h, v = v }
             end
@@ -536,7 +625,7 @@ return function(api)
 
     -- mods                      this PC's list and what was heard
     -- mods on | off             (read at start from ModsCheck)
-    -- mods fake <p|u> <name> <size>   a made-up mod on this PC's list, sent at once (a test bench's two copies share one folder)
+    -- mods fake <p|u|j> <name> <size>   a made-up mod on this PC's list, sent at once (a test bench's two copies share one folder)
     -- mods forget               what was told before is forgotten: the next difference is told again
     function mods.command(args)
         local word, rest = (args or ""):match("^%s*(%S*)%s*(.-)%s*$")
@@ -549,9 +638,9 @@ return function(api)
                 forget()
             end
         elseif word == "fake" then
-            local kind, name, size = rest:match("^([pu]) (%S+) (%d+)$")
+            local kind, name, size = rest:match("^([puj]) (%S+) (%d+)$")
             if not kind then
-                log("Usage: mods fake <p|u> <name> <size>")
+                log("Usage: mods fake <p|u|j> <name> <size>")
                 return
             end
             mods.fakes[kind .. ":" .. name:lower()] = { kind = kind, name = name, key = name:lower(), size = tonumber(size) }

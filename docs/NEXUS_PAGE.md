@@ -169,6 +169,7 @@ Online co-op needs none of these pad steps. If your pads stop working in other g
 [*]The host leads into new areas and boss arenas. Stay close when you’re about to start a boss
 [*]Cutscenes, dialogue, spending dust, quests and story progress aren’t shared yet
 [*]Don’t press Ctrl+R (UE4SS hot reload) while playing together: restart the game instead
+[*]Other mods: what a mod changes (an outfit, a weapon’s look) shows on your partner’s screen only if they install the same mod too. When you connect, Phantom Pact tells you which of your mods your partner doesn’t have (1.7.7)
 [/list]
 
 [line]

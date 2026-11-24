@@ -2358,6 +2358,26 @@ void test_files() {
     } else {
         std::puts("  (no link could be made on this account: a link's size is not checked)");
     }
+    // A path in the PC's own code page, not UTF-8 (a game folder with such letters in it, handed to Lua that way):
+    // read all the same, and its names come back in that code page, so they open when put to the path.
+    {
+        const std::wstring odd = L"café";
+        char own[32] = {};
+        BOOL lost = FALSE;
+        WideCharToMultiByte(CP_ACP, WC_NO_BEST_FIT_CHARS, odd.c_str(), -1, own, sizeof(own), nullptr, &lost);
+        if (!lost && GetACP() != CP_UTF8) {
+            fs::create_directories(root / odd, ec);
+            write(root / odd / (odd + L".pak"), 9);
+            const std::wstring w = (root / odd).wstring();
+            std::string path(static_cast<size_t>(WideCharToMultiByte(CP_ACP, 0, w.data(), static_cast<int>(w.size()), nullptr, 0, nullptr, nullptr)), '\0');
+            WideCharToMultiByte(CP_ACP, 0, w.data(), static_cast<int>(w.size()), path.data(), static_cast<int>(path.size()), nullptr, nullptr);
+            std::string listed;
+            check(list_folder(path, listed) && listed == std::string("F 9 ") + own + ".pak\n",
+                  "a path in the PC's own code page, not UTF-8: read, and its names come back in that code page");
+        } else {
+            std::puts("  (this PC's code page is UTF-8 or has no such letter: a path in it is not checked)");
+        }
+    }
     fs::remove_all(root, ec);
     check(!fs::exists(root), "the test's folder is gone again");
 }

@@ -19034,8 +19034,8 @@ local function otherMods()
     local a = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES)
     a:run(16)
     local h, g = a.pcs[1], a.pcs[2]
-    check(count(h.logs, "Mods here beside Phantom Pact: 0 %(0 pak, 0 UE4SS%)%.$") == 1
-        and count(g.logs, "Mods here beside Phantom Pact: 0 %(0 pak, 0 UE4SS%)%.$") == 1,
+    check(count(h.logs, "Mods here beside Phantom Pact: 0 %(0 pak, 0 UE4SS, 0 JavaScript%)%.$") == 1
+        and count(g.logs, "Mods here beside Phantom Pact: 0 %(0 pak, 0 UE4SS, 0 JavaScript%)%.$") == 1,
         "no other mod: the game's own paks, UE4SS's own mods and Phantom Pact aren't counted")
     check(count(h.sent, "^E MODS %d+ 1 1 0$") >= 1 and count(g.sent, "^E MODS %d+ 1 1 0$") >= 1, "each PC tells the other it has none")
     check(count(h.logs, "Mods check with your partner: 0 the same; 0 of this PC's 0 aren't on theirs; 0 of theirs aren't here; "
@@ -19061,9 +19061,9 @@ local function otherMods()
     local b = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES, nil, nil, differing)
     b:run(30)
     h, g = b.pcs[1], b.pcs[2]
-    check(count(h.logs, "Mods here beside Phantom Pact: 5 %(4 pak, 1 UE4SS%): Hair, Naginata, MoyuanExecution, Outfit, RandomWeapon%.$") == 1,
+    check(count(h.logs, "Mods here beside Phantom Pact: 5 %(4 pak, 1 UE4SS, 0 JavaScript%): Hair, Naginata, MoyuanExecution, Outfit, RandomWeapon%.$") == 1,
         "the host's own: a mod's files are one mod, named without what only orders the load; one named ProjectPBZ-... is a mod")
-    check(count(g.logs, "Mods here beside Phantom Pact: 3 %(2 pak, 1 UE4SS%): Hair, Outfit, MapMarkers%.$") == 1,
+    check(count(g.logs, "Mods here beside Phantom Pact: 3 %(2 pak, 1 UE4SS, 0 JavaScript%): Hair, Outfit, MapMarkers%.$") == 1,
         "the guest's: a UE4SS mod mods.txt turns on counts, one it turns off doesn't")
     check(count(h.logs, "Mods check with your partner: 1 the same; 3 of this PC's 5 aren't on theirs %(Naginata, MoyuanExecution, RandomWeapon%); "
         .. "1 of theirs aren't here; 1 another version there %(Outfit%)%.$") == 1, "the host's comparison")
@@ -19211,6 +19211,42 @@ local function otherMods()
         and tips(q.pcs[1], "the players here") == 0 and tips(q.pcs[2], "the players here") == 0,
         "a party of two: each is told as two players are")
     allErrors(q)
+
+    -- JavaScript mods. (The bench, 11-24: its game had the Mods Menu and Phantom Master Ninja running, and a list of paks
+    -- and UE4SS mods had neither.) The host: the Mods Menu (its hid.dll beside the game's exe) with one mod of its kind, and
+    -- two PBZModLoader mods, one of them turned off in that loader's mods.ini. The guest: the same folders with no
+    -- loader's DLL, so none of it loads there.
+    local j = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES, nil, nil, function(pc, i)
+        pc.mods = { menu = { { "PBZModsMenu", 283238 }, { "PhantomMasterNinja", 813 } },
+            loader = { { "PVLW_2_GauntletOfMasters", 3011 }, { "QuietMod", 700 } }, noDlls = i == 2 }
+        pc.files["mods.ini"] = table.concat({ "[Loader]", "Enabled=1", "; Automatically loads mods/<id>/main.js", "[Mods]",
+            "; your-mod-id=0", "PVLW_2_GauntletOfMasters=0", "" }, string.char(10))
+    end)
+    j:run(30)
+    h, g = j.pcs[1], j.pcs[2]
+    check(count(h.logs, "Mods here beside Phantom Pact: 3 %(0 pak, 0 UE4SS, 3 JavaScript%): PBZModsMenu, PhantomMasterNinja, "
+        .. "QuietMod%.$") == 1, "the Mods Menu, its mod and a PBZModLoader mod count; one that loader's mods.ini turns off doesn't")
+    check(count(g.logs, "Mods here beside Phantom Pact: 0 %(0 pak, 0 UE4SS, 0 JavaScript%)%.$") == 1,
+        "the same folders with no loader's DLL beside the game: nothing of them counts")
+    check(tips(h, "your partner doesn't have these mods of yours: PBZModsMenu, PhantomMasterNinja, QuietMod%." .. ONLY_WHERE) == 1
+        and tips(g, "your partner has mods you don't have %(3%)%." .. ONLY_WHERE) == 1, "and the difference is told on both")
+    local sizes = {}
+    for _, m in ipairs(h.env.PBZ.mods.list()) do
+        sizes[m.name] = m.size
+    end
+    check(sizes.PBZModsMenu == 283738 and sizes.PhantomMasterNinja == 1313 and sizes.QuietMod == 782,
+        "a JavaScript mod's size is its .js files, the folders below too, and not its settings")
+    allErrors(j)
+    -- PBZModLoader alone (its version.dll, no Mods Menu), and that loader switched off whole in its mods.ini.
+    local l = Session.new(SIM_SCRIPTS, { "Host", "Guest" }, false, ENEMIES, nil, nil, function(pc, i)
+        pc.mods = { loader = { { "QuietMod", 700 } }, loaderDll = true }
+        pc.files["mods.ini"] = table.concat({ "[Loader]", "Enabled=" .. (i == 1 and 1 or 0), "[Mods]", "" }, string.char(10))
+    end)
+    l:run(16)
+    check(count(l.pcs[1].logs, "Mods here beside Phantom Pact: 1 %(0 pak, 0 UE4SS, 1 JavaScript%): QuietMod%.$") == 1
+        and count(l.pcs[2].logs, "Mods here beside Phantom Pact: 0 %(0 pak, 0 UE4SS, 0 JavaScript%)%.$") == 1,
+        "PBZModLoader alone: its mods count, and none where its mods.ini has the loader off")
+    allErrors(l)
 end
 
 return function(print_, scripts)

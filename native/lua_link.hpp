@@ -73,13 +73,20 @@ inline uint32_t name_hash(std::string_view name) {
 // What lies in one folder (its path in UTF-8, either slash), a line each: "F <bytes> <name>" or "D 0 <name>", none of
 // what lies below it and 500 at most. False if there is no such folder. Only names and sizes are read, nothing of a
 // file's contents; a link's size is the file's it points to (a mod manager's way of putting a mod in). (pp_files.)
+// A path that isn't UTF-8 is taken as the PC's own code page, and the names go back in it: a game folder with such
+// letters in its path, handed to Lua that way, still opens with the names put to it.
 inline bool list_folder(const std::string& dir, std::string& out) {
     out.clear();
     if (dir.empty()) return false;
-    const int n = MultiByteToWideChar(CP_UTF8, 0, dir.data(), static_cast<int>(dir.size()), nullptr, 0);
+    UINT cp = CP_UTF8;
+    int n = MultiByteToWideChar(cp, MB_ERR_INVALID_CHARS, dir.data(), static_cast<int>(dir.size()), nullptr, 0);
+    if (n <= 0) {
+        cp = CP_ACP;
+        n = MultiByteToWideChar(cp, 0, dir.data(), static_cast<int>(dir.size()), nullptr, 0);
+    }
     if (n <= 0) return false;
     std::wstring wide(static_cast<size_t>(n), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, dir.data(), static_cast<int>(dir.size()), wide.data(), n);
+    MultiByteToWideChar(cp, 0, dir.data(), static_cast<int>(dir.size()), wide.data(), n);
     for (auto& c : wide) {
         if (c == L'/') c = L'\\';
     }
@@ -93,7 +100,7 @@ inline bool list_folder(const std::string& dir, std::string& out) {
     do {
         if (wcscmp(found.cFileName, L".") == 0 || wcscmp(found.cFileName, L"..") == 0) continue;
         char name[1024];
-        if (WideCharToMultiByte(CP_UTF8, 0, found.cFileName, -1, name, sizeof(name), nullptr, nullptr) <= 1) continue;
+        if (WideCharToMultiByte(cp, 0, found.cFileName, -1, name, sizeof(name), nullptr, nullptr) <= 1) continue;
         const bool is_dir = (found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
         unsigned long long size = is_dir ? 0 : (static_cast<unsigned long long>(found.nFileSizeHigh) << 32) | found.nFileSizeLow;
         if (!is_dir && (found.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {

@@ -35,6 +35,9 @@ share loot and dust, and regroup at bells. The host's world leads, and your part
 - Optional `Secret` that signs every packet; works over Tailscale, Hamachi, Radmin, ZeroTier, UU Accelerator, and
   Steam (beta)
 - English, 中文 and العربية (Arabic, new in 1.7.2): the F5 panel, the PvP page and the mod's tips in your language
+- A mods check (new in 1.7.7): when you connect, you're told which of your other mods your partner doesn't have. A mod
+  changes files on one PC, so what it changes shows on your partner's screen only if they install it too; no mod files
+  are ever sent, only a short code per mod ([INSTALL.md](INSTALL.md#other-mods))
 - Local co-op (F5 > MORE > Mode > LOCAL, in testing): two players on one PC in split screen, one pad each or keyboard plus
   pad, or each on a monitor of their own (F4 panel, or `Monitors = 2`, new in 1.7.2). Player 2 climbs, opens chests, rings bells, drinks and fights on their own, with the game's own HUD, button prompts,
   boss bars and execution points in their half of the screen, and one shared backpack, out of which they wear and hold

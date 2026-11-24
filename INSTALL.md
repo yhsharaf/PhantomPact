@@ -1,4 +1,4 @@
-# Phantom Pact 1.7.6: online co-op for Phantom Blade Zero
+# Phantom Pact 1.7.7: online co-op for Phantom Blade Zero
 
 Play the campaign with a friend: you see each other as a second Soul, fight the same enemies and bosses, and
 share loot and dust, and regroup at bells. The host's world decides enemies, bosses and deaths; the guest's world follows.
@@ -288,9 +288,10 @@ Phantom Pact changes no game files: it's a UE4SS Lua mod with a small DLL of its
   Pact again.
 - **What your partner sees of your mods.** A mod changes files on one PC, so what it changes (an outfit, a weapon's
   look) can show on your partner's screen only if they have the same mod installed too: Phantom Pact never sends a
-  mod's files. When you connect, each game tells the other which other mods it has, as marks only (no file and no mod
-  name goes across), and you're told once, by name, which of your mods your partner doesn't have. The UE4SS log has
-  the comparison every time ("Mods check with your partner"). `ModsCheck = Off` in `PhantomPact.ini` turns it off.
+  mod's files. When you connect, each game tells the other which other mods it has (pak mods, UE4SS mods, and the
+  JavaScript mods of PBZ Mods Menu and PBZModLoader), as marks only: no file and no mod name goes across. You're
+  told once, by name, which of your mods your partner doesn't have. The UE4SS log has the comparison every time
+  ("Mods check with your partner"). `ModsCheck = Off` in `PhantomPact.ini` turns it off.
 - **Looks and camera** (gore, blood, effects, FOV, camera distance): only your own screen, fine together. While you're
   down, and in a PvP finishing move, the camera is Phantom Pact's, so a camera mod doesn't show there.
 - **Your own fighting** (parry or deflect windows, animation cancels, damage, hit-stop): your own game judges the hits on
